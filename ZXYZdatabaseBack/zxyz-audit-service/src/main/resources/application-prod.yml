@@ -23,3 +23,5 @@ app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
   internal-service-token: ${INTERNAL_SERVICE_TOKEN}
+  team-service:
+    base-url: ${services.team-service.base-url}

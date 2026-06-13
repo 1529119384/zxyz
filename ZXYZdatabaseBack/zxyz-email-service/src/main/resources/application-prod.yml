@@ -24,3 +24,5 @@ email:
 
 app:
   internal-service-token: ${INTERNAL_SERVICE_TOKEN}
+  team-service:
+    base-url: ${services.team-service.base-url}
