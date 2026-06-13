@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: zxyz-audit-service
+  config:
+    import: classpath:application-common.yml
+  profiles:
+    default: dev
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 1
+
+mybatis:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+server:
+  port: ${SERVER_PORT:18087}
+

@@ -1,0 +1,415 @@
+name: CI/CD - Selective Build & Deploy
+
+on:
+  push:
+    branches: [dev, main]
+    tags: ['v*']
+  pull_request:
+    branches: [dev, main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '镜像标签（如 v1.0.0、latest、dev）'
+        required: true
+        default: 'latest'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOCKERHUB_PREFIX: ACloud  # ← DockerHub 用户名
+
+jobs:
+  # ============================================================
+  # Job 1: 检测哪些服务有变更 + 确定镜像标签
+  # ============================================================
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend-common: ${{ steps.filter.outputs.backend-common }}
+      project-service: ${{ steps.filter.outputs.project-service }}
+      im-service: ${{ steps.filter.outputs.im-service }}
+      email-service: ${{ steps.filter.outputs.email-service }}
+      user-service: ${{ steps.filter.outputs.user-service }}
+      share-service: ${{ steps.filter.outputs.share-service }}
+      file-service: ${{ steps.filter.outputs.file-service }}
+      team-service: ${{ steps.filter.outputs.team-service }}
+      audit-service: ${{ steps.filter.outputs.audit-service }}
+      gateway: ${{ steps.filter.outputs.gateway }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      docker-config: ${{ steps.filter.outputs.docker-config }}
+      backend-any: ${{ steps.backend-any.outputs.changed }}
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend-common:
+              - 'ZXYZdatabaseBack/pom.xml'
+              - 'ZXYZdatabaseBack/zxyz-common/**'
+              - 'ZXYZdatabaseBack/Dockerfile'
+            project-service:
+              - 'ZXYZdatabaseBack/zxyz-project-service/**'
+            im-service:
+              - 'ZXYZdatabaseBack/zxyz-im-service/**'
+            email-service:
+              - 'ZXYZdatabaseBack/zxyz-email-service/**'
+            user-service:
+              - 'ZXYZdatabaseBack/zxyz-user-service/**'
+            share-service:
+              - 'ZXYZdatabaseBack/zxyz-share-service/**'
+            file-service:
+              - 'ZXYZdatabaseBack/zxyz-file-service/**'
+            team-service:
+              - 'ZXYZdatabaseBack/zxyz-team-service/**'
+            audit-service:
+              - 'ZXYZdatabaseBack/zxyz-audit-service/**'
+            gateway:
+              - 'ZXYZdatabaseBack/zxyz-gateway/**'
+            frontend:
+              - 'ZXYZdatabaseFront/**'
+              - 'deploy/nginx/**'
+            docker-config:
+              - 'docker-compose.yml'
+              - '.env.example'
+
+      - name: Check if any backend changed
+        id: backend-any
+        run: |
+          if [ "${{ steps.filter.outputs.backend-common }}" = "true" ] || \
+             [ "${{ steps.filter.outputs.project-service }}" = "true" ] || \
+             [ "${{ steps.filter.outputs.im-service }}" = "true" ] || \
+             [ "${{ steps.filter.outputs.email-service }}" = "true" ] || \
+             [ "${{ steps.filter.outputs.user-service }}" = "true" ] || \
+             [ "${{ steps.filter.outputs.share-service }}" = "true" ] || \
+             [ "${{ steps.filter.outputs.file-service }}" = "true" ] || \
+             [ "${{ steps.filter.outputs.team-service }}" = "true" ] || \
+             [ "${{ steps.filter.outputs.audit-service }}" = "true" ] || \
+             [ "${{ steps.filter.outputs.gateway }}" = "true" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Determine image tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref }}" = "refs/heads/dev" ]; then
+            echo "tag=dev" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "tag=latest" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=dev" >> $GITHUB_OUTPUT
+          fi
+
+  # ============================================================
+  # Job 2: 质量检查（PR 和 push 均执行）
+  # ============================================================
+  quality-check:
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    steps:
+      # 如果前后端都没有变更，跳过整个 job（节省 runner 时间）
+      - name: Check if any changes exist
+        id: has-changes
+        run: |
+          BACKEND="${{ needs.detect-changes.outputs.backend-any }}"
+          FRONTEND="${{ needs.detect-changes.outputs.frontend }}"
+          if [ "$BACKEND" = "true" ] || [ "$FRONTEND" = "true" ]; then
+            echo "run=true" >> $GITHUB_OUTPUT
+          else
+            echo "run=false" >> $GITHUB_OUTPUT
+            echo "⏭️ Skip: no backend or frontend changes detected"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.has-changes.outputs.run == 'true'
+
+      # --- 前端 lint + test ---
+      - name: Setup Node.js
+        if: needs.detect-changes.outputs.frontend == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ZXYZdatabaseFront/package-lock.json
+
+      - name: Install frontend deps
+        if: needs.detect-changes.outputs.frontend == 'true'
+        run: cd ZXYZdatabaseFront && npm ci
+
+      - name: Lint frontend
+        if: needs.detect-changes.outputs.frontend == 'true'
+        run: cd ZXYZdatabaseFront && npm run lint
+
+      - name: Test frontend
+        if: needs.detect-changes.outputs.frontend == 'true'
+        run: cd ZXYZdatabaseFront && npm run test
+
+      # --- 后端编译检查 ---
+      # 注意：当前后端 Dockerfile 跳过测试（-Dmaven.test.skip=true），
+      # 因为测试源码存在编译问题。待修复后应改为 mvn test。
+      - name: Setup JDK 17
+        if: needs.detect-changes.outputs.backend-any == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: maven
+
+      - name: Backend compile
+        if: needs.detect-changes.outputs.backend-any == 'true'
+        run: cd ZXYZdatabaseBack && mvn -B compile -Dmaven.test.skip=true
+
+  # ============================================================
+  # Job 3: 构建并推送镜像（只构建有变更的服务，仅 push 触发）
+  # ============================================================
+  build-and-push:
+    needs: [detect-changes, quality-check]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          # 后端 9 个服务（is_backend=true → backend-common 变更时也重建）
+          - name: project-service
+            context: .
+            dockerfile: ZXYZdatabaseBack/Dockerfile
+            module: zxyz-project-service
+            change: ${{ needs.detect-changes.outputs.project-service }}
+            is_backend: true
+          - name: im-service
+            context: .
+            dockerfile: ZXYZdatabaseBack/Dockerfile
+            module: zxyz-im-service
+            change: ${{ needs.detect-changes.outputs.im-service }}
+            is_backend: true
+          - name: email-service
+            context: .
+            dockerfile: ZXYZdatabaseBack/Dockerfile
+            module: zxyz-email-service
+            change: ${{ needs.detect-changes.outputs.email-service }}
+            is_backend: true
+          - name: user-service
+            context: .
+            dockerfile: ZXYZdatabaseBack/Dockerfile
+            module: zxyz-user-service
+            change: ${{ needs.detect-changes.outputs.user-service }}
+            is_backend: true
+          - name: share-service
+            context: .
+            dockerfile: ZXYZdatabaseBack/Dockerfile
+            module: zxyz-share-service
+            change: ${{ needs.detect-changes.outputs.share-service }}
+            is_backend: true
+          - name: file-service
+            context: .
+            dockerfile: ZXYZdatabaseBack/Dockerfile
+            module: zxyz-file-service
+            change: ${{ needs.detect-changes.outputs.file-service }}
+            is_backend: true
+          - name: team-service
+            context: .
+            dockerfile: ZXYZdatabaseBack/Dockerfile
+            module: zxyz-team-service
+            change: ${{ needs.detect-changes.outputs.team-service }}
+            is_backend: true
+          - name: audit-service
+            context: .
+            dockerfile: ZXYZdatabaseBack/Dockerfile
+            module: zxyz-audit-service
+            change: ${{ needs.detect-changes.outputs.audit-service }}
+            is_backend: true
+          - name: gateway
+            context: .
+            dockerfile: ZXYZdatabaseBack/Dockerfile
+            module: zxyz-gateway
+            change: ${{ needs.detect-changes.outputs.gateway }}
+            is_backend: true
+          # 前端（独立构建，不受 backend-common 变更影响）
+          - name: frontend-nginx
+            context: .
+            dockerfile: ZXYZdatabaseFront/Dockerfile
+            module: frontend
+            change: ${{ needs.detect-changes.outputs.frontend }}
+            is_backend: false
+    steps:
+      - name: Check if needs build
+        id: should-build
+        run: |
+          # 后端服务：自身变更 || backend-common 变更 || docker-config 变更
+          # 前端：自身变更 || docker-config 变更（不受 backend-common 影响）
+          if [ "${{ matrix.change }}" = "true" ] || \
+             [ "${{ needs.detect-changes.outputs.docker-config }}" = "true" ] || \
+             ([ "${{ matrix.is_backend }}" = "true" ] && [ "${{ needs.detect-changes.outputs.backend-common }}" = "true" ]); then
+            echo "build=true" >> $GITHUB_OUTPUT
+          else
+            echo "build=false" >> $GITHUB_OUTPUT
+            echo "⏭️ Skip: ${{ matrix.name }} (no changes)"
+          fi
+
+      - name: Checkout code
+        if: steps.should-build.outputs.build == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        if: steps.should-build.outputs.build == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        if: steps.should-build.outputs.build == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: Build and push
+        if: steps.should-build.outputs.build == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          build-args: ${{ matrix.module != 'frontend' && format('MODULE={0}', matrix.module) || '' }}
+          tags: |
+            ${{ env.DOCKERHUB_PREFIX }}/zxyz-${{ matrix.name }}:${{ needs.detect-changes.outputs.tag }}
+            ${{ env.DOCKERHUB_PREFIX }}/zxyz-${{ matrix.name }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ============================================================
+  # Job 3.5: 检查是否有实际构建（防止空部署）
+  # ============================================================
+  build-complete:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: always()
+    outputs:
+      any_built: ${{ steps.check.outputs.any_built }}
+    steps:
+      - name: Check if any image was built
+        id: check
+        run: |
+          if [ "${{ needs.build-and-push.result }}" = "success" ]; then
+            echo "any_built=true" >> $GITHUB_OUTPUT
+          else
+            echo "any_built=false" >> $GITHUB_OUTPUT
+            echo "⏭️ Skip deploy: no images were built"
+          fi
+
+  # ============================================================
+  # Job 4: 部署到服务器（仅 push 触发且有镜像构建时）
+  # ============================================================
+  deploy:
+    needs: [detect-changes, build-complete]
+    runs-on: ubuntu-latest
+    if: needs.build-complete.outputs.any_built == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    steps:
+      - name: Determine deploy target
+        id: target
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ] || [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "host=${{ secrets.PROD_DEPLOY_HOST }}" >> $GITHUB_OUTPUT
+            echo "key=${{ secrets.PROD_SSH_KEY }}" >> $GITHUB_OUTPUT
+            echo "env=production" >> $GITHUB_OUTPUT
+          else
+            echo "host=${{ secrets.DEV_DEPLOY_HOST || secrets.DEPLOY_HOST }}" >> $GITHUB_OUTPUT
+            echo "key=${{ secrets.DEV_SSH_KEY || secrets.DEPLOY_SSH_KEY }}" >> $GITHUB_OUTPUT
+            echo "env=development" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ steps.target.outputs.host }}
+          username: ${{ secrets.DEPLOY_USERNAME }}
+          key: ${{ steps.target.outputs.key }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script: |
+            #!/bin/bash
+            set -e
+
+            DEPLOY_DIR="${{ secrets.DEPLOY_PATH || '/opt/zxyz' }}"
+            IMAGE_TAG="${{ needs.detect-changes.outputs.tag }}"
+            DOCKERHUB_PREFIX="${{ env.DOCKERHUB_PREFIX }}"
+            cd "$DEPLOY_DIR"
+
+            echo "===== Deploying to ${{ steps.target.outputs.env }} ====="
+            echo "Image tag: $IMAGE_TAG"
+
+            # 从仓库同步 docker-compose.yml 和 nginx 配置
+            REPO_DIR="/opt/zxyz-repo"
+            UP_FLAGS=""
+            if [ -d "$REPO_DIR" ]; then
+              echo "===== Syncing config from repo ====="
+              OLD_HASH=$(md5sum "$DEPLOY_DIR/docker-compose.yml" 2>/dev/null | cut -d' ' -f1)
+              cd "$REPO_DIR" && git pull --ff-only
+              cp "$REPO_DIR/docker-compose.yml" "$DEPLOY_DIR/docker-compose.yml"
+              cp "$REPO_DIR/deploy/nginx/default.conf" "$DEPLOY_DIR/deploy/nginx/default.conf"
+              cd "$DEPLOY_DIR"
+              NEW_HASH=$(md5sum "$DEPLOY_DIR/docker-compose.yml" | cut -d' ' -f1)
+              if [ "$OLD_HASH" != "$NEW_HASH" ]; then
+                UP_FLAGS="--force-recreate"
+                echo "===== docker-compose.yml changed, will force-recreate ====="
+              fi
+            else
+              echo "WARNING: $REPO_DIR not found, skipping config sync"
+            fi
+
+            # 更新 .env 中的镜像标签和 DockerHub 前缀
+            # sed 模式兼容有无引号的值：匹配到行尾的所有内容
+            if grep -q '^APP_IMAGE_TAG=' .env; then
+              sed -i "s|^APP_IMAGE_TAG=.*|APP_IMAGE_TAG=$IMAGE_TAG|" .env
+            else
+              echo "APP_IMAGE_TAG=$IMAGE_TAG" >> .env
+            fi
+            if grep -q '^DOCKERHUB_PREFIX=' .env; then
+              # 确保末尾有斜杠，且不会重复添加
+              PREFIX="${DOCKERHUB_PREFIX%/}/"
+              sed -i "s|^DOCKERHUB_PREFIX=.*|DOCKERHUB_PREFIX=$PREFIX|" .env
+            else
+              echo "DOCKERHUB_PREFIX=${DOCKERHUB_PREFIX%/}/" >> .env
+            fi
+
+            # 拉取所有镜像（docker compose pull 会检查 digest，无变化的镜像跳过）
+            echo "===== Pulling images ====="
+            docker compose pull
+
+            # 只重启有新镜像的容器（docker compose up -d 会自动判断）
+            # 如果 compose 文件有结构性变更，加 --force-recreate 确保容器重建
+            echo "===== Restarting services with new images ====="
+            docker compose up -d $UP_FLAGS
+
+            # 等待容器启动并检查健康状态（MySQL start_period=30s，需等待足够时间）
+            echo "===== Waiting for services to become healthy ====="
+            sleep 30
+            for i in $(seq 1 12); do
+              # 检查是否有 unhealthy 或 starting 状态的容器
+              if docker compose ps | grep -qE "(unhealthy|starting)"; then
+                if [ "$i" -eq 12 ]; then
+                  echo "ERROR: Services did not become healthy within 2 minutes"
+                  docker compose ps
+                  docker compose logs --tail=50
+                  exit 1
+                fi
+                echo "Waiting... (attempt $i/12)"
+                sleep 10
+              else
+                echo "===== All services healthy ====="
+                break
+              fi
+            done
+
+            # 显示容器状态
+            echo "===== Container status ====="
+            docker compose ps
+
+            echo "===== Deploy complete ====="

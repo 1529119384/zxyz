@@ -1,0 +1,49 @@
+spring:
+  config:
+    import: classpath:application-common.yml
+  application:
+    name: zxyz-im-service
+  profiles:
+    default: dev
+  cloud:
+    nacos:
+      discovery:
+        metadata:
+          netty-websocket-port: ${IM_NETTY_PORT:19090}
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${IM_DATASOURCE_URL}
+    username: ${IM_DATASOURCE_USERNAME}
+    password: ${IM_DATASOURCE_PASSWORD}
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 1
+
+server:
+  port: ${SERVER_PORT:18081}
+
+mybatis:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+im:
+  message:
+    recall-window-seconds: 120
+  invite-link:
+    default-expire-hours: 24
+    default-max-uses: 0
+  netty:
+    enabled: true
+    websocket-path: /ws
+  user-service:
+    base-url: ${services.user-service.base-url}
+  file-service:
+    base-url: ${services.file-service.base-url}
+  team-service:
+    base-url: ${services.team-service.base-url}
+
+app:
+  team-service:
+    base-url: ${services.team-service.base-url}

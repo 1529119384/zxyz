@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="uno.acloud.im.infrastructure.mapper.ImMessageMapper">
+
+    <!-- M40: Common SELECT columns for message row queries (extracted from 3-branch choose) -->
+    <sql id="messageRowColumns">
+        m.id AS messageId,
+        m.conversation_id AS conversationId,
+        m.sender_user_id AS senderUserId,
+        up.username AS senderUsername,
+        up.name AS senderName,
+        up.avatar AS senderAvatar,
+        m.message_type AS messageType,
+        CASE
+            WHEN m.status = 0 AND m.message_type IN ('PROJECT_CREATION_APPLICATION', 'PROJECT_CREATE_RESULT') THEN CAST(m.content AS CHAR)
+            WHEN m.status = 0 AND m.message_type = 'TEXT' THEN JSON_UNQUOTE(JSON_EXTRACT(m.content, '$.content'))
+            WHEN m.status = 0 AND m.message_type IN ('ANNOUNCEMENT', 'SYSTEM_NOTIFICATION') THEN CAST(m.content AS CHAR)
+            ELSE NULL
+        END AS content,
+        CASE WHEN m.status = 0 THEN CAST(m.content AS CHAR) ELSE NULL END AS rawContent,
+        m.client_message_id AS clientMessageId,
+        m.status AS status,
+        m.recall_by_user_id AS recallByUserId,
+        m.recall_time AS recallTime,
+        m.recall_reason AS recallReason,
+        <!-- M31: Replace correlated EXISTS subquery with CASE over the existing rcm LEFT JOIN -->
+        CASE
+            WHEN c.type = 'DIRECT' AND m.sender_user_id = #{currentUserId}
+            THEN MAX(
+                CASE WHEN rcm.user_id &lt;&gt; #{currentUserId}
+                          AND rcm.status = 0
+                          AND rcm.last_read_message_id &gt;= m.id
+                     THEN 1 ELSE 0 END
+            )
+            ELSE 0
+        END AS readByPeer,
+        COALESCE(SUM(
+            CASE WHEN c.type IN ('TEAM', 'TEAM_NOTIFICATION')
+                      AND rcm.status = 0
+                      AND rcm.user_id &lt;&gt; m.sender_user_id
+                      AND rcm.last_read_message_id &gt;= m.id
+                 THEN 1 ELSE 0 END
+        ), 0) AS readCount,
+        m.create_time AS createTime
+    </sql>
+
+    <!-- Common FROM / JOIN clauses -->
+    <sql id="messageRowFrom">
+        FROM im_message m
+        JOIN im_conversation c ON c.id = m.conversation_id
+        LEFT JOIN im_user_profile up ON up.user_id = m.sender_user_id
+        LEFT JOIN im_conversation_member rcm ON rcm.conversation_id = m.conversation_id
+    </sql>
+
+    <!-- Common GROUP BY clause (matches all columns + aggregates) -->
+    <sql id="messageRowGroupBy">
+        GROUP BY m.id, m.conversation_id, m.sender_user_id, up.username, up.name, up.avatar,
+                 m.message_type, m.content, m.status, m.client_message_id,
+                 m.recall_by_user_id, m.recall_time, m.recall_reason, c.type, m.create_time
+    </sql>
+
+    <!-- Outer column list for the reverse-ordered subquery wrapper (branches 2 & 3) -->
+    <sql id="recentColumns">
+        recent.messageId, recent.conversationId, recent.senderUserId, recent.senderUsername, recent.senderName,
+        recent.senderAvatar, recent.messageType, recent.content, recent.rawContent, recent.clientMessageId,
+        recent.status, recent.recallByUserId, recent.recallTime, recent.recallReason,
+        recent.readByPeer, recent.readCount, recent.createTime
+    </sql>
+
+    <select id="listMessageRows" resultType="uno.acloud.im.infrastructure.mapper.ImMessageViewRow">
+        <choose>
+            <!-- Branch 1: fetch messages after a given id or time (forward scroll) -->
+            <when test="afterMessageId != null or afterTime != null">
+                SELECT <include refid="messageRowColumns"/>
+                <include refid="messageRowFrom"/>
+                WHERE m.conversation_id = #{conversationId}
+                  AND m.status IN (0, 1)
+                  AND (
+                      <trim suffixOverrides="OR">
+                          <if test="afterMessageId != null">m.id &gt; #{afterMessageId} OR </if>
+                          <if test="afterTime != null">m.create_time &gt; #{afterTime} OR </if>
+                      </trim>
+                  )
+                <include refid="messageRowGroupBy"/>
+                ORDER BY m.id ASC
+                LIMIT #{limit}
+            </when>
+            <!-- Branch 2: fetch messages before a given id (backward scroll) -->
+            <when test="beforeMessageId != null">
+                SELECT <include refid="recentColumns"/>
+                FROM (
+                    SELECT <include refid="messageRowColumns"/>
+                    <include refid="messageRowFrom"/>
+                    WHERE m.conversation_id = #{conversationId}
+                      AND m.status IN (0, 1)
+                      AND m.id &lt; #{beforeMessageId}
+                    <include refid="messageRowGroupBy"/>
+                    ORDER BY m.id DESC
+                    LIMIT #{limit}
+                ) recent
+                ORDER BY recent.messageId ASC
+            </when>
+            <!-- Branch 3: initial load (latest messages) -->
+            <otherwise>
+                SELECT <include refid="recentColumns"/>
+                FROM (
+                    SELECT <include refid="messageRowColumns"/>
+                    <include refid="messageRowFrom"/>
+                    WHERE m.conversation_id = #{conversationId}
+                      AND m.status IN (0, 1)
+                    <include refid="messageRowGroupBy"/>
+                    ORDER BY m.id DESC
+                    LIMIT #{limit}
+                ) recent
+                ORDER BY recent.messageId ASC
+            </otherwise>
+        </choose>
+    </select>
+
+</mapper>

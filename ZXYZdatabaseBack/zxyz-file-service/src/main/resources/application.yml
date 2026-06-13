@@ -1,0 +1,40 @@
+spring:
+  config:
+    import: classpath:application-common.yml
+  profiles:
+    default: dev
+  application:
+    name: zxyz-file-service
+  servlet:
+    multipart:
+      max-file-size: 1GB
+      max-request-size: 1GB
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${FILE_DATASOURCE_URL}
+    username: ${FILE_DATASOURCE_USERNAME}
+    password: ${FILE_DATASOURCE_PASSWORD}
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 1
+
+server:
+  port: ${SERVER_PORT:18085}
+
+mybatis:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+app:
+  file-object-delete:
+    enabled: true
+    batch-size: 20
+    initial-delay-ms: 30000
+    retry-fixed-delay-ms: 60000
+  team-service:
+    base-url: ${services.team-service.base-url}
+  project-service:
+    base-url: ${services.project-service.base-url}
+  share-service:
+    base-url: ${services.share-service.base-url}

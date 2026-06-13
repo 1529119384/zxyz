@@ -1,0 +1,41 @@
+spring:
+  application:
+    name: zxyz-project-service
+  config:
+    import: classpath:application-common.yml
+  profiles:
+    default: dev
+  servlet:
+    multipart:
+      max-file-size: 1GB
+      max-request-size: 1GB
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 1
+
+mybatis:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+server:
+  port: ${SERVER_PORT:18080}
+
+app:
+  performance:
+    time-aspect-enabled: true
+  file-object-delete:
+    enabled: true
+    batch-size: 20
+    initial-delay-ms: 30000
+    retry-fixed-delay-ms: 60000
+  im:
+    base-url: ${services.im-service.base-url}
+  file-service:
+    base-url: ${services.file-service.base-url}
+  team-service:
+    base-url: ${services.team-service.base-url}
+  user-service:
+    base-url: ${services.user-service.base-url}
+  email-service:
+    base-url: ${services.email-service.base-url}

@@ -1,0 +1,19 @@
+[Unit]
+Description=ZXYZ Database Spring Boot Service
+After=network.target
+
+[Service]
+Type=simple
+User=zxyz
+Group=zxyz
+WorkingDirectory=/opt/zxyz-database/current
+EnvironmentFile=/opt/zxyz-database/shared/app.env
+ExecStart=/usr/bin/java -jar /opt/zxyz-database/current/app.jar --spring.profiles.active=prod
+SuccessExitStatus=143
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/zxyz-database/app.log
+StandardError=append:/var/log/zxyz-database/error.log
+
+[Install]
+WantedBy=multi-user.target

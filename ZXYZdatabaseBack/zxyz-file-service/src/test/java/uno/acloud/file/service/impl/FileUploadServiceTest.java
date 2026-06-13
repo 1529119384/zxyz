@@ -1,0 +1,365 @@
+package uno.acloud.file.service.impl;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.RestClient;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
+import uno.acloud.common.ErrorCode;
+import uno.acloud.common.FileNodeType;
+import uno.acloud.common.oss.GetSignUrl;
+import uno.acloud.exception.BusinessException;
+import uno.acloud.file.config.ServiceProperties;
+import uno.acloud.file.dto.BatchConfirmUploadRequest;
+import uno.acloud.file.dto.ConfirmUploadRequest;
+import uno.acloud.file.infrastructure.entity.FileItem;
+import uno.acloud.file.infrastructure.entity.Folder;
+import uno.acloud.file.vo.BatchUploadConfirmResultVO;
+
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class FileUploadServiceTest {
+
+    @Mock
+    private GetSignUrl getSignUrl;
+
+    @Mock
+    private FileUploadPersistenceManager fileUploadPersistenceService;
+
+    @Mock
+    private FileDomainValidator fileDomainValidator;
+
+    @Mock
+    private FilePathResolver filePathResolver;
+
+    @Mock
+    private FileAccessGuard fileAccessGuardService;
+
+    @Mock
+    private RestClient restClient;
+
+    @Mock
+    private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+
+    private ServiceProperties serviceProperties;
+
+    private FileUploadService fileUploadService;
+
+    @BeforeEach
+    void setUp() {
+        serviceProperties = new ServiceProperties();
+        // Default: no quota service URL configured (skip HTTP quota check)
+        serviceProperties.getProjectService().setBaseUrl(null);
+        serviceProperties.setInternalServiceToken("test-token");
+
+        fileUploadService = new FileUploadService(
+                getSignUrl, fileUploadPersistenceService, fileDomainValidator,
+                filePathResolver, fileAccessGuardService, restClient,
+                objectMapper, serviceProperties);
+    }
+
+    // ==================== Upload with sufficient quota — should succeed ====================
+
+    @Test
+    void confirmUpload_sufficientQuota_shouldSucceed() {
+        Long userId = 1L;
+        Long parentId = 100L;
+        Long teamId = 10L;
+
+        ConfirmUploadRequest item = new ConfirmUploadRequest();
+        item.setObjectKey("files/uuid-test.txt");
+        item.setOriginalName("test.txt");
+        item.setFileSize(1024L);
+        item.setParentId(parentId);
+        item.setTeamId(teamId);
+        item.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+
+        BatchConfirmUploadRequest request = new BatchConfirmUploadRequest();
+        request.setTeamId(teamId);
+        request.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+        request.setFiles(List.of(item));
+
+        Folder parentFolder = Folder.create();
+        parentFolder.setId(parentId);
+        parentFolder.setTeamId(teamId);
+        parentFolder.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+
+        FileItem savedFile = FileItem.create();
+        savedFile.setId(1000L);
+        savedFile.setOriginalName("test.txt");
+
+        when(fileDomainValidator.requireFolder(parentId)).thenReturn(parentFolder);
+        when(fileDomainValidator.resolveAvailableName(
+                eq(parentId), any(SpaceTarget.class), eq(FileNodeType.FILE),
+                eq("test.txt"), anySet(), any()))
+                .thenReturn("test.txt");
+        when(getSignUrl.getFileUrl("files/uuid-test.txt")).thenReturn("https://oss.example.com/files/uuid-test.txt");
+        when(fileUploadPersistenceService.saveFileItem(any(FileItem.class))).thenReturn(savedFile);
+
+        BatchUploadConfirmResultVO result = fileUploadService.confirmUpload(request, userId);
+
+        assertNotNull(result);
+        assertEquals(1, result.getTotalCount());
+        assertEquals(1, result.getSuccessCount());
+        assertEquals(0, result.getFailCount());
+        verify(fileUploadPersistenceService).saveFileItem(any(FileItem.class));
+    }
+
+    // ==================== Upload exceeding quota — should throw ====================
+
+    @Test
+    void confirmUpload_exceedingQuota_shouldThrow() {
+        Long userId = 1L;
+
+        ConfirmUploadRequest item = new ConfirmUploadRequest();
+        item.setObjectKey("files/uuid-big.txt");
+        item.setOriginalName("big.txt");
+        item.setFileSize(10_000_000_000L);
+        item.setParentId(100L);
+        item.setTeamId(10L);
+        item.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+
+        BatchConfirmUploadRequest request = new BatchConfirmUploadRequest();
+        request.setTeamId(10L);
+        request.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+        request.setFiles(List.of(item));
+
+        // Must create service AFTER setting the URL, since it's captured at construction
+        ServiceProperties quotaProps = new ServiceProperties();
+        quotaProps.getProjectService().setBaseUrl("http://project-service:18080");
+        quotaProps.setInternalServiceToken("test-token");
+
+        // Throw 403 directly from post() — the catch block catches RestClientResponseException
+        doThrow(HttpClientErrorException.create(
+                HttpStatus.FORBIDDEN, "Forbidden",
+                HttpHeaders.EMPTY, new byte[0], StandardCharsets.UTF_8))
+                .when(restClient).post();
+
+        FileUploadService quotaService = new FileUploadService(
+                getSignUrl, fileUploadPersistenceService, fileDomainValidator,
+                filePathResolver, fileAccessGuardService, restClient,
+                objectMapper, quotaProps);
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> quotaService.confirmUpload(request, userId));
+        assertEquals(ErrorCode.BAD_REQUEST, ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("存储空间不足"));
+    }
+
+    // ==================== Upload to project space without access — should return fail ====================
+
+    @Test
+    void confirmUpload_projectSpaceWithoutAccess_shouldReturnFail() {
+        Long userId = 1L;
+        Long parentId = 100L;
+        Long projectId = 50L;
+
+        ConfirmUploadRequest item = new ConfirmUploadRequest();
+        item.setObjectKey("files/uuid-test.txt");
+        item.setOriginalName("test.txt");
+        item.setFileSize(1024L);
+        item.setParentId(parentId);
+        item.setSpaceType(uno.acloud.common.FileSpaceType.PROJECT);
+        item.setProjectId(projectId);
+
+        BatchConfirmUploadRequest request = new BatchConfirmUploadRequest();
+        request.setSpaceType(uno.acloud.common.FileSpaceType.PROJECT);
+        request.setProjectId(projectId);
+        request.setFiles(List.of(item));
+
+        Folder parentFolder = Folder.create();
+        parentFolder.setId(parentId);
+        parentFolder.setTeamId(10L);
+        parentFolder.setSpaceType(uno.acloud.common.FileSpaceType.PROJECT);
+        parentFolder.setProjectId(projectId);
+
+        when(fileDomainValidator.requireFolder(parentId)).thenReturn(parentFolder);
+        // Project access check throws
+        doThrow(new BusinessException(ErrorCode.NO_PERMISSION, "只有项目成员可以访问项目文件"))
+                .when(fileAccessGuardService).requireProjectFileAccess(projectId, userId);
+
+        BatchUploadConfirmResultVO result = fileUploadService.confirmUpload(request, userId);
+
+        assertNotNull(result);
+        assertEquals(1, result.getTotalCount());
+        assertEquals(0, result.getSuccessCount());
+        assertEquals(1, result.getFailCount());
+    }
+
+    // ==================== Upload with zero bytes — should handle gracefully ====================
+
+    @Test
+    void confirmUpload_zeroBytes_shouldSucceed() {
+        Long userId = 1L;
+        Long parentId = 100L;
+        Long teamId = 10L;
+
+        ConfirmUploadRequest item = new ConfirmUploadRequest();
+        item.setObjectKey("files/uuid-empty.txt");
+        item.setOriginalName("empty.txt");
+        item.setFileSize(0L);
+        item.setParentId(parentId);
+        item.setTeamId(teamId);
+        item.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+
+        BatchConfirmUploadRequest request = new BatchConfirmUploadRequest();
+        request.setTeamId(teamId);
+        request.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+        request.setFiles(List.of(item));
+
+        Folder parentFolder = Folder.create();
+        parentFolder.setId(parentId);
+        parentFolder.setTeamId(teamId);
+        parentFolder.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+
+        FileItem savedFile = FileItem.create();
+        savedFile.setId(1001L);
+        savedFile.setOriginalName("empty.txt");
+
+        when(fileDomainValidator.requireFolder(parentId)).thenReturn(parentFolder);
+        when(fileDomainValidator.resolveAvailableName(
+                eq(parentId), any(SpaceTarget.class), eq(FileNodeType.FILE),
+                eq("empty.txt"), anySet(), any()))
+                .thenReturn("empty.txt");
+        when(getSignUrl.getFileUrl("files/uuid-empty.txt")).thenReturn("https://oss.example.com/files/uuid-empty.txt");
+        when(fileUploadPersistenceService.saveFileItem(any(FileItem.class))).thenReturn(savedFile);
+
+        BatchUploadConfirmResultVO result = fileUploadService.confirmUpload(request, userId);
+
+        assertNotNull(result);
+        assertEquals(1, result.getTotalCount());
+        assertEquals(1, result.getSuccessCount());
+        assertEquals(0, result.getFailCount());
+    }
+
+    // ==================== Whitelist: getUploadSign rejects unsupported extension ====================
+
+    @Test
+    void getUploadSign_unsupportedExtension_shouldThrow() {
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> fileUploadService.getUploadSign("malware.xyz"));
+        assertEquals(ErrorCode.BAD_REQUEST, ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("不支持的文件类型: .xyz"));
+    }
+
+    @Test
+    void getUploadSign_noExtension_shouldThrow() {
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> fileUploadService.getUploadSign("README"));
+        assertEquals(ErrorCode.BAD_REQUEST, ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("缺少扩展名"));
+    }
+
+    @Test
+    void getUploadSign_allowedExtension_shouldSucceed() {
+        when(fileDomainValidator.validateInputName("report.pdf")).thenReturn("report.pdf");
+        when(getSignUrl.generatePutSignInfo(anyString(), eq("report.pdf")))
+                .thenReturn(new uno.acloud.common.oss.OssSignInfo(
+                        "https://oss.example.com/put", "files/uuid-report.pdf",
+                        "https://oss.example.com/files/uuid-report.pdf",
+                        "application/pdf", "attachment", 1700000000L));
+
+        uno.acloud.common.oss.OssSignInfo result = fileUploadService.getUploadSign("report.pdf");
+        assertNotNull(result);
+    }
+
+    // ==================== Whitelist: confirmUpload rejects unsupported extension ====================
+
+    @Test
+    void confirmUpload_unsupportedExtension_shouldReturnFail() {
+        Long userId = 1L;
+        Long parentId = 100L;
+        Long teamId = 10L;
+
+        ConfirmUploadRequest item = new ConfirmUploadRequest();
+        item.setObjectKey("files/uuid-bad.xyz");
+        item.setOriginalName("bad.xyz");
+        item.setFileSize(1024L);
+        item.setParentId(parentId);
+        item.setTeamId(teamId);
+        item.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+
+        BatchConfirmUploadRequest request = new BatchConfirmUploadRequest();
+        request.setTeamId(teamId);
+        request.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+        request.setFiles(List.of(item));
+
+        BatchUploadConfirmResultVO result = fileUploadService.confirmUpload(request, userId);
+
+        assertNotNull(result);
+        assertEquals(1, result.getTotalCount());
+        assertEquals(0, result.getSuccessCount());
+        assertEquals(1, result.getFailCount());
+    }
+
+    // ==================== Max file size: confirmUpload rejects oversized file ====================
+
+    @Test
+    void confirmUpload_exceedingMaxSize_shouldReturnFail() {
+        Long userId = 1L;
+        Long parentId = 100L;
+        Long teamId = 10L;
+
+        ConfirmUploadRequest item = new ConfirmUploadRequest();
+        item.setObjectKey("files/uuid-huge.txt");
+        item.setOriginalName("huge.txt");
+        item.setFileSize(600 * 1024 * 1024L); // 600MB, exceeds 500MB limit
+        item.setParentId(parentId);
+        item.setTeamId(teamId);
+        item.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+
+        BatchConfirmUploadRequest request = new BatchConfirmUploadRequest();
+        request.setTeamId(teamId);
+        request.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+        request.setFiles(List.of(item));
+
+        BatchUploadConfirmResultVO result = fileUploadService.confirmUpload(request, userId);
+
+        assertNotNull(result);
+        assertEquals(1, result.getTotalCount());
+        assertEquals(0, result.getSuccessCount());
+        assertEquals(1, result.getFailCount());
+    }
+
+    // ==================== OSS HEAD size check: confirmUpload rejects oversized OSS object ====================
+
+    @Test
+    void confirmUpload_ossObjectExceedsMaxSize_shouldReturnFail() {
+        Long userId = 1L;
+        Long parentId = 100L;
+        Long teamId = 10L;
+
+        ConfirmUploadRequest item = new ConfirmUploadRequest();
+        item.setObjectKey("files/uuid-tampered.txt");
+        item.setOriginalName("tampered.txt");
+        item.setFileSize(1024L); // client reports small size
+        item.setParentId(parentId);
+        item.setTeamId(teamId);
+        item.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+
+        BatchConfirmUploadRequest request = new BatchConfirmUploadRequest();
+        request.setTeamId(teamId);
+        request.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+        request.setFiles(List.of(item));
+
+        // OSS HEAD returns actual size exceeding limit
+        when(getSignUrl.getObjectSize("files/uuid-tampered.txt")).thenReturn(600 * 1024 * 1024L);
+
+        BatchUploadConfirmResultVO result = fileUploadService.confirmUpload(request, userId);
+
+        assertNotNull(result);
+        assertEquals(1, result.getTotalCount());
+        assertEquals(0, result.getSuccessCount());
+        assertEquals(1, result.getFailCount());
+    }
+}

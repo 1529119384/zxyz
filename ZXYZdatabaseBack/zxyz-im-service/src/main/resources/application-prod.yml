@@ -1,0 +1,12 @@
+# 生产环境配置。
+# Redis、im.netty.port、app.internal.service-token 已由 application-common.yml 和 application.yml 统一管理。
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${IM_DATASOURCE_URL}
+    username: ${IM_DATASOURCE_USERNAME}
+    password: ${IM_DATASOURCE_PASSWORD}
+
+mybatis:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl

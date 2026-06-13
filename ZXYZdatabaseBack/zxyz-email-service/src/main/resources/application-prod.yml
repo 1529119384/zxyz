@@ -1,0 +1,26 @@
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 3000
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 2
+
+mybatis:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+email:
+  host: ${EMAIL_HOST}
+  port: ${EMAIL_PORT:587}
+  username: ${EMAIL_USERNAME}
+  password: ${EMAIL_PASSWORD}
+  config-secret: ${EMAIL_CONFIG_SECRET}
+
+app:
+  internal-service-token: ${INTERNAL_SERVICE_TOKEN}

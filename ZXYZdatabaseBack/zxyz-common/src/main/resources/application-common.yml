@@ -1,0 +1,147 @@
+# 正确处理反向代理转发的请求头（如 Nginx、Kubernetes Ingress）
+server:
+  forward-headers-strategy: native
+  trusted-proxies: 172.18.0.0/16
+  shutdown: graceful
+
+# Redis 配置（所有服务共享）
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  datasource:
+    hikari:
+      maximum-pool-size: ${HIKARI_MAX_POOL_SIZE:20}
+      minimum-idle: ${HIKARI_MIN_IDLE:5}
+      idle-timeout: ${HIKARI_IDLE_TIMEOUT:300000}
+      max-lifetime: ${HIKARI_MAX_LIFETIME:600000}
+      connection-timeout: ${HIKARI_CONNECTION_TIMEOUT:30000}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
+      timeout: ${REDIS_TIMEOUT:30s}
+      lettuce:
+        pool:
+          max-active: ${REDIS_POOL_MAX_ACTIVE:8}
+          max-idle: ${REDIS_POOL_MAX_IDLE:8}
+          min-idle: ${REDIS_POOL_MIN_IDLE:0}
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+        username: ${NACOS_USERNAME:nacos}
+        password: ${NACOS_PASSWORD:CHANGE_ME_NACOS}
+        namespace: ${NACOS_NAMESPACE:}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        prefetch: 10
+
+# Sa-Token 配置（所有服务共享）
+sa-token:
+  token-name: satoken
+  is-write-cookie: false
+  token-storage-mode: redis
+  timeout: 7200
+  active-timeout: 1800
+  is-concurrent: true
+  is-share: false
+  token-style: uuid
+  is-log: true
+  is-read-cookie: true
+  redis:
+    prefix: ${SA_TOKEN_REDIS_PREFIX:satoken:}
+
+# 日志配置：抑制 Nacos 客户端在 Windows 上的文件轮转警告
+logging:
+  level:
+    com.alibaba.nacos.client.config: WARN
+
+# MyBatis 公共配置
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+
+# Actuator 健康检查与可观测性
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,loggers
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# 服务间调用地址（所有服务共享，可通过环境变量覆盖）
+services:
+  user-service:
+    base-url: ${USER_SERVICE_BASE_URL:http://zxyz-user-service}
+  team-service:
+    base-url: ${TEAM_SERVICE_BASE_URL:http://zxyz-team-service}
+  file-service:
+    base-url: ${FILE_SERVICE_BASE_URL:http://zxyz-file-service}
+  im-service:
+    base-url: ${IM_SERVICE_BASE_URL:http://zxyz-im-service}
+  email-service:
+    base-url: ${EMAIL_SERVICE_BASE_URL:http://zxyz-email-service}
+  project-service:
+    base-url: ${PROJECT_SERVICE_BASE_URL:http://zxyz-project-service}
+  share-service:
+    base-url: ${SHARE_SERVICE_BASE_URL:http://zxyz-share-service}
+
+# CORS 公共默认值
+app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:4173}
+  # 服务间调用鉴权 token，本地开发使用默认值，生产环境必须通过环境变量注入
+  internal-service-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token}
+  auth:
+    cookie:
+      max-age: ${AUTH_COOKIE_MAX_AGE:2592000}
+      secure: ${AUTH_COOKIE_SECURE:true}
+      domain: ${AUTH_COOKIE_DOMAIN:}
+  email:
+    verify-code:
+      cooldown-seconds: ${EMAIL_VERIFY_COOLDOWN:60}
+  oss:
+    region: ${OSS_REGION:cn-shenzhen}
+    bucket: ${OSS_BUCKET:zxyz-database}
+    endpoint: ${OSS_ENDPOINT:}
+    public-base-url: ${OSS_PUBLIC_BASE_URL:}
+    sign-expire-seconds: ${OSS_SIGN_EXPIRE:3600}
+
+# Resilience4j 服务间调用韧性配置
+resilience4j:
+  retry:
+    instances:
+      serviceClient:
+        max-attempts: 3
+        wait-duration: 500ms
+  circuitbreaker:
+    instances:
+      serviceClient:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+
+# SpringDoc + Knife4j API 文档配置
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+  packages-to-scan: uno.acloud.*.controller
+knife4j:
+  enable: ${KNIFE4J_ENABLE:false}
+  setting:
+    language: zh_cn

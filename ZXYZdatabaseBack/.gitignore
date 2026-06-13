@@ -1,0 +1,36 @@
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+.vscode/
+
+# Maven
+**/target/
+mvnw
+mvnw.cmd
+.mvn/
+
+# Build
+*.class
+*.jar
+!rest-assured*.jar
+
+# Logs
+*.log
+logs/
+sql/backups/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Package files
+*.zip
+ZXYZDatabaseBackend.zip
+
+# Lombok generates
+lombok.config

@@ -1,0 +1,32 @@
+spring:
+  config:
+    import: classpath:application-common.yml
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 1
+  cloud:
+    nacos:
+      discovery:
+        enabled: false
+
+mybatis:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+app:
+  internal-service-token: test-internal-token
+  file-object-delete:
+    enabled: false
+  im:
+    base-url: http://localhost:19999
+  file-service:
+    base-url: http://localhost:19999
+  team-service:
+    base-url: http://localhost:19999
+  user-service:
+    base-url: http://localhost:19999
+  email-service:
+    base-url: http://localhost:19999

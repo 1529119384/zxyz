@@ -1,0 +1,803 @@
+services:
+  mysql:
+    image: mysql:8.4.0-oraclelinux8
+    container_name: zxyz-mysql
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+08:00
+    volumes:
+      - ${DATA_DIR:-./data}/mysql:/var/lib/mysql
+      - ./sql/00-init-zxyz.sh:/docker-entrypoint-initdb.d/00-init-zxyz.sh:ro
+      - ./sql/schema_project.sql:/docker-entrypoint-sql/schema_project.sql:ro
+      - ./sql/schema_im.sql:/docker-entrypoint-sql/schema_im.sql:ro
+      - ./sql/schema_email.sql:/docker-entrypoint-sql/schema_email.sql:ro
+      - ./sql/schema_share.sql:/docker-entrypoint-sql/schema_share.sql:ro
+      - ./sql/schema_file.sql:/docker-entrypoint-sql/schema_file.sql:ro
+      - ./sql/schema_team.sql:/docker-entrypoint-sql/schema_team.sql:ro
+      - ./sql/schema_user.sql:/docker-entrypoint-sql/schema_user.sql:ro
+      - ./sql/schema_audit.sql:/docker-entrypoint-sql/schema_audit.sql:ro
+      - ./sql/schema_nacos.sql:/docker-entrypoint-sql/schema_nacos.sql:ro
+    networks:
+      - zxyz-net
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  nacos:
+    image: nacos/nacos-server:v3.2.1
+    container_name: zxyz-nacos
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    environment:
+      MODE: standalone
+      SPRING_DATASOURCE_PLATFORM: mysql
+      MYSQL_SERVICE_HOST: mysql
+      MYSQL_SERVICE_PORT: 3306
+      MYSQL_SERVICE_DB_NAME: nacos
+      MYSQL_SERVICE_USER: root
+      MYSQL_SERVICE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_SERVICE_DB_PARAM: "useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true"
+      JVM_XMS: 512m
+      JVM_XMX: 512m
+      # Nacos 鉴权配置 — 生产环境必须通过环境变量注入，禁止使用默认密码
+      NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN}
+      NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY:-serverIdentity}
+      NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE:-security}
+      # Nacos 控制台管理员密码，必须在 .env 中覆盖默认值
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-CHANGE_ME_NACOS}
+      TZ: Asia/Shanghai
+    ports:
+      - "127.0.0.1:${NACOS_PORT:-8848}:8848"
+    volumes:
+      - ${DATA_DIR:-./data}/nacos:/home/nacos/data
+    networks:
+      - zxyz-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8848/nacos/v1/console/health/readiness || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: zxyz-redis
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.25'
+    command: ["sh", "-c", "redis-server --appendonly yes --requirepass \"$${REDIS_PASSWORD}\""]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      TZ: Asia/Shanghai
+    volumes:
+      - ${DATA_DIR:-./data}/redis:/data
+    networks:
+      - zxyz-net
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: zxyz-rabbitmq
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+      TZ: Asia/Shanghai
+    ports:
+      - "127.0.0.1:${RABBITMQ_MGMT_PORT:-15672}:15672"
+    volumes:
+      - ${DATA_DIR:-./data}/rabbitmq:/var/lib/rabbitmq
+    networks:
+      - zxyz-net
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  project-service:
+    build:
+      context: .
+      dockerfile: ZXYZdatabaseBack/Dockerfile
+      args:
+        MODULE: zxyz-project-service
+    image: ${DOCKERHUB_PREFIX:-}zxyz-project-service:${APP_IMAGE_TAG:-latest}
+    container_name: zxyz-project-service
+    restart: unless-stopped
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: ${SERVER_PORT:-18080}
+      TZ: Asia/Shanghai
+      PROJECT_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_project?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+      PROJECT_DATASOURCE_USERNAME: root
+      PROJECT_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_DATABASE: ${REDIS_DATABASE:-1}
+      IM_SERVICE_BASE_URL: http://zxyz-im-service
+      EMAIL_SERVICE_BASE_URL: http://zxyz-email-service
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      SHARE_COOKIE_SECRET: ${SHARE_COOKIE_SECRET}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL}
+      FILE_SERVICE_BASE_URL: http://zxyz-file-service
+      TEAM_SERVICE_BASE_URL: http://zxyz-team-service
+      USER_SERVICE_BASE_URL: http://zxyz-user-service
+      SHARE_SERVICE_BASE_URL: http://zxyz-share-service
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-*}
+      NACOS_SERVER_ADDR: nacos:8848
+      NACOS_USERNAME: nacos
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-CHANGE_ME_NACOS}
+    networks:
+      - zxyz-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:${SERVER_PORT:-18080}/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 90s
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  im-service:
+    build:
+      context: .
+      dockerfile: ZXYZdatabaseBack/Dockerfile
+      args:
+        MODULE: zxyz-im-service
+    image: ${DOCKERHUB_PREFIX:-}zxyz-im-service:${APP_IMAGE_TAG:-latest}
+    container_name: zxyz-im-service
+    restart: unless-stopped
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: ${SERVER_PORT:-18081}
+      TZ: Asia/Shanghai
+      IM_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_im?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+      IM_DATASOURCE_USERNAME: root
+      IM_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_DATABASE: ${REDIS_DATABASE:-2}
+      USER_SERVICE_BASE_URL: http://zxyz-user-service
+      FILE_SERVICE_BASE_URL: http://zxyz-file-service
+      TEAM_SERVICE_BASE_URL: http://zxyz-team-service
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      IM_NETTY_PORT: 19090
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-*}
+      NACOS_SERVER_ADDR: nacos:8848
+      NACOS_USERNAME: nacos
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-CHANGE_ME_NACOS}
+    networks:
+      - zxyz-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:${SERVER_PORT:-18081}/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 90s
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  email-service:
+    build:
+      context: .
+      dockerfile: ZXYZdatabaseBack/Dockerfile
+      args:
+        MODULE: zxyz-email-service
+    image: ${DOCKERHUB_PREFIX:-}zxyz-email-service:${APP_IMAGE_TAG:-latest}
+    container_name: zxyz-email-service
+    restart: unless-stopped
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: ${SERVER_PORT:-18082}
+      TZ: Asia/Shanghai
+      EMAIL_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_email?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+      EMAIL_DATASOURCE_USERNAME: root
+      EMAIL_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_DATABASE: ${REDIS_DATABASE:-3}
+      EMAIL_HOST: ${EMAIL_HOST}
+      EMAIL_PORT: ${EMAIL_PORT:-587}
+      EMAIL_USERNAME: ${EMAIL_USERNAME}
+      EMAIL_PASSWORD: ${EMAIL_PASSWORD}
+      EMAIL_FROM: ${EMAIL_FROM}
+      EMAIL_CONFIG_SECRET: ${EMAIL_CONFIG_SECRET}
+      EMAIL_ENABLED: ${EMAIL_ENABLED:-true}
+      EMAIL_ASYNC: ${EMAIL_ASYNC:-true}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      NACOS_SERVER_ADDR: nacos:8848
+      NACOS_USERNAME: nacos
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-CHANGE_ME_NACOS}
+    networks:
+      - zxyz-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:${SERVER_PORT:-18082}/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 90s
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  share-service:
+    build:
+      context: .
+      dockerfile: ZXYZdatabaseBack/Dockerfile
+      args:
+        MODULE: zxyz-share-service
+    image: ${DOCKERHUB_PREFIX:-}zxyz-share-service:${APP_IMAGE_TAG:-latest}
+    container_name: zxyz-share-service
+    restart: unless-stopped
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: ${SERVER_PORT:-18084}
+      TZ: Asia/Shanghai
+      SHARE_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_share?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+      SHARE_DATASOURCE_USERNAME: root
+      SHARE_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_DATABASE: ${REDIS_DATABASE:-5}
+      FILE_SERVICE_BASE_URL: http://zxyz-file-service
+      USER_SERVICE_BASE_URL: http://zxyz-user-service
+      TEAM_SERVICE_BASE_URL: http://zxyz-team-service
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      SHARE_COOKIE_SECRET: ${SHARE_COOKIE_SECRET}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      NACOS_SERVER_ADDR: nacos:8848
+      NACOS_USERNAME: nacos
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-CHANGE_ME_NACOS}
+    networks:
+      - zxyz-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:${SERVER_PORT:-18084}/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 90s
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  file-service:
+    build:
+      context: .
+      dockerfile: ZXYZdatabaseBack/Dockerfile
+      args:
+        MODULE: zxyz-file-service
+    image: ${DOCKERHUB_PREFIX:-}zxyz-file-service:${APP_IMAGE_TAG:-latest}
+    container_name: zxyz-file-service
+    restart: unless-stopped
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: ${SERVER_PORT:-18085}
+      TZ: Asia/Shanghai
+      FILE_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_file?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+      FILE_DATASOURCE_USERNAME: root
+      FILE_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_DATABASE: ${REDIS_DATABASE:-6}
+      OSS_REGION: ${OSS_REGION}
+      OSS_BUCKET: ${OSS_BUCKET}
+      OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID}
+      OSS_ACCESS_KEY_SECRET: ${OSS_ACCESS_KEY_SECRET}
+      OSS_ENDPOINT: ${OSS_ENDPOINT}
+      OSS_PUBLIC_BASE_URL: ${OSS_PUBLIC_BASE_URL}
+      TEAM_SERVICE_BASE_URL: http://zxyz-team-service
+      PROJECT_SERVICE_BASE_URL: http://zxyz-project-service
+      SHARE_SERVICE_BASE_URL: http://zxyz-share-service
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-*}
+      NACOS_SERVER_ADDR: nacos:8848
+      NACOS_USERNAME: nacos
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-CHANGE_ME_NACOS}
+    networks:
+      - zxyz-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:${SERVER_PORT:-18085}/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 90s
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  team-service:
+    build:
+      context: .
+      dockerfile: ZXYZdatabaseBack/Dockerfile
+      args:
+        MODULE: zxyz-team-service
+    image: ${DOCKERHUB_PREFIX:-}zxyz-team-service:${APP_IMAGE_TAG:-latest}
+    container_name: zxyz-team-service
+    restart: unless-stopped
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: ${SERVER_PORT:-18086}
+      TZ: Asia/Shanghai
+      TEAM_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_team?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+      TEAM_DATASOURCE_USERNAME: root
+      TEAM_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_DATABASE: ${REDIS_DATABASE:-7}
+      USER_SERVICE_BASE_URL: http://zxyz-user-service
+      IM_SERVICE_BASE_URL: http://zxyz-im-service
+      EMAIL_SERVICE_BASE_URL: http://zxyz-email-service
+      FILE_SERVICE_BASE_URL: http://zxyz-file-service
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      OSS_REGION: ${OSS_REGION}
+      OSS_BUCKET: ${OSS_BUCKET}
+      OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID}
+      OSS_ACCESS_KEY_SECRET: ${OSS_ACCESS_KEY_SECRET}
+      OSS_ENDPOINT: ${OSS_ENDPOINT}
+      OSS_PUBLIC_BASE_URL: ${OSS_PUBLIC_BASE_URL}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-*}
+      NACOS_SERVER_ADDR: nacos:8848
+      NACOS_USERNAME: nacos
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-CHANGE_ME_NACOS}
+    networks:
+      - zxyz-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:${SERVER_PORT:-18086}/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 90s
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  audit-service:
+    build:
+      context: .
+      dockerfile: ZXYZdatabaseBack/Dockerfile
+      args:
+        MODULE: zxyz-audit-service
+    image: ${DOCKERHUB_PREFIX:-}zxyz-audit-service:${APP_IMAGE_TAG:-latest}
+    container_name: zxyz-audit-service
+    restart: unless-stopped
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: ${AUDIT_SERVICE_PORT:-18087}
+      TZ: Asia/Shanghai
+      AUDIT_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_audit?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+      AUDIT_DATASOURCE_USERNAME: root
+      AUDIT_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_DATABASE: ${REDIS_DATABASE:-8}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-*}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      NACOS_SERVER_ADDR: nacos:8848
+      NACOS_USERNAME: nacos
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-CHANGE_ME_NACOS}
+    networks:
+      - zxyz-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:${AUDIT_SERVICE_PORT:-18087}/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 90s
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  user-service:
+    build:
+      context: .
+      dockerfile: ZXYZdatabaseBack/Dockerfile
+      args:
+        MODULE: zxyz-user-service
+    image: ${DOCKERHUB_PREFIX:-}zxyz-user-service:${APP_IMAGE_TAG:-latest}
+    container_name: zxyz-user-service
+    restart: unless-stopped
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      nacos:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: ${SERVER_PORT:-18083}
+      TZ: Asia/Shanghai
+      USER_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_user?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+      USER_DATASOURCE_USERNAME: root
+      USER_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_DATABASE: ${REDIS_DATABASE:-4}
+      TEAM_SERVICE_BASE_URL: http://zxyz-team-service
+      IM_SERVICE_BASE_URL: http://zxyz-im-service
+      EMAIL_SERVICE_BASE_URL: http://zxyz-email-service
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      OSS_REGION: ${OSS_REGION}
+      OSS_BUCKET: ${OSS_BUCKET}
+      OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID}
+      OSS_ACCESS_KEY_SECRET: ${OSS_ACCESS_KEY_SECRET}
+      OSS_ENDPOINT: ${OSS_ENDPOINT}
+      OSS_PUBLIC_BASE_URL: ${OSS_PUBLIC_BASE_URL}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      VERIFICATION_RETURN_CODE: ${VERIFICATION_RETURN_CODE:-true}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-*}
+      NACOS_SERVER_ADDR: nacos:8848
+      NACOS_USERNAME: nacos
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-CHANGE_ME_NACOS}
+    networks:
+      - zxyz-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:${SERVER_PORT:-18083}/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 90s
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  gateway:
+    build:
+      context: .
+      dockerfile: ZXYZdatabaseBack/Dockerfile
+      args:
+        MODULE: zxyz-gateway
+    image: ${DOCKERHUB_PREFIX:-}zxyz-gateway:${APP_IMAGE_TAG:-latest}
+    container_name: zxyz-gateway
+    restart: unless-stopped
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    depends_on:
+      nacos:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: ${SERVER_PORT:-18000}
+      TZ: Asia/Shanghai
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_DATABASE: ${REDIS_DATABASE:-0}
+      NACOS_SERVER_ADDR: nacos:8848
+      NACOS_USERNAME: nacos
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-CHANGE_ME_NACOS}
+      IM_WEBSOCKET_URI: ${IM_WEBSOCKET_URI:-ws://im-service:${IM_NETTY_PORT:-19090}}
+      MAX_REQUEST_SIZE: ${MAX_REQUEST_SIZE:-512MB}
+    networks:
+      - zxyz-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:${SERVER_PORT:-18000}/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  frontend-nginx:
+    build:
+      context: .
+      dockerfile: ZXYZdatabaseFront/Dockerfile
+    image: ${DOCKERHUB_PREFIX:-}zxyz-frontend-nginx:${APP_IMAGE_TAG:-latest}
+    container_name: zxyz-frontend-nginx
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.5'
+    depends_on:
+      gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    networks:
+      - zxyz-net
+
+  loki:
+    image: grafana/loki:3.0.0
+    container_name: zxyz-loki
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+    volumes:
+      - ${DATA_DIR:-./data}/loki:/loki
+    networks:
+      - zxyz-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  promtail:
+    image: grafana/promtail:3.0.0
+    container_name: zxyz-promtail
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ./deploy/promtail-config.yml:/etc/promtail/config.yml:ro
+    networks:
+      - zxyz-net
+    depends_on:
+      loki:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+networks:
+  zxyz-net:
+    driver: bridge

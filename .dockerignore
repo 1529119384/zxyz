@@ -1,0 +1,31 @@
+# Root Docker build context ignore file.
+# docker-compose.yml uses the project root as build context so the front Dockerfile
+# can read deploy/nginx/default.conf and both images can be built from one place.
+
+**/.git
+**/.idea
+**/.vscode
+**/node_modules
+**/dist
+**/dist-ssr
+**/target
+**/logs
+**/*.log
+**/*.zip
+**/.env.local
+**/.env.*.local
+
+.claude
+.trae
+.codex-git-front
+git-scratch-*
+old
+
+redis-server.exe - 快捷方式.lnk
+
+# 敏感文件与构建无关文件
+.env
+.env.*
+!.env.example
+ISSUE/
+sql/schema_*.sql

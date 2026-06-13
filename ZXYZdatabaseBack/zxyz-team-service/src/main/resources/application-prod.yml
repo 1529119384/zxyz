@@ -1,0 +1,33 @@
+spring:
+  datasource:
+    url: ${TEAM_DATASOURCE_URL}
+    username: ${TEAM_DATASOURCE_USERNAME}
+    password: ${TEAM_DATASOURCE_PASSWORD}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 3000
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 2
+
+mybatis:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}
+  internal-service-token: ${INTERNAL_SERVICE_TOKEN}
+  user-service:
+    base-url: ${services.user-service.base-url}
+  im-service:
+    base-url: ${services.im-service.base-url}
+  email-service:
+    base-url: ${services.email-service.base-url}
+  file-service:
+    base-url: ${services.file-service.base-url}

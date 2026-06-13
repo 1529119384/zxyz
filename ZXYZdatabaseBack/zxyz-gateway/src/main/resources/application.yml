@@ -1,0 +1,126 @@
+spring:
+  main:
+    web-application-type: reactive
+  config:
+    import: classpath:application-common.yml
+  application:
+    name: zxyz-gateway
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
+      timeout: ${REDIS_TIMEOUT:30s}
+  http:
+    codecs:
+      max-in-memory-size: ${MAX_REQUEST_SIZE:100MB}
+  cloud:
+    gateway:
+      default-filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: ${RATE_LIMIT_REPLENISH:50}
+            redis-rate-limiter.burstCapacity: ${RATE_LIMIT_BURST:100}
+            key-resolver: "#{@userKeyResolver}"
+      server:
+        webflux:
+          globalcors:
+            add-to-simple-url-handler-mapping: true
+            cors-configurations:
+              '[/**]':
+                allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:4173}
+                allowed-methods: "*"
+                allowed-headers: "*"
+                exposed-headers: "Authorization"
+                allow-credentials: true
+                max-age: 3600
+          routes:
+            # IM WebSocket 路由：/ws → im-service Netty 端口（lb:// 不适用于 WebSocket，使用环境变量）
+            - id: im-websocket
+              uri: ${IM_WEBSOCKET_URI:ws://localhost:19090}
+              predicates:
+                - Path=/ws, /ws/**
+              filters:
+                - SetPath=/ws
+
+            # IM HTTP API 路由：/im-api/** → im-service（剥离 /im-api 前缀）
+            - id: im-service
+              uri: lb://zxyz-im-service
+              predicates:
+                - Path=/im-api/**
+              filters:
+                - StripPrefix=1
+
+            # IM 原生 HTTP API 路由：/api/im/**, /api/team-collaboration/** → im-service
+            - id: im-service-api
+              uri: lb://zxyz-im-service
+              predicates:
+                - Path=/api/im/**, /api/team-collaboration/**
+
+            # 邮件服务路由：/api/email/** → email-service
+            - id: email-service
+              uri: lb://zxyz-email-service
+              predicates:
+                - Path=/api/email/**
+
+            # 公开分享页路由（无需鉴权，白名单在 SaTokenFilterConfig 中配置）
+            - id: share-public
+              uri: lb://zxyz-share-service
+              predicates:
+                - Path=/api/public/shares/**
+
+            # 分享服务路由：/api/shares/** → share-service
+            - id: share-service
+              uri: lb://zxyz-share-service
+              predicates:
+                - Path=/api/shares/**
+
+            # 文件服务路由：文件、文件夹、回收站、IM 文件卡片 → file-service
+            - id: file-service
+              uri: lb://zxyz-file-service
+              predicates:
+                - Path=/api/files/**, /api/folders/**, /api/trash/**, /api/im-file-cards/**
+
+            # 团队服务路由：/api/teams/**, /api/admin/teams/**, /api/permissions/** → team-service
+            - id: team-service
+              uri: lb://zxyz-team-service
+              predicates:
+                - Path=/api/teams/**, /api/admin/teams/**, /api/permissions/**
+
+            # 用户服务路由：/api/users/** → user-service
+            - id: user-service
+              uri: lb://zxyz-user-service
+              predicates:
+                - Path=/api/users/**
+
+            # 管理后台邮件路由：/api/admin/email/** → email-service
+            - id: admin-email
+              uri: lb://zxyz-email-service
+              predicates:
+                - Path=/api/admin/email/**
+              filters:
+                - RewritePath=/api/admin/email(?<segment>/?.*), /api/email/internal${segment}
+                - AddRequestHeader=X-Internal-Service-Token, ${INTERNAL_SERVICE_TOKEN:dev-internal-token}
+
+            # 管理后台数据库路由：/api/admin/database/** → project-service
+            - id: admin-database
+              uri: lb://zxyz-project-service
+              predicates:
+                - Path=/api/admin/database/**
+
+            # 项目服务路由：项目、成员、目录、配额、申请、存储用量 → project-service
+            - id: project-service
+              uri: lb://zxyz-project-service
+              predicates:
+                - Path=/api/projects/**, /api/project-members/**, /api/project-catalog/**, /api/project-catalogs/**, /api/project-quotas/**, /api/project-create-requests/**, /api/storage/**
+
+
+server:
+  port: ${SERVER_PORT:18000}
+
+sa-token:
+  is-log: false
+
+app:
+  internal-service-token: ${INTERNAL_SERVICE_TOKEN}

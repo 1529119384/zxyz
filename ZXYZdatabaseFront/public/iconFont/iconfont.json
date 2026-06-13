@@ -1,0 +1,86 @@
+{
+  "id": "5064083",
+  "name": "zxyz",
+  "font_family": "iconfont",
+  "css_prefix_text": "icon-",
+  "description": "",
+  "glyphs": [
+    {
+      "icon_id": "7709615",
+      "name": "文件类_未知文件",
+      "font_class": "wenjianlei_weizhiwenjian",
+      "unicode": "e654",
+      "unicode_decimal": 58964
+    },
+    {
+      "icon_id": "1110989",
+      "name": "excel",
+      "font_class": "excel",
+      "unicode": "e617",
+      "unicode_decimal": 58903
+    },
+    {
+      "icon_id": "1280136",
+      "name": "pdf",
+      "font_class": "pdf",
+      "unicode": "e621",
+      "unicode_decimal": 58913
+    },
+    {
+      "icon_id": "4318807",
+      "name": "mp3",
+      "font_class": "mp",
+      "unicode": "e6c2",
+      "unicode_decimal": 59074
+    },
+    {
+      "icon_id": "4318814",
+      "name": "ppt",
+      "font_class": "ppt",
+      "unicode": "e6c3",
+      "unicode_decimal": 59075
+    },
+    {
+      "icon_id": "11290361",
+      "name": "压缩包",
+      "font_class": "yasuobao",
+      "unicode": "e61c",
+      "unicode_decimal": 58908
+    },
+    {
+      "icon_id": "11447565",
+      "name": "word3",
+      "font_class": "word",
+      "unicode": "e805",
+      "unicode_decimal": 59397
+    },
+    {
+      "icon_id": "11448884",
+      "name": "文件夹",
+      "font_class": "wenjianjia",
+      "unicode": "e80c",
+      "unicode_decimal": 59404
+    },
+    {
+      "icon_id": "26153347",
+      "name": "mp4",
+      "font_class": "mp4",
+      "unicode": "e6bf",
+      "unicode_decimal": 59071
+    },
+    {
+      "icon_id": "41068407",
+      "name": "txt",
+      "font_class": "txt",
+      "unicode": "e852",
+      "unicode_decimal": 59474
+    },
+    {
+      "icon_id": "43182829",
+      "name": "jpg",
+      "font_class": "jpg",
+      "unicode": "e6ab",
+      "unicode_decimal": 59051
+    }
+  ]
+}

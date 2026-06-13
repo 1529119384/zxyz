@@ -1,0 +1,35 @@
+spring:
+  config:
+    import: classpath:application-common.yml
+  profiles:
+    default: dev
+  application:
+    name: zxyz-team-service
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${TEAM_DATASOURCE_URL}
+    username: ${TEAM_DATASOURCE_USERNAME}
+    password: ${TEAM_DATASOURCE_PASSWORD}
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 1
+
+server:
+  port: ${SERVER_PORT:18086}
+
+mybatis:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+app:
+  user-service:
+    base-url: ${services.user-service.base-url}
+  im-service:
+    base-url: ${services.im-service.base-url}
+  email-service:
+    base-url: ${services.email-service.base-url}
+  file-service:
+    base-url: ${services.file-service.base-url}
+  project-service:
+    base-url: ${services.project-service.base-url}

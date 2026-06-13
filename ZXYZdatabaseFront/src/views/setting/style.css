@@ -1,0 +1,337 @@
+.settings-page {
+  min-height: 100%;
+  padding: 24px;
+  background: #f5f7fb;
+  color: #1f2937;
+}
+
+.settings-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.settings-header h1 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+}
+
+.settings-header p,
+.avatar-actions p {
+  margin: 8px 0 0;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.settings-nav {
+  margin-bottom: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.settings-nav.el-menu--horizontal {
+  padding: 0 12px;
+}
+
+.settings-content {
+  min-height: 0;
+}
+
+.settings-grid,
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.settings-panel {
+  min-height: 280px;
+  padding: 20px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.create-team-panel {
+  max-width: 980px;
+}
+
+.admin-grid {
+  align-items: start;
+}
+
+.admin-team-panel {
+  grid-column: 1 / -1;
+}
+
+.email-server-panel {
+  grid-column: 1 / -1;
+}
+
+.email-record-panel {
+  grid-column: 1 / -1;
+}
+
+.database-maintenance-panel {
+  grid-column: 1 / -1;
+}
+
+.admin-toolbar-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.admin-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.email-server-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+}
+
+.email-server-summary-item {
+  min-width: 0;
+}
+
+.email-server-summary-item span {
+  display: block;
+  margin-bottom: 6px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.email-server-summary-item strong {
+  display: block;
+  overflow: hidden;
+  color: #111827;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.email-server-summary-message {
+  grid-column: span 1;
+}
+
+.email-server-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.email-server-name strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.email-runtime-alert {
+  margin-bottom: 16px;
+}
+
+.database-maintenance-alert {
+  margin-bottom: 16px;
+}
+
+.database-maintenance-summary {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+}
+
+.database-maintenance-summary-item {
+  min-width: 0;
+}
+
+.database-maintenance-summary-item span {
+  display: block;
+  margin-bottom: 6px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.database-maintenance-summary-item strong {
+  display: block;
+  overflow: hidden;
+  color: #111827;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.database-import-form {
+  max-width: 720px;
+}
+
+.database-file-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.database-file-name {
+  overflow: hidden;
+  color: #4b5563;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.email-record-filters {
+  margin-bottom: 12px;
+}
+
+.email-record-filters .el-form-item {
+  margin-bottom: 12px;
+}
+
+.email-record-pagination {
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.email-record-preview-block {
+  margin-top: 16px;
+}
+
+.email-record-preview-title {
+  margin-bottom: 8px;
+  color: #111827;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.email-record-preview {
+  width: 100%;
+  min-height: 320px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.profile-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.panel-title {
+  margin-bottom: 18px;
+}
+
+.panel-title h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.panel-title span {
+  display: inline-block;
+  margin-top: 6px;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.avatar-row,
+.verify-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.avatar-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.avatar-file-input {
+  display: none;
+}
+
+.avatar-action-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.upload-progress {
+  color: #409eff;
+  font-size: 13px;
+}
+
+.inline-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  width: 100%;
+}
+
+.inline-control:has(.el-select) {
+  grid-template-columns: 120px minmax(0, 1fr) auto;
+}
+
+.team-select {
+  width: 100%;
+}
+
+.quota-helper {
+  display: block;
+  margin-top: 8px;
+  color: #909399;
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .settings-grid,
+  .form-grid,
+  .inline-control,
+  .inline-control:has(.el-select) {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-toolbar-title,
+  .admin-toolbar-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .email-server-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .database-maintenance-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .database-file-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

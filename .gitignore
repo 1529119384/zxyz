@@ -1,0 +1,61 @@
+# ===== 环境与敏感文件 =====
+.env
+.env.*
+!.env.example
+
+# ===== IDE =====
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+*.swp
+.project
+.classpath
+.settings/
+
+# ===== Java / Maven =====
+**/target/
+**/mvnw
+**/mvnw.cmd
+**/.mvn/
+
+# ===== Node =====
+**/node_modules/
+**/dist/
+**/dist-ssr/
+
+# ===== 日志与临时文件 =====
+**/*.log
+**/logs/
+**/*.zip
+
+# ===== 系统文件 =====
+.DS_Store
+Thumbs.db
+
+# ===== 数据卷（Docker bind mount） =====
+data/
+
+# ===== 构建产物 =====
+derby.log
+nacos.home_IS_UNDEFINED/
+query
+
+# ===== 项目特定 =====
+.claude/
+.trae/
+.workbuddy/
+.codex-git-front
+git-scratch-*
+old/
+redis-server.exe - 快捷方式.lnk
+
+# ===== Monorepo 安全网（防止子目录 .git/ 被误提交） =====
+ZXYZdatabaseBack/.git/
+ZXYZdatabaseFront/.git/
+**/.git.bak/
+
+# ===== 不纳入版本控制的目录 =====
+ISSUE/
+sql/schema_*.sql

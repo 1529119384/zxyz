@@ -1,0 +1,36 @@
+# 本地开发默认配置，生产环境不要激活 dev profile。
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${PROJECT_DATASOURCE_URL:jdbc:mysql://localhost:3306/zxyz_project}
+    username: ${PROJECT_DATASOURCE_USERNAME:root}
+    password: ${PROJECT_DATASOURCE_PASSWORD:123456}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
+      timeout: ${REDIS_TIMEOUT:30s}
+      lettuce:
+        pool:
+          max-active: ${REDIS_POOL_MAX_ACTIVE:8}
+          max-idle: ${REDIS_POOL_MAX_IDLE:8}
+          min-idle: ${REDIS_POOL_MIN_IDLE:0}
+
+mybatis:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+app:
+  im:
+    base-url: ${services.im-service.base-url}
+  internal-service-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token}
+  file-service:
+    base-url: ${services.file-service.base-url}
+  team-service:
+    base-url: ${services.team-service.base-url}
+  user-service:
+    base-url: ${services.user-service.base-url}
+  email-service:
+    base-url: ${services.email-service.base-url}

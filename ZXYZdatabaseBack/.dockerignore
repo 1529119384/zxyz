@@ -1,0 +1,14 @@
+**/target/
+.git/
+.github/
+.idea/
+.vscode/
+.env
+.env.*
+!.env.example
+ISSUE/
+sql/
+*.log
+*.zip
+*.md
+lombok.config

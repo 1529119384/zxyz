@@ -1,0 +1,62 @@
+name: Manual Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch to deploy. Only main is allowed.
+        required: true
+        default: main
+
+concurrency:
+  group: manual-deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Ensure main branch only
+        run: |
+          if [ "${{ github.event.inputs.branch }}" != "main" ]; then
+            echo "Only main branch can be deployed."
+            exit 1
+          fi
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build project
+        run: npm run build
+
+      - name: Prepare SSH key
+        shell: bash
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -p "${{ secrets.PORT }}" "${{ secrets.HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Ensure target directory exists
+        shell: bash
+        run: |
+          ssh -p "${{ secrets.PORT }}" "${{ secrets.USERNAME }}@${{ secrets.HOST }}" \
+            "mkdir -p '${{ secrets.TARGET_DIR }}'"
+
+      - name: Upload dist files
+        shell: bash
+        run: |
+          rsync -avz --delete -e "ssh -p ${{ secrets.PORT }}" dist/ \
+            "${{ secrets.USERNAME }}@${{ secrets.HOST }}:${{ secrets.TARGET_DIR }}/"

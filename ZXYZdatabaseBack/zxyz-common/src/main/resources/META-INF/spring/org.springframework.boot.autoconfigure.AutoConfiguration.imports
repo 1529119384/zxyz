@@ -1,0 +1,3 @@
+uno.acloud.common.config.AuthServicePortAutoConfig
+uno.acloud.common.config.CacheConfig
+uno.acloud.common.config.RedissonAutoConfiguration

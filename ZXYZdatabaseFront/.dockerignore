@@ -1,0 +1,16 @@
+node_modules/
+dist/
+dist-ssr/
+.git/
+.github/
+.vscode/
+.idea/
+.env
+.env.*
+!.env.example
+*.log
+*.zip
+*.md
+tests/
+__tests__/
+.vite/

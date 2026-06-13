@@ -1,0 +1,22 @@
+# 本地开发默认配置，生产环境不要激活 dev profile。
+spring:
+  datasource:
+    url: ${FILE_DATASOURCE_URL:jdbc:mysql://localhost:3306/zxyz_file?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${FILE_DATASOURCE_USERNAME:root}
+    password: ${FILE_DATASOURCE_PASSWORD:123456}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+
+mybatis:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+app:
+  internal-service-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token}
+  team-service:
+    base-url: ${services.team-service.base-url}
+  project-service:
+    base-url: ${services.project-service.base-url}
+  share-service:
+    base-url: ${services.share-service.base-url}
