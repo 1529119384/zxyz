@@ -346,7 +346,7 @@ jobs:
             echo "Image tag: $IMAGE_TAG"
 
             # 从仓库同步 docker-compose.yml 和 nginx 配置
-            REPO_DIR="/opt/zxyz-repo"
+            REPO_DIR="${DEPLOY_DIR}-repo"
             UP_FLAGS=""
             if [ -d "$REPO_DIR" ]; then
               echo "===== Syncing config from repo ====="
