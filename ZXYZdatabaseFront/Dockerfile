@@ -5,7 +5,7 @@
 # 构建阶段打包 Vite 静态资源，运行阶段用 Nginx 提供静态文件并反向代理后端。
 # -----------------------------------------------------------------------------
 
-FROM dockerpull.org/node:22-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /workspace
 
@@ -15,7 +15,7 @@ RUN npm ci
 COPY ZXYZdatabaseFront/ ./
 RUN npm run build
 
-FROM dockerpull.org/nginx:1.27-alpine
+FROM nginx:1.27-alpine
 
 ENV TZ=Asia/Shanghai
 
