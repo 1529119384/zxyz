@@ -298,16 +298,30 @@ jobs:
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
+        timeout: 600s
         env:
           SSH_KEY: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') && secrets.PROD_SSH_KEY || secrets.DEV_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
+          BACKEND_COMMON: ${{ needs.detect-changes.outputs.backend-common }}
+          PROJECT_SVC: ${{ needs.detect-changes.outputs.project-service }}
+          IM_SVC: ${{ needs.detect-changes.outputs.im-service }}
+          EMAIL_SVC: ${{ needs.detect-changes.outputs.email-service }}
+          USER_SVC: ${{ needs.detect-changes.outputs.user-service }}
+          SHARE_SVC: ${{ needs.detect-changes.outputs.share-service }}
+          FILE_SVC: ${{ needs.detect-changes.outputs.file-service }}
+          TEAM_SVC: ${{ needs.detect-changes.outputs.team-service }}
+          AUDIT_SVC: ${{ needs.detect-changes.outputs.audit-service }}
+          GATEWAY_SVC: ${{ needs.detect-changes.outputs.gateway }}
+          FRONTEND_SVC: ${{ needs.detect-changes.outputs.frontend }}
+          DOCKER_CFG: ${{ needs.detect-changes.outputs.docker-config }}
         with:
           host: ${{ steps.target.outputs.host }}
           username: ${{ secrets.DEPLOY_USERNAME }}
           key: ${{ env.SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
+          envs: BACKEND_COMMON,PROJECT_SVC,IM_SVC,EMAIL_SVC,USER_SVC,SHARE_SVC,FILE_SVC,TEAM_SVC,AUDIT_SVC,GATEWAY_SVC,FRONTEND_SVC,DOCKER_CFG
           script: |
             #!/bin/bash
-            set -e
+            set +e
 
             DEPLOY_DIR="${{ secrets.DEPLOY_PATH || '/www/zxyz' }}"
             IMAGE_TAG="${{ needs.detect-changes.outputs.tag }}"
@@ -317,71 +331,84 @@ jobs:
             echo "===== Deploying to ${{ steps.target.outputs.env }} ====="
             echo "Image tag: $IMAGE_TAG"
 
-            # 从仓库同步 docker-compose.yml 和 nginx 配置
+            # --- 配置同步 ---
             REPO_DIR="${DEPLOY_DIR}-repo"
             UP_FLAGS=""
             if [ -d "$REPO_DIR" ]; then
-              echo "===== Syncing config from repo ====="
               OLD_HASH=$(md5sum "$DEPLOY_DIR/docker-compose.yml" 2>/dev/null | cut -d' ' -f1)
-              cd "$REPO_DIR" && git pull --ff-only
+              cd "$REPO_DIR" && git pull --ff-only -q
               cp "$REPO_DIR/docker-compose.yml" "$DEPLOY_DIR/docker-compose.yml"
               cp "$REPO_DIR/deploy/nginx/default.conf" "$DEPLOY_DIR/deploy/nginx/default.conf"
               cd "$DEPLOY_DIR"
               NEW_HASH=$(md5sum "$DEPLOY_DIR/docker-compose.yml" | cut -d' ' -f1)
-              if [ "$OLD_HASH" != "$NEW_HASH" ]; then
-                UP_FLAGS="--force-recreate"
-                echo "===== docker-compose.yml changed, will force-recreate ====="
-              fi
-            else
-              echo "WARNING: $REPO_DIR not found, skipping config sync"
+              [ "$OLD_HASH" != "$NEW_HASH" ] && UP_FLAGS="--force-recreate" && echo "docker-compose.yml changed, will force-recreate"
             fi
 
-            # 更新 .env 中的镜像标签和 DockerHub 前缀
-            # sed 模式兼容有无引号的值：匹配到行尾的所有内容
-            if grep -q '^APP_IMAGE_TAG=' .env; then
-              sed -i "s|^APP_IMAGE_TAG=.*|APP_IMAGE_TAG=$IMAGE_TAG|" .env
+            # --- 更新 .env ---
+            sed -i "s|^APP_IMAGE_TAG=.*|APP_IMAGE_TAG=$IMAGE_TAG|" .env 2>/dev/null || echo "APP_IMAGE_TAG=$IMAGE_TAG" >> .env
+            PREFIX="${DOCKERHUB_PREFIX%/}/"
+            sed -i "s|^DOCKERHUB_PREFIX=.*|DOCKERHUB_PREFIX=$PREFIX|" .env 2>/dev/null || echo "DOCKERHUB_PREFIX=$PREFIX" >> .env
+
+            # --- 筛选需要更新的服务 ---
+            UPDATE_SVC=()
+            if [ "$BACKEND_COMMON" = "true" ]; then
+              UPDATE_SVC+=(project-service im-service email-service user-service share-service file-service team-service audit-service gateway)
             else
-              echo "APP_IMAGE_TAG=$IMAGE_TAG" >> .env
+              [ "$PROJECT_SVC" = "true" ] && UPDATE_SVC+=(project-service)
+              [ "$IM_SVC" = "true" ] && UPDATE_SVC+=(im-service)
+              [ "$EMAIL_SVC" = "true" ] && UPDATE_SVC+=(email-service)
+              [ "$USER_SVC" = "true" ] && UPDATE_SVC+=(user-service)
+              [ "$SHARE_SVC" = "true" ] && UPDATE_SVC+=(share-service)
+              [ "$FILE_SVC" = "true" ] && UPDATE_SVC+=(file-service)
+              [ "$TEAM_SVC" = "true" ] && UPDATE_SVC+=(team-service)
+              [ "$AUDIT_SVC" = "true" ] && UPDATE_SVC+=(audit-service)
+              [ "$GATEWAY_SVC" = "true" ] && UPDATE_SVC+=(gateway)
             fi
-            if grep -q '^DOCKERHUB_PREFIX=' .env; then
-              # 确保末尾有斜杠，且不会重复添加
-              PREFIX="${DOCKERHUB_PREFIX%/}/"
-              sed -i "s|^DOCKERHUB_PREFIX=.*|DOCKERHUB_PREFIX=$PREFIX|" .env
-            else
-              echo "DOCKERHUB_PREFIX=${DOCKERHUB_PREFIX%/}/" >> .env
+            [ "$FRONTEND_SVC" = "true" ] && UPDATE_SVC+=(frontend-nginx)
+            [ "$DOCKER_CFG" = "true" ] && UPDATE_SVC=(project-service im-service email-service user-service share-service file-service team-service audit-service gateway frontend-nginx)
+
+            if [ ${#UPDATE_SVC[@]} -eq 0 ]; then
+              echo "No service changed, skip deploy"
+              exit 0
             fi
+            echo "Will update: ${UPDATE_SVC[*]}"
 
-            # 只拉取应用镜像（基础设施镜像不部署，无需拉取）
-            echo "===== Pulling application images ====="
-            docker compose pull project-service im-service email-service user-service share-service file-service team-service audit-service gateway frontend-nginx
+            # --- 并行拉取镜像 ---
+            echo "===== Pulling images ====="
+            for svc in "${UPDATE_SVC[@]}"; do
+              docker compose pull "$svc" &
+            done
+            wait
+            echo "Pull finished"
 
-            # 先停止应用服务（保留基础设施），再启动所有服务
-            # 这样应用服务会用新镜像创建新容器，而基础设施保持运行不中断
-            echo "===== Restarting application services ====="
-            docker compose stop project-service im-service email-service user-service share-service file-service team-service audit-service gateway frontend-nginx
-            docker compose up -d
+            # --- 重启变更服务 ---
+            echo "===== Restarting services ====="
+            docker compose up -d $UP_FLAGS "${UPDATE_SVC[@]}"
 
-            # 等待容器启动并检查健康状态
-            # gateway Spring Boot 启动 ≈ 260s，直接轮询，间隔 10s，最多 40 次（400s）
-            echo "===== Waiting for services to become healthy ====="
-            for i in $(seq 1 40); do
-              if docker compose ps | grep -qE "(unhealthy|starting)"; then
-                if [ "$i" -eq 40 ]; then
-                  echo "ERROR: Services did not become healthy within ~7 minutes"
-                  docker compose ps
-                  docker compose logs --tail=50
-                  exit 1
-                fi
-                echo "Waiting... (attempt $i/40)"
-                sleep 10
-              else
-                echo "===== All services healthy ====="
+            # --- 分层健康检查 ---
+            # 普通服务：10 次 × 5s = 50s
+            echo "===== Waiting for common services ====="
+            for i in $(seq 1 10); do
+              if ! docker compose ps 2>/dev/null | grep -qE "(im-service|email-service|user-service|share-service|file-service|team-service|audit-service|frontend-nginx).*(unhealthy|starting)"; then
+                echo "Common services ready"
                 break
               fi
+              sleep 5
             done
 
-            # 显示容器状态
+            # Gateway 单独长等待：25 次 × 10s = 250s
+            echo "===== Waiting for gateway ====="
+            for i in $(seq 1 25); do
+              if ! docker compose ps 2>/dev/null | grep -q "gateway.*(unhealthy|starting)"; then
+                echo "Gateway ready"
+                break
+              fi
+              if [ "$i" -eq 25 ]; then
+                echo "WARN: Gateway startup timeout, continuing"
+              fi
+              sleep 10
+            done
+
             echo "===== Container status ====="
             docker compose ps
-
             echo "===== Deploy complete ====="
