@@ -245,10 +245,9 @@ jobs:
       - name: Check if needs build
         id: should-build
         run: |
-          # 后端服务：自身变更 || backend-common 变更 || docker-config 变更
-          # 前端：自身变更 || docker-config 变更（不受 backend-common 影响）
+          # 后端服务：自身变更 || backend-common 变更
+          # 前端：自身变更（docker-compose 改动不触发重建，compose 是运行时配置）
           if [ "${{ matrix.change }}" = "true" ] || \
-             [ "${{ needs.detect-changes.outputs.docker-config }}" = "true" ] || \
              ([ "${{ matrix.is_backend }}" = "true" ] && [ "${{ needs.detect-changes.outputs.backend-common }}" = "true" ]); then
             echo "build=true" >> $GITHUB_OUTPUT
           else
