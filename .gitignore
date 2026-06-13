@@ -50,9 +50,9 @@ nacos.home_IS_UNDEFINED/
 query
 
 # ===== 项目特定 =====
-.claude/
-.trae/
-.workbuddy/
+**/.claude/
+**/.trae/
+**/.workbuddy/
 .codex-git-front
 git-scratch-*
 old/
