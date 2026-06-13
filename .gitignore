@@ -25,10 +25,17 @@
 **/dist/
 **/dist-ssr/
 
+# ===== Vite 自动生成的类型声明 =====
+auto-imports.d.ts
+components.d.ts
+env.d.ts
+
 # ===== 日志与临时文件 =====
 **/*.log
 **/logs/
 **/*.zip
+**/*.dump
+**/*.tmp
 
 # ===== 系统文件 =====
 .DS_Store
@@ -49,7 +56,6 @@ query
 .codex-git-front
 git-scratch-*
 old/
-redis-server.exe - 快捷方式.lnk
 
 # ===== Monorepo 安全网（防止子目录 .git/ 被误提交） =====
 ZXYZdatabaseBack/.git/
