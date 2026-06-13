@@ -390,20 +390,20 @@ jobs:
             docker compose up -d
 
             # 等待容器启动并检查健康状态
-            # Nacos start_period=60s + 启动 ≈ 90s，gateway Spring Boot ≈ 60-90s
+            # gateway Spring Boot 启动 ≈ 260s，加上其他服务，总等待需 8 分钟
             echo "===== Waiting for services to become healthy ====="
-            sleep 90
-            for i in $(seq 1 18); do
+            sleep 120
+            for i in $(seq 1 24); do
               # 检查是否有 unhealthy 或 starting 状态的容器
               if docker compose ps | grep -qE "(unhealthy|starting)"; then
-                if [ "$i" -eq 18 ]; then
-                  echo "ERROR: Services did not become healthy within 4.5 minutes"
+                if [ "$i" -eq 24 ]; then
+                  echo "ERROR: Services did not become healthy within 8 minutes"
                   docker compose ps
                   docker compose logs --tail=50
                   exit 1
                 fi
-                echo "Waiting... (attempt $i/18)"
-                sleep 10
+                echo "Waiting... (attempt $i/24)"
+                sleep 15
               else
                 echo "===== All services healthy ====="
                 break
