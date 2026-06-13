@@ -19,8 +19,14 @@ FROM nginx:1.27-alpine
 
 ENV TZ=Asia/Shanghai
 
-# 替换默认站点配置：包含 Vue history fallback、HTTP API 代理和 WebSocket 代理。
-COPY deploy/nginx/default.conf /etc/nginx/conf.d/default.conf
+# envsubst 用于启动时将环境变量注入 nginx 配置模板（如 OSS 域名）。
+RUN apk add --no-cache gettext
+
+# 站点配置作为模板，启动时由 entrypoint.sh 用 envsubst 替换变量。
+COPY deploy/nginx/default.conf /etc/nginx/templates/default.conf.template
+COPY deploy/nginx/entrypoint.sh /docker-entrypoint-custom.sh
+RUN chmod +x /docker-entrypoint-custom.sh
+
 COPY --from=builder /workspace/dist /usr/share/nginx/html
 
 EXPOSE 80
@@ -30,4 +36,4 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup \
     && chown -R appuser:appgroup /var/cache/nginx /var/run /run
 USER appuser
 
-CMD ["nginx", "-g", "daemon off;"]
+ENTRYPOINT ["/docker-entrypoint-custom.sh"]

@@ -727,6 +727,9 @@ services:
     image: ${DOCKERHUB_PREFIX:-}zxyz-frontend-nginx:${APP_IMAGE_TAG:-latest}
     container_name: zxyz-frontend-nginx
     restart: unless-stopped
+    environment:
+      # nginx CSP connect-src 需要 OSS 域名，启动时 envsubst 注入
+      OSS_PUBLIC_BASE_URL: ${OSS_PUBLIC_BASE_URL:-https://zxyz-database.oss-cn-shenzhen.aliyuncs.com}
     deploy:
       resources:
         limits:
