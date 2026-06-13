@@ -2,6 +2,9 @@
 .env
 .env.*
 !.env.example
+# 前端环境配置（CI 构建需要）
+!ZXYZdatabaseFront/.env.production
+!ZXYZdatabaseFront/.env.development
 
 # ===== IDE =====
 .idea/

@@ -337,7 +337,7 @@ jobs:
             #!/bin/bash
             set -e
 
-            DEPLOY_DIR="${{ secrets.DEPLOY_PATH || '/opt/zxyz' }}"
+            DEPLOY_DIR="${{ secrets.DEPLOY_PATH || '/www/zxyz' }}"
             IMAGE_TAG="${{ needs.detect-changes.outputs.tag }}"
             DOCKERHUB_PREFIX="${{ env.DOCKERHUB_PREFIX }}"
             cd "$DEPLOY_DIR"

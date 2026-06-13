@@ -9,6 +9,10 @@ dist-ssr/
 .env.local
 .env.*.local
 
+# 必须显式包含生产/开发环境配置（根 .gitignore 的 .env.* 会覆盖）
+!.env.production
+!.env.development
+
 # Logs
 *.log
 npm-debug.log*
