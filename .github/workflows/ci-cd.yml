@@ -383,10 +383,10 @@ jobs:
             echo "===== Pulling images ====="
             docker compose pull
 
-            # 只重启有新镜像的容器（docker compose up -d 会自动判断）
-            # 如果 compose 文件有结构性变更，加 --force-recreate 确保容器重建
+            # 使用 --force-recreate 确保容器使用最新镜像重建
+            # docker compose up -d 不带 --force-recreate 时，相同 tag 的镜像不会触发容器重建
             echo "===== Restarting services with new images ====="
-            docker compose up -d $UP_FLAGS
+            docker compose up -d --force-recreate
 
             # 等待容器启动并检查健康状态（MySQL start_period=30s，需等待足够时间）
             echo "===== Waiting for services to become healthy ====="
