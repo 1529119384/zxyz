@@ -111,31 +111,16 @@ jobs:
           fi
 
   # ============================================================
-  # Job 2: 质量检查（PR 和 push 均执行）
+  # Job 2a: 前端质量检查（与后端并行）
   # ============================================================
-  quality-check:
+  quality-check-frontend:
     needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     steps:
-      # 如果前后端都没有变更，跳过整个 job（节省 runner 时间）
-      - name: Check if any changes exist
-        id: has-changes
-        run: |
-          BACKEND="${{ needs.detect-changes.outputs.backend-any }}"
-          FRONTEND="${{ needs.detect-changes.outputs.frontend }}"
-          if [ "$BACKEND" = "true" ] || [ "$FRONTEND" = "true" ]; then
-            echo "run=true" >> $GITHUB_OUTPUT
-          else
-            echo "run=false" >> $GITHUB_OUTPUT
-            echo "⏭️ Skip: no backend or frontend changes detected"
-          fi
-
       - uses: actions/checkout@v4
-        if: steps.has-changes.outputs.run == 'true'
 
-      # --- 前端 lint + test ---
       - name: Setup Node.js
-        if: needs.detect-changes.outputs.frontend == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -143,38 +128,46 @@ jobs:
           cache-dependency-path: ZXYZdatabaseFront/package-lock.json
 
       - name: Install frontend deps
-        if: needs.detect-changes.outputs.frontend == 'true'
         run: cd ZXYZdatabaseFront && npm ci
 
       - name: Lint frontend
-        if: needs.detect-changes.outputs.frontend == 'true'
         run: cd ZXYZdatabaseFront && npm run lint
 
       - name: Test frontend
-        if: needs.detect-changes.outputs.frontend == 'true'
         run: cd ZXYZdatabaseFront && npm run test
 
-      # --- 后端编译检查 ---
-      # 注意：当前后端 Dockerfile 跳过测试（-Dmaven.test.skip=true），
-      # 因为测试源码存在编译问题。待修复后应改为 mvn test。
+  # ============================================================
+  # Job 2b: 后端质量检查（与前端并行）
+  # ============================================================
+  quality-check-backend:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend-any == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Setup JDK 17
-        if: needs.detect-changes.outputs.backend-any == 'true'
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
           cache: maven
 
+      # 注意：当前后端 Dockerfile 跳过测试（-Dmaven.test.skip=true），
+      # 因为测试源码存在编译问题。待修复后应改为 mvn test。
       - name: Backend compile
-        if: needs.detect-changes.outputs.backend-any == 'true'
         run: cd ZXYZdatabaseBack && mvn -B compile -Dmaven.test.skip=true
 
   # ============================================================
   # Job 3: 构建并推送镜像（只构建有变更的服务，仅 push 触发）
   # ============================================================
   build-and-push:
-    needs: [detect-changes, quality-check]
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: [detect-changes, quality-check-frontend, quality-check-backend]
+    if: |
+      always() &&
+      needs.quality-check-frontend.result != 'failure' &&
+      needs.quality-check-backend.result != 'failure' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -262,8 +255,6 @@ jobs:
       - name: Set up Docker Buildx
         if: steps.should-build.outputs.build == 'true'
         uses: docker/setup-buildx-action@v3
-        with:
-          config: buildkitd.toml
 
       - name: Login to DockerHub
         if: steps.should-build.outputs.build == 'true'
@@ -287,32 +278,12 @@ jobs:
           cache-to: type=gha,mode=max
 
   # ============================================================
-  # Job 3.5: 检查是否有实际构建（防止空部署）
-  # ============================================================
-  build-complete:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    if: always()
-    outputs:
-      any_built: ${{ steps.check.outputs.any_built }}
-    steps:
-      - name: Check if any image was built
-        id: check
-        run: |
-          if [ "${{ needs.build-and-push.result }}" = "success" ]; then
-            echo "any_built=true" >> $GITHUB_OUTPUT
-          else
-            echo "any_built=false" >> $GITHUB_OUTPUT
-            echo "⏭️ Skip deploy: no images were built"
-          fi
-
-  # ============================================================
   # Job 4: 部署到服务器（仅 push 触发且有镜像构建时）
   # ============================================================
   deploy:
-    needs: [detect-changes, build-complete]
+    needs: [detect-changes, build-and-push]
     runs-on: ubuntu-latest
-    if: needs.build-complete.outputs.any_built == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: always() && needs.build-and-push.result == 'success' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     steps:
       - name: Determine deploy target
         id: target
@@ -380,9 +351,9 @@ jobs:
               echo "DOCKERHUB_PREFIX=${DOCKERHUB_PREFIX%/}/" >> .env
             fi
 
-            # 拉取所有镜像（docker compose pull 会检查 digest，无变化的镜像跳过）
-            echo "===== Pulling images ====="
-            docker compose pull
+            # 只拉取应用镜像（基础设施镜像不部署，无需拉取）
+            echo "===== Pulling application images ====="
+            docker compose pull project-service im-service email-service user-service share-service file-service team-service audit-service gateway frontend-nginx
 
             # 先停止应用服务（保留基础设施），再启动所有服务
             # 这样应用服务会用新镜像创建新容器，而基础设施保持运行不中断
@@ -391,20 +362,18 @@ jobs:
             docker compose up -d
 
             # 等待容器启动并检查健康状态
-            # gateway Spring Boot 启动 ≈ 260s，加上其他服务，总等待需 8 分钟
+            # gateway Spring Boot 启动 ≈ 260s，直接轮询，间隔 10s，最多 40 次（400s）
             echo "===== Waiting for services to become healthy ====="
-            sleep 120
-            for i in $(seq 1 24); do
-              # 检查是否有 unhealthy 或 starting 状态的容器
+            for i in $(seq 1 40); do
               if docker compose ps | grep -qE "(unhealthy|starting)"; then
-                if [ "$i" -eq 24 ]; then
-                  echo "ERROR: Services did not become healthy within 8 minutes"
+                if [ "$i" -eq 40 ]; then
+                  echo "ERROR: Services did not become healthy within ~7 minutes"
                   docker compose ps
                   docker compose logs --tail=50
                   exit 1
                 fi
-                echo "Waiting... (attempt $i/24)"
-                sleep 15
+                echo "Waiting... (attempt $i/40)"
+                sleep 10
               else
                 echo "===== All services healthy ====="
                 break
