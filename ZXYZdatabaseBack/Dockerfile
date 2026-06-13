@@ -12,7 +12,7 @@
 #   - zxyz-audit-service
 # -----------------------------------------------------------------------------
 
-FROM maven:3.9-eclipse-temurin-17 AS builder
+FROM dockerpull.org/maven:3.9-eclipse-temurin-17 AS builder
 
 WORKDIR /workspace
 
@@ -41,7 +41,7 @@ RUN mvn -B -pl zxyz-common -am install -Dmaven.test.skip=false -DskipTests \
     && mvn -B -pl "${MODULE}" -am package -Dmaven.test.skip=true \
     && find "${MODULE}/target" -maxdepth 1 -type f -name "${MODULE}-*.jar" ! -name "original-*.jar" -exec cp {} /tmp/app.jar \;
 
-FROM eclipse-temurin:17-jre
+FROM dockerpull.org/eclipse-temurin:17-jre
 
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
