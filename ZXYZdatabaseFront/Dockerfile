@@ -27,7 +27,7 @@ EXPOSE 80
 
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup \
     && mkdir -p /var/cache/nginx/client_temp /var/cache/nginx/proxy_temp /var/cache/nginx/fastcgi_temp \
-    && chown -R appuser:appgroup /var/cache/nginx /var/run
+    && chown -R appuser:appgroup /var/cache/nginx /var/run /run
 USER appuser
 
 CMD ["nginx", "-g", "daemon off;"]
