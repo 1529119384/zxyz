@@ -53,8 +53,8 @@ CREATE TABLE permission (
     permission_name VARCHAR(64) NOT NULL,
     permission_code VARCHAR(64) NOT NULL,
     description VARCHAR(255) NULL,
-    create_time DATETIME(3)NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    update_time DATETIME(3)NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    update_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
     PRIMARY KEY (id),
     UNIQUE KEY uk_permission_code (permission_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -64,8 +64,8 @@ CREATE TABLE role (
     role_name VARCHAR(64) NOT NULL,
     role_code VARCHAR(64) NOT NULL,
     description VARCHAR(255) NULL,
-    create_time DATETIME(3)NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    update_time DATETIME(3)NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    update_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
     PRIMARY KEY (id),
     UNIQUE KEY uk_role_code (role_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -74,7 +74,7 @@ CREATE TABLE user_role (
     id INT NOT NULL AUTO_INCREMENT,
     user_id BIGINT NOT NULL,
     role_id INT NOT NULL,
-    create_time DATETIME(3)NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     PRIMARY KEY (id),
     UNIQUE KEY uk_user_role (user_id, role_id),
     INDEX idx_user_role_user (user_id),
@@ -85,7 +85,7 @@ CREATE TABLE role_permission (
     id INT NOT NULL AUTO_INCREMENT,
     role_id INT NOT NULL,
     permission_id INT NOT NULL,
-    create_time DATETIME(3)NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     PRIMARY KEY (id),
     UNIQUE KEY uk_role_permission (role_id, permission_id),
     INDEX idx_role_permission_role (role_id),
@@ -101,7 +101,7 @@ CREATE TABLE permission_audit (
     target_id BIGINT NULL,
     before_value TEXT NULL,
     after_value TEXT NULL,
-    operation_time DATETIME(3)NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    operation_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     ip_address VARCHAR(64) NULL,
     PRIMARY KEY (id),
     INDEX idx_pa_scope_time (scope_type, operation_time),
@@ -117,8 +117,8 @@ CREATE TABLE team_permission (
     permission_name VARCHAR(64) NOT NULL,
     permission_code VARCHAR(64) NOT NULL,
     description VARCHAR(255) NULL,
-    create_time DATETIME(3)NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    update_time DATETIME(3)NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    update_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
     PRIMARY KEY (id),
     UNIQUE KEY uk_tp_code (permission_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -130,8 +130,8 @@ CREATE TABLE team_role (
     role_code VARCHAR(64) NOT NULL,
     description VARCHAR(255) NULL,
     builtin TINYINT NOT NULL DEFAULT 0 COMMENT '0-自定义，1-内置角色（owner/admin/member）',
-    create_time DATETIME(3)NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    update_time DATETIME(3)NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    update_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
     PRIMARY KEY (id),
     UNIQUE KEY uk_tr_code (team_id, role_code),
     INDEX idx_tr_team (team_id)
@@ -142,7 +142,7 @@ CREATE TABLE team_member_role (
     team_id BIGINT NOT NULL,
     user_id BIGINT NOT NULL,
     team_role_id BIGINT NOT NULL,
-    create_time DATETIME(3)NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     PRIMARY KEY (id),
     UNIQUE KEY uk_tmr_user (team_id, user_id),
     INDEX idx_tmr_role (team_role_id)
@@ -153,7 +153,7 @@ CREATE TABLE team_role_permission (
     team_id BIGINT NOT NULL,
     team_role_id BIGINT NOT NULL,
     permission_id INT NOT NULL,
-    create_time DATETIME(3)NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     PRIMARY KEY (id),
     UNIQUE KEY uk_trp (team_id, team_role_id, permission_id),
     INDEX idx_trp_role (team_role_id),

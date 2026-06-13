@@ -24,7 +24,7 @@ CREATE TABLE project_member (
     user_id BIGINT NOT NULL,
     role_code VARCHAR(32) NOT NULL COMMENT 'leader-负责人，member-成员',
     join_time DATETIME(3)NOT NULL,
-    update_time DATETIME(3)NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    update_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '更新时间',
     PRIMARY KEY (id),
     UNIQUE KEY uk_project_member (project_id, user_id),
     INDEX idx_pm_project (project_id)
