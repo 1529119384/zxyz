@@ -298,7 +298,6 @@ jobs:
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
-        timeout: 600s
         env:
           SSH_KEY: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') && secrets.PROD_SSH_KEY || secrets.DEV_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
           BACKEND_COMMON: ${{ needs.detect-changes.outputs.backend-common }}
@@ -318,6 +317,7 @@ jobs:
           username: ${{ secrets.DEPLOY_USERNAME }}
           key: ${{ env.SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
+          timeout: 600s
           envs: BACKEND_COMMON,PROJECT_SVC,IM_SVC,EMAIL_SVC,USER_SVC,SHARE_SVC,FILE_SVC,TEAM_SVC,AUDIT_SVC,GATEWAY_SVC,FRONTEND_SVC,DOCKER_CFG
           script: |
             #!/bin/bash
