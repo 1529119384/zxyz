@@ -318,20 +318,20 @@ jobs:
         run: |
           if [ "${{ github.ref }}" = "refs/heads/main" ] || [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             echo "host=${{ secrets.PROD_DEPLOY_HOST }}" >> $GITHUB_OUTPUT
-            echo "key=${{ secrets.PROD_SSH_KEY }}" >> $GITHUB_OUTPUT
             echo "env=production" >> $GITHUB_OUTPUT
           else
             echo "host=${{ secrets.DEV_DEPLOY_HOST || secrets.DEPLOY_HOST }}" >> $GITHUB_OUTPUT
-            echo "key=${{ secrets.DEV_SSH_KEY || secrets.DEPLOY_SSH_KEY }}" >> $GITHUB_OUTPUT
             echo "env=development" >> $GITHUB_OUTPUT
           fi
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
+        env:
+          SSH_KEY: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') && secrets.PROD_SSH_KEY || secrets.DEV_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
         with:
           host: ${{ steps.target.outputs.host }}
           username: ${{ secrets.DEPLOY_USERNAME }}
-          key: ${{ steps.target.outputs.key }}
+          key: ${{ env.SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
           script: |
             #!/bin/bash
