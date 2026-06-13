@@ -34,10 +34,11 @@ RUN test -n "${MODULE}" \
     && mvn -B -pl "${MODULE}" -am dependency:go-offline
 
 # 复制源码后执行目标模块打包。
-# 这里使用 maven.test.skip=true：当前仓库测试源码存在未修复的类型编译问题，
-# 生产镜像只需要主源码和资源文件，避免测试源码阻断部署打包。
+# 分两步：先构建 zxyz-common 的 test-jar（部分服务依赖其测试工具类），
+# 再用 -Dmaven.test.skip=true 打包目标模块（跳过测试编译和执行）。
 COPY ZXYZdatabaseBack/ ./
-RUN mvn -B -pl "${MODULE}" -am package -Dmaven.test.skip=true \
+RUN mvn -B -pl zxyz-common -am install -Dmaven.test.skip=false -DskipTests \
+    && mvn -B -pl "${MODULE}" -am package -Dmaven.test.skip=true \
     && find "${MODULE}/target" -maxdepth 1 -type f -name "${MODULE}-*.jar" ! -name "original-*.jar" -exec cp {} /tmp/app.jar \;
 
 FROM eclipse-temurin:17-jre
