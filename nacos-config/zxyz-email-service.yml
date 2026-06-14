@@ -1,0 +1,21 @@
+# email-service 专用配置
+server:
+  port: ${SERVER_PORT:18082}
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${EMAIL_DATASOURCE_URL}
+    username: ${EMAIL_DATASOURCE_USERNAME}
+    password: ${EMAIL_DATASOURCE_PASSWORD}
+
+email:
+  from: ${EMAIL_FROM:${email.username}}
+  async: ${EMAIL_ASYNC:true}
+  enabled: ${EMAIL_ENABLED:true}
+  batch-size: ${EMAIL_BATCH_SIZE:50}
+  retry-fixed-delay-ms: ${EMAIL_RETRY_FIXED_DELAY_MS:60000}
+  retry-initial-delay-ms: ${EMAIL_RETRY_INITIAL_DELAY_MS:10000}
+  verify-code-expire-minutes: ${EMAIL_VERIFY_CODE_EXPIRE_MINUTES:10}
+  ip-limit-per-minute: ${EMAIL_IP_LIMIT_PER_MINUTE:3}
+  email-limit-per-minute: ${EMAIL_ADDRESS_LIMIT_PER_MINUTE:1}

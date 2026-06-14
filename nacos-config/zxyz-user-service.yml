@@ -1,0 +1,14 @@
+# user-service 专用配置
+server:
+  port: ${SERVER_PORT:18083}
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${USER_DATASOURCE_URL}
+    username: ${USER_DATASOURCE_USERNAME}
+    password: ${USER_DATASOURCE_PASSWORD}
+
+app:
+  verification:
+    return-code-in-response: ${VERIFICATION_RETURN_CODE:true}

@@ -1,0 +1,20 @@
+# im-service 专用配置
+server:
+  port: ${SERVER_PORT:18081}
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${IM_DATASOURCE_URL}
+    username: ${IM_DATASOURCE_USERNAME}
+    password: ${IM_DATASOURCE_PASSWORD}
+
+im:
+  message:
+    recall-window-seconds: 120
+  invite-link:
+    default-expire-hours: 24
+    default-max-uses: 0
+  netty:
+    enabled: true
+    websocket-path: /ws

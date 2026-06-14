@@ -1,0 +1,81 @@
+# 数据库连接池
+spring:
+  datasource:
+    hikari:
+      maximum-pool-size: ${HIKARI_MAX_POOL_SIZE:20}
+      minimum-idle: ${HIKARI_MIN_IDLE:5}
+      idle-timeout: ${HIKARI_IDLE_TIMEOUT:300000}
+      max-lifetime: ${HIKARI_MAX_LIFETIME:600000}
+      connection-timeout: ${HIKARI_CONNECTION_TIMEOUT:30000}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
+      timeout: ${REDIS_TIMEOUT:3s}
+      lettuce:
+        pool:
+          max-active: ${REDIS_POOL_MAX_ACTIVE:8}
+          max-idle: ${REDIS_POOL_MAX_IDLE:8}
+          min-idle: ${REDIS_POOL_MIN_IDLE:2}
+
+# Sa-Token（所有服务共享，与 application-common.yml 保持一致）
+sa-token:
+  token-name: satoken
+  is-write-cookie: false
+  token-storage-mode: redis
+  timeout: 7200
+  active-timeout: 1800
+  is-concurrent: true
+  is-share: false
+  token-style: uuid
+  is-log: true
+  is-read-cookie: true
+  redis:
+    prefix: ${SA_TOKEN_REDIS_PREFIX:satoken:}
+
+# 服务间调用地址（保留环境变量覆盖能力，Docker 网络中使用默认值即可）
+services:
+  user-service:
+    base-url: ${USER_SERVICE_BASE_URL:http://zxyz-user-service}
+  team-service:
+    base-url: ${TEAM_SERVICE_BASE_URL:http://zxyz-team-service}
+  file-service:
+    base-url: ${FILE_SERVICE_BASE_URL:http://zxyz-file-service}
+  im-service:
+    base-url: ${IM_SERVICE_BASE_URL:http://zxyz-im-service}
+  email-service:
+    base-url: ${EMAIL_SERVICE_BASE_URL:http://zxyz-email-service}
+  project-service:
+    base-url: ${PROJECT_SERVICE_BASE_URL:http://zxyz-project-service}
+  share-service:
+    base-url: ${SHARE_SERVICE_BASE_URL:http://zxyz-share-service}
+  admin-service:
+    base-url: ${ADMIN_SERVICE_BASE_URL:http://zxyz-admin-service}
+  # 注意：share-service 有双 token 路径，详见第 1.3.1 节迁移策略
+
+# 服务间鉴权（注意：必须用扁平格式 app.internal-service-token，不能嵌套！）
+# 原因：Java 端 @ConfigurationProperties(prefix="app") 绑定扁平字段 internalServiceToken
+app:
+  internal-service-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token}
+
+# share-service 专用：TeamServiceProperties 绑定（@ConfigurationProperties(prefix="share.team-service")）
+# ShareUserQueryClient / ShareFileServiceClient 出站调用时使用此 token
+share:
+  team-service:
+    internal-service-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token}
+
+# Resilience4j
+resilience4j:
+  retry:
+    instances:
+      serviceClient:
+        max-attempts: 3
+        wait-duration: 500ms
+  circuitbreaker:
+    instances:
+      serviceClient:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s

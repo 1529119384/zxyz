@@ -1,0 +1,14 @@
+# share-service 专用配置
+server:
+  port: ${SERVER_PORT:18084}
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${SHARE_DATASOURCE_URL}
+    username: ${SHARE_DATASOURCE_USERNAME}
+    password: ${SHARE_DATASOURCE_PASSWORD}
+
+app:
+  share:
+    cookie-secret: ${SHARE_COOKIE_SECRET}

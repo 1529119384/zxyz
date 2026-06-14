@@ -1,0 +1,17 @@
+# 域名、访问、Cookie（配置键与现有 Java 代码一致，零代码改动）
+app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:4173}
+  # Cookie 配置（secure 默认 false，兼容本地 HTTP 开发；生产环境通过环境变量设为 true）
+  # 绑定路径：ServiceProperties.auth.*（AuthCookie 类：maxAge/secure/domain）
+  auth:
+    max-age: ${AUTH_COOKIE_MAX_AGE:2592000}
+    secure: ${AUTH_COOKIE_SECURE:false}
+    domain: ${AUTH_COOKIE_DOMAIN:}
+  # 验证码冷却（绑定路径：ServiceProperties.email.verifyCode.cooldownSeconds）
+  email:
+    verify-code:
+      cooldown-seconds: ${EMAIL_VERIFY_COOLDOWN:60}
+  # share-service 专用（绑定路径：ShareProperties.frontendBaseUrl，prefix="app.share"）
+  share:
+    frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:5173}

@@ -1,0 +1,7 @@
+# Gateway 专用配置
+# Gateway 的路由配置保留在本地 application.yml（路由规则不适合热更新，且与 Gateway 版本强耦合）
+# Gateway 的 CORS 配置通过共享 zxyz-dynamic.yml 统一管理
+# Gateway 仅导入 zxyz-dynamic.yml，不需要 zxyz-static.yml
+
+server:
+  port: ${SERVER_PORT:18000}

@@ -1,0 +1,10 @@
+# audit-service 专用配置
+server:
+  port: ${SERVER_PORT:18087}
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${AUDIT_DATASOURCE_URL}
+    username: ${AUDIT_DATASOURCE_USERNAME}
+    password: ${AUDIT_DATASOURCE_PASSWORD}

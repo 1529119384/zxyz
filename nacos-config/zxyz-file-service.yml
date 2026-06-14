@@ -1,0 +1,10 @@
+# file-service 专用配置
+server:
+  port: ${SERVER_PORT:18085}
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${FILE_DATASOURCE_URL}
+    username: ${FILE_DATASOURCE_USERNAME}
+    password: ${FILE_DATASOURCE_PASSWORD}

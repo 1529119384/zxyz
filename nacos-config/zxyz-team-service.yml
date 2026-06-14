@@ -1,0 +1,10 @@
+# team-service 专用配置
+server:
+  port: ${SERVER_PORT:18086}
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${TEAM_DATASOURCE_URL}
+    username: ${TEAM_DATASOURCE_USERNAME}
+    password: ${TEAM_DATASOURCE_PASSWORD}

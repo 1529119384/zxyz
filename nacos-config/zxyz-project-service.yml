@@ -1,0 +1,19 @@
+# project-service 专用配置
+server:
+  port: ${SERVER_PORT:18080}
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${PROJECT_DATASOURCE_URL}
+    username: ${PROJECT_DATASOURCE_USERNAME}
+    password: ${PROJECT_DATASOURCE_PASSWORD}
+
+app:
+  performance:
+    time-aspect-enabled: true
+  file-object-delete:
+    enabled: true
+    batch-size: 20
+    initial-delay-ms: 30000
+    retry-fixed-delay-ms: 60000
