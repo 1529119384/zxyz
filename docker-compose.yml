@@ -76,6 +76,7 @@ services:
       TZ: Asia/Shanghai
     ports:
       - "127.0.0.1:${NACOS_PORT:-8848}:8848"
+      - "127.0.0.1:${NACOS_CONSOLE_PORT:-8080}:8080"
     volumes:
       - ${DATA_DIR:-./data}/nacos:/home/nacos/data
     networks:
@@ -84,7 +85,7 @@ services:
       mysql:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8848/nacos/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/nacos/ || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10
