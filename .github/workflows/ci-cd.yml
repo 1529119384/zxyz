@@ -37,6 +37,7 @@ jobs:
       file-service: ${{ steps.filter.outputs.file-service }}
       team-service: ${{ steps.filter.outputs.team-service }}
       audit-service: ${{ steps.filter.outputs.audit-service }}
+      admin-service: ${{ steps.filter.outputs.admin-service }}
       gateway: ${{ steps.filter.outputs.gateway }}
       frontend: ${{ steps.filter.outputs.frontend }}
       docker-config: ${{ steps.filter.outputs.docker-config }}
@@ -69,6 +70,8 @@ jobs:
               - 'ZXYZdatabaseBack/zxyz-team-service/**'
             audit-service:
               - 'ZXYZdatabaseBack/zxyz-audit-service/**'
+            admin-service:
+              - 'ZXYZdatabaseBack/zxyz-admin-service/**'
             gateway:
               - 'ZXYZdatabaseBack/zxyz-gateway/**'
             frontend:
@@ -90,6 +93,7 @@ jobs:
              [ "${{ steps.filter.outputs.file-service }}" = "true" ] || \
              [ "${{ steps.filter.outputs.team-service }}" = "true" ] || \
              [ "${{ steps.filter.outputs.audit-service }}" = "true" ] || \
+             [ "${{ steps.filter.outputs.admin-service }}" = "true" ] || \
              [ "${{ steps.filter.outputs.gateway }}" = "true" ]; then
             echo "changed=true" >> $GITHUB_OUTPUT
           else
@@ -222,6 +226,12 @@ jobs:
             module: zxyz-audit-service
             change: ${{ needs.detect-changes.outputs.audit-service }}
             is_backend: true
+          - name: admin-service
+            context: .
+            dockerfile: ZXYZdatabaseBack/Dockerfile
+            module: zxyz-admin-service
+            change: ${{ needs.detect-changes.outputs.admin-service }}
+            is_backend: true
           - name: gateway
             context: .
             dockerfile: ZXYZdatabaseBack/Dockerfile
@@ -310,6 +320,7 @@ jobs:
           FILE_SVC: ${{ needs.detect-changes.outputs.file-service }}
           TEAM_SVC: ${{ needs.detect-changes.outputs.team-service }}
           AUDIT_SVC: ${{ needs.detect-changes.outputs.audit-service }}
+          ADMIN_SVC: ${{ needs.detect-changes.outputs.admin-service }}
           GATEWAY_SVC: ${{ needs.detect-changes.outputs.gateway }}
           FRONTEND_SVC: ${{ needs.detect-changes.outputs.frontend }}
           DOCKER_CFG: ${{ needs.detect-changes.outputs.docker-config }}
@@ -319,7 +330,7 @@ jobs:
           key: ${{ env.SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
           timeout: 600s
-          envs: BACKEND_COMMON,PROJECT_SVC,IM_SVC,EMAIL_SVC,USER_SVC,SHARE_SVC,FILE_SVC,TEAM_SVC,AUDIT_SVC,GATEWAY_SVC,FRONTEND_SVC,DOCKER_CFG
+          envs: BACKEND_COMMON,PROJECT_SVC,IM_SVC,EMAIL_SVC,USER_SVC,SHARE_SVC,FILE_SVC,TEAM_SVC,AUDIT_SVC,ADMIN_SVC,GATEWAY_SVC,FRONTEND_SVC,DOCKER_CFG
           script: |
             #!/bin/bash
             set +e
@@ -353,7 +364,7 @@ jobs:
             # --- 筛选需要更新的服务 ---
             UPDATE_SVC=()
             if [ "$BACKEND_COMMON" = "true" ]; then
-              UPDATE_SVC+=(project-service im-service email-service user-service share-service file-service team-service audit-service gateway)
+              UPDATE_SVC+=(project-service im-service email-service user-service share-service file-service team-service audit-service admin-service gateway)
             else
               [ "$PROJECT_SVC" = "true" ] && UPDATE_SVC+=(project-service)
               [ "$IM_SVC" = "true" ] && UPDATE_SVC+=(im-service)
@@ -363,10 +374,11 @@ jobs:
               [ "$FILE_SVC" = "true" ] && UPDATE_SVC+=(file-service)
               [ "$TEAM_SVC" = "true" ] && UPDATE_SVC+=(team-service)
               [ "$AUDIT_SVC" = "true" ] && UPDATE_SVC+=(audit-service)
+              [ "$ADMIN_SVC" = "true" ] && UPDATE_SVC+=(admin-service)
               [ "$GATEWAY_SVC" = "true" ] && UPDATE_SVC+=(gateway)
             fi
             [ "$FRONTEND_SVC" = "true" ] && UPDATE_SVC+=(frontend-nginx)
-            [ "$DOCKER_CFG" = "true" ] && UPDATE_SVC=(project-service im-service email-service user-service share-service file-service team-service audit-service gateway frontend-nginx)
+            [ "$DOCKER_CFG" = "true" ] && UPDATE_SVC=(project-service im-service email-service user-service share-service file-service team-service audit-service admin-service gateway frontend-nginx)
 
             if [ ${#UPDATE_SVC[@]} -eq 0 ]; then
               echo "No service changed, skip deploy"
@@ -390,7 +402,7 @@ jobs:
             # 普通服务：10 次 × 5s = 50s
             echo "===== Waiting for common services ====="
             for i in $(seq 1 10); do
-              if ! docker compose ps 2>/dev/null | grep -qE "(im-service|email-service|user-service|share-service|file-service|team-service|audit-service|frontend-nginx).*(unhealthy|starting)"; then
+              if ! docker compose ps 2>/dev/null | grep -qE "(im-service|email-service|user-service|share-service|file-service|team-service|audit-service|admin-service|frontend-nginx).*(unhealthy|starting)"; then
                 echo "Common services ready"
                 break
               fi

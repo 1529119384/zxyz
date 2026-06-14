@@ -67,6 +67,7 @@ services:
       MYSQL_SERVICE_DB_PARAM: "useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true"
       JVM_XMS: 512m
       JVM_XMX: 512m
+      JVM_XMN: 256m
       # Nacos 鉴权配置 — 生产环境必须通过环境变量注入，禁止使用默认密码
       NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN}
       NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY:-serverIdentity}
@@ -85,11 +86,12 @@ services:
       mysql:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/nacos/ || exit 1"]
+      # Nacos 3.x: console API returns 500; use /next/ (React UI) which returns 200
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/next/ || exit 1"]
       interval: 15s
       timeout: 5s
-      retries: 10
-      start_period: 60s
+      retries: 20
+      start_period: 120s
     logging:
       driver: json-file
       options:
