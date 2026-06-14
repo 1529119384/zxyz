@@ -182,7 +182,7 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      SERVER_PORT: ${SERVER_PORT:-18080}
+      SERVER_PORT: ${PROJECT_SERVICE_PORT:-18080}
       TZ: Asia/Shanghai
       PROJECT_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_project?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       PROJECT_DATASOURCE_USERNAME: root
@@ -204,14 +204,14 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-*}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:4173}
       NACOS_SERVER_ADDR: nacos:8848
       NACOS_USERNAME: nacos
       NACOS_PASSWORD: ${NACOS_PASSWORD:-CHANGE_ME_NACOS}
     networks:
       - zxyz-net
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:${SERVER_PORT:-18080}/actuator/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:${PROJECT_SERVICE_PORT:-18080}/actuator/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 8
@@ -248,7 +248,7 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      SERVER_PORT: ${SERVER_PORT:-18081}
+      SERVER_PORT: ${IM_SERVICE_PORT:-18081}
       TZ: Asia/Shanghai
       IM_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_im?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       IM_DATASOURCE_USERNAME: root
@@ -266,14 +266,14 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-*}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:4173}
       NACOS_SERVER_ADDR: nacos:8848
       NACOS_USERNAME: nacos
       NACOS_PASSWORD: ${NACOS_PASSWORD:-CHANGE_ME_NACOS}
     networks:
       - zxyz-net
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:${SERVER_PORT:-18081}/actuator/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:${IM_SERVICE_PORT:-18081}/actuator/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 8
@@ -310,7 +310,7 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      SERVER_PORT: ${SERVER_PORT:-18082}
+      SERVER_PORT: ${EMAIL_SERVICE_PORT:-18082}
       TZ: Asia/Shanghai
       EMAIL_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_email?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       EMAIL_DATASOURCE_USERNAME: root
@@ -338,7 +338,7 @@ services:
     networks:
       - zxyz-net
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:${SERVER_PORT:-18082}/actuator/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:${EMAIL_SERVICE_PORT:-18082}/actuator/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 8
@@ -375,7 +375,7 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      SERVER_PORT: ${SERVER_PORT:-18084}
+      SERVER_PORT: ${SHARE_SERVICE_PORT:-18084}
       TZ: Asia/Shanghai
       SHARE_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_share?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       SHARE_DATASOURCE_USERNAME: root
@@ -400,7 +400,7 @@ services:
     networks:
       - zxyz-net
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:${SERVER_PORT:-18084}/actuator/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:${SHARE_SERVICE_PORT:-18084}/actuator/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 8
@@ -437,7 +437,7 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      SERVER_PORT: ${SERVER_PORT:-18085}
+      SERVER_PORT: ${FILE_SERVICE_PORT:-18085}
       TZ: Asia/Shanghai
       FILE_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_file?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       FILE_DATASOURCE_USERNAME: root
@@ -460,14 +460,14 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-*}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:4173}
       NACOS_SERVER_ADDR: nacos:8848
       NACOS_USERNAME: nacos
       NACOS_PASSWORD: ${NACOS_PASSWORD:-CHANGE_ME_NACOS}
     networks:
       - zxyz-net
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:${SERVER_PORT:-18085}/actuator/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:${FILE_SERVICE_PORT:-18085}/actuator/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 8
@@ -504,7 +504,7 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      SERVER_PORT: ${SERVER_PORT:-18086}
+      SERVER_PORT: ${TEAM_SERVICE_PORT:-18086}
       TZ: Asia/Shanghai
       TEAM_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_team?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       TEAM_DATASOURCE_USERNAME: root
@@ -528,14 +528,14 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-*}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:4173}
       NACOS_SERVER_ADDR: nacos:8848
       NACOS_USERNAME: nacos
       NACOS_PASSWORD: ${NACOS_PASSWORD:-CHANGE_ME_NACOS}
     networks:
       - zxyz-net
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:${SERVER_PORT:-18086}/actuator/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:${TEAM_SERVICE_PORT:-18086}/actuator/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 8
@@ -585,7 +585,7 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-*}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:4173}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
       NACOS_SERVER_ADDR: nacos:8848
       NACOS_USERNAME: nacos
@@ -630,7 +630,7 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      SERVER_PORT: ${SERVER_PORT:-18083}
+      SERVER_PORT: ${USER_SERVICE_PORT:-18083}
       TZ: Asia/Shanghai
       USER_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_user?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       USER_DATASOURCE_USERNAME: root
@@ -654,14 +654,14 @@ services:
       RABBITMQ_USERNAME: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       VERIFICATION_RETURN_CODE: ${VERIFICATION_RETURN_CODE:-true}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-*}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:4173}
       NACOS_SERVER_ADDR: nacos:8848
       NACOS_USERNAME: nacos
       NACOS_PASSWORD: ${NACOS_PASSWORD:-CHANGE_ME_NACOS}
     networks:
       - zxyz-net
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:${SERVER_PORT:-18083}/actuator/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:${USER_SERVICE_PORT:-18083}/actuator/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 8
@@ -695,7 +695,7 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      SERVER_PORT: ${SERVER_PORT:-18000}
+      SERVER_PORT: ${GATEWAY_PORT:-18000}
       TZ: Asia/Shanghai
       REDIS_HOST: redis
       REDIS_PORT: 6379
@@ -707,10 +707,11 @@ services:
       IM_WEBSOCKET_URI: ${IM_WEBSOCKET_URI:-ws://im-service:${IM_NETTY_PORT:-19090}}
       MAX_REQUEST_SIZE: ${MAX_REQUEST_SIZE:-512MB}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:4173}
     networks:
       - zxyz-net
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:${SERVER_PORT:-18000}/actuator/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:${GATEWAY_PORT:-18000}/actuator/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 6
