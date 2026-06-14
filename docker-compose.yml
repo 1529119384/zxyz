@@ -706,6 +706,7 @@ services:
       NACOS_PASSWORD: ${NACOS_PASSWORD:-CHANGE_ME_NACOS}
       IM_WEBSOCKET_URI: ${IM_WEBSOCKET_URI:-ws://im-service:${IM_NETTY_PORT:-19090}}
       MAX_REQUEST_SIZE: ${MAX_REQUEST_SIZE:-512MB}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
     networks:
       - zxyz-net
     healthcheck:
