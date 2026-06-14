@@ -19,6 +19,7 @@ concurrency:
 
 env:
   DOCKERHUB_PREFIX: aclouda  # ← DockerHub 用户名
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   # ============================================================

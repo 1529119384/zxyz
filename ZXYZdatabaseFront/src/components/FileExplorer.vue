@@ -274,7 +274,7 @@ const {
   dragState,
   selectionBoxStyle,
   getRowFromTarget,
-  isBodyWrapperTarget,
+  isBodyWrapperTarget: _isBodyWrapperTarget,
   shouldSuppressRowClick,
 } = useDragSelection({
   dragContainerRef: filePageRef,

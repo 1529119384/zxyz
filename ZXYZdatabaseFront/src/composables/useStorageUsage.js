@@ -70,7 +70,7 @@ export function useStorageUsage({
         }),
       )
       storageUsage.value = response?.data || null
-    } catch (error) {
+    } catch {
       storageUsage.value = null
     }
   }

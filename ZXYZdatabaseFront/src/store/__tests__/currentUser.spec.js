@@ -11,7 +11,6 @@ vi.mock('@/utils/auth', () => ({
   clearToken: vi.fn(),
 }))
 
-
 import { useCurrentUserStore } from '@/store/currentUser'
 import { fetchCurrentUser, login as loginByPassword } from '@/api/auth'
 import { clearToken } from '@/utils/auth'
@@ -124,7 +123,7 @@ describe('useCurrentUserStore', () => {
 
     it('cleans up legacy currentUser key on store initialization', () => {
       localStorage.setItem('currentUser', 'legacy-data')
-      const store = useCurrentUserStore()
+      const _store = useCurrentUserStore()
 
       expect(localStorage.getItem('currentUser')).toBeNull()
     })
@@ -269,7 +268,7 @@ describe('useCurrentUserStore', () => {
       const store = useCurrentUserStore()
 
       const p1 = store.loadProfile()
-      const p2 = store.loadProfile()
+      const _p2 = store.loadProfile()
 
       await p1
 

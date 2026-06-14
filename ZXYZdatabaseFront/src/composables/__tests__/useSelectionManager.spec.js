@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { ref, nextTick } from 'vue'
+import { ref } from 'vue'
 
 vi.mock('@vueuse/core', () => ({
   useDebounceFn: (fn) => {
@@ -262,7 +262,7 @@ describe('useSelectionManager', () => {
 
   describe('pruneSelection', () => {
     it('removes IDs not present in the provided rows', async () => {
-      const { selectedIds, selectionAnchorId, setSelectedIds, pruneSelection } = createManager()
+      const { selectedIds, selectionAnchorId: _, setSelectedIds, pruneSelection } = createManager()
 
       setSelectedIds([1, 2, 3, 4, 5], 3)
 

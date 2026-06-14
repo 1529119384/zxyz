@@ -17,10 +17,10 @@ export function createMessageDomain(state, deps = {}) {
   const {
     messagesByConversation,
     activeConversationId,
-    chatViewActive,
-    windowFocused,
+    chatViewActive: _chatViewActive,
+    windowFocused: _windowFocused,
     searchResults,
-    lastWsError,
+    lastWsError: _lastWsError,
   } = state
   const { getConversations, isConversationEffectivelyVisible, scheduleReadSync } = deps
   const recentAccess = new Map()
