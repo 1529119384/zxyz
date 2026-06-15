@@ -10,6 +10,7 @@
 #   - zxyz-file-service
 #   - zxyz-team-service
 #   - zxyz-audit-service
+#   - zxyz-admin-service
 # -----------------------------------------------------------------------------
 
 FROM maven:3.9-eclipse-temurin-17 AS builder
@@ -28,6 +29,7 @@ COPY ZXYZdatabaseBack/zxyz-file-service/pom.xml ./zxyz-file-service/pom.xml
 COPY ZXYZdatabaseBack/zxyz-team-service/pom.xml ./zxyz-team-service/pom.xml
 COPY ZXYZdatabaseBack/zxyz-user-service/pom.xml ./zxyz-user-service/pom.xml
 COPY ZXYZdatabaseBack/zxyz-audit-service/pom.xml ./zxyz-audit-service/pom.xml
+COPY ZXYZdatabaseBack/zxyz-admin-service/pom.xml ./zxyz-admin-service/pom.xml
 
 ARG MODULE
 RUN test -n "${MODULE}" \
@@ -56,7 +58,7 @@ ENV SPRING_PROFILES_ACTIVE=prod \
 # 使用构建阶段挑选出的 Spring Boot 可执行 jar，避免误复制 original 包。
 COPY --from=builder /tmp/app.jar /app/app.jar
 
-EXPOSE 18000 18080 18081 18082 18083 18084 18085 18086 18087 19090
+EXPOSE 18000 18080 18081 18082 18083 18084 18085 18086 18087 18088 19090
 
 RUN groupadd -r appgroup && useradd -r -g appgroup appuser
 USER appuser
