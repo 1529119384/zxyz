@@ -4,6 +4,13 @@ server:
   trusted-proxies: 172.18.0.0/16
   shutdown: graceful
 
+# Jasypt 配置加密
+jasypt:
+  encryptor:
+    algorithm: AES/GCM/NoPadding
+    iv-generator-classname: org.jasypt.iv.RandomIvGenerator
+    password: ${JASYPT_PASSWORD}
+
 # Redis 配置（所有服务共享）
 spring:
   lifecycle:
@@ -21,12 +28,12 @@ spring:
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
       database: ${REDIS_DATABASE:0}
-      timeout: ${REDIS_TIMEOUT:30s}
+      timeout: ${REDIS_TIMEOUT:3s}
       lettuce:
         pool:
           max-active: ${REDIS_POOL_MAX_ACTIVE:8}
           max-idle: ${REDIS_POOL_MAX_IDLE:8}
-          min-idle: ${REDIS_POOL_MIN_IDLE:0}
+          min-idle: ${REDIS_POOL_MIN_IDLE:2}
   cloud:
     nacos:
       discovery:
@@ -68,6 +75,7 @@ logging:
 mybatis:
   configuration:
     map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
 
 # Actuator 健康检查与可观测性
 management:
@@ -82,8 +90,25 @@ management:
     tags:
       application: ${spring.application.name}
 
-# 服务间调用地址（所有服务共享，可通过环境变量覆盖）
-services:
+# CORS 公共默认值 & 服务间调用地址（所有服务共享，可通过环境变量覆盖）
+app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:4173}
+  # 服务间调用鉴权 token，本地开发使用默认值，生产环境必须通过环境变量注入
+  internal-service-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token}
+  auth:
+    max-age: ${AUTH_COOKIE_MAX_AGE:2592000}
+    secure: ${AUTH_COOKIE_SECURE:true}
+    domain: ${AUTH_COOKIE_DOMAIN:}
+  email:
+    verify-code:
+      cooldown-seconds: ${EMAIL_VERIFY_COOLDOWN:60}
+  oss:
+    region: ${OSS_REGION:cn-shenzhen}
+    bucket: ${OSS_BUCKET:zxyz-database}
+    endpoint: ${OSS_ENDPOINT:}
+    public-base-url: ${OSS_PUBLIC_BASE_URL:}
+    sign-expire-seconds: ${OSS_SIGN_EXPIRE:3600}
   user-service:
     base-url: ${USER_SERVICE_BASE_URL:http://zxyz-user-service}
   team-service:
@@ -98,27 +123,8 @@ services:
     base-url: ${PROJECT_SERVICE_BASE_URL:http://zxyz-project-service}
   share-service:
     base-url: ${SHARE_SERVICE_BASE_URL:http://zxyz-share-service}
-
-# CORS 公共默认值
-app:
-  cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:4173}
-  # 服务间调用鉴权 token，本地开发使用默认值，生产环境必须通过环境变量注入
-  internal-service-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token}
-  auth:
-    cookie:
-      max-age: ${AUTH_COOKIE_MAX_AGE:2592000}
-      secure: ${AUTH_COOKIE_SECURE:true}
-      domain: ${AUTH_COOKIE_DOMAIN:}
-  email:
-    verify-code:
-      cooldown-seconds: ${EMAIL_VERIFY_COOLDOWN:60}
-  oss:
-    region: ${OSS_REGION:cn-shenzhen}
-    bucket: ${OSS_BUCKET:zxyz-database}
-    endpoint: ${OSS_ENDPOINT:}
-    public-base-url: ${OSS_PUBLIC_BASE_URL:}
-    sign-expire-seconds: ${OSS_SIGN_EXPIRE:3600}
+  admin-service:
+    base-url: ${ADMIN_SERVICE_BASE_URL:http://zxyz-admin-service}
 
 # Resilience4j 服务间调用韧性配置
 resilience4j:

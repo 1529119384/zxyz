@@ -29,6 +29,7 @@
         <module>zxyz-team-service</module>
         <module>zxyz-user-service</module>
         <module>zxyz-audit-service</module>
+        <module>zxyz-admin-service</module>
     </modules>
 
     <properties>
@@ -53,6 +54,7 @@
         <spring-cloud.version>2025.0.0</spring-cloud.version>
         <spring-cloud-alibaba.version>2025.0.0.0</spring-cloud-alibaba.version>
         <resilience4j.version>2.2.0</resilience4j.version>
+        <jasypt.version>3.0.5</jasypt.version>
     </properties>
 
     <dependencyManagement>
@@ -197,6 +199,11 @@
                 <artifactId>junit-jupiter</artifactId>
                 <version>${testcontainers.version}</version>
                 <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.github.ulisesbocchio</groupId>
+                <artifactId>jasypt-spring-boot-starter</artifactId>
+                <version>${jasypt.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

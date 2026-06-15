@@ -1,6 +1,19 @@
 spring:
   config:
-    import: classpath:application-common.yml
+    import:
+      - classpath:application-common.yml
+      - nacos:zxyz-static.yml?group=ZXYZ&refreshEnabled=false
+      - nacos:zxyz-dynamic.yml?group=ZXYZ&refreshEnabled=true
+      - nacos:zxyz-file-service.yml?group=ZXYZ&refreshEnabled=false
+  cloud:
+    nacos:
+      config:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+        username: ${NACOS_USERNAME:nacos}
+        password: ${NACOS_PASSWORD:nacos}
+        namespace: ${NACOS_NAMESPACE:}
+        file-extension: yml
+        group: ZXYZ
   profiles:
     default: dev
   application:
@@ -21,10 +34,6 @@ spring:
 
 server:
   port: ${SERVER_PORT:18085}
-
-mybatis:
-  configuration:
-    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
 
 app:
   file-object-delete:

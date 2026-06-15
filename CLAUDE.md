@@ -6,16 +6,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Git
 
-根目录 `zxyz/` **不是** git 仓库。两个独立仓库：
+三个 git 仓库：
 
-| 目录 | 分支 |
-|---|---|
-| `ZXYZdatabaseBack/` | master |
-| `ZXYZdatabaseFront/` | main |
+| 目录 | 分支 | 说明 |
+|---|---|---|
+| `zxyz/`（根目录） | dev | CI/CD 配置、docker-compose、nginx、SQL、ISSUE |
+| `ZXYZdatabaseBack/` | dev | 后端 Java 代码 |
+| `ZXYZdatabaseFront/` | main | 前端 Vue 代码 |
 
-WHEN 执行 git 操作, DO cd 到对应子目录再执行。
-WHEN 修改前后端, DO 分别提交到各自仓库。
-WHEN 文件在根目录（`ISSUE/`、`sql/`、`docker-compose.yml`）, DO 不提交到任何仓库。
+WHEN 执行 git 操作, DO cd 到对应目录再执行。
+WHEN 修改前后端代码, DO 分别提交到各自子仓库。
+WHEN 修改根目录文件（`docker-compose.yml`、`deploy/`、`sql/`、`.github/`）, DO 在根目录提交。
 
 ## Build & Test Commands
 
@@ -63,26 +64,7 @@ npm run test:watch # Vitest watch mode
 | `zxyz-team-service` | 18086 | zxyz_team | Traditional layering |
 | `zxyz-audit-service` | 18087 | — | RabbitMQ consumer for operation logs |
 
-**Two patterns coexist**:
-- **Traditional layering** (most services): `controller/` → `service/` + `impl/` → `mapper/` → `entity/`, with `dto/`, `vo/`, `config/`, `satoken/`, `infrastructure/`
-- **DDD** (email-service, im-service): `interfaces/` → `application/` → `domain/` + `infrastructure/` + `config/`
-
-### Inter-service Communication
-
-- **Synchronous**: `*ServiceClient` classes extending `AbstractServiceClient` (in zxyz-common), authenticated with `X-Internal-Service-Token` header, Resilience4j retry (3×500ms) + circuit breaker (50%)
-- **Asynchronous**: RabbitMQ Topic Exchange `zxyz.topic` via `*EventPublisher` classes
-
-### Frontend: Vue 3 SPA
-
-- Vue 3 (Composition API + `<script setup>`), Vite 7, Element Plus 2.11 (auto-import), Pinia 3, Axios
-- Three HTTP clients: `request.js` (auth), `imRequest.js` (IM), `publicRequest.js` (public)
-- API modules strictly domain-separated in `api/` — cross-domain imports forbidden
-- ~40 composables in `composables/` drive file explorer behavior
-- IM WebSocket via `imWebSocket.js`, state synced via Pinia `im/` stores
-
-## Local Development
-
-`start/` directory has Windows `.bat` scripts to start middleware (MySQL, Redis, Nacos, RabbitMQ) locally.
+详细架构说明：[后端](docs/claude-backend.md) · [前端](docs/claude-frontend.md) · [基础设施](docs/claude-infra.md)
 
 ## Backend Conventions
 
@@ -111,20 +93,39 @@ WHEN 提交代码, DO 使用 conventional commits 格式（Husky + commitlint �
 WHEN 处理错误, DO 使用 `BusinessException` → `ErrorCode` → `Result` 模式。
 WHEN 添加 API 接口, DO 参考 `src/api/README.md` 中的模块规范。
 
-## Infrastructure
+## Infrastructure & CI/CD
 
-- **MySQL 8.4**: 8 independent databases, schemas in `sql/` directory, Flyway migrations per service at `src/main/resources/db/migration/`. DB init script: `sql/00-init-zxyz.sh`
+- **MySQL 8.4**: 9 independent databases, Flyway migrations per service. DB init: `sql/00-init-zxyz.sh`
 - **Redis**: localhost:6379, Sa-Token sessions (shared) + Redisson distributed locks
-- **Nacos**: localhost:8848, service registry
+- **Nacos**: localhost:8848, service registry（仅 discovery，未启用 Nacos Config）。配置管理改造计划见 `ISSUE/10-CONFIG-MANAGEMENT-REFORM.md`
 - **RabbitMQ**: localhost:5672, Topic Exchange `zxyz.topic`
 - **Auth**: Sa-Token 1.43.0 (UUID token, Redis session store, HttpOnly cookie)
 - **API Docs**: Knife4j 4.5.0 + springdoc 2.8.9 (available at each service's doc endpoint)
-- **Docker**: `docker-compose.yml` orchestrates all services; unified `Dockerfile` with `MODULE` build arg
+- **Docker**: `docker-compose.yml` orchestrates 15 services; unified `Dockerfile` with `MODULE` build arg
+- **Nginx CSP**: `deploy/nginx/default.conf` 用 `envsubst` 模板化，`OSS_PUBLIC_BASE_URL` 在启动时注入，不要硬编码 OSS 域名
+- **内部鉴权**: 所有服务（含 gateway）必须在 docker-compose environment 中传入 `INTERNAL_SERVICE_TOKEN`，gateway 的 `AddRequestHeader` filter 依赖此变量注入 `X-Internal-Service-Token` header
 
 Gateway routing table and inter-service call map: `docs/infrastructure.md`
 Build/run commands: `docs/commands.md`
 Tech stack details: `docs/architecture.md`
 Deployment guide: `DEPLOYMENT.md`
+Design proposals: `ISSUE/` 目录（#09 CI/CD、#10 配置管理、#11 多存储、#12 性能优化）
+
+## CI/CD
+
+`.github/workflows/ci-cd.yml` — 基于路径变更的选择性构建部署：
+
+- **触发**: push 到 `dev`/`main`、`v*` tag、PR、手动 dispatch
+- **变更检测**: `dorny/paths-filter` 按服务目录判断哪些镜像需要重建
+- **backend-common 变更**: 所有后端服务都重建（共享依赖）
+- **docker-compose.yml 变更**: 不触发镜像重建（运行时配置，非构建依赖）
+- **构建**: Docker Buildx + GHA 缓存，镜像推送到 DockerHub（`aclouda/zxyz-*`）
+- **部署**: SSH 到服务器，只拉取+重启变更的服务，分层健康检查（普通服务 50s，gateway 250s）
+- **镜像标签**: dev 分支 → `dev`，main 分支 → `latest`，tag → 版本号
+
+本地修改 `.env` 中的 `APP_IMAGE_TAG` 和 `DOCKERHUB_PREFIX` 即可控制部署目标。
+
+**服务器 `.env`** 在 `/www/zxyz/.env`，独立于仓库维护，包含 OSS 密钥等敏感配置。CI/CD 不同步此文件。
 
 ## Work Principles
 

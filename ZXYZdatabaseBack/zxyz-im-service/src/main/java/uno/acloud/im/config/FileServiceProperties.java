@@ -4,7 +4,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import org.springframework.util.StringUtils;
 
-@ConfigurationProperties(prefix = "im.file-service")
+@ConfigurationProperties(prefix = "app.file-service")
 public class FileServiceProperties {
 
     private String baseUrl;
@@ -19,7 +19,7 @@ public class FileServiceProperties {
 
     public String normalizedBaseUrl() {
         if (!StringUtils.hasText(baseUrl)) {
-            throw new IllegalStateException("im.file-service.base-url 未配置");
+            throw new IllegalStateException("app.file-service.base-url 未配置");
         }
         return StringUtils.trimTrailingCharacter(baseUrl.trim(), '/');
     }

@@ -1,28 +1,13 @@
+# Redis 配置已由 application-common.yml 统一管理
 spring:
   datasource:
     url: ${FILE_DATASOURCE_URL}
     username: ${FILE_DATASOURCE_USERNAME}
     password: ${FILE_DATASOURCE_PASSWORD}
-  data:
-    redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
-      timeout: 3000
-      lettuce:
-        pool:
-          max-active: 8
-          max-idle: 8
-          min-idle: 2
-
-mybatis:
-  configuration:
-    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
 
 app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
-  internal-service-token: ${INTERNAL_SERVICE_TOKEN}
   team-service:
     base-url: ${services.team-service.base-url}
   project-service:

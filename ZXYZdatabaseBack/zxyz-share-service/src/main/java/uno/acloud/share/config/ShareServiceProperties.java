@@ -3,7 +3,7 @@ package uno.acloud.share.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.util.StringUtils;
 
-@ConfigurationProperties(prefix = "share")
+@ConfigurationProperties(prefix = "app.share")
 public class ShareServiceProperties {
 
     private final UserService userService = new UserService();
@@ -18,7 +18,7 @@ public class ShareServiceProperties {
         public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
         public String normalizedBaseUrl() {
             if (!StringUtils.hasText(baseUrl)) {
-                throw new IllegalStateException("share.user-service.base-url 未配置");
+                throw new IllegalStateException("app.share.user-service.base-url 未配置");
             }
             return StringUtils.trimTrailingCharacter(baseUrl.trim(), '/');
         }
@@ -30,7 +30,7 @@ public class ShareServiceProperties {
         public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
         public String normalizedBaseUrl() {
             if (!StringUtils.hasText(baseUrl)) {
-                throw new IllegalStateException("share.file-service.base-url 未配置");
+                throw new IllegalStateException("app.share.file-service.base-url 未配置");
             }
             return StringUtils.trimTrailingCharacter(baseUrl.trim(), '/');
         }

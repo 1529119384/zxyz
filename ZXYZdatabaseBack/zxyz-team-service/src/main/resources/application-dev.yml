@@ -8,12 +8,7 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
 
-mybatis:
-  configuration:
-    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
-
 app:
-  internal-service-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token}
   user-service:
     base-url: ${services.user-service.base-url}
   im-service:

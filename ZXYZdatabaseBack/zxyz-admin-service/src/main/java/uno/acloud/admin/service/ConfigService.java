@@ -11,6 +11,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import uno.acloud.admin.domain.SysConfig;
 import uno.acloud.admin.mapper.SysConfigAuditMapper;
 import uno.acloud.admin.mapper.SysConfigMapper;
+import uno.acloud.common.util.JasyptEncryptor;
 
 import java.util.concurrent.TimeUnit;
 
@@ -28,6 +29,7 @@ public class ConfigService {
     private final SysConfigMapper configMapper;
     private final SysConfigAuditMapper auditMapper;
     private final StringRedisTemplate stringRedisTemplate;
+    private final JasyptEncryptor jasyptEncryptor;
 
     private final Cache<String, String> cache = Caffeine.newBuilder()
             .expireAfterWrite(5, TimeUnit.MINUTES)
@@ -36,10 +38,12 @@ public class ConfigService {
 
     public ConfigService(SysConfigMapper configMapper,
                          SysConfigAuditMapper auditMapper,
-                         StringRedisTemplate stringRedisTemplate) {
+                         StringRedisTemplate stringRedisTemplate,
+                         JasyptEncryptor jasyptEncryptor) {
         this.configMapper = configMapper;
         this.auditMapper = auditMapper;
         this.stringRedisTemplate = stringRedisTemplate;
+        this.jasyptEncryptor = jasyptEncryptor;
     }
 
     /**
@@ -56,7 +60,7 @@ public class ConfigService {
             if (config == null) {
                 return NULL_SENTINEL;
             }
-            return config.getConfigValue();
+            return jasyptEncryptor.decrypt(config.getConfigValue());
         });
         return NULL_SENTINEL.equals(value) ? null : value;
     }

@@ -2,7 +2,9 @@ spring:
   main:
     web-application-type: reactive
   config:
-    import: classpath:application-common.yml
+    import:
+      - classpath:application-common.yml
+      - nacos:zxyz-dynamic.yml?group=ZXYZ&refreshEnabled=true
   application:
     name: zxyz-gateway
   data:
@@ -16,6 +18,14 @@ spring:
     codecs:
       max-in-memory-size: ${MAX_REQUEST_SIZE:100MB}
   cloud:
+    nacos:
+      config:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+        username: ${NACOS_USERNAME:nacos}
+        password: ${NACOS_PASSWORD:nacos}
+        namespace: ${NACOS_NAMESPACE:}
+        file-extension: yml
+        group: ZXYZ
     gateway:
       default-filters:
         - name: RequestRateLimiter
@@ -109,6 +119,14 @@ spring:
               predicates:
                 - Path=/api/admin/database/**
 
+            # 管理后台通用路由：/api/admin/** → admin-service（剥离 /api/admin 前缀）
+            - id: admin-service
+              uri: lb://zxyz-admin-service
+              predicates:
+                - Path=/api/admin/**
+              filters:
+                - RewritePath=/api/admin/(?<segment>.*), /${segment}
+
             # 项目服务路由：项目、成员、目录、配额、申请、存储用量 → project-service
             - id: project-service
               uri: lb://zxyz-project-service
@@ -123,4 +141,4 @@ sa-token:
   is-log: false
 
 app:
-  internal-service-token: ${INTERNAL_SERVICE_TOKEN}
+  internal-service-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token}

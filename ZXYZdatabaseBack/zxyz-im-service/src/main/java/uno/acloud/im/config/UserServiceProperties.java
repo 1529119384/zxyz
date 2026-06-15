@@ -4,7 +4,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import org.springframework.util.StringUtils;
 
-@ConfigurationProperties(prefix = "im.user-service")
+@ConfigurationProperties(prefix = "app.user-service")
 public class UserServiceProperties {
 
     private String baseUrl;
@@ -19,7 +19,7 @@ public class UserServiceProperties {
 
     public String normalizedBaseUrl() {
         if (!StringUtils.hasText(baseUrl)) {
-            throw new IllegalStateException("im.user-service.base-url 未配置");
+            throw new IllegalStateException("app.user-service.base-url 未配置");
         }
         return StringUtils.trimTrailingCharacter(baseUrl.trim(), '/');
     }

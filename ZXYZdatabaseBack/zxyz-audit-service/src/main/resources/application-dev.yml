@@ -8,12 +8,7 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
 
-mybatis:
-  configuration:
-    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
-
 app:
-  internal-service-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token}
   # RemoteStpInterfaceAutoConfig 需要此属性进行服务间权限校验
   team-service:
     base-url: ${services.team-service.base-url}

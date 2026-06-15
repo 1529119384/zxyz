@@ -21,6 +21,10 @@ public class FileObjectRef implements Serializable {
 
     @TableId(value = "object_key", type = IdType.INPUT)
     private String objectKey;
+
+    /** 存储提供者标识 */
+    private String storageProvider;
+
     private Integer refCount;
     private String deleteStatus;
     private Integer deleteRetryCount;

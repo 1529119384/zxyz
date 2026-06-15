@@ -15,19 +15,16 @@ spring:
         pool:
           max-active: ${REDIS_POOL_MAX_ACTIVE:8}
           max-idle: ${REDIS_POOL_MAX_IDLE:8}
-          min-idle: ${REDIS_POOL_MIN_IDLE:0}
-
-share:
-  file-service:
-    base-url: ${services.file-service.base-url}
-  user-service:
-    base-url: ${services.user-service.base-url}
-  team-service:
-    base-url: ${services.team-service.base-url}
-    internal-service-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token}
+          min-idle: ${REDIS_POOL_MIN_IDLE:2}
 
 app:
   share:
     cookie-secret: ${SHARE_COOKIE_SECRET:share-secret}
     frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:5173}
-  internal-service-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token}
+    file-service:
+      base-url: ${services.file-service.base-url}
+    user-service:
+      base-url: ${services.user-service.base-url}
+    team-service:
+      base-url: ${services.team-service.base-url}
+      internal-service-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token}

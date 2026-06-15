@@ -3,7 +3,7 @@ package uno.acloud.share.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.util.StringUtils;
 
-@ConfigurationProperties(prefix = "share.team-service")
+@ConfigurationProperties(prefix = "app.team-service")
 public class TeamServiceProperties {
 
     private String baseUrl;
@@ -27,7 +27,7 @@ public class TeamServiceProperties {
 
     public String normalizedBaseUrl() {
         if (!StringUtils.hasText(baseUrl)) {
-            throw new IllegalStateException("share.team-service.base-url 未配置");
+            throw new IllegalStateException("app.team-service.base-url 未配置");
         }
         return StringUtils.trimTrailingCharacter(baseUrl.trim(), '/');
     }

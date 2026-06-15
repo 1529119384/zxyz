@@ -18,9 +18,10 @@ public class StorageProviderClient {
     private final String internalServiceToken;
 
     public StorageProviderClient(RestClient.Builder restClientBuilder,
+                                 @Value("${app.file-service.base-url}") String fileServiceBaseUrl,
                                  @Value("${app.internal-service-token:}") String internalServiceToken) {
         this.restClient = restClientBuilder
-                .baseUrl("http://zxyz-file-service:18085")
+                .baseUrl(fileServiceBaseUrl)
                 .build();
         this.internalServiceToken = internalServiceToken;
     }

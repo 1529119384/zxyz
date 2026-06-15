@@ -18,9 +18,10 @@ public class EmailProviderClient {
     private final String internalServiceToken;
 
     public EmailProviderClient(RestClient.Builder restClientBuilder,
+                               @Value("${app.email-service.base-url}") String emailServiceBaseUrl,
                                @Value("${app.internal-service-token:}") String internalServiceToken) {
         this.restClient = restClientBuilder
-                .baseUrl("http://zxyz-email-service:18082")
+                .baseUrl(emailServiceBaseUrl)
                 .build();
         this.internalServiceToken = internalServiceToken;
     }

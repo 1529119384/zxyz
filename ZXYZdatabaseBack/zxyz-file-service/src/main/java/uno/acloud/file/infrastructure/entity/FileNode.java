@@ -31,6 +31,9 @@ public abstract class FileNode implements Serializable {
     /** 原始名称 */
     private String originalName;
 
+    /** 存储提供者标识 */
+    private String storageProvider;
+
     /** 存储路径 */
     private String storePath;
 

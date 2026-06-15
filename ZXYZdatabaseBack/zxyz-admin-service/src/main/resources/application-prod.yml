@@ -2,9 +2,9 @@
 config:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: ${ADMIN_DATASOURCE_URL}
-    username: ${ADMIN_DATASOURCE_USERNAME}
-    password: ${ADMIN_DATASOURCE_PASSWORD}
+    url: jdbc:mysql://${CONFIG_DB_HOST}:${CONFIG_DB_PORT:3306}/zxyz_config?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: ${CONFIG_DB_USERNAME}
+    password: ${CONFIG_DB_PASSWORD}
     hikari:
       maximum-pool-size: 5
       minimum-idle: 2
