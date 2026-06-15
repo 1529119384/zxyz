@@ -8,3 +8,5 @@ export const createConfig = (payload) => request.post('/api/admin/configs', payl
 
 export const updateConfig = (key, value) =>
   request.put(`/api/admin/configs/${key}`, { configValue: value })
+
+export const fetchAuditLogs = () => request.get('/api/admin/configs/audit')
