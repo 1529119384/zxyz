@@ -1,6 +1,5 @@
 package uno.acloud.admin.controller;
 
-import cn.dev33.satoken.annotation.SaCheckRole;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -14,7 +13,6 @@ import uno.acloud.admin.domain.SysConfig;
 import uno.acloud.admin.domain.SysConfigAudit;
 import uno.acloud.admin.service.ConfigService;
 import uno.acloud.common.Result;
-import uno.acloud.common.SystemRoleCodes;
 import uno.acloud.common.web.CurrentUser;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import uno.acloud.admin.mapper.SysConfigAuditMapper;
@@ -28,7 +26,6 @@ import java.util.List;
 @Tag(name = "配置管理", description = "系统配置管理接口")
 @RestController
 @RequestMapping("/api/admin/configs")
-@SaCheckRole(SystemRoleCodes.SYSTEM_ADMIN)
 public class ConfigAdminController {
 
     private final ConfigService configService;
