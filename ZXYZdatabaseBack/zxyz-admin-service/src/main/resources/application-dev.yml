@@ -2,7 +2,7 @@
 config:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: ${ADMIN_DATASOURCE_URL:jdbc:mysql://localhost:3306/zxyz_config}
+    jdbc-url: ${ADMIN_DATASOURCE_URL:jdbc:mysql://localhost:3306/zxyz_config}
     username: ${ADMIN_DATASOURCE_USERNAME:root}
     password: ${ADMIN_DATASOURCE_PASSWORD:123456}
     hikari:
