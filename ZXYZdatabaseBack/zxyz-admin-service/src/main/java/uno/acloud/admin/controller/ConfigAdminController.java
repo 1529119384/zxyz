@@ -25,7 +25,7 @@ import java.util.List;
  */
 @Tag(name = "配置管理", description = "系统配置管理接口")
 @RestController
-@RequestMapping("/api/admin/configs")
+@RequestMapping("/configs")
 public class ConfigAdminController {
 
     private final ConfigService configService;
