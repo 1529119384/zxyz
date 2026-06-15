@@ -1,0 +1,10 @@
+# 生产环境配置，通过环境变量注入敏感信息。
+config:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${ADMIN_DATASOURCE_URL}
+    username: ${ADMIN_DATASOURCE_USERNAME}
+    password: ${ADMIN_DATASOURCE_PASSWORD}
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 2
