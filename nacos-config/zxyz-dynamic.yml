@@ -1,3 +1,14 @@
+# =============================================================================
+# 共享动态配置（所有服务共用，可热更新）
+# =============================================================================
+# 敏感值使用 ENC() 格式存储，jasypt-spring-boot-starter 启动时自动解密。
+# 加密命令: java -cp jasypt-1.9.3.jar org.jasypt.intf.cli.JasyptPBEStringEncryptionCLI \
+#   algorithm=AES/GCM/NoPadding password=$JASYPT_PASSWORD input="your-secret"
+# 输出格式: ENC(encrypted_value)
+#
+# 示例:
+#   app.internal-service-token: ENC(encrypted_token)
+
 # 域名、访问、Cookie（配置键与现有 Java 代码一致，零代码改动）
 app:
   cors:

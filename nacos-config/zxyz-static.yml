@@ -1,3 +1,15 @@
+# =============================================================================
+# 共享静态配置（所有服务共用）
+# =============================================================================
+# 敏感值使用 ENC() 格式存储，jasypt-spring-boot-starter 启动时自动解密。
+# 加密命令: java -cp jasypt-1.9.3.jar org.jasypt.intf.cli.JasyptPBEStringEncryptionCLI \
+#   algorithm=AES/GCM/NoPadding password=$JASYPT_PASSWORD input="your-secret"
+# 输出格式: ENC(encrypted_value)
+#
+# 示例:
+#   spring.data.redis.password: ENC(encrypted_redis_password)
+#   app.internal-service-token: ENC(encrypted_token)
+
 # 数据库连接池
 spring:
   datasource:
@@ -57,11 +69,13 @@ services:
 
 # 服务间鉴权（注意：必须用扁平格式 app.internal-service-token，不能嵌套！）
 # 原因：Java 端 @ConfigurationProperties(prefix="app") 绑定扁平字段 internalServiceToken
+# 生产环境替换为: app.internal-service-token: ENC(encrypted_value)
 app:
   internal-service-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token}
 
 # share-service 专用：TeamServiceProperties 绑定（@ConfigurationProperties(prefix="share.team-service")）
 # ShareUserQueryClient / ShareFileServiceClient 出站调用时使用此 token
+# 生产环境替换为: share.team-service.internal-service-token: ENC(encrypted_value)
 share:
   team-service:
     internal-service-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token}

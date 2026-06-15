@@ -1,4 +1,10 @@
+# =============================================================================
 # Gateway 专用配置
+# =============================================================================
+# 敏感值使用 ENC() 格式存储，jasypt-spring-boot-starter 启动时自动解密。
+# 加密命令: java -cp jasypt-1.9.3.jar org.jasypt.intf.cli.JasyptPBEStringEncryptionCLI \
+#   algorithm=AES/GCM/NoPadding password=$JASYPT_PASSWORD input="your-secret"
+# 输出格式: ENC(encrypted_value)
 # Gateway 的路由配置保留在本地 application.yml（路由规则不适合热更新，且与 Gateway 版本强耦合）
 # Gateway 的 CORS 配置通过共享 zxyz-dynamic.yml 统一管理
 # Gateway 仅导入 zxyz-dynamic.yml，不需要 zxyz-static.yml
