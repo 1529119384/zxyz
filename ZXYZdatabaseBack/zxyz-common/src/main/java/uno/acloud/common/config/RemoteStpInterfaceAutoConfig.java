@@ -6,6 +6,7 @@ import cn.dev33.satoken.stp.StpInterface;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.client.RestClient;
@@ -21,6 +22,7 @@ import org.springframework.web.client.RestClient;
  * 使此自动配置类无需知道具体服务的属性来源。</p>
  */
 @Configuration
+@ConditionalOnProperty(name = "app.team-service.base-url")
 public class RemoteStpInterfaceAutoConfig {
 
     @Bean
