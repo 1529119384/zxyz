@@ -49,11 +49,11 @@ npm run test:watch # Vitest watch mode
 
 **Frontend**: Vue 3.5 (Composition API + `<script setup>`), Vite 7.3, Element Plus 2.11 (auto-import), Pinia 3.0, Axios 1.13, Vitest 4.1.
 
-### Backend: 10 Maven Modules
+### Backend: 11 Maven Modules
 
 | Module | Port | Database | Architecture |
 |---|---|---|---|
-| `zxyz-common` | — | — | Shared: error codes, Result, permissions, OSS client, service clients, audit, MQ constants |
+| `zxyz-common` | — | — | Shared: error codes, Result, permissions, OSS client, service clients, ConfigServiceClient, audit, MQ constants |
 | `zxyz-gateway` | 18000 | — | Spring Cloud Gateway (WebFlux), Sa-Token auth, Redis rate limiting |
 | `zxyz-project-service` | 18080 | zxyz_project | Traditional layering |
 | `zxyz-im-service` | 18081/19090 | zxyz_im | **DDD** (interfaces → application → domain) + Netty WebSocket |
@@ -63,6 +63,7 @@ npm run test:watch # Vitest watch mode
 | `zxyz-file-service` | 18085 | zxyz_file | Traditional layering |
 | `zxyz-team-service` | 18086 | zxyz_team | Traditional layering |
 | `zxyz-audit-service` | 18087 | — | RabbitMQ consumer for operation logs |
+| `zxyz-admin-service` | 18088 | zxyz_config | Config management: ConfigService + Jasypt + Caffeine cache + Redis Pub/Sub |
 
 详细架构说明：[后端](docs/claude-backend.md) · [前端](docs/claude-frontend.md) · [基础设施](docs/claude-infra.md)
 
@@ -80,7 +81,23 @@ WHEN 修改 Gateway 路由, DO 同步更新 `docs/infrastructure.md` 中的路�
 
 **Config binding pitfall**: All services use flat `app.internal-service-token` in YAML with `@Value` or `@ConfigurationProperties(prefix="app")`. Do NOT nest it under `app.internal.service-token` — Spring Boot cannot bind nested YAML to flat fields. If you see empty token values at runtime, check the YAML structure.
 
+**Service URL config**: All service base URLs use `app.*-service.base-url` in `application-common.yml` (e.g., `app.user-service.base-url`). Individual service `application.yml` files map these directly to env vars (e.g., `${TEAM_SERVICE_BASE_URL:http://zxyz-team-service}`), NOT via `${services.*}` indirection — that causes `@ConditionalOnProperty` to fail before Nacos loads.
+
 **MyBatis + MapStruct conflict**: MyBatis `@MapperScan` can hijack MapStruct `@Mapper` interfaces in the same package. Keep MapStruct mappers in a separate package (e.g., `uno.acloud.{service}.convert`).
+
+**Auto-configuration conditions**: `RemoteStpInterfaceAutoConfig` requires `@ConditionalOnBean(RestClient.class)` — Gateway (WebFlux) has no `RestClient`, so it's skipped. `ConfigClientAutoConfiguration` requires `@ConditionalOnBean(RestClient.Builder.class)` — same reason, skipped in Gateway. admin-service also skips `RemoteStpInterfaceAutoConfig` since it has no `RestClient`.
+
+**Config encryption**: Sensitive values in Nacos use `ENC(ciphertext)` format. Jasypt 3.0.5 + AES/GCM/NoPadding, key via `JASYPT_PASSWORD` env var. See `docs/jasypt-key-management.md`.
+
+**admin-service data source**: Uses `config.datasource.*` prefix (not `spring.datasource.*`) with `@Primary` DataSource. HikariCP requires `jdbc-url` (not `url`) in YAML when using `@ConfigurationProperties`.
+
+**Config management API**: admin-service exposes `GET/PUT /configs` (no `/api/admin` prefix — Gateway's `RewritePath` strips it). Frontend page at `/setting/config-admin` (no auth guard for testing). Redis Pub/Sub on `zxyz:config:changed` channel notifies config changes.
+
+**Gateway route rewrite**: Routes with `RewritePath=/api/admin/(?<segment>.*)` → `/${segment}` strip the `/api/admin` prefix. Backend controllers must map to the rewritten path (e.g., `@RequestMapping("/configs")`, NOT `@RequestMapping("/api/admin/configs")`).
+
+**Nginx DNS cache**: After restarting backend containers, their Docker network IPs change. Nginx caches DNS resolution at startup — restart it after service changes: `docker compose restart frontend-nginx`.
+
+**RabbitMQ health check**: RabbitMQ often times out its Docker health check under load but still functions normally. Services that depend on it may show "unhealthy" status while actually running fine. Use `docker exec zxyz-rabbitmq rabbitmq-diagnostics -q ping` to verify.
 
 ## Frontend Conventions
 
@@ -92,16 +109,18 @@ WHEN 处理文件操作, DO 使用 `composables/` 中的组合函数，不直接
 WHEN 提交代码, DO 使用 conventional commits 格式（Husky + commitlint 强制）。
 WHEN 处理错误, DO 使用 `BusinessException` → `ErrorCode` → `Result` 模式。
 WHEN 添加 API 接口, DO 参考 `src/api/README.md` 中的模块规范。
+WHEN 添加 admin 页面, DO 放在 `src/views/setting/` 下，路由在 `src/router/index.js` 中配置。测试页面可不加 `beforeEnter` 权限守卫。
+WHEN 添加 setting 子路由, DO 确保 `route.name` 在 Setting 组件 watcher 的 `{ immediate: true }` 执行前已就绪，否则会被重定向到第一个可见 tab。
 
 ## Infrastructure & CI/CD
 
-- **MySQL 8.4**: 9 independent databases, Flyway migrations per service. DB init: `sql/00-init-zxyz.sh`
+- **MySQL 8.4**: 10 independent databases (including zxyz_config), Flyway migrations per service. DB init: `sql/00-init-zxyz.sh`
 - **Redis**: localhost:6379, Sa-Token sessions (shared) + Redisson distributed locks
-- **Nacos**: localhost:8848, service registry（仅 discovery，未启用 Nacos Config）。配置管理改造计划见 `ISSUE/10-CONFIG-MANAGEMENT-REFORM.md`
+- **Nacos**: localhost:8848, service registry + Config（`spring.config.import:nacos:` 协议，10 个服务已接入）。配置模板在 `nacos-config/` 目录
 - **RabbitMQ**: localhost:5672, Topic Exchange `zxyz.topic`
 - **Auth**: Sa-Token 1.43.0 (UUID token, Redis session store, HttpOnly cookie)
 - **API Docs**: Knife4j 4.5.0 + springdoc 2.8.9 (available at each service's doc endpoint)
-- **Docker**: `docker-compose.yml` orchestrates 15 services; unified `Dockerfile` with `MODULE` build arg
+- **Docker**: `docker-compose.yml` orchestrates 16 services; unified `Dockerfile` with `MODULE` build arg
 - **Nginx CSP**: `deploy/nginx/default.conf` 用 `envsubst` 模板化，`OSS_PUBLIC_BASE_URL` 在启动时注入，不要硬编码 OSS 域名
 - **内部鉴权**: 所有服务（含 gateway）必须在 docker-compose environment 中传入 `INTERNAL_SERVICE_TOKEN`，gateway 的 `AddRequestHeader` filter 依赖此变量注入 `X-Internal-Service-Token` header
 
@@ -122,6 +141,7 @@ Design proposals: `ISSUE/` 目录（#09 CI/CD、#10 配置管理、#11 多存储
 - **构建**: Docker Buildx + GHA 缓存，镜像推送到 DockerHub（`aclouda/zxyz-*`）
 - **部署**: SSH 到服务器，只拉取+重启变更的服务，分层健康检查（普通服务 50s，gateway 250s）
 - **镜像标签**: dev 分支 → `dev`，main 分支 → `latest`，tag → 版本号
+- **前端构建**: 从根仓库 `ZXYZdatabaseFront/` 目录构建，新组件必须同时提交到前端子仓库和根仓库
 
 本地修改 `.env` 中的 `APP_IMAGE_TAG` 和 `DOCKERHUB_PREFIX` 即可控制部署目标。
 
