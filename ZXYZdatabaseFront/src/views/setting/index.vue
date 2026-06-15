@@ -44,6 +44,7 @@ const navItems = computed(() => [
   { name: 'accountSettings', label: '个人设置', visible: true },
   { name: 'teamAdminSettings', label: '创建团队', visible: canCreateTeam.value },
   { name: 'systemAdminSettings', label: '系统运营', visible: canCreateTeam.value },
+  { name: 'configAdminSettings', label: '配置管理', visible: true },
   { name: 'permissionCenter', label: '权限管理', visible: canShowPermissionCenter.value },
 ])
 const visibleNavItems = computed(() => navItems.value.filter((item) => item.visible))
@@ -55,6 +56,7 @@ const activeRouteName = computed(() => {
 watch(
   [() => route.name, canCreateTeam, canShowPermissionCenter],
   () => {
+    if (!route.name) return
     if (visibleNavItems.value.some((item) => item.name === route.name)) {
       return
     }
