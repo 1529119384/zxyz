@@ -17,6 +17,7 @@ const Setting = () => import('@/views/setting/index.vue')
 const AccountSettings = () => import('@/views/setting/AccountSettings.vue')
 const TeamAdminSettings = () => import('@/views/setting/TeamAdmin.vue')
 const SystemAdminSettings = () => import('@/views/setting/SystemAdmin.vue')
+const ConfigAdminSettings = () => import('@/views/setting/ConfigAdmin.vue')
 const PermissionCenter = () => import('@/views/permission/index.vue')
 const ChatHome = () => import('@/views/chat/index.vue')
 const Projects = () => import('@/views/projects/index.vue')
@@ -92,6 +93,11 @@ const router = createRouter({
               name: 'systemAdminSettings',
               component: SystemAdminSettings,
               beforeEnter: requireSystemAdminRole(),
+            },
+            {
+              path: 'config-admin',
+              name: 'configAdminSettings',
+              component: ConfigAdminSettings,
             },
             {
               path: 'permissions',
