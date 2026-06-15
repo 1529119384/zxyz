@@ -5,8 +5,9 @@ import uno.acloud.satoken.RemoteStpInterfaceImpl;
 import cn.dev33.satoken.stp.StpInterface;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.client.RestClient;
@@ -26,6 +27,7 @@ import org.springframework.web.client.RestClient;
 public class RemoteStpInterfaceAutoConfig {
 
     @Bean
+    @ConditionalOnBean(RestClient.class)
     @ConditionalOnMissingBean(StpInterface.class)
     public StpInterface stpInterface(RestClient restClient,
                                      @Value("${app.team-service.base-url}") String teamServiceBaseUrl,
