@@ -1,6 +1,7 @@
 package uno.acloud.common.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -31,6 +32,7 @@ public class ConfigClientAutoConfiguration {
     private static final String CONFIG_CHANGED_TOPIC = "zxyz:config:changed";
 
     @Bean
+    @ConditionalOnBean(RestClient.Builder.class)
     @ConditionalOnMissingBean
     public ConfigServiceClient configServiceClient(
             RestClient.Builder restClientBuilder,
@@ -46,6 +48,7 @@ public class ConfigClientAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnBean(ConfigServiceClient.class)
     public RedisMessageListenerContainer configChangeListener(
             RedisConnectionFactory connectionFactory,
             ConfigServiceClient configServiceClient) {
