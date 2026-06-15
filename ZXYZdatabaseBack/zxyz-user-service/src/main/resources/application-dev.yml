@@ -12,8 +12,8 @@ app:
   auth:
     secure: false
   team-service:
-    base-url: ${services.team-service.base-url}
+    base-url: ${TEAM_SERVICE_BASE_URL:http://zxyz-team-service}
   email-service:
-    base-url: ${services.email-service.base-url}
+    base-url: ${EMAIL_SERVICE_BASE_URL:http://zxyz-email-service}
   verification:
     return-code-in-response: ${VERIFICATION_RETURN_CODE:true}

@@ -51,8 +51,8 @@ im:
 
 app:
   user-service:
-    base-url: ${services.user-service.base-url}
+    base-url: ${USER_SERVICE_BASE_URL:http://zxyz-user-service}
   file-service:
-    base-url: ${services.file-service.base-url}
+    base-url: ${FILE_SERVICE_BASE_URL:http://zxyz-file-service}
   team-service:
-    base-url: ${services.team-service.base-url}
+    base-url: ${TEAM_SERVICE_BASE_URL:http://zxyz-team-service}

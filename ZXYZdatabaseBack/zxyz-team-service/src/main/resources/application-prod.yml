@@ -9,10 +9,10 @@ app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
   user-service:
-    base-url: ${services.user-service.base-url}
+    base-url: ${USER_SERVICE_BASE_URL:http://zxyz-user-service}
   im-service:
-    base-url: ${services.im-service.base-url}
+    base-url: ${IM_SERVICE_BASE_URL:http://zxyz-im-service}
   email-service:
-    base-url: ${services.email-service.base-url}
+    base-url: ${EMAIL_SERVICE_BASE_URL:http://zxyz-email-service}
   file-service:
-    base-url: ${services.file-service.base-url}
+    base-url: ${FILE_SERVICE_BASE_URL:http://zxyz-file-service}

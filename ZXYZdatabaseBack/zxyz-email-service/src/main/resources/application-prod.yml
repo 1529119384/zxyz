@@ -8,4 +8,4 @@ email:
 
 app:
   team-service:
-    base-url: ${services.team-service.base-url}
+    base-url: ${TEAM_SERVICE_BASE_URL:http://zxyz-team-service}

@@ -36,9 +36,9 @@ app:
     cookie-secret: ${SHARE_COOKIE_SECRET}
     frontend-base-url: ${FRONTEND_BASE_URL}
     file-service:
-      base-url: ${services.file-service.base-url}
+      base-url: ${FILE_SERVICE_BASE_URL:http://zxyz-file-service}
     user-service:
-      base-url: ${services.user-service.base-url}
+      base-url: ${USER_SERVICE_BASE_URL:http://zxyz-user-service}
     team-service:
-      base-url: ${services.team-service.base-url}
+      base-url: ${TEAM_SERVICE_BASE_URL:http://zxyz-team-service}
       internal-service-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token}

@@ -10,8 +10,8 @@ spring:
 
 app:
   team-service:
-    base-url: ${services.team-service.base-url}
+    base-url: ${TEAM_SERVICE_BASE_URL:http://zxyz-team-service}
   project-service:
-    base-url: ${services.project-service.base-url}
+    base-url: ${PROJECT_SERVICE_BASE_URL:http://zxyz-project-service}
   share-service:
-    base-url: ${services.share-service.base-url}
+    base-url: ${SHARE_SERVICE_BASE_URL:http://zxyz-share-service}
