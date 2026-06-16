@@ -12,6 +12,11 @@ on:
         description: '镜像标签（如 v1.0.0、latest、dev）'
         required: true
         default: 'latest'
+      skip_quality:
+        description: '跳过质量检查（lint/test/compile）'
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -120,7 +125,9 @@ jobs:
   # ============================================================
   quality-check-frontend:
     needs: detect-changes
-    if: needs.detect-changes.outputs.frontend == 'true'
+    if: |
+      needs.detect-changes.outputs.frontend == 'true' &&
+      !(github.event_name == 'workflow_dispatch' && github.event.inputs.skip_quality == 'true')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -146,7 +153,9 @@ jobs:
   # ============================================================
   quality-check-backend:
     needs: detect-changes
-    if: needs.detect-changes.outputs.backend-any == 'true'
+    if: |
+      needs.detect-changes.outputs.backend-any == 'true' &&
+      !(github.event_name == 'workflow_dispatch' && github.event.inputs.skip_quality == 'true')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
