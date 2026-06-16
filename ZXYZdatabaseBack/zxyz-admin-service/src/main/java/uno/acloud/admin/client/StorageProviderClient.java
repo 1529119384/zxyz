@@ -1,62 +1,43 @@
 package uno.acloud.admin.client;
 
-import org.springframework.beans.factory.annotation.Value;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
-import uno.acloud.common.InternalServiceHeaders;
+import uno.acloud.admin.config.AdminServiceProperties;
+import uno.acloud.client.AbstractServiceClient;
 
 /**
- * 存储提供者服务客户端
- * <p>
- * 调用 zxyz-file-service 的存储提供者管理接口。
- * </p>
+ * 存储提供者服务客户端。
+ * <p>调用 zxyz-file-service 的存储提供者管理接口，
+ * 继承 {@link AbstractServiceClient} 获得 @LoadBalanced、Resilience4j 保护和超时配置。</p>
  */
+@Slf4j
 @Component
-public class StorageProviderClient {
+public class StorageProviderClient extends AbstractServiceClient {
 
-    private final RestClient restClient;
-    private final String internalServiceToken;
-
-    public StorageProviderClient(RestClient.Builder restClientBuilder,
-                                 @Value("${app.file-service.base-url}") String fileServiceBaseUrl,
-                                 @Value("${app.internal-service-token:}") String internalServiceToken) {
-        this.restClient = restClientBuilder
-                .baseUrl(fileServiceBaseUrl)
-                .build();
-        this.internalServiceToken = internalServiceToken;
+    public StorageProviderClient(RestClient restClient,
+                                 AdminServiceProperties props,
+                                 ObjectMapper objectMapper) {
+        super(restClient, props.getFileService().normalizedBaseUrl(),
+                props.getInternalServiceToken(), objectMapper);
     }
 
-    /**
-     * 获取所有存储提供者
-     */
-    public Object listAll() {
-        return restClient.get()
-                .uri("/api/admin/storage-providers")
-                .header(InternalServiceHeaders.TOKEN_HEADER, internalServiceToken)
-                .retrieve()
-                .body(Object.class);
+    @Override
+    protected String serviceName() {
+        return "存储服务";
     }
 
-    /**
-     * 更新存储提供者配置
-     */
+    public JsonNode listAll() {
+        return getJson("/api/admin/storage-providers");
+    }
+
     public void updateConfig(String providerId, Object request) {
-        restClient.patch()
-                .uri("/api/admin/storage-providers/{providerId}", providerId)
-                .header(InternalServiceHeaders.TOKEN_HEADER, internalServiceToken)
-                .body(request)
-                .retrieve()
-                .toBodilessEntity();
+        patchJson("/api/admin/storage-providers/{providerId}", request, providerId);
     }
 
-    /**
-     * 存储提供者健康检查
-     */
-    public Object healthCheck(String providerId) {
-        return restClient.get()
-                .uri("/api/admin/storage-providers/{providerId}/health", providerId)
-                .header(InternalServiceHeaders.TOKEN_HEADER, internalServiceToken)
-                .retrieve()
-                .body(Object.class);
+    public JsonNode healthCheck(String providerId) {
+        return getJson("/api/admin/storage-providers/{providerId}/health", providerId);
     }
 }

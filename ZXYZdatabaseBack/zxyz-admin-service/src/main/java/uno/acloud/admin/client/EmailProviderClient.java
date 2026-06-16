@@ -1,62 +1,43 @@
 package uno.acloud.admin.client;
 
-import org.springframework.beans.factory.annotation.Value;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
-import uno.acloud.common.InternalServiceHeaders;
+import uno.acloud.admin.config.AdminServiceProperties;
+import uno.acloud.client.AbstractServiceClient;
 
 /**
- * 邮件提供者服务客户端
- * <p>
- * 调用 zxyz-email-service 的邮件提供者管理接口。
- * </p>
+ * 邮件提供者服务客户端。
+ * <p>调用 zxyz-email-service 的邮件提供者管理接口，
+ * 继承 {@link AbstractServiceClient} 获得 @LoadBalanced、Resilience4j 保护和超时配置。</p>
  */
+@Slf4j
 @Component
-public class EmailProviderClient {
+public class EmailProviderClient extends AbstractServiceClient {
 
-    private final RestClient restClient;
-    private final String internalServiceToken;
-
-    public EmailProviderClient(RestClient.Builder restClientBuilder,
-                               @Value("${app.email-service.base-url}") String emailServiceBaseUrl,
-                               @Value("${app.internal-service-token:}") String internalServiceToken) {
-        this.restClient = restClientBuilder
-                .baseUrl(emailServiceBaseUrl)
-                .build();
-        this.internalServiceToken = internalServiceToken;
+    public EmailProviderClient(RestClient restClient,
+                               AdminServiceProperties props,
+                               ObjectMapper objectMapper) {
+        super(restClient, props.getEmailService().normalizedBaseUrl(),
+                props.getInternalServiceToken(), objectMapper);
     }
 
-    /**
-     * 获取所有邮件提供者
-     */
-    public Object listAll() {
-        return restClient.get()
-                .uri("/api/admin/email-providers")
-                .header(InternalServiceHeaders.TOKEN_HEADER, internalServiceToken)
-                .retrieve()
-                .body(Object.class);
+    @Override
+    protected String serviceName() {
+        return "邮件服务";
     }
 
-    /**
-     * 更新邮件提供者配置
-     */
+    public JsonNode listAll() {
+        return getJson("/api/admin/email-providers");
+    }
+
     public void updateConfig(String providerId, Object request) {
-        restClient.patch()
-                .uri("/api/admin/email-providers/{providerId}", providerId)
-                .header(InternalServiceHeaders.TOKEN_HEADER, internalServiceToken)
-                .body(request)
-                .retrieve()
-                .toBodilessEntity();
+        patchJson("/api/admin/email-providers/{providerId}", request, providerId);
     }
 
-    /**
-     * 邮件提供者健康检查
-     */
-    public Object healthCheck(String providerId) {
-        return restClient.get()
-                .uri("/api/admin/email-providers/{providerId}/health", providerId)
-                .header(InternalServiceHeaders.TOKEN_HEADER, internalServiceToken)
-                .retrieve()
-                .body(Object.class);
+    public JsonNode healthCheck(String providerId) {
+        return getJson("/api/admin/email-providers/{providerId}/health", providerId);
     }
 }

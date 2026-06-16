@@ -176,6 +176,7 @@ public class FileOperationHelper {
 
     // ---- Recursive walk ----
 
+    @Deprecated(since = "phase4", forRemoval = true)
     public <T> void walkDescendants(Long sourceParentId, T parentContext, DescendantAction<T> action) {
         walkDescendants(sourceParentId, parentContext, action, 0);
     }

@@ -64,6 +64,15 @@ public interface FileMapper {
     @Select("SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted FROM file_node WHERE id = #{fileId}")
     FileNode getFileNodeById(Long fileId);
 
+    @Select("SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted FROM file_node WHERE id = #{fileId} AND deleted = 0")
+    FileNode getActiveFileNodeById(Long fileId);
+
+    @Select("SELECT COUNT(*) FROM file_node WHERE parent_id = #{parentId} AND deleted = 0")
+    int countActiveChildren(@Param("parentId") Long parentId);
+
+    @Select("SELECT parent_id FROM file_node WHERE id = #{fileId}")
+    Long getParentId(@Param("fileId") Long fileId);
+
     @Select({
             "<script>",
             "SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted FROM file_node WHERE id IN",
@@ -321,7 +330,7 @@ public interface FileMapper {
                                     @Param("spaceType") Integer spaceType,
                                     @Param("projectId") Long projectId);
 
-    @Update("UPDATE file_node SET store_path = CONCAT(#{newPrefix}, SUBSTRING(store_path, LENGTH(#{oldPrefix}) + 1)), modify_time = NOW() WHERE store_path LIKE CONCAT(#{oldPrefix}, '/%')")
+    @Update("UPDATE file_node SET store_path = CONCAT(#{newPrefix}, SUBSTRING(store_path, LENGTH(#{oldPrefix}) + 1)), modify_time = NOW() WHERE store_path LIKE CONCAT(#{oldPrefix}, '/%') AND deleted IN (0, 1)")
     int renameDescendantStorePaths(@Param("oldPrefix") String oldPrefix, @Param("newPrefix") String newPrefix);
 
     @Update({

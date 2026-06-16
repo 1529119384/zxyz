@@ -2,11 +2,6 @@ import { mapMyShareRecords, mapShareFileEntries } from '@/models/share'
 import request from '@/utils/request'
 import publicRequest from '@/utils/publicRequest'
 
-const getShareRequestConfig = (config = {}) => ({
-  withCredentials: true,
-  ...config,
-})
-
 export const createShare = (payload) => request.post('/api/shares', payload)
 
 export const fetchMyShareList = async (params = {}) => {
@@ -23,21 +18,20 @@ export const fetchMyShareList = async (params = {}) => {
 export const cancelMyShare = (shareId) => request.patch(`/api/shares/${shareId}`, { status: 1 })
 
 export const fetchPublicShareInfo = (shareKey) =>
-  publicRequest.get(`/api/public/shares/${shareKey}`, getShareRequestConfig())
+  publicRequest.get(`/api/public/shares/${shareKey}`)
 
 export const verifySharePassword = (shareKey, password) =>
   publicRequest.post(
     `/api/public/shares/${shareKey}/accesses`,
     { password },
-    getShareRequestConfig(),
   )
 
 export const fetchPublicShareFiles = async (shareKey, path = '') => {
   const response = await publicRequest.get(
     `/api/public/shares/${shareKey}/files`,
-    getShareRequestConfig({
+    {
       params: path ? { path } : {},
-    }),
+    },
   )
 
   return {
@@ -49,5 +43,4 @@ export const fetchPublicShareFiles = async (shareKey, path = '') => {
 export const getPublicShareDownloadUrl = (shareKey, fileId) =>
   publicRequest.get(
     `/api/public/shares/${shareKey}/files/${fileId}/download-url`,
-    getShareRequestConfig(),
   )

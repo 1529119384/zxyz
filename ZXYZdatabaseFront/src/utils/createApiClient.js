@@ -103,7 +103,6 @@ function redirectToLogin() {
  * @param {'redirect'|'silent'} [options.onTokenExpired='redirect'] - Token 失效时的处理策略
  *   - 'redirect'：清除 token 并跳转登录页（适用于主服务）
  *   - 'silent'：仅标记错误已处理，不跳转（适用于附属服务）
- * @param {boolean} [options.attachAuth=true] - 是否自动注入登录鉴权 Header
  * @param {string} [options.errorMessagePrefix=''] - 错误消息前缀，如 'IM '
  * @param {boolean} [options.enableRawBlob=false] - 是否支持原始 Blob 响应透传
  * @returns {import('axios').AxiosInstance}
@@ -113,7 +112,6 @@ export function createApiClient(options = {}) {
     baseURL,
     timeout = 5000,
     onTokenExpired = 'redirect',
-    attachAuth = true,
     errorMessagePrefix = '',
     enableRawBlob = false,
     withCredentials = true,

@@ -9,8 +9,6 @@ const publicRequest = createApiClient({
   baseURL: getApiBaseUrl(),
   timeout: 5000,
   onTokenExpired: 'silent',
-  attachAuth: false,
-  withCredentials: false,
 })
 
 export default publicRequest

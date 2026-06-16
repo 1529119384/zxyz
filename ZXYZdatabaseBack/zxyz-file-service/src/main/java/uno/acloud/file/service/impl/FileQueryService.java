@@ -153,7 +153,7 @@ public class FileQueryService implements FileQueryPort {
 
     @Override
     public FileInfoDTO getFileInfoById(Long fileId) {
-        return fileConverter.toFileInfoDTO(fileMapper.getFileNodeById(fileId));
+        return fileConverter.toFileInfoDTO(fileMapper.getActiveFileNodeById(fileId));
     }
 
     @Override

@@ -1,6 +1,7 @@
 package uno.acloud.admin.controller;
 
 import cn.dev33.satoken.annotation.SaCheckRole;
+import com.fasterxml.jackson.databind.JsonNode;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -42,7 +43,7 @@ public class ProviderAdminController {
 
     @Operation(summary = "获取所有存储提供者")
     @GetMapping("/storage")
-    public Result<Object> listStorageProviders() {
+    public Result<JsonNode> listStorageProviders() {
         return Result.of(storageProviderClient.listAll());
     }
 
@@ -57,7 +58,7 @@ public class ProviderAdminController {
 
     @Operation(summary = "存储提供者健康检查")
     @GetMapping("/storage/{providerId}/health")
-    public Result<Object> storageProviderHealth(
+    public Result<JsonNode> storageProviderHealth(
             @Parameter(description = "提供者标识") @PathVariable String providerId) {
         return Result.of(storageProviderClient.healthCheck(providerId));
     }
@@ -66,7 +67,7 @@ public class ProviderAdminController {
 
     @Operation(summary = "获取所有邮件提供者")
     @GetMapping("/email")
-    public Result<Object> listEmailProviders() {
+    public Result<JsonNode> listEmailProviders() {
         return Result.of(emailProviderClient.listAll());
     }
 
@@ -81,7 +82,7 @@ public class ProviderAdminController {
 
     @Operation(summary = "邮件提供者健康检查")
     @GetMapping("/email/{providerId}/health")
-    public Result<Object> emailProviderHealth(
+    public Result<JsonNode> emailProviderHealth(
             @Parameter(description = "提供者标识") @PathVariable String providerId) {
         return Result.of(emailProviderClient.healthCheck(providerId));
     }

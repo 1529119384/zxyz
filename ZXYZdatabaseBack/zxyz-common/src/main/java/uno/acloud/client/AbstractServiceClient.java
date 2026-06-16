@@ -217,6 +217,51 @@ public abstract class AbstractServiceClient {
     }
 
     /**
+     * 发送 JSON PATCH 请求。
+     *
+     * @param path    请求路径（相对于 baseUrl）
+     * @param payload 请求体
+     * @return 响应 JSON 根节点
+     * @throws BusinessException 请求失败时抛出
+     */
+    protected JsonNode patchJson(String path, Object payload) {
+        return executeWithResilience(() -> {
+            String body = restClient.patch()
+                    .uri(baseUrl + path)
+                    .headers(this::internalHeaders)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .body(payload)
+                    .retrieve()
+                    .body(String.class);
+            return readJsonNode(body);
+        });
+    }
+
+    /**
+     * 发送 JSON PATCH 请求（支持 URI 模板变量）。
+     *
+     * @param path         请求路径模板（相对于 baseUrl）
+     * @param payload      请求体
+     * @param uriVariables URI 模板变量值
+     * @return 响应 JSON 根节点
+     * @throws BusinessException 请求失败时抛出
+     */
+    protected JsonNode patchJson(String path, Object payload, Object... uriVariables) {
+        return executeWithResilience(() -> {
+            String body = restClient.patch()
+                    .uri(baseUrl + path, uriVariables)
+                    .headers(this::internalHeaders)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .body(payload)
+                    .retrieve()
+                    .body(String.class);
+            return readJsonNode(body);
+        });
+    }
+
+    /**
      * 发送 DELETE 请求（无响应体）。
      *
      * @param path 请求路径（相对于 baseUrl）

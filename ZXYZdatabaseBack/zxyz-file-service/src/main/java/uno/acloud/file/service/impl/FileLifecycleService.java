@@ -95,6 +95,7 @@ public class FileLifecycleService implements FileLifecyclePort {
             if (rows != allIds.size()) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "彻底删除文件失败");
             }
+            cleanupOrphanFolders(normalizedFileIds, userId);
             fileObjectReferenceService.releaseReferences(ossKeys);
             publishFromSnapshotsAfterCommit("DELETED", snapshots);
             log.info("彻底删除文件 roots={}, allIds={}", normalizedFileIds, allIds);
@@ -230,5 +231,24 @@ public class FileLifecycleService implements FileLifecyclePort {
     }
 
     private record RestoreNameScope(Long parentId, SpaceTarget target, Integer fileType, Long ownerUserId) {
+    }
+
+    private void cleanupOrphanFolders(List<Long> deletedFileIds, Long userId) {
+        Set<Long> checkedParentIds = new HashSet<>();
+        for (Long fileId : deletedFileIds) {
+            Long parentId = fileMapper.getParentId(fileId);
+            if (parentId == null || parentId == -1L || !checkedParentIds.add(parentId)) {
+                continue;
+            }
+            while (parentId != null && parentId != -1L) {
+                if (fileMapper.countActiveChildren(parentId) == 0) {
+                    fileMapper.reallyDeleteByIds(List.of(parentId), userId);
+                    log.info("清理孤立父文件夹: parentId={}", parentId);
+                    parentId = fileMapper.getParentId(parentId);
+                } else {
+                    break;
+                }
+            }
+        }
     }
 }

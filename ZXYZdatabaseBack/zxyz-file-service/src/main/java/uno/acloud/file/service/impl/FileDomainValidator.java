@@ -23,6 +23,7 @@ import java.util.stream.Collectors;
 public class FileDomainValidator {
 
     private final FileMapper fileMapper;
+    private final java.util.Map<String, List<String>> nameCache = new java.util.HashMap<>();
 
     public List<Long> normalizeFileIds(List<Long> fileIds) {
         if (fileIds == null || fileIds.isEmpty()) {
@@ -182,14 +183,16 @@ public class FileDomainValidator {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "非法的文件类型");
         }
         String normalizedName = validateInputName(rawName);
-        List<String> activeNames = fileMapper.getActiveNamesByParentIdAndFileType(
-                parentId,
-                target.teamId(),
-                target.spaceType(),
-                target.projectId(),
-                fileType,
-                ownerUserId
-        );
+        String cacheKey = parentId + ":" + fileType + ":" + target.spaceType() + ":" + target.teamId() + ":" + target.projectId() + ":" + ownerUserId;
+        List<String> activeNames = nameCache.computeIfAbsent(cacheKey, k ->
+                fileMapper.getActiveNamesByParentIdAndFileType(
+                        parentId,
+                        target.teamId(),
+                        target.spaceType(),
+                        target.projectId(),
+                        fileType,
+                        ownerUserId
+                ));
         Set<String> occupiedNames = new HashSet<>(activeNames);
         if (reservedNames != null) {
             occupiedNames.addAll(reservedNames);
@@ -238,5 +241,9 @@ public class FileDomainValidator {
     }
 
     private record NameParts(String baseName, String extension) {
+    }
+
+    public void clearNameCache() {
+        nameCache.clear();
     }
 }
