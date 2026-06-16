@@ -152,13 +152,13 @@ Design proposals: `ISSUE/` 目录（#09 CI/CD、#10 配置管理、#11 多存储
 - **变更检测**: `dorny/paths-filter` 按服务目录判断哪些镜像需要重建
 - **backend-common 变更**: 所有后端服务都重建（共享依赖）
 - **docker-compose.yml 变更**: 不触发镜像重建（运行时配置，非构建依赖）
-- **构建**: Docker Buildx + GHA 缓存，镜像推送到 DockerHub（`aclouda/zxyz-*`）
+- **构建**: Docker Buildx + GHA 缓存，镜像推送到 GHCR（`ghcr.io/<owner>/zxyz-*`）
 - **部署**: SSH 到服务器，只拉取+重启变更的服务，分层健康检查（普通服务 30s，gateway 60s）
 - **手动触发**: workflow_dispatch 支持 `skip_quality` 参数跳过 lint/test/compile，直接构建部署
 - **镜像标签**: dev 分支 → `dev`，main 分支 → `latest`，tag → 版本号
 - **前端构建**: 从根仓库 `ZXYZdatabaseFront/` 目录构建，新组件必须同时提交到前端子仓库和根仓库
 
-本地修改 `.env` 中的 `APP_IMAGE_TAG` 和 `DOCKERHUB_PREFIX` 即可控制部署目标。
+本地修改 `.env` 中的 `APP_IMAGE_TAG` 和 `IMAGE_PREFIX` 即可控制部署目标。
 
 **快速部署（开发用）**: CI/CD 构建完成后，SSH 到服务器运行 `scripts/deploy-fast.sh <服务名>` 拉取+重启，跳过完整健康检查等待。`--no-health` 跳过健康检查，`--all` 重启所有服务。
 

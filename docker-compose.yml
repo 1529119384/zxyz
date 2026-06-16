@@ -165,7 +165,7 @@ services:
       dockerfile: ZXYZdatabaseBack/Dockerfile
       args:
         MODULE: zxyz-project-service
-    image: ${DOCKERHUB_PREFIX:-}zxyz-project-service:${APP_IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-}zxyz-project-service:${APP_IMAGE_TAG:-latest}
     container_name: zxyz-project-service
     restart: unless-stopped
     stop_grace_period: 30s
@@ -235,7 +235,7 @@ services:
       dockerfile: ZXYZdatabaseBack/Dockerfile
       args:
         MODULE: zxyz-im-service
-    image: ${DOCKERHUB_PREFIX:-}zxyz-im-service:${APP_IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-}zxyz-im-service:${APP_IMAGE_TAG:-latest}
     container_name: zxyz-im-service
     restart: unless-stopped
     stop_grace_period: 30s
@@ -301,7 +301,7 @@ services:
       dockerfile: ZXYZdatabaseBack/Dockerfile
       args:
         MODULE: zxyz-email-service
-    image: ${DOCKERHUB_PREFIX:-}zxyz-email-service:${APP_IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-}zxyz-email-service:${APP_IMAGE_TAG:-latest}
     container_name: zxyz-email-service
     restart: unless-stopped
     stop_grace_period: 30s
@@ -370,7 +370,7 @@ services:
       dockerfile: ZXYZdatabaseBack/Dockerfile
       args:
         MODULE: zxyz-share-service
-    image: ${DOCKERHUB_PREFIX:-}zxyz-share-service:${APP_IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-}zxyz-share-service:${APP_IMAGE_TAG:-latest}
     container_name: zxyz-share-service
     restart: unless-stopped
     stop_grace_period: 30s
@@ -436,7 +436,7 @@ services:
       dockerfile: ZXYZdatabaseBack/Dockerfile
       args:
         MODULE: zxyz-file-service
-    image: ${DOCKERHUB_PREFIX:-}zxyz-file-service:${APP_IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-}zxyz-file-service:${APP_IMAGE_TAG:-latest}
     container_name: zxyz-file-service
     restart: unless-stopped
     stop_grace_period: 30s
@@ -507,7 +507,7 @@ services:
       dockerfile: ZXYZdatabaseBack/Dockerfile
       args:
         MODULE: zxyz-team-service
-    image: ${DOCKERHUB_PREFIX:-}zxyz-team-service:${APP_IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-}zxyz-team-service:${APP_IMAGE_TAG:-latest}
     container_name: zxyz-team-service
     restart: unless-stopped
     stop_grace_period: 30s
@@ -579,7 +579,7 @@ services:
       dockerfile: ZXYZdatabaseBack/Dockerfile
       args:
         MODULE: zxyz-audit-service
-    image: ${DOCKERHUB_PREFIX:-}zxyz-audit-service:${APP_IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-}zxyz-audit-service:${APP_IMAGE_TAG:-latest}
     container_name: zxyz-audit-service
     restart: unless-stopped
     stop_grace_period: 30s
@@ -641,7 +641,7 @@ services:
       dockerfile: ZXYZdatabaseBack/Dockerfile
       args:
         MODULE: zxyz-admin-service
-    image: ${DOCKERHUB_PREFIX:-}zxyz-admin-service:${APP_IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-}zxyz-admin-service:${APP_IMAGE_TAG:-latest}
     container_name: zxyz-admin-service
     restart: unless-stopped
     stop_grace_period: 30s
@@ -694,7 +694,7 @@ services:
       dockerfile: ZXYZdatabaseBack/Dockerfile
       args:
         MODULE: zxyz-user-service
-    image: ${DOCKERHUB_PREFIX:-}zxyz-user-service:${APP_IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-}zxyz-user-service:${APP_IMAGE_TAG:-latest}
     container_name: zxyz-user-service
     restart: unless-stopped
     stop_grace_period: 30s
@@ -766,7 +766,7 @@ services:
       dockerfile: ZXYZdatabaseBack/Dockerfile
       args:
         MODULE: zxyz-gateway
-    image: ${DOCKERHUB_PREFIX:-}zxyz-gateway:${APP_IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-}zxyz-gateway:${APP_IMAGE_TAG:-latest}
     container_name: zxyz-gateway
     restart: unless-stopped
     stop_grace_period: 30s
@@ -818,7 +818,7 @@ services:
     build:
       context: .
       dockerfile: ZXYZdatabaseFront/Dockerfile
-    image: ${DOCKERHUB_PREFIX:-}zxyz-frontend-nginx:${APP_IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-}zxyz-frontend-nginx:${APP_IMAGE_TAG:-latest}
     container_name: zxyz-frontend-nginx
     restart: unless-stopped
     environment:

@@ -48,7 +48,7 @@
 
 1. **detect-changes** — `dorny/paths-filter` 检测 11 个服务的变更。镜像标签：`dev` 分支 → `dev`，`main` → `latest`，tag → 版本号
 2. **quality-check** — 前端（Node 22, lint + test）和后端（JDK 17, compile）并行执行
-3. **build-and-push** — 矩阵构建变更的服务镜像。backend-common 变更触发所有后端重建。Docker Buildx + GHA 缓存，推送到 DockerHub（`aclouda/zxyz-*`）
+3. **build-and-push** — 矩阵构建变更的服务镜像。backend-common 变更触发所有后端重建。Docker Buildx + GHA 缓存，推送到 GHCR（`ghcr.io/<owner>/zxyz-*`）
 4. **deploy** — SSH 到服务器，选择性拉取+重启变更的服务，分层健康检查（普通服务 50s，gateway 250s）
 
 **关键规则**：
