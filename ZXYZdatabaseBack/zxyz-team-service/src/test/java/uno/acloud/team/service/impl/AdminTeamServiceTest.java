@@ -50,7 +50,10 @@ class AdminTeamServiceTest {
     void setUp() {
         adminTeamService = new AdminTeamService(
                 teamMapper, teamQuotaMapper, userServiceClient,
-                fileServiceClient, imSystemNotificationClient, emailServiceClient);
+                fileServiceClient, imSystemNotificationClient, emailServiceClient,
+                null);
+        // Self-injection for @Transactional proxy — in unit tests, point to the same instance
+        adminTeamService.setSelf(adminTeamService);
     }
 
     // ==================== listTeams — batch fetch (N+1 fix verification) ====================

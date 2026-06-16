@@ -36,18 +36,19 @@ public class ProjectQuotaService implements ProjectQuotaPort {
     public ProjectVO updateProjectQuota(Long projectId, UpdateProjectQuotaRequest request, Long operatorUserId) {
         Project project = projectAccessGuard.requireProjectManageAccess(projectId, operatorUserId);
         Long storageLimit = commandSupport.normalizeStorageLimit(request == null ? null : request.getStorageLimit());
-        // HTTP call outside transaction to avoid holding DB connection during remote I/O
+        // HTTP calls outside transaction to avoid holding DB connection during remote I/O
         long usedStorage = fileServiceClient.sumActiveFileSize(operatorUserId, project.getTeamId(), 3, projectId);
         if (storageLimit != null && storageLimit < usedStorage) {
             throw new BusinessException(ErrorCode.FILE_STATE_INVALID, "项目空间配额不能小于当前已使用空间");
         }
         // DB operations via proxy to ensure proper transaction boundary
-        return self.doUpdateProjectQuota(projectId, storageLimit, project, operatorUserId);
+        self.doUpdateProjectQuota(projectId, storageLimit);
+        // HTTP call for view assembly outside transaction
+        return viewAssembler.toProjectVO(project, operatorUserId);
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public ProjectVO doUpdateProjectQuota(Long projectId, Long storageLimit, Project project, Long operatorUserId) {
+    public void doUpdateProjectQuota(Long projectId, Long storageLimit) {
         commandSupport.upsertProjectQuota(projectId, storageLimit);
-        return viewAssembler.toProjectVO(project, operatorUserId);
     }
 }

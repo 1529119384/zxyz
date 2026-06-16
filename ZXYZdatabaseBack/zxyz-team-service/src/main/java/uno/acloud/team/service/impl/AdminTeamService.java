@@ -1,6 +1,7 @@
 package uno.acloud.team.service.impl;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.common.ErrorCode;
@@ -44,19 +45,22 @@ public class AdminTeamService implements AdminTeamPort {
     private final FileServiceClient fileServiceClient;
     private final ImSystemNotificationClient imSystemNotificationClient;
     private final EmailServiceClient emailServiceClient;
+    private AdminTeamService self;
 
     public AdminTeamService(TeamMapper teamMapper,
                             TeamQuotaMapper teamQuotaMapper,
                             UserServiceClient userServiceClient,
                             FileServiceClient fileServiceClient,
                             ImSystemNotificationClient imSystemNotificationClient,
-                            EmailServiceClient emailServiceClient) {
+                            EmailServiceClient emailServiceClient,
+                            @Lazy AdminTeamService self) {
         this.teamMapper = teamMapper;
         this.teamQuotaMapper = teamQuotaMapper;
         this.userServiceClient = userServiceClient;
         this.fileServiceClient = fileServiceClient;
         this.imSystemNotificationClient = imSystemNotificationClient;
         this.emailServiceClient = emailServiceClient;
+        this.self = self;
     }
 
     @Override
@@ -88,9 +92,9 @@ public class AdminTeamService implements AdminTeamPort {
         return overviews;
     }
 
-    @Transactional(rollbackFor = Exception.class)
     @Override
     public AdminTeamOverviewVO updateTeamQuota(Long teamId, UpdateTeamQuotaRequest request) {
+        // Phase 1: Pre-transaction validation + HTTP calls
         Team team = teamMapper.selectById(teamId);
         if (team == null || !Integer.valueOf(0).equals(team.getStatus())) {
             throw new BusinessException(ErrorCode.TEAM_NOT_FOUND, "团队不存在");
@@ -102,19 +106,16 @@ public class AdminTeamService implements AdminTeamPort {
         if (memberLimit < currentMemberCount) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "团队人数上限不能小于当前成员数");
         }
+        // HTTP call outside transaction to avoid holding DB connection during remote I/O
         long usedStorage = fileServiceClient.sumActiveFileSize(null, teamId, 2, null);
         if (storageLimit < usedStorage) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "团队空间上限不能小于当前已使用空间");
         }
 
-        TeamQuota quota = new TeamQuota();
-        quota.setTeamId(teamId);
-        quota.setMemberLimit(memberLimit);
-        quota.setStorageLimit(storageLimit);
-        quota.setCreateTime(LocalDateTime.now());
-        quota.setUpdateTime(LocalDateTime.now());
-        teamQuotaMapper.upsertQuota(quota);
+        // Phase 2: DB transaction
+        self.doUpdateTeamQuota(teamId, memberLimit, storageLimit);
 
+        // Phase 3: Post-transaction HTTP calls
         imSystemNotificationClient.sendBatch(
                 teamMapper.listAdminUserIds(teamId),
                 TEAM_QUOTA_NOTIFICATION_TYPE,
@@ -129,6 +130,17 @@ public class AdminTeamService implements AdminTeamPort {
                 .filter(item -> item.getId().equals(teamId))
                 .findFirst()
                 .orElseThrow(() -> new BusinessException(ErrorCode.SYSTEM_ERROR, "团队信息刷新失败"));
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void doUpdateTeamQuota(Long teamId, int memberLimit, long storageLimit) {
+        TeamQuota quota = new TeamQuota();
+        quota.setTeamId(teamId);
+        quota.setMemberLimit(memberLimit);
+        quota.setStorageLimit(storageLimit);
+        quota.setCreateTime(LocalDateTime.now());
+        quota.setUpdateTime(LocalDateTime.now());
+        teamQuotaMapper.upsertQuota(quota);
     }
 
     @Override
@@ -209,5 +221,10 @@ public class AdminTeamService implements AdminTeamPort {
             throw new BusinessException(ErrorCode.BAD_REQUEST, message);
         }
         return value;
+    }
+
+    // Package-private setter for unit testing without Spring proxy
+    void setSelf(AdminTeamService self) {
+        this.self = self;
     }
 }

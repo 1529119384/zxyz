@@ -48,7 +48,10 @@ class ProjectMemberServiceTest {
     @BeforeEach
     void setUp() {
         projectMemberService = new ProjectMemberService(
-                projectMapper, projectAccessGuard, commandSupport, viewAssembler, eventPublisher);
+                projectMapper, projectAccessGuard, commandSupport, viewAssembler, eventPublisher,
+                null);
+        // Self-injection for @Transactional proxy — in unit tests, point to the same instance
+        projectMemberService.setSelf(projectMemberService);
     }
 
     private Project activeProject(Long id, Long teamId, Long leaderUserId) {
