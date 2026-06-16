@@ -31,7 +31,7 @@ public class FolderController {
     @Operation(summary = "创建文件夹")
     @PostMapping
     @SaCheckPermission(SystemPermissionCodes.FOLDER_CREATE)
-    @RequiresTeamPermission(value = TeamPermissionCodes.TEAM_FILE_WRITE, teamIdArg = "request.teamId")
+    @RequiresTeamPermission(value = TeamPermissionCodes.TEAM_FILE_WRITE, teamIdArg = "request.teamId", skipWhenTeamIdMissing = true)
     public Result<FolderCreateResultVO> createFolder(@CurrentUser Long userId, @Valid @RequestBody CreateFolderRequest request) {
         return Result.of(fileFolderPort.createFolder(
                 request.getFolderName(),

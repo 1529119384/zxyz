@@ -51,8 +51,14 @@ public class FileUploadService implements FileUploadPort {
             "png", "jpg", "jpeg", "gif", "bmp", "webp", "ico",
             // 压缩包
             "zip", "rar", "7z", "tar", "gz",
-            // 其他
-            "mp3", "mp4", "avi", "mov", "wav"
+            // 音视频
+            "mp3", "mp4", "avi", "mov", "wav",
+            // 代码/标记
+            "md", "json", "xml", "yaml", "yml", "html", "css",
+            "ts", "vue", "java", "py", "go", "sql", "sh", "log",
+            "ini", "conf", "toml",
+            // 其他文档
+            "odt", "ods", "odp", "key", "epub"
     );
 
     private static final long MAX_FILE_SIZE_BYTES = 500 * 1024 * 1024; // 500MB

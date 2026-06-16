@@ -75,7 +75,7 @@ public class FileController {
     @Log
     @PostMapping("/uploads/confirmations")
     @SaCheckPermission(SystemPermissionCodes.FILE_UPLOAD)
-    @RequiresTeamPermission(value = TeamPermissionCodes.TEAM_FILE_WRITE, teamIdArg = "request.teamId")
+    @RequiresTeamPermission(value = TeamPermissionCodes.TEAM_FILE_WRITE, teamIdArg = "request.teamId", skipWhenTeamIdMissing = true)
     public Result<BatchUploadConfirmResultVO> confirmUpload(@CurrentUser Long userId, @Valid @RequestBody BatchConfirmUploadRequest request) {
         int fileCount = request == null || request.getFiles() == null ? 0 : request.getFiles().size();
         log.info("用户 {} 批量确认上传文件，数量: {}", userId, fileCount);
@@ -87,7 +87,7 @@ public class FileController {
     @Log
     @GetMapping
     @SaCheckPermission(SystemPermissionCodes.FILE_READ)
-    @RequiresTeamPermission(value = TeamPermissionCodes.TEAM_FILE_READ)
+    @RequiresTeamPermission(value = TeamPermissionCodes.TEAM_FILE_READ, skipWhenTeamIdMissing = true)
     public Result<List<FileListItemVO>> getFileList(@CurrentUser Long userId,
                               @RequestParam Long parentId,
                               @RequestParam(required = false) Long teamId,
@@ -108,7 +108,7 @@ public class FileController {
     @Operation(summary = "搜索文件")
     @GetMapping("/search")
     @SaCheckPermission(SystemPermissionCodes.FILE_READ)
-    @RequiresTeamPermission(value = TeamPermissionCodes.TEAM_FILE_READ)
+    @RequiresTeamPermission(value = TeamPermissionCodes.TEAM_FILE_READ, skipWhenTeamIdMissing = true)
     public Result<FileSearchResultVO> searchFiles(@CurrentUser Long userId,
                               @RequestParam String keyword,
                               @RequestParam(required = false) Long teamId,
@@ -141,7 +141,7 @@ public class FileController {
     @Operation(summary = "批量移动文件")
     @PatchMapping(path = "", consumes = "application/json")
     @SaCheckPermission(SystemPermissionCodes.FILE_WRITE)
-    @RequiresTeamPermission(value = TeamPermissionCodes.TEAM_FILE_WRITE, teamIdArg = "request.teamId")
+    @RequiresTeamPermission(value = TeamPermissionCodes.TEAM_FILE_WRITE, teamIdArg = "request.teamId", skipWhenTeamIdMissing = true)
     public Result<BatchOperationDetailVO> patchFiles(@CurrentUser Long userId, @Valid @RequestBody MoveCopyFilesRequest request) {
         List<Long> fileIds = resolveFileIds(request);
         Long targetParentId = resolveTargetParentId(request);
@@ -155,7 +155,7 @@ public class FileController {
     @Operation(summary = "批量复制文件")
     @PostMapping(path = "/copies", consumes = "application/json")
     @SaCheckPermission(SystemPermissionCodes.FILE_WRITE)
-    @RequiresTeamPermission(value = TeamPermissionCodes.TEAM_FILE_WRITE, teamIdArg = "request.teamId")
+    @RequiresTeamPermission(value = TeamPermissionCodes.TEAM_FILE_WRITE, teamIdArg = "request.teamId", skipWhenTeamIdMissing = true)
     public Result<BatchOperationDetailVO> copyFiles(@CurrentUser Long userId, @Valid @RequestBody MoveCopyFilesRequest request) {
         List<Long> fileIds = resolveFileIds(request);
         Long targetParentId = resolveTargetParentId(request);
