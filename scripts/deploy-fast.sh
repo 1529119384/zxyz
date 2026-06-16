@@ -8,6 +8,8 @@
 #   ./scripts/deploy-fast.sh project-service gateway       # 多个服务
 #   ./scripts/deploy-fast.sh --no-health project-service   # 跳过健康检查（最快）
 #   ./scripts/deploy-fast.sh --all                         # 重启所有应用服务
+#   ./scripts/deploy-fast.sh --validate                    # 仅验证 .env 配置
+#   ./scripts/deploy-fast.sh --clean-nacos                 # 清理 Nacos 日志后部署
 #
 # 前置条件:
 #   - 服务器上已部署 docker-compose.yml（/www/zxyz/）
@@ -27,20 +29,52 @@ ALL_APP_SERVICES=(
 # --- 参数解析 ---
 NO_PULL=false
 NO_HEALTH=false
+VALIDATE_ONLY=false
+CLEAN_NACOS=false
 SERVICES=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --no-pull)   NO_PULL=true; shift ;;
-    --no-health) NO_HEALTH=true; shift ;;
-    --all)       SERVICES=("${ALL_APP_SERVICES[@]}"); shift ;;
-    -*)          echo "Unknown option: $1"; exit 1 ;;
-    *)           SERVICES+=("$1"); shift ;;
+    --no-pull)      NO_PULL=true; shift ;;
+    --no-health)    NO_HEALTH=true; shift ;;
+    --all)          SERVICES=("${ALL_APP_SERVICES[@]}"); shift ;;
+    --validate)     VALIDATE_ONLY=true; shift ;;
+    --clean-nacos)  CLEAN_NACOS=true; shift ;;
+    -*)             echo "Unknown option: $1"; exit 1 ;;
+    *)              SERVICES+=("$1"); shift ;;
   esac
 done
 
+# --- 环境验证 ---
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ "$VALIDATE_ONLY" = true ]; then
+  bash "$SCRIPT_DIR/validate-env.sh" "$DEPLOY_DIR/.env"
+  exit $?
+fi
+
+# --- Nacos 日志清理 ---
+if [ "$CLEAN_NACOS" = true ]; then
+  echo "===== Cleaning Nacos logs ====="
+  docker exec zxyz-nacos sh -c "find /home/nacos/logs -name '*.log.*' -mtime +7 -delete 2>/dev/null"
+  docker exec zxyz-nacos sh -c "find /home/nacos/logs -name 'nacos.log' -size +100M -exec truncate -s 20M {} \; 2>/dev/null"
+  echo "Nacos logs cleaned"
+  echo ""
+fi
+
+# --- 自动验证 .env ---
+if [ -f "$SCRIPT_DIR/validate-env.sh" ] && [ -f "$DEPLOY_DIR/.env" ]; then
+  echo "===== Validating .env ====="
+  if ! bash "$SCRIPT_DIR/validate-env.sh" "$DEPLOY_DIR/.env"; then
+    echo ""
+    echo "ERROR: .env validation failed. Fix issues before deploying."
+    echo "Run: ./scripts/validate-env.sh $DEPLOY_DIR/.env"
+    exit 1
+  fi
+  echo ""
+fi
+
 if [ ${#SERVICES[@]} -eq 0 ]; then
-  echo "Usage: deploy-fast.sh [--no-pull] [--no-health] [--all] <service> [service...]"
+  echo "Usage: deploy-fast.sh [--no-pull] [--no-health] [--all] [--validate] [--clean-nacos] <service> [service...]"
   echo ""
   echo "Available services:"
   for s in "${ALL_APP_SERVICES[@]}"; do
@@ -55,6 +89,7 @@ echo "===== Fast Deploy ====="
 echo "Services: ${SERVICES[*]}"
 echo "Pull:     $([ "$NO_PULL" = true ] && echo "SKIP" || echo "YES")"
 echo "Health:   $([ "$NO_HEALTH" = true ] && echo "SKIP" || echo "WAIT")"
+echo "Nacos:    $([ "$CLEAN_NACOS" = true ] && echo "CLEAN" || echo "SKIP")"
 echo ""
 
 # --- 拉取镜像 ---

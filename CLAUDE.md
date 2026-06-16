@@ -164,7 +164,14 @@ Code review: `ISSUE/CODEX-CODE-REVIEW-RESULTS.md`（42 项问题，P0-P3 分级�
 
 本地修改 `.env` 中的 `APP_IMAGE_TAG` 和 `IMAGE_PREFIX` 即可控制部署目标。
 
-**快速部署（开发用）**: CI/CD 构建完成后，SSH 到服务器运行 `scripts/deploy-fast.sh <服务名>` 拉取+重启，跳过完整健康检查等待。`--no-health` 跳过健康检查，`--all` 重启所有服务。
+**快速部署（开发用）**: CI/CD 构建完成后，SSH 到服务器运行 `scripts/deploy-fast.sh <服务名>` 拉取+重启，跳过完整健康检查等待。`--no-health` 跳过健康检查，`--all` 重启所有服务。`--validate` 仅验证 .env 配置。`--clean-nacos` 清理 Nacos 日志后部署。
+
+**部署注意事项**:
+- 修改 `.env` 后必须用 `docker compose up -d` 重建容器，`docker compose restart` 不会重新加载环境变量
+- `.env` 中所有 `CHANGE_ME_*` 占位符必须在首次部署时替换，否则服务启动后连接失败
+- Nacos 日志会持续增长，已配置 sidecar 定期清理（保留 7 天，单文件限 100MB）
+- 10 个 Java 服务同时启动 CPU 压力大，建议分批：基础设施 → gateway → 业务服务
+- 首次部署前运行 `./scripts/validate-env.sh .env` 检查配置完整性
 
 **服务器 `.env`** 在 `/www/zxyz/.env`，独立于仓库维护，包含 OSS 密钥等敏感配置。CI/CD 不同步此文件。
 
