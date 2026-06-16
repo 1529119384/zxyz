@@ -399,27 +399,30 @@ jobs:
             docker compose up -d $UP_FLAGS "${UPDATE_SVC[@]}"
 
             # --- 分层健康检查 ---
-            # 普通服务：10 次 × 5s = 50s
+            # 普通服务：6 次 × 5s = 30s
             echo "===== Waiting for common services ====="
-            for i in $(seq 1 10); do
+            for i in $(seq 1 6); do
               if ! docker compose ps 2>/dev/null | grep -qE "(im-service|email-service|user-service|share-service|file-service|team-service|audit-service|admin-service|frontend-nginx).*(unhealthy|starting)"; then
                 echo "Common services ready"
                 break
               fi
+              if [ "$i" -eq 6 ]; then
+                echo "WARN: Common services not all healthy, continuing"
+              fi
               sleep 5
             done
 
-            # Gateway 单独长等待：25 次 × 10s = 250s
+            # Gateway：12 次 × 5s = 60s
             echo "===== Waiting for gateway ====="
-            for i in $(seq 1 25); do
+            for i in $(seq 1 12); do
               if ! docker compose ps 2>/dev/null | grep -q "gateway.*(unhealthy|starting)"; then
                 echo "Gateway ready"
                 break
               fi
-              if [ "$i" -eq 25 ]; then
+              if [ "$i" -eq 12 ]; then
                 echo "WARN: Gateway startup timeout, continuing"
               fi
-              sleep 10
+              sleep 5
             done
 
             echo "===== Container status ====="

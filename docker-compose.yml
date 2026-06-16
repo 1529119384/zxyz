@@ -218,10 +218,10 @@ services:
       - zxyz-net
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:${PROJECT_SERVICE_PORT:-18080}/actuator/health || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 8
-      start_period: 90s
+      interval: 10s
+      timeout: 3s
+      retries: 4
+      start_period: 30s
     logging:
       driver: json-file
       options:
@@ -283,10 +283,10 @@ services:
       - zxyz-net
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:${IM_SERVICE_PORT:-18081}/actuator/health || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 8
-      start_period: 90s
+      interval: 10s
+      timeout: 3s
+      retries: 4
+      start_period: 30s
     logging:
       driver: json-file
       options:
@@ -351,10 +351,10 @@ services:
       - zxyz-net
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:${EMAIL_SERVICE_PORT:-18082}/actuator/health || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 8
-      start_period: 90s
+      interval: 10s
+      timeout: 3s
+      retries: 4
+      start_period: 30s
     logging:
       driver: json-file
       options:
@@ -416,10 +416,10 @@ services:
       - zxyz-net
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:${SHARE_SERVICE_PORT:-18084}/actuator/health || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 8
-      start_period: 90s
+      interval: 10s
+      timeout: 3s
+      retries: 4
+      start_period: 30s
     logging:
       driver: json-file
       options:
@@ -486,10 +486,10 @@ services:
       - zxyz-net
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:${FILE_SERVICE_PORT:-18085}/actuator/health || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 8
-      start_period: 90s
+      interval: 10s
+      timeout: 3s
+      retries: 4
+      start_period: 30s
     logging:
       driver: json-file
       options:
@@ -557,10 +557,10 @@ services:
       - zxyz-net
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:${TEAM_SERVICE_PORT:-18086}/actuator/health || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 8
-      start_period: 90s
+      interval: 10s
+      timeout: 3s
+      retries: 4
+      start_period: 30s
     logging:
       driver: json-file
       options:
@@ -618,10 +618,10 @@ services:
       - zxyz-net
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:${AUDIT_SERVICE_PORT:-18087}/actuator/health || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 8
-      start_period: 90s
+      interval: 10s
+      timeout: 3s
+      retries: 4
+      start_period: 30s
     logging:
       driver: json-file
       options:
@@ -670,10 +670,10 @@ services:
       - zxyz-net
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:${ADMIN_SERVICE_PORT:-18088}/actuator/health || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 8
-      start_period: 90s
+      interval: 10s
+      timeout: 3s
+      retries: 4
+      start_period: 30s
     logging:
       driver: json-file
       options:
@@ -741,10 +741,10 @@ services:
       - zxyz-net
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:${USER_SERVICE_PORT:-18083}/actuator/health || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 8
-      start_period: 90s
+      interval: 10s
+      timeout: 3s
+      retries: 4
+      start_period: 30s
     logging:
       driver: json-file
       options:
@@ -794,10 +794,10 @@ services:
       - zxyz-net
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:${GATEWAY_PORT:-18000}/actuator/health || exit 1"]
-      interval: 15s
-      timeout: 5s
+      interval: 10s
+      timeout: 3s
       retries: 6
-      start_period: 60s
+      start_period: 30s
     logging:
       driver: json-file
       options:
