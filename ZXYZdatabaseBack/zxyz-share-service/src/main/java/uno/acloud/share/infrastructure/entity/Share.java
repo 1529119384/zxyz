@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.AllArgsConstructor;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -14,7 +15,7 @@ import java.time.LocalDateTime;
 
 @Getter
 @Setter
-@ToString
+@ToString(exclude = {"password"})
 @NoArgsConstructor
 @AllArgsConstructor
 @TableName("share")
@@ -26,6 +27,7 @@ public class Share implements Serializable {
     private String shareKey;
     private Long userId;
     private String username;
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String password;
     private LocalDateTime expireTime;
     private Integer maxAccessCount;

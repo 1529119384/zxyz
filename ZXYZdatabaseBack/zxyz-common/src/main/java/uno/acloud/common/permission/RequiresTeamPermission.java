@@ -10,5 +10,5 @@ import java.lang.annotation.Target;
 public @interface RequiresTeamPermission {
     String value();
     String teamIdArg() default "teamId";
-    boolean skipWhenTeamIdMissing() default true;
+    boolean skipWhenTeamIdMissing() default false;
 }

@@ -98,6 +98,7 @@ const router = createRouter({
               path: 'config-admin',
               name: 'configAdminSettings',
               component: ConfigAdminSettings,
+              beforeEnter: requireSystemAdminRole(),
             },
             {
               path: 'permissions',
@@ -160,7 +161,7 @@ router.beforeEach(async (to, from, next) => {
     }
     // 网络错误等非认证错误，仍跳转登录页避免在异常状态下访问页面
     handleBusinessError(error, '加载登录状态失败，请稍后重试')
-    next({ name: 'login', query: { redirect: to.fullPath } })
+    next({ name: 'login', query: { redirect: sanitizeRedirectPath(to.fullPath) } })
     return
   }
 

@@ -161,6 +161,9 @@ public class FileDomainValidator {
         if (".".equals(normalizedName) || "..".equals(normalizedName)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "文件名不能为 . 或 ..");
         }
+        if (normalizedName.matches(".*[<>&\"'].*")) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "文件名不能包含特殊字符");
+        }
         return normalizedName;
     }
 

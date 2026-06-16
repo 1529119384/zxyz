@@ -26,5 +26,18 @@ export function sanitizeRedirectPath(path, fallback = '/index') {
     return fallback
   }
 
+  // Strip control characters (tab, newline, etc.) that could bypass regex checks
+  const cleaned = [...decoded]
+    .filter((ch) => {
+      const code = ch.charCodeAt(0)
+      return code > 0x1f && code !== 0x7f
+    })
+    .join('')
+
+  // Whitelist: only allow safe path characters
+  if (!/^\/[\w\-./?#=&%+;@!~]*$/.test(cleaned)) {
+    return fallback
+  }
+
   return trimmed
 }

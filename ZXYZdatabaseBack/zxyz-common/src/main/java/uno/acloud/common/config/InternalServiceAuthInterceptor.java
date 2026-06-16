@@ -44,8 +44,7 @@ public class InternalServiceAuthInterceptor implements HandlerInterceptor {
         // 使用常量时间比较，防止时序攻击
         if (StringUtils.isBlank(token)
                 || !MessageDigest.isEqual(internalServiceToken.getBytes(StandardCharsets.UTF_8), token.getBytes(StandardCharsets.UTF_8))) {
-            log.warn("内部服务鉴权失败: expected=[{}], provided=[{}], expectedLen={}, providedLen={}",
-                    internalServiceToken, token,
+            log.warn("内部服务鉴权失败: expectedLen={}, providedLen={}",
                     internalServiceToken.length(),
                     token == null ? "null" : token.length());
             throw new BusinessException(ErrorCode.NO_PERMISSION, "内部服务鉴权失败");

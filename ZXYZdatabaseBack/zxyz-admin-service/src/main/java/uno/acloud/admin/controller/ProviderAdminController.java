@@ -25,7 +25,7 @@ import java.util.Map;
  */
 @Tag(name = "提供者管理", description = "存储和邮件提供者管理接口")
 @RestController
-@RequestMapping("/api/admin/providers")
+@RequestMapping("/providers")
 @SaCheckRole(SystemRoleCodes.SYSTEM_ADMIN)
 public class ProviderAdminController {
 

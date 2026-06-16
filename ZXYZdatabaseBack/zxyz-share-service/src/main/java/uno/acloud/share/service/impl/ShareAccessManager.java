@@ -69,8 +69,8 @@ public class ShareAccessManager {
         boolean passed = !needPassword || hasValidAccessToken(share, shareAccessToken);
         return new SharePublicInfoVO(
                 share.getShareKey(),
-                share.getUsername(),
-                "来自 " + share.getUsername() + " 的分享",
+                null,
+                "分享",
                 needPassword,
                 passed,
                 passed,

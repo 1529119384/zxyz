@@ -22,7 +22,7 @@ import uno.acloud.exception.BusinessException;
 import java.util.List;
 import java.util.Set;
 
-@RestControllerAdvice(basePackages = {"uno.acloud.user", "uno.acloud.team", "uno.acloud.project", "uno.acloud.file", "uno.acloud.share", "uno.acloud.email", "uno.acloud.audit", "uno.acloud.gateway"})
+@RestControllerAdvice(basePackages = {"uno.acloud.user", "uno.acloud.team", "uno.acloud.project", "uno.acloud.file", "uno.acloud.share", "uno.acloud.email", "uno.acloud.audit", "uno.acloud.gateway", "uno.acloud.im", "uno.acloud.admin"})
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
