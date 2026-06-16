@@ -39,7 +39,7 @@
         </el-table-column>
         <el-table-column label="修改时间" width="180">
           <template #default="{ row }">
-            {{ row.modifyTime || '-' }}
+            {{ fmtTime(row.modifyTime) }}
           </template>
         </el-table-column>
       </el-table>
@@ -62,7 +62,7 @@ import { ElMessage } from 'element-plus'
 
 import { fetchFileList } from '@/api/files'
 import { getFileIcon } from '@/models/file'
-import { formatSize } from '@/utils/format'
+import { formatSize, fmtTime } from '@/utils/format'
 
 const props = defineProps({
   visible: {

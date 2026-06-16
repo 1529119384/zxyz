@@ -136,6 +136,8 @@ export function createApiClient(options = {}) {
 
       const payload = response.data
 
+      // 后端 Result 包装约定：code === 1 表示成功（ErrorCode.SUCCESS = 1）
+      // 成功时返回整个 payload（含 code/msg/data），由调用方按需取 data
       if (payload?.code === 1) {
         return payload
       }
