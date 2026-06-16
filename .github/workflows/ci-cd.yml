@@ -184,7 +184,8 @@ jobs:
       always() &&
       needs.quality-check-frontend.result != 'failure' &&
       needs.quality-check-backend.result != 'failure' &&
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      (needs.detect-changes.outputs.backend-any == 'true' || needs.detect-changes.outputs.frontend == 'true')
     runs-on: ubuntu-latest
     strategy:
       matrix:
