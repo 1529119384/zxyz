@@ -87,7 +87,7 @@ WHEN 修改 Gateway 路由, DO 同步更新 `docs/infrastructure.md` 中的路�
 
 **MyBatis + MapStruct conflict**: MyBatis `@MapperScan` can hijack MapStruct `@Mapper` interfaces in the same package. Keep MapStruct mappers in a separate package (e.g., `uno.acloud.{service}.convert`).
 
-**Auto-configuration conditions**: `RemoteStpInterfaceAutoConfig` requires `@ConditionalOnBean(RestClient.class)` — Gateway (WebFlux) has no `RestClient`, so it's skipped. `ConfigClientAutoConfiguration` requires `@ConditionalOnBean(RestClient.Builder.class)` — same reason, skipped in Gateway. admin-service also skips `RemoteStpInterfaceAutoConfig` since it has no `RestClient`.
+**Auto-configuration conditions**: `RemoteStpInterfaceAutoConfig` requires `@ConditionalOnBean(RestClient.class)` — Gateway (WebFlux) has no `RestClient`, so it's skipped. `ConfigClientAutoConfiguration` requires `@ConditionalOnBean(RestClient.Builder.class)` — same reason, skipped in Gateway.
 
 **GlobalExceptionHandler coverage**: `basePackages` includes all 10 service packages: `uno.acloud.{user,team,project,file,share,email,audit,gateway,im,admin}`. When adding a new service module, add its package to `basePackages` in `zxyz-common/GlobalExceptionHandler.java`.
 
@@ -99,7 +99,11 @@ WHEN 修改 Gateway 路由, DO 同步更新 `docs/infrastructure.md` 中的路�
 
 **Gateway route rewrite**: Routes with `RewritePath=/api/admin/(?<segment>.*)` → `/${segment}` strip the `/api/admin` prefix. Backend controllers must map to the rewritten path (e.g., `@RequestMapping("/configs")`, NOT `@RequestMapping("/api/admin/configs")`). Known issue: `ProviderAdminController` previously had wrong path `/api/admin/providers` → fixed to `/providers`.
 
-**RestClient timeout**: All 8 services + project-service factories use `JdkClientHttpRequestFactory` with `connectTimeout=3s, readTimeout=10s`. When creating new `RestClient` beans, always configure timeouts via `HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build()` and `factory.setReadTimeout(Duration.ofSeconds(10))`.
+**RestClient timeout**: All 9 services use `JdkClientHttpRequestFactory` with `connectTimeout=3s, readTimeout=10s`. When creating new `RestClient` beans, always configure timeouts via `HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build()` and `factory.setReadTimeout(Duration.ofSeconds(10))`.
+
+**AbstractServiceClient HTTP helpers**: Base class provides `getJson`, `postJson`, `putJson`, `patchJson`, `deleteJson` — all wrapped with Resilience4j retry (3x, 500ms) + circuit breaker (10-window, 50%, 30s). Subclasses inherit these for free. New client classes should extend `AbstractServiceClient` (see admin-service's `EmailProviderClient`/`StorageProviderClient` as reference).
+
+**API response contract**: All backend APIs return `Result<T>` with `code: 1` = success (`ErrorCode.SUCCESS = 1`). Frontend `createApiClient.js` checks `payload?.code === 1`. See `docs/api-contract.md` for full contract.
 
 **Entity security**: `User` and `Share` entities use `@JsonProperty(access = WRITE_ONLY)` on `password` field + `@ToString(exclude = {"password"})` to prevent accidental serialization of BCrypt hashes.
 
@@ -121,8 +125,9 @@ WHEN 修改 Gateway 路由, DO 同步更新 `docs/infrastructure.md` 中的路�
 
 WHEN 编写前端代码, DO 在 `ZXYZdatabaseFront/` 目录执行 npm 命令。
 WHEN 添加 API 接口, DO 按领域放入对应 `api/` 文件，禁止跨领域引用。
-WHEN 选择 HTTP 客户端, DO 按场景选：`request.js`（需登录）、`imRequest.js`（IM）、`publicRequest.js`（公开）。
+WHEN 选择 HTTP 客户端, DO 按场景选：`request.js`（已认证，默认）、`publicRequest.js`（公开/分享）、`imRequest.js`（IM）。所有客户端均 `withCredentials: true`。
 WHEN 处理认证, DO 依赖 HttpOnly Cookie（`withCredentials: true`），不手动注入 Authorization Header。
+WHEN 显示时间戳, DO 使用 `fmtTime()` 函数（`utils/format.js`），不要直接 `|| '-'` 显示原始值。
 WHEN 处理文件操作, DO 使用 `composables/` 中的组合函数，不直接操作 store。
 WHEN 提交代码, DO 使用 conventional commits 格式（Husky + commitlint 强制）。
 WHEN 处理错误, DO 使用 `BusinessException` → `ErrorCode` → `Result` 模式。
@@ -149,7 +154,7 @@ Build/run commands: `docs/commands.md`
 Tech stack details: `docs/architecture.md`
 Deployment guide: `DEPLOYMENT.md`
 Design proposals: `ISSUE/` 目录（#09 CI/CD、#10 配置管理、#11 多存储、#12 性能优化、#13 硬编码配置热迁移）
-Code review: `ISSUE/CODEX-CODE-REVIEW-RESULTS.md`（42 项问题，P0-P3 分级，含修复建议）
+Code review: `ISSUE/CODEX-CODE-REVIEW-RESULTS.md`（42 项问题，P0-P3 分级，阶段一~四已完成安全热修复、事务重构、性能优化、低优先级修复）
 
 ## CI/CD
 
