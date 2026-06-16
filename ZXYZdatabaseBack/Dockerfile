@@ -33,14 +33,14 @@ COPY ZXYZdatabaseBack/zxyz-admin-service/pom.xml ./zxyz-admin-service/pom.xml
 
 ARG MODULE
 RUN test -n "${MODULE}" \
-    && mvn -BT -1C -pl "${MODULE}" -am dependency:go-offline
+    && mvn -B -T 1C -pl "${MODULE}" -am dependency:go-offline
 
 # 复制源码后执行目标模块打包。
 # 分两步：先构建 zxyz-common 的 test-jar（部分服务依赖其测试工具类），
 # 再用 -Dmaven.test.skip=true 打包目标模块（跳过测试编译和执行）。
 COPY ZXYZdatabaseBack/ ./
-RUN mvn -BT -1C -pl zxyz-common -am install -Dmaven.test.skip=false -DskipTests \
-    && mvn -BT -1C -pl "${MODULE}" -am package -Dmaven.test.skip=true \
+RUN mvn -B -T 1C -pl zxyz-common -am install -Dmaven.test.skip=false -DskipTests \
+    && mvn -B -T 1C -pl "${MODULE}" -am package -Dmaven.test.skip=true \
     && find "${MODULE}/target" -maxdepth 1 -type f -name "${MODULE}-*.jar" ! -name "original-*.jar" -exec cp {} /tmp/app.jar \;
 
 FROM eclipse-temurin:17-jre
