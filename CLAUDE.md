@@ -115,6 +115,8 @@ WHEN 修改 Gateway 路由, DO 同步更新 `docs/infrastructure.md` 中的路�
 
 **Transaction boundary pattern**: HTTP/MQ calls must NOT happen inside `@Transactional` methods — they hold DB connections during remote I/O. Use the three-phase pattern: (1) HTTP pre-checks outside transaction, (2) DB operations in `@Transactional` method via `@Lazy` self-injection, (3) post-transaction HTTP notifications. See `ProjectCreationCommand`, `ProjectCatalogService` for examples. Self-injection requires a package-private `setSelf()` method for unit testing without Spring proxy.
 
+**Env validation**: Run `./scripts/validate-env.sh .env` before first deployment to catch `CHANGE_ME_*` placeholders and missing required variables. The deploy script runs this automatically.
+
 ## Frontend Conventions
 
 WHEN 编写前端代码, DO 在 `ZXYZdatabaseFront/` 目录执行 npm 命令。
@@ -136,10 +138,11 @@ WHEN 添加 setting 子路由, DO 确保 `route.name` 在 Setting 组件 watcher
 - **RabbitMQ**: localhost:5672, Topic Exchange `zxyz.topic`
 - **Auth**: Sa-Token 1.43.0 (UUID token, Redis session store, HttpOnly cookie)
 - **API Docs**: Knife4j 4.5.0 + springdoc 2.8.9 (available at each service's doc endpoint)
-- **Docker**: `docker-compose.yml` orchestrates 16 services; unified `Dockerfile` with `MODULE` build arg
+- **Docker**: `docker-compose.yml` orchestrates 18 services (含 nacos-log-cleanup sidecar); unified `Dockerfile` with `MODULE` build arg
 - **GHCR**: 镜像推送到 `ghcr.io`（`IMAGE_PREFIX` 变量），workflow 需要 `permissions: packages: write`
 - **Nginx CSP**: `deploy/nginx/default.conf` 用 `envsubst` 模板化，`OSS_PUBLIC_BASE_URL` 在启动时注入，不要硬编码 OSS 域名
 - **内部鉴权**: 所有服务（含 gateway）必须在 docker-compose environment 中传入 `INTERNAL_SERVICE_TOKEN`（无默认值，生产环境必须配置），gateway 的 `AddRequestHeader` filter 依赖此变量注入 `X-Internal-Service-Token` header
+- **RabbitMQ 连接**: 所有服务（含 gateway、admin-service）必须在 docker-compose environment 中传入 `RABBITMQ_HOST: rabbitmq`，否则健康检查因 `RabbitHealthIndicator` 连接 localhost 失败
 
 Gateway routing table and inter-service call map: `docs/infrastructure.md`
 Build/run commands: `docs/commands.md`
@@ -152,7 +155,7 @@ Code review: `ISSUE/CODEX-CODE-REVIEW-RESULTS.md`（42 项问题，P0-P3 分级�
 
 `.github/workflows/ci-cd.yml` — 基于路径变更的选择性构建部署：
 
-- **触发**: push 到 `dev`/`main`、`v*` tag、PR、手动 dispatch
+- **触发**: push 到 `dev`/`main`、`v*` tag、PR、手动 dispatch。`on.push/pull_request` 有 paths 白名单，仅监控 `ZXYZdatabaseBack/**`、`ZXYZdatabaseFront/**`、`deploy/**`、`docker-compose.yml`、`.env.example`、`.github/workflows/**`，CLAUDE.md 等文档变更不触发 workflow
 - **变更检测**: `dorny/paths-filter` 按服务目录判断哪些镜像需要重建
 - **backend-common 变更**: 所有后端服务都重建（共享依赖）
 - **docker-compose.yml 变更**: 不触发镜像重建（运行时配置，非构建依赖）
