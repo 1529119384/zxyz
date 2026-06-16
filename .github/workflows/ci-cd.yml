@@ -4,8 +4,21 @@ on:
   push:
     branches: [dev, main]
     tags: ['v*']
+    paths:
+      - 'ZXYZdatabaseBack/**'
+      - 'ZXYZdatabaseFront/**'
+      - 'deploy/**'
+      - 'docker-compose.yml'
+      - '.env.example'
+      - '.github/workflows/**'
   pull_request:
     branches: [dev, main]
+    paths:
+      - 'ZXYZdatabaseBack/**'
+      - 'ZXYZdatabaseFront/**'
+      - 'deploy/**'
+      - 'docker-compose.yml'
+      - '.env.example'
   workflow_dispatch:
     inputs:
       tag:
