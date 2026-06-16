@@ -81,6 +81,8 @@ WHEN 修改 Gateway 路由, DO 同步更新 `docs/infrastructure.md` 中的路�
 
 **Config binding pitfall**: All services use flat `app.internal-service-token` in YAML with `@Value` or `@ConfigurationProperties(prefix="app")`. Do NOT nest it under `app.internal.service-token` — Spring Boot cannot bind nested YAML to flat fields. If you see empty token values at runtime, check the YAML structure.
 
+**`@ConfigurationProperties` prefix matching**: Each properties class binds to a specific YAML prefix. E.g. `TeamServiceProperties(prefix="app.team-service")` expects `app.team-service.internal-service-token`, NOT `app.internal-service-token` or `app.share.team-service.internal-service-token`. When adding new `@ConfigurationProperties` classes, ensure the YAML keys match the exact prefix. Common mistake: nesting service config under a parent service's `app.*` block instead of at the correct prefix level.
+
 **Service URL config**: All service base URLs use `app.*-service.base-url` in `application-common.yml` (e.g., `app.user-service.base-url`). Individual service `application.yml` files map these directly to env vars (e.g., `${TEAM_SERVICE_BASE_URL:http://zxyz-team-service}`), NOT via `${services.*}` indirection — that causes `@ConditionalOnProperty` to fail before Nacos loads.
 
 **MyBatis + MapStruct conflict**: MyBatis `@MapperScan` can hijack MapStruct `@Mapper` interfaces in the same package. Keep MapStruct mappers in a separate package (e.g., `uno.acloud.{service}.convert`).
@@ -139,13 +141,18 @@ Design proposals: `ISSUE/` 目录（#09 CI/CD、#10 配置管理、#11 多存储
 - **backend-common 变更**: 所有后端服务都重建（共享依赖）
 - **docker-compose.yml 变更**: 不触发镜像重建（运行时配置，非构建依赖）
 - **构建**: Docker Buildx + GHA 缓存，镜像推送到 DockerHub（`aclouda/zxyz-*`）
-- **部署**: SSH 到服务器，只拉取+重启变更的服务，分层健康检查（普通服务 50s，gateway 250s）
+- **部署**: SSH 到服务器，只拉取+重启变更的服务，分层健康检查（普通服务 30s，gateway 60s）
+- **手动触发**: workflow_dispatch 支持 `skip_quality` 参数跳过 lint/test/compile，直接构建部署
 - **镜像标签**: dev 分支 → `dev`，main 分支 → `latest`，tag → 版本号
 - **前端构建**: 从根仓库 `ZXYZdatabaseFront/` 目录构建，新组件必须同时提交到前端子仓库和根仓库
 
 本地修改 `.env` 中的 `APP_IMAGE_TAG` 和 `DOCKERHUB_PREFIX` 即可控制部署目标。
 
+**快速部署（开发用）**: CI/CD 构建完成后，SSH 到服务器运行 `scripts/deploy-fast.sh <服务名>` 拉取+重启，跳过完整健康检查等待。`--no-health` 跳过健康检查，`--all` 重启所有服务。
+
 **服务器 `.env`** 在 `/www/zxyz/.env`，独立于仓库维护，包含 OSS 密钥等敏感配置。CI/CD 不同步此文件。
+
+**JVM 启动优化**: docker-compose.yml 中 10 个后端服务配置了 `JAVA_OPTS="-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1"`，牺牲少量峰值性能换启动速度。Dockerfile 中 Maven 使用 `-T 1C` 并发编译。
 
 ## Work Principles
 
