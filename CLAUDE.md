@@ -113,6 +113,8 @@ WHEN 修改 Gateway 路由, DO 同步更新 `docs/infrastructure.md` 中的路�
 
 **RabbitMQ health check**: RabbitMQ often times out its Docker health check under load but still functions normally. Services that depend on it may show "unhealthy" status while actually running fine. Use `docker exec zxyz-rabbitmq rabbitmq-diagnostics -q ping` to verify.
 
+**Transaction boundary pattern**: HTTP/MQ calls must NOT happen inside `@Transactional` methods — they hold DB connections during remote I/O. Use the three-phase pattern: (1) HTTP pre-checks outside transaction, (2) DB operations in `@Transactional` method via `@Lazy` self-injection, (3) post-transaction HTTP notifications. See `ProjectCreationCommand`, `ProjectCatalogService` for examples. Self-injection requires a package-private `setSelf()` method for unit testing without Spring proxy.
+
 ## Frontend Conventions
 
 WHEN 编写前端代码, DO 在 `ZXYZdatabaseFront/` 目录执行 npm 命令。
@@ -135,6 +137,7 @@ WHEN 添加 setting 子路由, DO 确保 `route.name` 在 Setting 组件 watcher
 - **Auth**: Sa-Token 1.43.0 (UUID token, Redis session store, HttpOnly cookie)
 - **API Docs**: Knife4j 4.5.0 + springdoc 2.8.9 (available at each service's doc endpoint)
 - **Docker**: `docker-compose.yml` orchestrates 16 services; unified `Dockerfile` with `MODULE` build arg
+- **GHCR**: 镜像推送到 `ghcr.io`（`IMAGE_PREFIX` 变量），workflow 需要 `permissions: packages: write`
 - **Nginx CSP**: `deploy/nginx/default.conf` 用 `envsubst` 模板化，`OSS_PUBLIC_BASE_URL` 在启动时注入，不要硬编码 OSS 域名
 - **内部鉴权**: 所有服务（含 gateway）必须在 docker-compose environment 中传入 `INTERNAL_SERVICE_TOKEN`（无默认值，生产环境必须配置），gateway 的 `AddRequestHeader` filter 依赖此变量注入 `X-Internal-Service-Token` header
 
