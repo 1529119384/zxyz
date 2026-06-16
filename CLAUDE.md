@@ -95,7 +95,7 @@ WHEN 修改 Gateway 路由, DO 同步更新 `docs/infrastructure.md` 中的路�
 
 **admin-service data source**: Uses `config.datasource.*` prefix (not `spring.datasource.*`) with `@Primary` DataSource. HikariCP requires `jdbc-url` (not `url`) in YAML when using `@ConfigurationProperties`.
 
-**Config management API**: admin-service exposes `GET/PUT /configs` (no `/api/admin` prefix — Gateway's `RewritePath` strips it). Frontend page at `/setting/config-admin` (requires `requireSystemAdminRole()`). Redis Pub/Sub on `zxyz:config:changed` channel notifies config changes.
+**Config management API**: admin-service exposes `GET/PUT /configs` (no `/api/admin` prefix — Gateway's `RewritePath` strips it). `ConfigServiceClient.get(key)` calls `GET /api/admin/configs/{key}` — ensure this single-key endpoint exists in `ConfigAdminController`. Frontend page at `/setting/config-admin` (requires `requireSystemAdminRole()`). Redis Pub/Sub on `zxyz:config:changed` channel notifies config changes. Config keys follow `app.{domain}.{property}` naming convention.
 
 **Gateway route rewrite**: Routes with `RewritePath=/api/admin/(?<segment>.*)` → `/${segment}` strip the `/api/admin` prefix. Backend controllers must map to the rewritten path (e.g., `@RequestMapping("/configs")`, NOT `@RequestMapping("/api/admin/configs")`). Known issue: `ProviderAdminController` previously had wrong path `/api/admin/providers` → fixed to `/providers`.
 
@@ -105,7 +105,9 @@ WHEN 修改 Gateway 路由, DO 同步更新 `docs/infrastructure.md` 中的路�
 
 **Filename XSS**: `FileDomainValidator.validateInputName()` and `FileRenameService.validateRenameName()` reject `< > " ' &` characters. Use these methods for all user-provided file/folder names.
 
-**`@RequiresTeamPermission` default**: `skipWhenTeamIdMissing` defaults to `false` — missing teamId throws `BAD_REQUEST`. All annotated endpoints must provide teamId.
+**File upload type whitelist**: `FileUploadService.ALLOWED_EXTENSIONS` controls which file types can be uploaded. `BLOCKED_EXTENSIONS` (with dot prefix, e.g. `.exe`) is checked first and overrides ALLOWED. Note: `.js` is in BLOCKED (XSS risk in browsers) — do NOT add `js` to ALLOWED. `GetSignUrl.java` has a duplicate `BLOCKED_EXTENSIONS` set — keep both in sync when modifying.
+
+**`@RequiresTeamPermission` default**: `skipWhenTeamIdMissing` defaults to `false` — missing teamId throws `BAD_REQUEST`. Endpoints that support personal space (teamId=null) must explicitly set `skipWhenTeamIdMissing = true`. Otherwise personal-space operations like file listing, folder creation, and upload confirmation all break with "teamId 不能为空".
 
 **Nginx DNS cache**: After restarting backend containers, their Docker network IPs change. Nginx caches DNS resolution at startup — restart it after service changes: `docker compose restart frontend-nginx`.
 
@@ -140,7 +142,7 @@ Gateway routing table and inter-service call map: `docs/infrastructure.md`
 Build/run commands: `docs/commands.md`
 Tech stack details: `docs/architecture.md`
 Deployment guide: `DEPLOYMENT.md`
-Design proposals: `ISSUE/` 目录（#09 CI/CD、#10 配置管理、#11 多存储、#12 性能优化）
+Design proposals: `ISSUE/` 目录（#09 CI/CD、#10 配置管理、#11 多存储、#12 性能优化、#13 硬编码配置热迁移）
 
 ## CI/CD
 
