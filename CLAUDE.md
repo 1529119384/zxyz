@@ -146,6 +146,7 @@ Build/run commands: `docs/commands.md`
 Tech stack details: `docs/architecture.md`
 Deployment guide: `DEPLOYMENT.md`
 Design proposals: `ISSUE/` 目录（#09 CI/CD、#10 配置管理、#11 多存储、#12 性能优化、#13 硬编码配置热迁移）
+Code review: `ISSUE/CODEX-CODE-REVIEW-RESULTS.md`（42 项问题，P0-P3 分级，含修复建议）
 
 ## CI/CD
 
