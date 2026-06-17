@@ -134,7 +134,7 @@ public interface TeamMapper extends BaseMapper<Team> {
 
     @Update("""
             UPDATE team_member
-            SET status = 2, update_time = NOW()
+            SET status = 2, personal_storage_limit = NULL, update_time = NOW()
             WHERE team_id = #{teamId}
               AND user_id = #{userId}
               AND status = 0

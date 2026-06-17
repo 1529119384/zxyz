@@ -1,5 +1,6 @@
 package uno.acloud.email.config;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "email")
@@ -7,6 +8,7 @@ public class EmailProperties {
     private String host;
     private int port = 587;
     private String username;
+    @JsonIgnore
     private String password;
     private String from;
     private String configSecret;

@@ -3,6 +3,7 @@ package uno.acloud.audit.mq;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
@@ -44,8 +45,9 @@ public class OperateLogConsumer {
             operateLogMapper.insert(operateLog);
             log.debug("审计日志写入完成: service={}, method={}", operateLog.getServiceName(), operateLog.getMethodName());
         } catch (JsonProcessingException e) {
-            // Poison message: deserialization will never succeed on retry, discard it
-            log.error("审计日志反序列化失败（丢弃消息）, message={}", message, e);
+            // Poison message: deserialization will never succeed on retry, send to DLQ
+            log.error("审计日志反序列化失败（送入死信队列）, message={}", message, e);
+            throw new AmqpRejectAndDontRequeueException("审计日志反序列化失败", e);
         } catch (Exception e) {
             log.error("审计日志写入失败（将重试）, message={}", message, e);
             throw new RuntimeException("审计日志写入失败", e);

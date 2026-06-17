@@ -4,7 +4,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.SystemRoleCodes;
 import uno.acloud.exception.BusinessException;
@@ -68,11 +71,23 @@ class UserRoleBindingServiceTest {
         when(permissionRoleMapper.getRoleByCode(SystemRoleCodes.SYSTEM_USER)).thenReturn(role);
         when(permissionRoleMapper.getRoleByUserID(10L)).thenReturn(List.of(SystemRoleCodes.SYSTEM_ADMIN));
 
-        userRoleBindingService.assignRoleToUser(10L, SystemRoleCodes.SYSTEM_USER, 99L, "127.0.0.1");
+        TransactionSynchronization[] captured = new TransactionSynchronization[1];
+        try (MockedStatic<TransactionSynchronizationManager> mocked = mockStatic(TransactionSynchronizationManager.class)) {
+            mocked.when(() -> TransactionSynchronizationManager.registerSynchronization(any()))
+                    .thenAnswer(invocation -> {
+                        captured[0] = invocation.getArgument(0);
+                        return null;
+                    });
 
-        verify(permissionRoleMapper).deleteUserRoles(10L);
-        verify(permissionRoleMapper).insertUserRole(10L, 2);
-        verify(userServiceClient).clearPermissionCache(10L);
+            userRoleBindingService.assignRoleToUser(10L, SystemRoleCodes.SYSTEM_USER, 99L, "127.0.0.1");
+
+            verify(permissionRoleMapper).deleteUserRoles(10L);
+            verify(permissionRoleMapper).insertUserRole(10L, 2);
+            verify(userServiceClient, never()).clearPermissionCache(anyLong());
+            assertNotNull(captured[0]);
+            captured[0].afterCommit();
+            verify(userServiceClient).clearPermissionCache(10L);
+        }
     }
 
     // ==================== ensureDefaultRole ====================
@@ -88,10 +103,22 @@ class UserRoleBindingServiceTest {
         adminRole.setRoleName("系统管理员");
         when(permissionRoleMapper.getRoleByCode(SystemRoleCodes.SYSTEM_ADMIN)).thenReturn(adminRole);
 
-        userRoleBindingService.ensureDefaultRole(10L, "newuser");
+        TransactionSynchronization[] captured = new TransactionSynchronization[1];
+        try (MockedStatic<TransactionSynchronizationManager> mocked = mockStatic(TransactionSynchronizationManager.class)) {
+            mocked.when(() -> TransactionSynchronizationManager.registerSynchronization(any()))
+                    .thenAnswer(invocation -> {
+                        captured[0] = invocation.getArgument(0);
+                        return null;
+                    });
 
-        verify(permissionRoleMapper).insertUserRole(10L, 1);
-        verify(userServiceClient).clearPermissionCache(10L);
+            userRoleBindingService.ensureDefaultRole(10L, "newuser");
+
+            verify(permissionRoleMapper).insertUserRole(10L, 1);
+            verify(userServiceClient, never()).clearPermissionCache(anyLong());
+            assertNotNull(captured[0]);
+            captured[0].afterCommit();
+            verify(userServiceClient).clearPermissionCache(10L);
+        }
     }
 
     @Test
@@ -105,10 +132,22 @@ class UserRoleBindingServiceTest {
         userRole.setRoleName("普通用户");
         when(permissionRoleMapper.getRoleByCode(SystemRoleCodes.SYSTEM_USER)).thenReturn(userRole);
 
-        userRoleBindingService.ensureDefaultRole(10L, "newuser");
+        TransactionSynchronization[] captured = new TransactionSynchronization[1];
+        try (MockedStatic<TransactionSynchronizationManager> mocked = mockStatic(TransactionSynchronizationManager.class)) {
+            mocked.when(() -> TransactionSynchronizationManager.registerSynchronization(any()))
+                    .thenAnswer(invocation -> {
+                        captured[0] = invocation.getArgument(0);
+                        return null;
+                    });
 
-        verify(permissionRoleMapper).insertUserRole(10L, 2);
-        verify(userServiceClient).clearPermissionCache(10L);
+            userRoleBindingService.ensureDefaultRole(10L, "newuser");
+
+            verify(permissionRoleMapper).insertUserRole(10L, 2);
+            verify(userServiceClient, never()).clearPermissionCache(anyLong());
+            assertNotNull(captured[0]);
+            captured[0].afterCommit();
+            verify(userServiceClient).clearPermissionCache(10L);
+        }
     }
 
     @Test
@@ -119,5 +158,34 @@ class UserRoleBindingServiceTest {
 
         verify(permissionRoleMapper, never()).countUsersByRoleCode(anyString());
         verify(permissionRoleMapper, never()).insertUserRole(anyLong(), anyInt());
+    }
+
+    // ==================== assignBootstrapAdminRole ====================
+
+    @Test
+    void assignBootstrapAdminRole_clearsCacheAfterCommit() {
+        when(permissionRoleMapper.countUserRoles(10L)).thenReturn(0);
+
+        RoleEntity adminRole = new RoleEntity();
+        adminRole.setId(1);
+        adminRole.setRoleCode(SystemRoleCodes.SYSTEM_ADMIN);
+        when(permissionRoleMapper.getRoleByCode(SystemRoleCodes.SYSTEM_ADMIN)).thenReturn(adminRole);
+
+        TransactionSynchronization[] captured = new TransactionSynchronization[1];
+        try (MockedStatic<TransactionSynchronizationManager> mocked = mockStatic(TransactionSynchronizationManager.class)) {
+            mocked.when(() -> TransactionSynchronizationManager.registerSynchronization(any()))
+                    .thenAnswer(invocation -> {
+                        captured[0] = invocation.getArgument(0);
+                        return null;
+                    });
+
+            userRoleBindingService.assignBootstrapAdminRole(10L);
+
+            verify(permissionRoleMapper).insertUserRole(10L, 1);
+            verify(userServiceClient, never()).clearPermissionCache(anyLong());
+            assertNotNull(captured[0]);
+            captured[0].afterCommit();
+            verify(userServiceClient).clearPermissionCache(10L);
+        }
     }
 }

@@ -119,6 +119,10 @@ WHEN 修改 Gateway 路由, DO 同步更新 `docs/infrastructure.md` 中的路�
 
 **Transaction boundary pattern**: HTTP/MQ calls must NOT happen inside `@Transactional` methods — they hold DB connections during remote I/O. Use the three-phase pattern: (1) HTTP pre-checks outside transaction, (2) DB operations in `@Transactional` method via `@Lazy` self-injection, (3) post-transaction HTTP notifications. See `ProjectCreationCommand`, `ProjectCatalogService` for examples. Self-injection requires a package-private `setSelf()` method for unit testing without Spring proxy.
 
+**MQ poison message handling**: When a consumer catches `JsonProcessingException` (deserialization failure that will never succeed on retry), throw `AmqpRejectAndDontRequeueException` to route the message to DLQ — do NOT just log and return (which silently ACKs the poison message). Import from `org.springframework.amqp.AmqpRejectAndDontRequeueException`.
+
+**Redis cache eviction**: Do NOT use `@CacheEvict(allEntries = true)` — it clears ALL entries when only one team's data changed. Use `StringRedisTemplate.scan(ScanOptions)` with pattern matching to evict only the affected keys (e.g., `team-permission::{teamId}:*`). See `TeamPermissionCacheService` for reference.
+
 **Env validation**: Run `./scripts/validate-env.sh .env` before first deployment to catch `CHANGE_ME_*` placeholders and missing required variables. The deploy script runs this automatically.
 
 ## Frontend Conventions
@@ -128,6 +132,7 @@ WHEN 添加 API 接口, DO 按领域放入对应 `api/` 文件，禁止跨领域
 WHEN 选择 HTTP 客户端, DO 按场景选：`request.js`（已认证，默认）、`publicRequest.js`（公开/分享）、`imRequest.js`（IM）。所有客户端均 `withCredentials: true`。
 WHEN 处理认证, DO 依赖 HttpOnly Cookie（`withCredentials: true`），不手动注入 Authorization Header。
 WHEN 显示时间戳, DO 使用 `fmtTime()` 函数（`utils/format.js`），不要直接 `|| '-'` 显示原始值。
+WHEN 设置时间戳默认值, DO 使用 `?? null`（而非 `|| null`），`||` 会将空字符串 `""` 和 `0` 误转为 `null`。
 WHEN 处理文件操作, DO 使用 `composables/` 中的组合函数，不直接操作 store。
 WHEN 提交代码, DO 使用 conventional commits 格式（Husky + commitlint 强制）。
 WHEN 处理错误, DO 使用 `BusinessException` → `ErrorCode` → `Result` 模式。
@@ -155,6 +160,8 @@ Tech stack details: `docs/architecture.md`
 Deployment guide: `DEPLOYMENT.md`
 Design proposals: `ISSUE/` 目录（#09 CI/CD、#10 配置管理、#11 多存储、#12 性能优化、#13 硬编码配置热迁移）
 Code review: `ISSUE/CODEX-CODE-REVIEW-RESULTS.md`（42 项问题，P0-P3 分级，阶段一~四已完成安全热修复、事务重构、性能优化、低优先级修复）
+
+**前端测试**: 22 个测试文件，244 个用例（`npm run test`）。覆盖 composables、utils、api、store、router guards。测试文件命名 `*.spec.js`，放在对应目录的 `__tests__/` 下。新增测试使用 `vi.mock()` mock 外部依赖，测试命名用中文。
 
 ## CI/CD
 

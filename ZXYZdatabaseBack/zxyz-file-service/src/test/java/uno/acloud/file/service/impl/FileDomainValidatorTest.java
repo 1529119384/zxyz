@@ -11,6 +11,7 @@ import uno.acloud.common.FileNodeType;
 import uno.acloud.common.FileSpaceType;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.file.infrastructure.entity.FileItem;
+import uno.acloud.file.infrastructure.entity.FileNode;
 import uno.acloud.file.infrastructure.entity.Folder;
 import uno.acloud.file.infrastructure.mapper.FileMapper;
 
@@ -19,6 +20,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -367,5 +369,82 @@ class FileDomainValidatorTest {
         SpaceTarget target = new SpaceTarget(10L, FileSpaceType.TEAM, null);
         assertThrows(BusinessException.class,
                 () -> validator.resolveAvailableName(-1L, target, 99, "test", new HashSet<>(), null));
+    }
+
+    // ---- requireNodes (batch) tests ----
+
+    @Test
+    void requireNodes_shouldBatchQueryAndReturnAll() {
+        FileItem item1 = FileItem.create();
+        item1.setId(1L);
+        FileItem item2 = FileItem.create();
+        item2.setId(2L);
+        when(fileMapper.getFileNodesByIds(List.of(1L, 2L))).thenReturn(List.of(item1, item2));
+
+        List<FileNode> result = validator.requireNodes(List.of(1L, 2L));
+
+        assertEquals(2, result.size());
+        verify(fileMapper, never()).getFileNodeById(anyLong());
+    }
+
+    @Test
+    void requireNodes_shouldThrowWhenSomeIdsMissing() {
+        FileItem item1 = FileItem.create();
+        item1.setId(1L);
+        when(fileMapper.getFileNodesByIds(List.of(1L, 99L))).thenReturn(List.of(item1));
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> validator.requireNodes(List.of(1L, 99L)));
+
+        assertEquals(ErrorCode.NOT_FOUND, ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("99"));
+    }
+
+    @Test
+    void requireNodes_shouldPreserveInputOrder() {
+        FileItem item2 = FileItem.create();
+        item2.setId(2L);
+        FileItem item1 = FileItem.create();
+        item1.setId(1L);
+        when(fileMapper.getFileNodesByIds(List.of(2L, 1L))).thenReturn(List.of(item2, item1));
+
+        List<FileNode> result = validator.requireNodes(List.of(2L, 1L));
+
+        assertEquals(2L, result.get(0).getId());
+        assertEquals(1L, result.get(1).getId());
+    }
+
+    // ---- requireMovableNodes (batch) tests ----
+
+    @Test
+    void requireMovableNodes_shouldReturnAllWhenActive() {
+        FileItem item1 = FileItem.create();
+        item1.setId(1L);
+        item1.setDeleted(FileDeleteStatus.NORMAL);
+        FileItem item2 = FileItem.create();
+        item2.setId(2L);
+        item2.setDeleted(FileDeleteStatus.NORMAL);
+        when(fileMapper.getFileNodesByIds(List.of(1L, 2L))).thenReturn(List.of(item1, item2));
+
+        List<FileNode> result = validator.requireMovableNodes(List.of(1L, 2L));
+
+        assertEquals(2, result.size());
+    }
+
+    @Test
+    void requireMovableNodes_shouldThrowWhenAnyNodeInactive() {
+        FileItem active = FileItem.create();
+        active.setId(1L);
+        active.setDeleted(FileDeleteStatus.NORMAL);
+        FileItem recycled = FileItem.create();
+        recycled.setId(2L);
+        recycled.setDeleted(FileDeleteStatus.RECYCLE);
+        when(fileMapper.getFileNodesByIds(List.of(1L, 2L))).thenReturn(List.of(active, recycled));
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> validator.requireMovableNodes(List.of(1L, 2L)));
+
+        assertEquals(ErrorCode.FILE_STATE_INVALID, ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("2"));
     }
 }

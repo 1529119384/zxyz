@@ -12,11 +12,9 @@ import uno.acloud.file.infrastructure.entity.FileNode;
 import uno.acloud.file.infrastructure.entity.Folder;
 import uno.acloud.file.infrastructure.mapper.FileMapper;
 
-import java.util.HashSet;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
+
 
 @RequiredArgsConstructor
 @Component
@@ -42,9 +40,14 @@ public class FileDomainValidator {
     }
 
     public List<FileNode> requireNodes(List<Long> fileIds) {
-        return fileIds.stream()
-                .map(this::requireNode)
-                .collect(Collectors.toList());
+        if (fileIds == null || fileIds.isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "fileIds 不能为空");
+        }
+        List<FileNode> nodes = fileMapper.getFileNodesByIds(fileIds);
+        if (nodes.size() != fileIds.size()) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "部分文件不存在");
+        }
+        return nodes;
     }
 
     public FileNode requireNode(Long fileId) {
@@ -83,10 +86,14 @@ public class FileDomainValidator {
     }
 
     public List<FileNode> requireMovableNodes(List<Long> fileIds) {
-        return normalizeFileIds(fileIds)
-                .stream()
-                .map(this::requireActiveNode)
-                .collect(Collectors.toList());
+        List<Long> normalized = normalizeFileIds(fileIds);
+        List<FileNode> nodes = requireNodes(normalized);
+        for (FileNode node : nodes) {
+            if (!node.isActive()) {
+                throw new BusinessException(ErrorCode.FILE_STATE_INVALID, "当前文件状态不可操作");
+            }
+        }
+        return nodes;
     }
 
     public FileItem requireFileItem(Long fileId) {

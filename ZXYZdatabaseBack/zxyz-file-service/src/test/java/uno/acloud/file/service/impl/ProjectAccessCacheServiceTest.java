@@ -5,9 +5,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
@@ -103,37 +106,34 @@ class ProjectAccessCacheServiceTest {
 
     // ---- evictProject tests ----
 
+    @SuppressWarnings("unchecked")
     @Test
-    void evictProject_shouldDeleteMatchingKeys() {
-        Set<String> keys = Set.of("file:project-access:50:100", "file:project-access:50:200");
-        when(redisTemplate.keys("file:project-access:50:*")).thenReturn(keys);
+    void evictProject_shouldDeleteMatchingKeys() throws Exception {
+        Cursor<String> cursor = mock(Cursor.class);
+        when(cursor.hasNext()).thenReturn(true, true, false);
+        when(cursor.next()).thenReturn("file:project-access:50:100", "file:project-access:50:200");
+        when(redisTemplate.scan(any(ScanOptions.class))).thenReturn(cursor);
 
         service.evictProject(50L);
 
-        verify(redisTemplate).delete(keys);
+        verify(redisTemplate).delete(List.of("file:project-access:50:100", "file:project-access:50:200"));
     }
 
+    @SuppressWarnings("unchecked")
     @Test
-    void evictProject_shouldHandleNoMatchingKeys() {
-        when(redisTemplate.keys("file:project-access:50:*")).thenReturn(Set.of());
+    void evictProject_shouldHandleNoMatchingKeys() throws Exception {
+        Cursor<String> cursor = mock(Cursor.class);
+        when(cursor.hasNext()).thenReturn(false);
+        when(redisTemplate.scan(any(ScanOptions.class))).thenReturn(cursor);
 
         assertDoesNotThrow(() -> service.evictProject(50L));
 
-        verify(redisTemplate, never()).delete(any(Set.class));
-    }
-
-    @Test
-    void evictProject_shouldHandleNullKeySet() {
-        when(redisTemplate.keys("file:project-access:50:*")).thenReturn(null);
-
-        assertDoesNotThrow(() -> service.evictProject(50L));
-
-        verify(redisTemplate, never()).delete(any(Set.class));
+        verify(redisTemplate, never()).delete(any(List.class));
     }
 
     @Test
     void evictProject_shouldNotThrowOnRedisFailure() {
-        when(redisTemplate.keys("file:project-access:50:*"))
+        when(redisTemplate.scan(any(ScanOptions.class)))
                 .thenThrow(new RuntimeException("Redis unavailable"));
 
         assertDoesNotThrow(() -> service.evictProject(50L));

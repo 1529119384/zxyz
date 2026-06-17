@@ -2,6 +2,8 @@ package uno.acloud.team.service.impl;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.SystemRoleCodes;
 import uno.acloud.common.SystemPermissionCodes;
@@ -55,7 +57,12 @@ public class UserRoleBindingService {
         permissionRoleMapper.insertUserRole(userId, role.getId());
         auditLogService.writeSystemAudit(operatorId, "system", "user:assign-role", "user", Long.valueOf(userId),
                 String.join(",", beforeCodes), role.getRoleCode(), ipAddress);
-        userServiceClient.clearPermissionCache(userId);
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                userServiceClient.clearPermissionCache(userId);
+            }
+        });
     }
 
     /** 为新用户分配默认角色（首个用户为管理员，后续为普通用户） */
@@ -67,7 +74,12 @@ public class UserRoleBindingService {
         boolean hasAdmin = permissionRoleMapper.countUsersByRoleCode(SystemRoleCodes.SYSTEM_ADMIN) > 0;
         String roleCode = hasAdmin ? SystemRoleCodes.SYSTEM_USER : SystemRoleCodes.SYSTEM_ADMIN;
         assignRoleByCode(userId, roleCode);
-        userServiceClient.clearPermissionCache(userId);
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                userServiceClient.clearPermissionCache(userId);
+            }
+        });
     }
 
     /** 引导阶段分配管理员角色 */
@@ -77,7 +89,12 @@ public class UserRoleBindingService {
             return;
         }
         assignRoleByCode(userId, SystemRoleCodes.SYSTEM_ADMIN);
-        userServiceClient.clearPermissionCache(userId);
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                userServiceClient.clearPermissionCache(userId);
+            }
+        });
     }
 
     // ==================== 私有方法 ====================

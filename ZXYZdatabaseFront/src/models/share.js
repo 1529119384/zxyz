@@ -76,12 +76,12 @@ export function mapMyShareRecord(item = {}) {
     shareUrl: item.shareUrl || '',
     hasPassword: Boolean(item.hasPassword),
     expireType: item.expireType || '',
-    expireTime: item.expireTime || '',
+    expireTime: item.expireTime ?? null,
     maxAccessCount: item.maxAccessCount ?? 0,
     currentAccessCount: item.currentAccessCount ?? 0,
     status: item.status ?? 0,
     statusText: item.statusText || SHARE_STATUS_MAP[item.status] || '-',
-    createTime: item.createTime || '',
+    createTime: item.createTime ?? null,
   }
 }
 
@@ -104,7 +104,7 @@ export function mapShareFileEntry(item = {}) {
     type,
     category: item.category,
     fileSize: item.size,
-    timeValue: item.modifyTime || '',
+    timeValue: item.modifyTime ?? null,
     extra: {
       invalid: Boolean(item.invalid || Number(item.deleted) !== 0),
       invalidText: item.invalidText || (Number(item.deleted) !== 0 ? '已失效' : ''),

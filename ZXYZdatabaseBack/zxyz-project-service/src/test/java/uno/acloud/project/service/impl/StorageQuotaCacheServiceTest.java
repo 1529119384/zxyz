@@ -216,8 +216,8 @@ class StorageQuotaCacheServiceTest {
 
         assertDoesNotThrow(() -> service.invalidateAllUsageCaches());
 
-        // Called twice: once for active prefix, once for personal prefix
-        verify(redisTemplate, times(2)).scan(any());
+        // Called 3 times: active prefix, personal prefix, and assembled VO prefix
+        verify(redisTemplate, times(3)).scan(any());
     }
 
     @Test

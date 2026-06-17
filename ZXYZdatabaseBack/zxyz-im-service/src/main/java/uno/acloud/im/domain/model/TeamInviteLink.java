@@ -3,6 +3,7 @@ package uno.acloud.im.domain.model;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
@@ -20,6 +21,7 @@ public class TeamInviteLink implements Serializable {
     @TableId(value = "id", type = IdType.AUTO)
     private Long id;
     private Long teamId;
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String token;
     private Long createdByUserId;
     private LocalDateTime expireTime;

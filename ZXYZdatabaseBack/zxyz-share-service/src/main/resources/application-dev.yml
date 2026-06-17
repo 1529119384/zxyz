@@ -27,4 +27,4 @@ app:
       base-url: ${USER_SERVICE_BASE_URL:http://zxyz-user-service}
     team-service:
       base-url: ${TEAM_SERVICE_BASE_URL:http://zxyz-team-service}
-      internal-service-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token}
+      internal-service-token: ${INTERNAL_SERVICE_TOKEN}

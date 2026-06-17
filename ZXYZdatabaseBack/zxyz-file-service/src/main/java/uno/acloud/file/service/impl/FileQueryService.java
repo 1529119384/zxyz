@@ -197,7 +197,7 @@ public class FileQueryService implements FileQueryPort {
 
     @Override
     public FileResourceVO getFileResourceById(Long fileId) {
-        return fileConverter.toFileResourceVO(fileMapper.getFileNodeById(fileId));
+        return fileConverter.toFileResourceVO(fileMapper.getActiveFileNodeById(fileId));
     }
 
     @Override

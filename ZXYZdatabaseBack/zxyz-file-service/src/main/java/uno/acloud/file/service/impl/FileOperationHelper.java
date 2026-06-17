@@ -174,25 +174,6 @@ public class FileOperationHelper {
         return !fileNode.getOriginalName().equals(resolvedName);
     }
 
-    // ---- Recursive walk ----
-
-    @Deprecated(since = "phase4", forRemoval = true)
-    public <T> void walkDescendants(Long sourceParentId, T parentContext, DescendantAction<T> action) {
-        walkDescendants(sourceParentId, parentContext, action, 0);
-    }
-
-    private <T> void walkDescendants(Long sourceParentId, T parentContext, DescendantAction<T> action, int depth) {
-        if (depth > MAX_FOLDER_DEPTH) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "文件夹层级超过上限 " + MAX_FOLDER_DEPTH + " 层");
-        }
-        for (FileNode child : getSortedChildren(sourceParentId)) {
-            T childContext = action.apply(child, parentContext);
-            if (child instanceof Folder) {
-                walkDescendants(child.getId(), childContext, action, depth + 1);
-            }
-        }
-    }
-
     // ---- Preloaded walk (avoids N+1 queries) ----
 
     public <T> void walkDescendantsPreloaded(Long rootParentId,
@@ -226,14 +207,6 @@ public class FileOperationHelper {
             map.computeIfAbsent(node.getParentId(), k -> new ArrayList<>()).add(node);
         }
         return map;
-    }
-
-    public List<FileNode> getSortedChildren(Long parentId) {
-        FileNode parent = fileDomainValidator.requireNode(parentId);
-        Long ownerUserId = parent.getTeamId() == null ? parent.getUploadUserId() : null;
-        List<FileNode> children = new ArrayList<>(fileMapper.getFileNodesByParentId(parentId, parent.getTeamId(), ownerUserId));
-        children.sort(Comparator.comparing(FileNode::getId));
-        return children;
     }
 
     // ---- MQ event publishing ----

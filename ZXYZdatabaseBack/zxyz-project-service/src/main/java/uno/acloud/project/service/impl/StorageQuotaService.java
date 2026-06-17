@@ -185,11 +185,26 @@ public class StorageQuotaService implements StorageQuotaPort {
     private StorageUsageVO getUsageWithContext(Long userId, Integer spaceType, Long teamId, Long projectId,
                                                PersonalLimitContext personalCtx) {
         Integer normalizedSpaceType = FileSpaceType.normalize(spaceType, teamId, projectId);
+
+        // 仅在无预解析上下文时使用 VO 缓存（getUsage 正常路径）
+        if (personalCtx == null) {
+            StorageUsageVO cached = cacheService.getUsageVO(userId, normalizedSpaceType, teamId, projectId);
+            if (cached != null) {
+                return cached;
+            }
+        }
+
         Long usedStorage = sumUsedStorage(userId, teamId, normalizedSpaceType, projectId);
         Long storageLimit = resolveStorageLimitWithContext(userId, teamId, normalizedSpaceType, projectId, personalCtx);
         boolean unlimited = storageLimit == null;
         Long remainingStorage = unlimited ? null : Math.max(0, storageLimit - usedStorage);
-        return new StorageUsageVO(normalizedSpaceType, teamId, projectId, usedStorage, storageLimit, remainingStorage, unlimited);
+        StorageUsageVO vo = new StorageUsageVO(normalizedSpaceType, teamId, projectId, usedStorage, storageLimit, remainingStorage, unlimited);
+
+        if (personalCtx == null) {
+            cacheService.putUsageVO(userId, normalizedSpaceType, teamId, projectId, vo);
+        }
+
+        return vo;
     }
 
     @Nullable

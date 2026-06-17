@@ -1,5 +1,6 @@
 package uno.acloud.email.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -38,6 +39,7 @@ public class EmailServerConfigRequest implements Serializable {
 
     @Size(max = 200, message = "密码长度不能超过200")
     @Schema(description = "SMTP密码")
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String password;
 
     @NotBlank(message = "发件人地址不能为空")

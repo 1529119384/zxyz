@@ -13,7 +13,7 @@ import uno.acloud.common.Result;
 import uno.acloud.dto.PersonalStorageUsage;
 import uno.acloud.dto.TeamStorageUsage;
 import uno.acloud.file.dto.InternalStorageQueryRequest;
-import uno.acloud.file.infrastructure.mapper.FileMapper;
+import uno.acloud.file.service.impl.StorageCacheService;
 
 import java.util.List;
 
@@ -23,6 +23,8 @@ import java.util.List;
  * 同时提供 POST（JSON 请求体）和 GET（查询参数）两种访问方式。
  * 现有调用方使用 POST，GET 别名用于兼容 REST 语义。
  * 注意：GET 请求通过查询参数绑定，列表参数使用重复 key（如 {@code ?userIds=1&userIds=2}）。
+ * <p>
+ * 所有查询通过 {@link StorageCacheService} 缓存（30s TTL），避免每次执行 SUM 全表扫描。
  */
 @Hidden
 @RestController
@@ -30,10 +32,10 @@ import java.util.List;
 @Tag(name = "存储统计（内部）", description = "内部服务存储统计 API")
 public class InternalStorageController {
 
-    private final FileMapper fileMapper;
+    private final StorageCacheService storageCacheService;
 
-    public InternalStorageController(FileMapper fileMapper) {
-        this.fileMapper = fileMapper;
+    public InternalStorageController(StorageCacheService storageCacheService) {
+        this.storageCacheService = storageCacheService;
     }
 
     @Operation(summary = "统计活跃文件大小（POST）")
@@ -49,7 +51,7 @@ public class InternalStorageController {
     }
 
     private Result<Long> doSumActiveFileSize(InternalStorageQueryRequest request) {
-        long sum = fileMapper.sumActiveFileSize(
+        long sum = storageCacheService.sumActiveFileSize(
                 request.getUserId(), request.getTeamId(),
                 request.getSpaceType(), request.getProjectId());
         return Result.of(sum);
@@ -72,7 +74,7 @@ public class InternalStorageController {
         if (userIds == null || userIds.isEmpty()) {
             return Result.of(0L);
         }
-        return Result.of(fileMapper.sumPersonalStorageByUsers(userIds));
+        return Result.of(storageCacheService.sumPersonalStorageByUsers(userIds));
     }
 
     @Operation(summary = "获取个人存储用量列表（POST）")
@@ -92,7 +94,7 @@ public class InternalStorageController {
         if (userIds == null || userIds.isEmpty()) {
             return Result.of(List.of());
         }
-        return Result.of(fileMapper.listPersonalStorageUsageByUsers(userIds));
+        return Result.of(storageCacheService.listPersonalStorageUsageByUsers(userIds));
     }
 
     @Operation(summary = "获取团队存储用量列表（POST）")
@@ -112,6 +114,6 @@ public class InternalStorageController {
         if (teamIds == null || teamIds.isEmpty()) {
             return Result.of(List.of());
         }
-        return Result.of(fileMapper.sumActiveFileSizeByTeamIds(teamIds));
+        return Result.of(storageCacheService.sumActiveFileSizeByTeamIds(teamIds));
     }
 }

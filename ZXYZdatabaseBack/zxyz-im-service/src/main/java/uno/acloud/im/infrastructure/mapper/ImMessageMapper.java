@@ -104,7 +104,7 @@ public interface ImMessageMapper extends BaseMapper<ImMessage> {
                    m.message_type AS messageType,
                    CASE
                        WHEN m.status = 0 AND m.message_type IN ('PROJECT_CREATION_APPLICATION', 'PROJECT_CREATE_RESULT') THEN CAST(m.content AS CHAR)
-                       WHEN m.status = 0 AND m.message_type = 'TEXT' THEN JSON_UNQUOTE(JSON_EXTRACT(m.content, '$.content'))
+                       WHEN m.status = 0 AND m.message_type = 'TEXT' THEN m.content_extracted
                        WHEN m.status = 0 AND m.message_type IN ('ANNOUNCEMENT', 'SYSTEM_NOTIFICATION') THEN CAST(m.content AS CHAR)
                        ELSE NULL
                    END AS content,
@@ -134,7 +134,7 @@ public interface ImMessageMapper extends BaseMapper<ImMessage> {
                    m.message_type AS messageType,
                    CASE
                        WHEN m.status = 0 AND m.message_type IN ('PROJECT_CREATION_APPLICATION', 'PROJECT_CREATE_RESULT') THEN CAST(m.content AS CHAR)
-                       WHEN m.status = 0 AND m.message_type = 'TEXT' THEN JSON_UNQUOTE(JSON_EXTRACT(m.content, '$.content'))
+                       WHEN m.status = 0 AND m.message_type = 'TEXT' THEN m.content_extracted
                        WHEN m.status = 0 AND m.message_type IN ('ANNOUNCEMENT', 'SYSTEM_NOTIFICATION') THEN CAST(m.content AS CHAR)
                        ELSE NULL
                    END AS content,
@@ -152,7 +152,7 @@ public interface ImMessageMapper extends BaseMapper<ImMessage> {
             WHERE m.conversation_id = #{conversationId}
               AND m.status = 0
               AND (
-                  JSON_UNQUOTE(JSON_EXTRACT(m.content, '$.content')) LIKE CONCAT(#{keyword}, '%')
+                  m.content_extracted LIKE CONCAT(#{keyword}, '%')
                   OR CAST(m.content AS CHAR) LIKE CONCAT(#{keyword}, '%')
               )
             ORDER BY m.id DESC

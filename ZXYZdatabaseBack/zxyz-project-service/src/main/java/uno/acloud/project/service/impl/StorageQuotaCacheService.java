@@ -12,6 +12,8 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
+import uno.acloud.project.vo.StorageUsageVO;
+
 /**
  * StorageQuotaService 的 Redis 缓存层。
  * <p>缓存远程 HTTP 调用结果以减少 checkUploadQuota 的网络往返。
@@ -36,6 +38,7 @@ public class StorageQuotaCacheService {
     private static final String USAGE_PERSONAL_KEY_PREFIX = KEY_PREFIX + "usage:personal:";
     private static final String USER_TEAM_IDS_KEY = KEY_PREFIX + "user:teamIds:";
     private static final String SYSTEM_ROLES_KEY = KEY_PREFIX + "user:systemRoles:";
+    private static final String USAGE_VO_KEY_PREFIX = KEY_PREFIX + "usage:vo:";
 
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
@@ -227,6 +230,42 @@ public class StorageQuotaCacheService {
         return roles;
     }
 
+    // ==================== Assembled VO cache ====================
+
+    /**
+     * 获取缓存的存储用量 VO，优先读缓存（TTL 30 秒）。
+     */
+    public StorageUsageVO getUsageVO(Long userId, Integer spaceType, Long teamId, Long projectId) {
+        String key = USAGE_VO_KEY_PREFIX + safeInt(spaceType)
+                + ":" + safeLong(teamId)
+                + ":" + safeLong(userId)
+                + ":" + safeLong(projectId);
+        try {
+            String cached = redisTemplate.opsForValue().get(key);
+            if (cached != null) {
+                return objectMapper.readValue(cached, StorageUsageVO.class);
+            }
+        } catch (Exception e) {
+            log.warn("读取存储用量 VO 缓存失败: key={}", key, e);
+        }
+        return null;
+    }
+
+    /**
+     * 缓存组装后的存储用量 VO（TTL 30 秒）。
+     */
+    public void putUsageVO(Long userId, Integer spaceType, Long teamId, Long projectId, StorageUsageVO vo) {
+        String key = USAGE_VO_KEY_PREFIX + safeInt(spaceType)
+                + ":" + safeLong(teamId)
+                + ":" + safeLong(userId)
+                + ":" + safeLong(projectId);
+        try {
+            redisTemplate.opsForValue().set(key, objectMapper.writeValueAsString(vo), USAGE_TTL);
+        } catch (Exception e) {
+            log.warn("写入存储用量 VO 缓存失败: key={}", key, e);
+        }
+    }
+
     // ==================== Cache invalidation ====================
 
     /**
@@ -236,6 +275,7 @@ public class StorageQuotaCacheService {
     public void invalidateAllUsageCaches() {
         deleteByPattern(USAGE_ACTIVE_KEY_PREFIX + "*");
         deleteByPattern(USAGE_PERSONAL_KEY_PREFIX + "*");
+        deleteByPattern(USAGE_VO_KEY_PREFIX + "*");
     }
 
     /**

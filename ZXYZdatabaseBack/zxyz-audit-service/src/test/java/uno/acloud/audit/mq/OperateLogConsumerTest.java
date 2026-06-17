@@ -1,5 +1,6 @@
 package uno.acloud.audit.mq;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.BeforeEach;
@@ -13,6 +14,7 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import uno.acloud.audit.mapper.OperateLogMapper;
@@ -85,13 +87,15 @@ class OperateLogConsumerTest {
     // ==================== handleAuditLog — deserialization failure (poison message) ====================
 
     @Test
-    void handleAuditLog_invalidJson_shouldDiscardAndNotThrow() {
+    void handleAuditLog_invalidJson_shouldRejectToDlq() {
         String invalidJson = "{not valid json!!!";
 
-        // Poison message: JsonProcessingException is caught and logged, NOT re-thrown
-        assertDoesNotThrow(() -> operateLogConsumer.handleAuditLog(invalidJson));
+        // Poison message: throws AmqpRejectAndDontRequeueException to route to DLQ
+        AmqpRejectAndDontRequeueException ex = assertThrows(
+                AmqpRejectAndDontRequeueException.class,
+                () -> operateLogConsumer.handleAuditLog(invalidJson));
 
-        // Mapper should never be called when deserialization fails
+        assertTrue(ex.getCause() instanceof JsonProcessingException);
         verifyNoInteractions(operateLogMapper);
     }
 

@@ -27,7 +27,7 @@ export function normalizeConversation(raw = {}) {
     peerUsername: raw.peerUsername || '',
     peerName: raw.peerName || '',
     peerAvatar: raw.peerAvatar || '',
-    updateTime: raw.updateTime || null,
+    updateTime: raw.updateTime ?? null,
   }
 }
 
@@ -40,7 +40,7 @@ export function normalizeTeam(raw = {}) {
     ownerUserId: raw.ownerUserId ?? null,
     myRoleCode: raw.myRoleCode || raw.myRole || '',
     myPermissions: Array.isArray(raw.myPermissions) ? raw.myPermissions : [],
-    createTime: raw.createTime || null,
+    createTime: raw.createTime ?? null,
   }
 }
 
@@ -51,7 +51,7 @@ export function normalizeTeamMember(raw = {}) {
     name: raw.name || '',
     avatar: raw.avatar || '',
     roleCode: raw.roleCode || raw.role || '',
-    joinTime: raw.joinTime || null,
+    joinTime: raw.joinTime ?? null,
   }
 }
 
@@ -71,9 +71,9 @@ export function normalizeMessage(raw = {}, overrides = {}) {
     readByPeer: Boolean(raw.readByPeer),
     readCount: Number(raw.readCount || 0),
     recallByUserId: raw.recallByUserId ?? null,
-    recallTime: raw.recallTime || null,
+    recallTime: raw.recallTime ?? null,
     recallReason: raw.recallReason || '',
-    createTime: raw.createTime || new Date().toISOString(),
+    createTime: raw.createTime ?? null,
     status: raw.status || STORED,
     ...overrides,
   }

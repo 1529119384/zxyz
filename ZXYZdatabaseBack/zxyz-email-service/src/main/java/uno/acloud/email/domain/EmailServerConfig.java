@@ -3,6 +3,7 @@ package uno.acloud.email.domain;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
@@ -23,6 +24,7 @@ public class EmailServerConfig implements Serializable {
     private String host;
     private Integer port;
     private String username;
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String passwordCipher;
     private String fromAddress;
     private String transportStrategy;

@@ -5,6 +5,8 @@ import org.springframework.lang.Nullable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.InputNormalizer;
 import uno.acloud.exception.BusinessException;
@@ -74,8 +76,16 @@ public class UserProfileService {
         userQueryHelper.requireUpdated(userMapper.updateProfile(userId, name, avatar));
         dbUser.setName(name);
         dbUser.setAvatar(avatar);
-        // 发布 MQ 事件通知 IM 等服务更新用户资料缓存
-        userEventPublisher.publishProfileUpdated(dbUser.getId(), dbUser.getUsername(), name, dbUser.getEmail(), avatar);
+        // 在事务提交后发布 MQ 事件，避免事务回滚时下游服务已收到通知
+        final Long eventId = dbUser.getId();
+        final String eventUsername = dbUser.getUsername();
+        final String eventEmail = dbUser.getEmail();
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                userEventPublisher.publishProfileUpdated(eventId, eventUsername, name, eventEmail, avatar);
+            }
+        });
         return userQueryHelper.requireCurrentUser(userId);
     }
 

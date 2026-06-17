@@ -1,9 +1,13 @@
 package uno.acloud.file.service.impl;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
@@ -52,14 +56,21 @@ public class ProjectAccessCacheService {
 
     /**
      * Invalidate access cache for a specific project (called when project members change).
+     * Uses SCAN instead of KEYS to avoid blocking Redis.
      */
     public void evictProject(Long projectId) {
         String pattern = KEY_PREFIX + projectId + ":*";
         try {
-            java.util.Set<String> keys = redisTemplate.keys(pattern);
-            if (keys != null && !keys.isEmpty()) {
-                redisTemplate.delete(keys);
-                log.info("已清除项目访问缓存: projectId={}, keys={}", projectId, keys.size());
+            ScanOptions options = ScanOptions.scanOptions().match(pattern).count(500).build();
+            List<String> keysToDelete = new ArrayList<>();
+            try (var cursor = redisTemplate.scan(options)) {
+                while (cursor.hasNext()) {
+                    keysToDelete.add(cursor.next());
+                }
+            }
+            if (!keysToDelete.isEmpty()) {
+                redisTemplate.delete(keysToDelete);
+                log.info("已清除项目访问缓存: projectId={}, keys={}", projectId, keysToDelete.size());
             }
         } catch (Exception e) {
             log.warn("Redis 清除项目访问缓存失败: projectId={}", projectId, e);
