@@ -83,7 +83,11 @@ public class UserProfileService {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                userEventPublisher.publishProfileUpdated(eventId, eventUsername, name, eventEmail, avatar);
+                try {
+                    userEventPublisher.publishProfileUpdated(eventId, eventUsername, name, eventEmail, avatar);
+                } catch (Exception e) {
+                    log.warn("Failed to publish profile updated event for user {} after commit", eventId, e);
+                }
             }
         });
         return userQueryHelper.requireCurrentUser(userId);

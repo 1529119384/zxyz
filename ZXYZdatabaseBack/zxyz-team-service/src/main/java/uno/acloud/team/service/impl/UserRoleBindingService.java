@@ -1,5 +1,6 @@
 package uno.acloud.team.service.impl;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -18,8 +19,8 @@ import java.util.Set;
 
 import static uno.acloud.common.InputNormalizer.requireText;
 
+@Slf4j
 /**
- * 用户角色绑定服务
  * 负责系统级用户角色分配、默认角色初始化
  */
 @Service
@@ -60,7 +61,11 @@ public class UserRoleBindingService {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                userServiceClient.clearPermissionCache(userId);
+                try {
+                    userServiceClient.clearPermissionCache(userId);
+                } catch (Exception e) {
+                    log.warn("Failed to clear permission cache for user {} after commit", userId, e);
+                }
             }
         });
     }
@@ -77,7 +82,11 @@ public class UserRoleBindingService {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                userServiceClient.clearPermissionCache(userId);
+                try {
+                    userServiceClient.clearPermissionCache(userId);
+                } catch (Exception e) {
+                    log.warn("Failed to clear permission cache for user {} after commit", userId, e);
+                }
             }
         });
     }
@@ -92,7 +101,11 @@ public class UserRoleBindingService {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                userServiceClient.clearPermissionCache(userId);
+                try {
+                    userServiceClient.clearPermissionCache(userId);
+                } catch (Exception e) {
+                    log.warn("Failed to clear permission cache for user {} after commit", userId, e);
+                }
             }
         });
     }
