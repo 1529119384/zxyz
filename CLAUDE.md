@@ -105,7 +105,9 @@ WHEN 修改 Gateway 路由, DO 同步更新 `docs/infrastructure.md` 中的路�
 
 **API response contract**: All backend APIs return `Result<T>` with `code: 1` = success (`ErrorCode.SUCCESS = 1`). Frontend `createApiClient.js` checks `payload?.code === 1`. See `docs/api-contract.md` for full contract.
 
-**Entity security**: `User` and `Share` entities use `@JsonProperty(access = WRITE_ONLY)` on `password` field + `@ToString(exclude = {"password"})` to prevent accidental serialization of BCrypt hashes.
+**Entity security**: `User` and `Share` entities use `@JsonProperty(access = WRITE_ONLY)` on `password` field + `@ToString(exclude = {"password"})` to prevent accidental serialization of BCrypt hashes. Any sensitive field (passwords, tokens, cipher text) on entities/DTOs must have `@JsonProperty(access = WRITE_ONLY)` or `@JsonIgnore`. Config classes that should never serialize use `@JsonIgnore`.
+
+**Internal service token**: `INTERNAL_SERVICE_TOKEN` must NEVER have a default value in YAML (e.g., do NOT use `${INTERNAL_SERVICE_TOKEN:dev-internal-token}`). A predictable default means all gateway-forwarded internal calls use an attacker-known token if the env var is unset. Apply this to all YAML files including `application-dev.yml`.
 
 **Filename XSS**: `FileDomainValidator.validateInputName()` and `FileRenameService.validateRenameName()` reject `< > " ' &` characters. Use these methods for all user-provided file/folder names.
 
@@ -117,7 +119,7 @@ WHEN 修改 Gateway 路由, DO 同步更新 `docs/infrastructure.md` 中的路�
 
 **RabbitMQ health check**: RabbitMQ often times out its Docker health check under load but still functions normally. Services that depend on it may show "unhealthy" status while actually running fine. Use `docker exec zxyz-rabbitmq rabbitmq-diagnostics -q ping` to verify.
 
-**Transaction boundary pattern**: HTTP/MQ calls must NOT happen inside `@Transactional` methods — they hold DB connections during remote I/O. Use the three-phase pattern: (1) HTTP pre-checks outside transaction, (2) DB operations in `@Transactional` method via `@Lazy` self-injection, (3) post-transaction HTTP notifications. See `ProjectCreationCommand`, `ProjectCatalogService` for examples. Self-injection requires a package-private `setSelf()` method for unit testing without Spring proxy.
+**Transaction boundary pattern**: HTTP/MQ calls must NOT happen inside `@Transactional` methods — they hold DB connections during remote I/O. Use `TransactionSynchronizationManager.registerSynchronization(afterCommit)` to defer remote calls. The `afterCommit` callback MUST wrap the remote call in try-catch to prevent exceptions from propagating into Spring's transaction synchronization chain. See `RoleManagementService` for the canonical pattern. For in-process Spring `ApplicationEventPublisher` events (NOT RabbitMQ), no afterCommit is needed since they don't involve network I/O.
 
 **MQ poison message handling**: When a consumer catches `JsonProcessingException` (deserialization failure that will never succeed on retry), throw `AmqpRejectAndDontRequeueException` to route the message to DLQ — do NOT just log and return (which silently ACKs the poison message). Import from `org.springframework.amqp.AmqpRejectAndDontRequeueException`.
 
@@ -162,6 +164,8 @@ Design proposals: `ISSUE/` 目录（#09 CI/CD、#10 配置管理、#11 多存储
 Code review: `ISSUE/CODEX-CODE-REVIEW-RESULTS.md`（42 项问题，P0-P3 分级，阶段一~四已完成安全热修复、事务重构、性能优化、低优先级修复）
 
 **前端测试**: 22 个测试文件，244 个用例（`npm run test`）。覆盖 composables、utils、api、store、router guards。测试文件命名 `*.spec.js`，放在对应目录的 `__tests__/` 下。新增测试使用 `vi.mock()` mock 外部依赖，测试命名用中文。
+
+**前端测试 import 顺序**: vitest/vue 导入在最前，空行后是 `vi.mock()` 调用（紧挨，无空行），再空行后是 `@/` 和第三方包导入。`element-plus` 的 `import` 必须放在 `vi.mock()` 之后（与 `@/` 导入同组），否则 `import-x/order` 报错。
 
 ## CI/CD
 
