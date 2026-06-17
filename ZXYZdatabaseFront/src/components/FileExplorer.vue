@@ -270,21 +270,17 @@ const {
   onOpenFolder: (payload) => emit('open-folder', payload),
 })
 
-const {
-  dragState,
-  selectionBoxStyle,
-  getRowFromTarget,
-  isBodyWrapperTarget: _isBodyWrapperTarget,
-  shouldSuppressRowClick,
-} = useDragSelection({
-  dragContainerRef: filePageRef,
-  tableWrapperRef,
-  filteredList,
-  isCheckboxClick,
-  selectedIds,
-  setSelectedIds,
-  closeContextMenu: () => closeContextMenu(),
-})
+const { dragState, selectionBoxStyle, getRowFromTarget, shouldSuppressRowClick } = useDragSelection(
+  {
+    dragContainerRef: filePageRef,
+    tableWrapperRef,
+    filteredList,
+    isCheckboxClick,
+    selectedIds,
+    setSelectedIds,
+    closeContextMenu: () => closeContextMenu(),
+  },
+)
 
 const fileContextMenu = useFileContextMenu({
   containerRef: filePageRef,

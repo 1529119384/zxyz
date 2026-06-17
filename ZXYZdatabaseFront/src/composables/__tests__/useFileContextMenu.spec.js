@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ref } from 'vue'
+
 import { useFileContextMenu, isEditableTarget } from '@/composables/useFileContextMenu'
 
 describe('isEditableTarget', () => {
@@ -24,7 +25,12 @@ describe('isEditableTarget', () => {
 })
 
 describe('useFileContextMenu', () => {
-  let containerRef, selectedRows, selectedIds, setSelectedIds, getRowFromTarget, shouldSuppressRowClick
+  let containerRef,
+    selectedRows,
+    selectedIds,
+    setSelectedIds,
+    getRowFromTarget,
+    shouldSuppressRowClick
 
   beforeEach(() => {
     containerRef = ref(document.createElement('div'))

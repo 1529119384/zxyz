@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { nextTick } from 'vue'
-import { useRenameAction } from '@/composables/useRenameAction'
 
 vi.mock('element-plus', () => ({
   ElMessage: { success: vi.fn() },
@@ -28,6 +27,7 @@ vi.mock('@/models/file', () => ({
 
 import { renameFile } from '@/api/files'
 import { handleBusinessError } from '@/utils/error'
+import { useRenameAction } from '@/composables/useRenameAction'
 
 describe('useRenameAction', () => {
   beforeEach(() => {
@@ -79,8 +79,14 @@ describe('useRenameAction', () => {
 
   it('should not close dialog while submitting', async () => {
     let resolve
-    renameFile.mockImplementation(() => new Promise((r) => { resolve = r }))
-    const { openRenameDialog, handleRenameSubmit, closeRenameDialog, renameDialogVisible } = useRenameAction({})
+    renameFile.mockImplementation(
+      () =>
+        new Promise((r) => {
+          resolve = r
+        }),
+    )
+    const { openRenameDialog, handleRenameSubmit, closeRenameDialog, renameDialogVisible } =
+      useRenameAction({})
     openRenameDialog({ id: 1, type: 1, fileName: 'test.txt' })
     handleRenameSubmit('new-name.txt')
     await nextTick()

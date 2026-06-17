@@ -1,18 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { useFileDownload } from '@/composables/useFileDownload'
+import { ElMessage } from 'element-plus'
 
 vi.mock('element-plus', () => ({
   ElMessage: { success: vi.fn() },
 }))
-
 vi.mock('@/api/files', () => ({
   getFileDownloadUrl: vi.fn(),
 }))
-
 vi.mock('@/utils/clipboard', () => ({
   copyText: vi.fn(),
 }))
-
 vi.mock('@/utils/download', () => ({
   downloadBlobByUrl: vi.fn(),
 }))
@@ -20,7 +17,7 @@ vi.mock('@/utils/download', () => ({
 import { getFileDownloadUrl } from '@/api/files'
 import { copyText } from '@/utils/clipboard'
 import { downloadBlobByUrl } from '@/utils/download'
-import { ElMessage } from 'element-plus'
+import { useFileDownload } from '@/composables/useFileDownload'
 
 describe('useFileDownload', () => {
   const mockRouter = {
@@ -32,7 +29,9 @@ describe('useFileDownload', () => {
   })
 
   it('should download file successfully', async () => {
-    getFileDownloadUrl.mockResolvedValue({ data: { downloadUrl: 'https://cdn.example.com/file.pdf' } })
+    getFileDownloadUrl.mockResolvedValue({
+      data: { downloadUrl: 'https://cdn.example.com/file.pdf' },
+    })
     const { downloadFile } = useFileDownload({ router: mockRouter })
     await downloadFile({ id: 42, fileName: 'file.pdf' })
     expect(getFileDownloadUrl).toHaveBeenCalledWith(42)
@@ -46,7 +45,9 @@ describe('useFileDownload', () => {
   })
 
   it('should copy download link successfully', async () => {
-    getFileDownloadUrl.mockResolvedValue({ data: { downloadUrl: 'https://cdn.example.com/file.pdf' } })
+    getFileDownloadUrl.mockResolvedValue({
+      data: { downloadUrl: 'https://cdn.example.com/file.pdf' },
+    })
     const { copyDownloadLink } = useFileDownload({ router: mockRouter })
     await copyDownloadLink({ id: 42, fileName: 'file.pdf' })
     expect(copyText).toHaveBeenCalledWith('https://cdn.example.com/file.pdf')

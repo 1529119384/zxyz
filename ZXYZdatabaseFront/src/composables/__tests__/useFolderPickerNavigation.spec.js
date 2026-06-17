@@ -54,7 +54,11 @@ describe('useFolderPickerNavigation', () => {
 
   it('应在加载失败时也设置 loading 为 false', async () => {
     fetchFileList.mockRejectedValue(new Error('network'))
-    try { await nav.loadFolder() } catch {}
+    try {
+      await nav.loadFolder()
+    } catch {
+      // expected
+    }
     expect(nav.loading.value).toBe(false)
   })
 

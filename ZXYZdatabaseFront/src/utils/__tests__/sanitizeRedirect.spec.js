@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+
 import { sanitizeRedirectPath } from '@/utils/sanitizeRedirect'
 
 describe('sanitizeRedirectPath', () => {
@@ -54,7 +55,9 @@ describe('sanitizeRedirectPath', () => {
     // %3A%2F%2F = ://
     expect(sanitizeRedirectPath('/path%3A%2F%2Fevil.com', fallback)).toBe(fallback)
     // %6A%61%76%61%73%63%72%69%70%74%3A = javascript:
-    expect(sanitizeRedirectPath('/%6A%61%76%61%73%63%72%69%70%74%3Aalert(1)', fallback)).toBe(fallback)
+    expect(sanitizeRedirectPath('/%6A%61%76%61%73%63%72%69%70%74%3Aalert(1)', fallback)).toBe(
+      fallback,
+    )
   })
 
   it('should block invalid percent-encoding', () => {

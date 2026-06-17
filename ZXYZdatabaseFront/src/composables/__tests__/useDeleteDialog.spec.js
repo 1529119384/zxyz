@@ -1,20 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { nextTick } from 'vue'
-import { useDeleteDialog } from '@/composables/useDeleteDialog'
+import { ElMessage } from 'element-plus'
 
 vi.mock('element-plus', () => ({
   ElMessage: { success: vi.fn() },
 }))
-
 vi.mock('@/utils/error', () => ({
   handleBusinessError: vi.fn(),
 }))
-
 vi.mock('@/utils/logger', () => ({
   logger: { error: vi.fn() },
 }))
 
-import { ElMessage } from 'element-plus'
+import { useDeleteDialog } from '@/composables/useDeleteDialog'
 import { handleBusinessError } from '@/utils/error'
 
 describe('useDeleteDialog', () => {
@@ -45,7 +43,8 @@ describe('useDeleteDialog', () => {
   })
 
   it('should open dialog with single item', () => {
-    const { openDeleteDialog, deleteDialogVisible, deleteDialogOptions } = useDeleteDialog(baseOptions)
+    const { openDeleteDialog, deleteDialogVisible, deleteDialogOptions } =
+      useDeleteDialog(baseOptions)
     const result = openDeleteDialog([{ fileName: 'test.txt', type: 1 }])
     expect(result).toBe(true)
     expect(deleteDialogVisible.value).toBe(true)
@@ -65,7 +64,8 @@ describe('useDeleteDialog', () => {
   })
 
   it('should close dialog when not submitting', () => {
-    const { openDeleteDialog, closeDeleteDialog, deleteDialogVisible } = useDeleteDialog(baseOptions)
+    const { openDeleteDialog, closeDeleteDialog, deleteDialogVisible } =
+      useDeleteDialog(baseOptions)
     openDeleteDialog([{ fileName: 'test.txt' }])
     expect(deleteDialogVisible.value).toBe(true)
     closeDeleteDialog()
@@ -74,8 +74,14 @@ describe('useDeleteDialog', () => {
 
   it('should not close dialog while submitting', async () => {
     let resolveDelete
-    baseOptions.deleteRequest.mockImplementation(() => new Promise((r) => { resolveDelete = r }))
-    const { openDeleteDialog, handleDeleteSubmit, closeDeleteDialog, deleteDialogVisible } = useDeleteDialog(baseOptions)
+    baseOptions.deleteRequest.mockImplementation(
+      () =>
+        new Promise((r) => {
+          resolveDelete = r
+        }),
+    )
+    const { openDeleteDialog, handleDeleteSubmit, closeDeleteDialog, deleteDialogVisible } =
+      useDeleteDialog(baseOptions)
     openDeleteDialog([{ fileName: 'test.txt' }])
     handleDeleteSubmit()
     await nextTick()
@@ -87,7 +93,8 @@ describe('useDeleteDialog', () => {
 
   it('should submit and show success message', async () => {
     baseOptions.deleteRequest.mockResolvedValue(undefined)
-    const { openDeleteDialog, handleDeleteSubmit, deleteDialogVisible, deleteSubmitting } = useDeleteDialog(baseOptions)
+    const { openDeleteDialog, handleDeleteSubmit, deleteDialogVisible, deleteSubmitting } =
+      useDeleteDialog(baseOptions)
     openDeleteDialog([{ fileName: 'test.txt' }])
     await handleDeleteSubmit()
     expect(baseOptions.deleteRequest).toHaveBeenCalled()
@@ -116,7 +123,8 @@ describe('useDeleteDialog', () => {
   })
 
   it('should handle dialog visibility change to false', () => {
-    const { openDeleteDialog, handleDeleteDialogVisibleChange, deleteDialogVisible } = useDeleteDialog(baseOptions)
+    const { openDeleteDialog, handleDeleteDialogVisibleChange, deleteDialogVisible } =
+      useDeleteDialog(baseOptions)
     openDeleteDialog([{ fileName: 'test.txt' }])
     expect(deleteDialogVisible.value).toBe(true)
     handleDeleteDialogVisibleChange(false)

@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { nextTick } from 'vue'
-import { useStorageUsage } from '@/composables/useStorageUsage'
 
 vi.mock('@/api/files', () => ({
   fetchStorageUsage: vi.fn(),
@@ -15,6 +14,7 @@ vi.mock('@/composables/useCurrentSpaceContext', () => ({
 }))
 
 import { fetchStorageUsage } from '@/api/files'
+import { useStorageUsage } from '@/composables/useStorageUsage'
 
 describe('useStorageUsage', () => {
   beforeEach(() => {
@@ -33,7 +33,9 @@ describe('useStorageUsage', () => {
 
   it('should return 0 percentage when unlimited', async () => {
     const { storageUsage, storageUsagePercentage } = useStorageUsage()
-    fetchStorageUsage.mockResolvedValue({ data: { unlimited: true, usedStorage: 1000, storageLimit: 2000 } })
+    fetchStorageUsage.mockResolvedValue({
+      data: { unlimited: true, usedStorage: 1000, storageLimit: 2000 },
+    })
     await useStorageUsage().refreshStorageUsage()
     storageUsage.value = { unlimited: true, usedStorage: 1000, storageLimit: 2000 }
     await nextTick()
@@ -63,7 +65,9 @@ describe('useStorageUsage', () => {
 
   it('should refresh storage usage successfully', async () => {
     const { storageUsage, refreshStorageUsage } = useStorageUsage()
-    fetchStorageUsage.mockResolvedValue({ data: { unlimited: false, usedStorage: 100, storageLimit: 500 } })
+    fetchStorageUsage.mockResolvedValue({
+      data: { unlimited: false, usedStorage: 100, storageLimit: 500 },
+    })
     await refreshStorageUsage()
     expect(fetchStorageUsage).toHaveBeenCalled()
     expect(storageUsage.value).toEqual({ unlimited: false, usedStorage: 100, storageLimit: 500 })
@@ -80,7 +84,9 @@ describe('useStorageUsage', () => {
     const { storageUsage, showStorageUsage, refreshStorageUsage } = useStorageUsage({
       getCurrentFolderId: () => -1,
     })
-    fetchStorageUsage.mockResolvedValue({ data: { unlimited: false, usedStorage: 100, storageLimit: 500 } })
+    fetchStorageUsage.mockResolvedValue({
+      data: { unlimited: false, usedStorage: 100, storageLimit: 500 },
+    })
     await refreshStorageUsage()
     await nextTick()
     expect(showStorageUsage.value).toBe(true)
@@ -90,7 +96,9 @@ describe('useStorageUsage', () => {
     const { storageUsage, showStorageUsage, refreshStorageUsage } = useStorageUsage({
       getCurrentFolderId: () => 42,
     })
-    fetchStorageUsage.mockResolvedValue({ data: { unlimited: false, usedStorage: 100, storageLimit: 500 } })
+    fetchStorageUsage.mockResolvedValue({
+      data: { unlimited: false, usedStorage: 100, storageLimit: 500 },
+    })
     await refreshStorageUsage()
     await nextTick()
     expect(showStorageUsage.value).toBe(false)

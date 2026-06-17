@@ -21,18 +21,12 @@ export const fetchPublicShareInfo = (shareKey) =>
   publicRequest.get(`/api/public/shares/${shareKey}`)
 
 export const verifySharePassword = (shareKey, password) =>
-  publicRequest.post(
-    `/api/public/shares/${shareKey}/accesses`,
-    { password },
-  )
+  publicRequest.post(`/api/public/shares/${shareKey}/accesses`, { password })
 
 export const fetchPublicShareFiles = async (shareKey, path = '') => {
-  const response = await publicRequest.get(
-    `/api/public/shares/${shareKey}/files`,
-    {
-      params: path ? { path } : {},
-    },
-  )
+  const response = await publicRequest.get(`/api/public/shares/${shareKey}/files`, {
+    params: path ? { path } : {},
+  })
 
   return {
     ...response,
@@ -41,6 +35,4 @@ export const fetchPublicShareFiles = async (shareKey, path = '') => {
 }
 
 export const getPublicShareDownloadUrl = (shareKey, fileId) =>
-  publicRequest.get(
-    `/api/public/shares/${shareKey}/files/${fileId}/download-url`,
-  )
+  publicRequest.get(`/api/public/shares/${shareKey}/files/${fileId}/download-url`)

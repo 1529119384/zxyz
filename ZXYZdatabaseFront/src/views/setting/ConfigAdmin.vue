@@ -85,12 +85,7 @@
         <el-input :model-value="form.configKey" disabled />
       </el-form-item>
       <el-form-item label="配置值">
-        <el-input
-          v-model="form.configValue"
-          type="textarea"
-          :rows="3"
-          placeholder="输入配置值"
-        />
+        <el-input v-model="form.configValue" type="textarea" :rows="3" placeholder="输入配置值" />
       </el-form-item>
       <el-form-item v-if="isCreateMode" label="描述">
         <el-input v-model="form.description" placeholder="可选" />

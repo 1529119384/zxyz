@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { ElMessage } from 'element-plus'
+
+import { useBatchFeedback } from '@/composables/useBatchFeedback'
 
 vi.mock('element-plus', () => ({
   ElMessage: {
@@ -7,9 +10,6 @@ vi.mock('element-plus', () => ({
     warning: vi.fn(),
   },
 }))
-
-import { useBatchFeedback } from '@/composables/useBatchFeedback'
-import { ElMessage } from 'element-plus'
 
 describe('useBatchFeedback', () => {
   let showFeedback
