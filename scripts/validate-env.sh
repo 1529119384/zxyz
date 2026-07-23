@@ -13,6 +13,14 @@ set -euo pipefail
 ENV_FILE="${1:-.env}"
 ERRORS=0
 WARNINGS=0
+SYNC_ONLY=false
+
+# 解析 --sync-only 参数
+for arg in "$@"; do
+  if [ "$arg" = "--sync-only" ]; then
+    SYNC_ONLY=true
+  fi
+done
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "ERROR: $ENV_FILE 不存在"
@@ -27,6 +35,49 @@ set +a
 
 echo "===== 验证 $ENV_FILE ====="
 echo ""
+
+# --- Step 1: 从 .env.example 补全缺失的 KEY ---
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+EXAMPLE_FILE="$SCRIPT_DIR/../.env.example"
+if [ -f "$EXAMPLE_FILE" ]; then
+  echo "--- Step 1: 补全缺失的配置项 ---"
+  sync_count=0
+  while IFS= read -r line; do
+    # 跳过注释和空行
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    [[ -z "${line// }" ]] && continue
+    # 匹配 KEY= 格式（值可能为空）
+    if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+      key="${BASH_REMATCH[1]}"
+      value="${BASH_REMATCH[2]}"
+      # 仅当 .env 中不存在该 KEY 时追加
+      if ! grep -qE "^${key}=" "$ENV_FILE" 2>/dev/null; then
+        echo "  补全: $key"
+        echo "$line" >> "$ENV_FILE"
+        sync_count=$((sync_count + 1))
+      fi
+    fi
+  done < "$EXAMPLE_FILE"
+  if [ "$sync_count" -gt 0 ]; then
+    echo "  已补全 $sync_count 个缺失的配置项到 $ENV_FILE"
+    # 重新加载更新后的 .env
+    set -a
+    source "$ENV_FILE"
+    set +a
+  else
+    echo "  所有配置项已存在，无需补全"
+  fi
+  echo ""
+
+  # --sync-only 模式：仅补全，跳过后续校验
+  if [ "$SYNC_ONLY" = true ]; then
+    echo "===== sync-only 模式：仅补全完成 ====="
+    exit 0
+  fi
+else
+  echo "WARN: .env.example 不存在，跳过 Step 1"
+  echo ""
+fi
 
 # --- 必须修改的占位符 ---
 check_not_placeholder() {
