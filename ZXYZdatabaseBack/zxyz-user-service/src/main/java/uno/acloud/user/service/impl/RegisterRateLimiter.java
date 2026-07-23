@@ -8,23 +8,29 @@ import java.time.Duration;
 import java.util.List;
 
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.exception.BusinessException;
 
 @Component
 public class RegisterRateLimiter {
 
-    private static final int IP_LIMIT_PER_HOUR = 3;
+    /** 每小时每 IP 注册上限 fallback */
+    private static final int FALLBACK_IP_LIMIT_PER_HOUR = 3;
 
     private final StringRedisTemplate stringRedisTemplate;
+    private final ConfigGetter configGetter;
+    private final int ipLimitPerHour;
 
-    public RegisterRateLimiter(StringRedisTemplate stringRedisTemplate) {
+    public RegisterRateLimiter(StringRedisTemplate stringRedisTemplate, ConfigGetter configGetter) {
         this.stringRedisTemplate = stringRedisTemplate;
+        this.configGetter = configGetter;
+        this.ipLimitPerHour = configGetter.getInt("app.rate-limit.register.ip-per-hour", FALLBACK_IP_LIMIT_PER_HOUR);
     }
 
     public void checkAndIncrement(String ip) {
         String key = "zxyz:user:register:ip:" + (ip == null || ip.isBlank() ? "unknown" : ip);
         Long current = incrementWithTtl(key, Duration.ofHours(1));
-        if (current > IP_LIMIT_PER_HOUR) {
+        if (current > ipLimitPerHour) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "注册请求过于频繁，请稍后再试");
         }
     }

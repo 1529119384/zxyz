@@ -9,10 +9,13 @@ import uno.acloud.exception.BusinessException;
 import uno.acloud.file.infrastructure.entity.FileItem;
 import uno.acloud.file.infrastructure.entity.FileNode;
 import uno.acloud.file.infrastructure.mapper.FileMapper;
-import uno.acloud.common.oss.GetSignUrl;
 import uno.acloud.file.service.FileQueryPort;
+import uno.acloud.file.storage.StorageProvider;
+import uno.acloud.file.storage.StorageProviderRegistry;
+import uno.acloud.file.storage.DownloadInfo;
 import uno.acloud.vo.FileDownloadUrlVO;
 import uno.acloud.file.vo.FileListItemVO;
+import uno.acloud.file.vo.FileListPagedResultVO;
 import uno.acloud.file.vo.FileResourceVO;
 import uno.acloud.file.vo.FileSearchItemVO;
 import uno.acloud.file.vo.FileSearchResultVO;
@@ -22,6 +25,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -31,15 +35,15 @@ public class FileQueryService implements FileQueryPort {
     private static final SortOrder DEFAULT_SORT_ORDER = SortOrder.ASC;
 
     private final FileMapper fileMapper;
-    private final GetSignUrl getSignUrl;
+    private final StorageProviderRegistry registry;
     private final FileDomainValidator fileDomainValidator;
     private final FileConverter fileConverter;
     private final FileAccessGuard fileAccessGuardService;
 
-    public FileQueryService(FileMapper fileMapper, GetSignUrl getSignUrl, FileDomainValidator fileDomainValidator,
+    public FileQueryService(FileMapper fileMapper, StorageProviderRegistry registry, FileDomainValidator fileDomainValidator,
                             FileConverter fileConverter, FileAccessGuard fileAccessGuardService) {
         this.fileMapper = fileMapper;
-        this.getSignUrl = getSignUrl;
+        this.registry = registry;
         this.fileDomainValidator = fileDomainValidator;
         this.fileConverter = fileConverter;
         this.fileAccessGuardService = fileAccessGuardService;
@@ -67,6 +71,29 @@ public class FileQueryService implements FileQueryPort {
     }
 
     @Override
+    public FileListPagedResultVO getFileListByParentId(Long parentId, Long teamId, Integer spaceType, Long projectId, String sortField, String sortOrder, Integer page, Integer pageSize, Long userId) {
+        if (parentId == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "parentId 不能为空");
+        }
+        SpaceTarget target = resolveListTarget(parentId, teamId, spaceType, projectId, userId);
+        requireReadAccess(target, userId);
+        SortOption sortOption = resolveSortOption(sortField, sortOrder);
+        int finalPage = page == null || page < 1 ? 1 : page;
+        int finalPageSize = pageSize == null || pageSize < 1 ? 50 : Math.min(pageSize, 100);
+        int offset = (finalPage - 1) * finalPageSize;
+
+        long total = fileMapper.countByParentId(parentId, target.teamId(), target.spaceType(), target.projectId(), userId);
+        List<FileListItemVO> fileList = total == 0
+                ? new ArrayList<>()
+                : fileMapper.getFileNodesByParentIdPaged(parentId, target.teamId(), target.spaceType(), target.projectId(), userId, finalPageSize, offset)
+                        .stream()
+                        .map(fileConverter::toFileListItemVO)
+                        .sorted(buildFileListComparator(sortOption))
+                        .collect(Collectors.toList());
+        return new FileListPagedResultVO(total, fileList);
+    }
+
+    @Override
     public FileDownloadUrlVO getFileDownloadUrl(Long fileId, Long userId) {
         if (fileId == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "fileId 不能为空");
@@ -80,11 +107,13 @@ public class FileQueryService implements FileQueryPort {
         if (fileItem.getUuidName() == null || fileItem.getUuidName().isBlank()) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "文件资源不存在");
         }
-        if (!getSignUrl.objectExists(fileItem.getUuidName())) {
+        StorageProvider provider = registry.resolveForFile(fileItem);
+        if (!provider.objectExists(fileItem.getUuidName())) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "文件资源已丢失，请联系管理员");
         }
-        String downloadUrl = getSignUrl.generateGetSignUrl(fileItem.getUuidName(), fileItem.getOriginalName());
-        return new FileDownloadUrlVO(fileId, downloadUrl);
+        DownloadInfo downloadInfo = provider.generateDownloadInfo(fileItem.getUuidName(), fileItem.getOriginalName());
+        return new FileDownloadUrlVO(fileId, downloadInfo.getDownloadUrl(),
+                downloadInfo.isDirectDownload(), fileItem.getOriginalName());
     }
 
     @Override
@@ -104,11 +133,13 @@ public class FileQueryService implements FileQueryPort {
         if (fileItem.getUuidName() == null || fileItem.getUuidName().isBlank()) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "文件资源不存在");
         }
-        if (!getSignUrl.objectExists(fileItem.getUuidName())) {
+        StorageProvider provider = registry.resolveForFile(fileItem);
+        if (!provider.objectExists(fileItem.getUuidName())) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "文件资源已丢失，请联系管理员");
         }
-        String downloadUrl = getSignUrl.generateGetSignUrl(fileItem.getUuidName(), fileItem.getOriginalName());
-        return new FileDownloadUrlVO(fileId, downloadUrl);
+        DownloadInfo downloadInfo = provider.generateDownloadInfo(fileItem.getUuidName(), fileItem.getOriginalName());
+        return new FileDownloadUrlVO(fileId, downloadInfo.getDownloadUrl(),
+                downloadInfo.isDirectDownload(), fileItem.getOriginalName());
     }
 
     @Override
@@ -196,6 +227,16 @@ public class FileQueryService implements FileQueryPort {
     }
 
     @Override
+    public Map<Long, List<FileInfoDTO>> getShareChildrenByParentIdsWithDeleted(List<Long> parentIds) {
+        if (parentIds == null || parentIds.isEmpty()) {
+            return Map.of();
+        }
+        return fileMapper.getShareChildrenByParentIdsWithDeleted(parentIds).stream()
+                .map(fileConverter::toFileInfoDTO)
+                .collect(Collectors.groupingBy(FileInfoDTO::getParentId));
+    }
+
+    @Override
     public FileResourceVO getFileResourceById(Long fileId) {
         return fileConverter.toFileResourceVO(fileMapper.getActiveFileNodeById(fileId));
     }
@@ -226,6 +267,16 @@ public class FileQueryService implements FileQueryPort {
                 ? new ArrayList<>()
                 : fileMapper.searchByKeyword(userId, teamId, normalizedKeyword, finalPageSize, offset);
         return new FileSearchResultVO(total, searchItems);
+    }
+
+    @Override
+    public FileNode getFileNodeById(Long fileId) {
+        return fileMapper.getActiveFileNodeById(fileId);
+    }
+
+    @Override
+    public FileNode getFileNodeForStream(Long fileId, Long userId) {
+        return fileDomainValidator.requireNode(fileId, userId, fileAccessGuardService);
     }
 
     public FileSearchResultVO searchFiles(String keyword, Integer page, Integer pageSize, long userId) {

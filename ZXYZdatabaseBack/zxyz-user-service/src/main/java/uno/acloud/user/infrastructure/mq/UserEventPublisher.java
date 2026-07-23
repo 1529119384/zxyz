@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.mq.MqRetryTemplateFactory;
 import uno.acloud.common.RabbitMqConstants;
+import uno.acloud.common.event.UserDeletedEvent;
 import uno.acloud.common.event.UserProfileUpdatedEvent;
 import uno.acloud.exception.BusinessException;
 
@@ -53,6 +54,29 @@ public class UserEventPublisher {
         } catch (Exception e) {
             log.error("发布用户资料更新事件失败（已重试{}次）: userId={}", MAX_RETRY_ATTEMPTS, userId, e);
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "MQ事件发布失败: " + RabbitMqConstants.ROUTING_KEY_USER_PROFILE_UPDATED);
+        }
+    }
+
+    /**
+     * 发布用户注销/删除事件，供下游服务清理数据。
+     */
+    public void publishUserDeleted(Long userId, String username) {
+        UserDeletedEvent event = UserDeletedEvent.of(userId, username);
+        String json;
+        try {
+            json = objectMapper.writeValueAsString(event);
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "序列化用户删除事件失败: userId=" + userId);
+        }
+        try {
+            retryTemplate.execute(context -> {
+                rabbitTemplate.convertAndSend(RabbitMqConstants.EXCHANGE, RabbitMqConstants.ROUTING_KEY_USER_DELETED, json);
+                log.info("已发布用户删除事件: userId={}, username={}", userId, username);
+                return null;
+            });
+        } catch (Exception e) {
+            log.error("发布用户删除事件失败（已重试{}次）: userId={}", MAX_RETRY_ATTEMPTS, userId, e);
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "MQ事件发布失败: " + RabbitMqConstants.ROUTING_KEY_USER_DELETED);
         }
     }
 }

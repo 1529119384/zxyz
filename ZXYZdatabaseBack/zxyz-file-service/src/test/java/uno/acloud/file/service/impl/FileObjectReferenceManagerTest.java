@@ -37,7 +37,7 @@ class FileObjectReferenceManagerTest {
 
     @Test
     void retainReference_throwsWhenIncrementFails() {
-        when(fileObjectRefMapper.incrementReference("oss-key-1", 1, FileObjectDeleteStatus.ACTIVE))
+        when(fileObjectRefMapper.incrementReference("oss-key-1", 1, FileObjectDeleteStatus.ACTIVE, "oss"))
                 .thenReturn(0);
 
         BusinessException ex = assertThrows(BusinessException.class,
@@ -48,11 +48,11 @@ class FileObjectReferenceManagerTest {
 
     @Test
     void retainReference_succeedsWhenIncrementReturns1() {
-        when(fileObjectRefMapper.incrementReference("oss-key-1", 1, FileObjectDeleteStatus.ACTIVE))
+        when(fileObjectRefMapper.incrementReference("oss-key-1", 1, FileObjectDeleteStatus.ACTIVE, "oss"))
                 .thenReturn(1);
 
         assertDoesNotThrow(() -> manager.retainReference("oss-key-1"));
-        verify(fileObjectRefMapper).incrementReference("oss-key-1", 1, FileObjectDeleteStatus.ACTIVE);
+        verify(fileObjectRefMapper).incrementReference("oss-key-1", 1, FileObjectDeleteStatus.ACTIVE, "oss");
     }
 
     @Test

@@ -73,4 +73,9 @@ public class ShareService implements SharePort {
     public ShareDownloadResponseVO getShareDownloadUrl(String shareKey, Long fileId, String shareAccessToken) {
         return shareContentService.getShareDownloadUrl(shareKey, fileId, shareAccessToken);
     }
+
+    @Override
+    public ShareDownloadResponseVO getShareStreamUrl(String shareKey, Long fileId, String shareAccessToken) {
+        return shareContentService.getShareStreamUrl(shareKey, fileId, shareAccessToken);
+    }
 }

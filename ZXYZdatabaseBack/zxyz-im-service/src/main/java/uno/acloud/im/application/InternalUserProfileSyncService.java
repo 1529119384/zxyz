@@ -3,6 +3,7 @@ package uno.acloud.im.application;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import lombok.extern.slf4j.Slf4j;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.domain.model.UserProfile;
@@ -11,6 +12,7 @@ import uno.acloud.im.dto.InternalUserProfileSyncRequest;
 
 import static uno.acloud.common.InputNormalizer.optionalText;
 
+@Slf4j
 @Service
 public class InternalUserProfileSyncService {
 
@@ -31,5 +33,14 @@ public class InternalUserProfileSyncService {
         profile.setName(optionalText(request.getName()));
         profile.setAvatar(optionalText(request.getAvatar()));
         userProfileMapper.upsert(profile);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void removeUserProfile(Long userId) {
+        if (userId == null) {
+            return;
+        }
+        userProfileMapper.deleteByUserId(userId);
+        log.info("删除用户 IM 资料: userId={}", userId);
     }
 }

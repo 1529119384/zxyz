@@ -13,10 +13,12 @@ import org.springframework.web.bind.annotation.RestController;
 import uno.acloud.common.Result;
 import uno.acloud.dto.FileInfoDTO;
 import uno.acloud.file.dto.InternalBatchFileIdsRequest;
+import uno.acloud.file.dto.InternalBatchParentIdsRequest;
 import uno.acloud.file.service.FileQueryPort;
 import uno.acloud.vo.FileDownloadUrlVO;
 
 import java.util.List;
+import java.util.Map;
 
 @Hidden
 @RestController
@@ -46,6 +48,12 @@ public class InternalFileController {
     @GetMapping("/{parentId}/share-children")
     public Result<List<FileInfoDTO>> getShareChildren(@PathVariable Long parentId) {
         return Result.of(fileQueryPort.getShareChildrenByParentIdWithDeleted(parentId));
+    }
+
+    @Operation(summary = "批量获取分享子文件列表")
+    @PostMapping("/batch-share-children")
+    public Result<Map<Long, List<FileInfoDTO>>> getBatchShareChildren(@Valid @RequestBody InternalBatchParentIdsRequest request) {
+        return Result.of(fileQueryPort.getShareChildrenByParentIdsWithDeleted(request.getParentIds()));
     }
 
     @Operation(summary = "获取分享文件下载链接")

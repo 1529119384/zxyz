@@ -79,4 +79,13 @@ public class PublicShareController {
         String shareAccessToken = shareCookieManager.resolveAccessToken(shareKey, httpServletRequest);
         return Result.of(shareService.getShareDownloadUrl(shareKey, fileId, shareAccessToken));
     }
+
+    @GetMapping("/{shareKey}/files/{fileId}/stream")
+    @Operation(summary = "流式下载分享文件")
+    public Result<ShareDownloadResponseVO> getShareStreamUrl(@PathVariable String shareKey,
+                                      @PathVariable Long fileId,
+                                      HttpServletRequest httpServletRequest) {
+        String shareAccessToken = shareCookieManager.resolveAccessToken(shareKey, httpServletRequest);
+        return Result.of(shareService.getShareStreamUrl(shareKey, fileId, shareAccessToken));
+    }
 }

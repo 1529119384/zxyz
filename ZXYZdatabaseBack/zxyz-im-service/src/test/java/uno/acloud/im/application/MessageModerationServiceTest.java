@@ -6,8 +6,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.exception.BusinessException;
-import uno.acloud.im.config.MessageModerationProperties;
 import uno.acloud.im.domain.enums.ConversationType;
 import uno.acloud.im.domain.model.ImConversation;
 import uno.acloud.im.domain.model.ImMessage;
@@ -37,16 +37,17 @@ class MessageModerationServiceTest {
     private ConversationService conversationService;
     @Mock
     private TeamPermissionService teamPermissionService;
+    @Mock
+    private ConfigGetter configGetter;
 
     private MessageModerationService service;
 
     @BeforeEach
     void setUp() {
-        MessageModerationProperties properties = new MessageModerationProperties();
-        properties.setRecallWindowSeconds(120);
+        org.mockito.Mockito.when(configGetter.getInt("app.im.message.recall-window-seconds", 120)).thenReturn(120);
         service = new MessageModerationService(
                 imMessageMapper, conversationMapper, teamMapper,
-                conversationService, teamPermissionService, properties);
+                conversationService, teamPermissionService, configGetter);
     }
 
     // ---- 辅助方法 ----

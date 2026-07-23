@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 import uno.acloud.admin.domain.SysConfig;
 import uno.acloud.admin.domain.SysConfigAudit;
 import uno.acloud.admin.service.ConfigService;
+import uno.acloud.common.ErrorCode;
 import uno.acloud.common.Result;
 import uno.acloud.common.SystemRoleCodes;
 import uno.acloud.common.web.CurrentUser;
@@ -51,6 +52,16 @@ public class ConfigAdminController {
                 new LambdaQueryWrapper<SysConfig>()
                         .orderByAsc(SysConfig::getConfigType, SysConfig::getConfigKey));
         return Result.of(list);
+    }
+
+    @Operation(summary = "按 key 查询单个配置值")
+    @GetMapping("/{key}")
+    public Result<String> getByKey(@Parameter(description = "配置键") @PathVariable String key) {
+        String value = configService.get(key);
+        if (value == null) {
+            return Result.error(ErrorCode.NOT_FOUND, "配置键不存在: " + key, null);
+        }
+        return Result.of(value);
     }
 
     @Operation(summary = "修改配置")

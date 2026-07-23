@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import uno.acloud.common.util.TransactionHelper;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.UserErrorCode;
 import uno.acloud.common.TeamPermissionCodes;
 import uno.acloud.common.TeamRoleCodes;
 import uno.acloud.exception.BusinessException;
@@ -17,6 +18,7 @@ import uno.acloud.exception.NotFoundException;
 import uno.acloud.exception.ValidationException;
 import uno.acloud.common.oss.AvatarUploadSignRequest;
 import uno.acloud.common.oss.AvatarUploadSignService;
+import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.team.dto.team.CreateTeamMemberRequest;
 import uno.acloud.team.dto.team.CreateTeamRequest;
 import uno.acloud.team.dto.team.UpdateTeamMemberStatusRequest;
@@ -54,9 +56,12 @@ import static uno.acloud.common.InputNormalizer.requireText;
 @Slf4j
 public class EnterpriseTeamService implements EnterpriseTeamPort {
 
-    private static final int DEFAULT_MEMBER_LIMIT = 100;
-    private static final long DEFAULT_STORAGE_LIMIT = 1024L * 1024L * 1024L * 100L;
-    private static final int MIN_PASSWORD_LENGTH = 6;
+    /** 团队默认成员上限 fallback */
+    private static final int FALLBACK_DEFAULT_MEMBER_LIMIT = 100;
+    /** 团队默认存储上限 fallback（100GB） */
+    private static final long FALLBACK_DEFAULT_STORAGE_LIMIT = 1024L * 1024L * 1024L * 100L;
+    /** 团队密码最小长度 fallback */
+    private static final int FALLBACK_MIN_PASSWORD_LENGTH = 6;
     private static final long LOCK_WAIT_SECONDS = 5L;
     private static final long LOCK_LEASE_SECONDS = 30L;
 
@@ -73,6 +78,10 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
     private final RedissonClient redissonClient;
     private final TeamEntityMapper teamEntityMapper;
     private final TransactionHelper transactionHelper;
+    private final ConfigGetter configGetter;
+    private final int defaultMemberLimit;
+    private final long defaultStorageLimit;
+    private final int minPasswordLength;
 
     public EnterpriseTeamService(TeamMapper teamMapper,
                                  TeamQuotaMapper quotaMapper,
@@ -86,7 +95,8 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
                                  AvatarUploadSignService avatarUploadSignService,
                                  RedissonClient redissonClient,
                                  TeamEntityMapper teamEntityMapper,
-                                 TransactionHelper transactionHelper) {
+                                 TransactionHelper transactionHelper,
+                                 ConfigGetter configGetter) {
         this.teamMapper = teamMapper;
         this.quotaMapper = quotaMapper;
         this.userServiceClient = userServiceClient;
@@ -100,6 +110,10 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
         this.redissonClient = redissonClient;
         this.teamEntityMapper = teamEntityMapper;
         this.transactionHelper = transactionHelper;
+        this.configGetter = configGetter;
+        this.defaultMemberLimit = configGetter.getInt("app.team.default-max-members", FALLBACK_DEFAULT_MEMBER_LIMIT);
+        this.defaultStorageLimit = configGetter.getLong("app.team.default-storage-limit-bytes", FALLBACK_DEFAULT_STORAGE_LIMIT);
+        this.minPasswordLength = configGetter.getInt("app.team.min-password-length", FALLBACK_MIN_PASSWORD_LENGTH);
     }
 
     @Override
@@ -145,8 +159,8 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
             );
         } catch (DuplicateKeyException | BusinessException e) {
             if (e instanceof DuplicateKeyException
-                    || (e instanceof BusinessException be && be.getErrorCode() == ErrorCode.USERNAME_EXISTS)) {
-                throw new BusinessException(ErrorCode.USERNAME_EXISTS, "大管理员用户名已存在");
+                    || (e instanceof BusinessException be && be.getErrorCode() == UserErrorCode.USERNAME_EXISTS.getCode())) {
+                throw new BusinessException(UserErrorCode.USERNAME_EXISTS, "大管理员用户名已存在");
             }
             throw e;
         }
@@ -172,8 +186,8 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
 
             TeamQuota quota = new TeamQuota();
             quota.setTeamId(team.getId());
-            quota.setMemberLimit(normalizePositive(request == null ? null : request.getMemberLimit(), DEFAULT_MEMBER_LIMIT));
-            quota.setStorageLimit(normalizePositiveLong(request == null ? null : request.getStorageLimit(), DEFAULT_STORAGE_LIMIT));
+            quota.setMemberLimit(normalizePositive(request == null ? null : request.getMemberLimit(), defaultMemberLimit));
+            quota.setStorageLimit(normalizePositiveLong(request == null ? null : request.getStorageLimit(), defaultStorageLimit));
             quota.setCreateTime(now);
             quota.setUpdateTime(now);
             quotaMapper.upsertQuota(quota);
@@ -257,7 +271,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
         }
         try {
             TeamQuota quota = quotaMapper.getByTeamId(teamId);
-            int memberLimit = quota == null ? DEFAULT_MEMBER_LIMIT : quota.getMemberLimit();
+            int memberLimit = quota == null ? defaultMemberLimit : quota.getMemberLimit();
             if (teamMapper.countOccupiedMembers(teamId) >= memberLimit) {
                 throw new ValidationException("团队成员名额已满");
             }
@@ -273,8 +287,8 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
                 );
             } catch (DuplicateKeyException | BusinessException e) {
                 if (e instanceof DuplicateKeyException
-                        || (e instanceof BusinessException be && be.getErrorCode() == ErrorCode.USERNAME_EXISTS)) {
-                    throw new BusinessException(ErrorCode.USERNAME_EXISTS, "用户名已存在");
+                        || (e instanceof BusinessException be && be.getErrorCode() == UserErrorCode.USERNAME_EXISTS.getCode())) {
+                    throw new BusinessException(UserErrorCode.USERNAME_EXISTS, "用户名已存在");
                 }
                 throw e;
             }
@@ -544,7 +558,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
 
     private String normalizePassword(String value) {
         String password = requireText(value, "密码不能为空");
-        if (password.length() < MIN_PASSWORD_LENGTH) {
+        if (password.length() < minPasswordLength) {
             throw new ValidationException("密码不能少于 6 位");
         }
         return password;

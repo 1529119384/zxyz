@@ -85,8 +85,6 @@ public interface FileMapper {
     @ResultMap("fileNodeResultMap")
     List<FileNode> getFileNodesByIds(@Param("fileIds") List<Long> fileIds);
 
-    // TODO(P3-08): 当前文件列表查询加载目录所有子项到内存并 Java 排序，无 LIMIT。
-    // 建议添加 LIMIT/OFFSET 分页，将 ORDER BY 推入 SQL，避免大目录内存溢出。
     @Select({
             "<script>",
             "SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider",
@@ -186,6 +184,20 @@ public interface FileMapper {
             "<script>",
             "SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path,",
             "       upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider",
+            "FROM file_node",
+            "WHERE parent_id IN",
+            "<foreach collection='parentIds' item='parentId' open='(' separator=',' close=')'>",
+            "    #{parentId}",
+            "</foreach>",
+            "</script>"
+    })
+    @ResultMap("fileNodeResultMap")
+    List<FileNode> getShareChildrenByParentIdsWithDeleted(@Param("parentIds") List<Long> parentIds);
+
+    @Select({
+            "<script>",
+            "SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path,",
+            "       upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider",
             "FROM file_node f",
             "WHERE f.deleted = 1",
             "  AND NOT EXISTS (",
@@ -270,11 +282,11 @@ public interface FileMapper {
     })
     List<String> getOssKeysByIds(@Param("fileIds") List<Long> fileIds);
 
-    @Insert("INSERT INTO file_node (file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted) VALUES (#{fileType}, #{uuidName}, #{originalName}, #{category}, #{fileSize}, #{fileUrl}, #{storePath}, #{uploadUserId}, #{sharedUserId}, #{teamId}, #{spaceType}, #{projectId}, #{deletedUserId}, #{parentId}, #{createTime}, #{modifyTime}, #{deleted})")
+    @Insert("INSERT INTO file_node (file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider) VALUES (#{fileType}, #{uuidName}, #{originalName}, #{category}, #{fileSize}, #{fileUrl}, #{storePath}, #{uploadUserId}, #{sharedUserId}, #{teamId}, #{spaceType}, #{projectId}, #{deletedUserId}, #{parentId}, #{createTime}, #{modifyTime}, #{deleted}, #{storageProvider})")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     Integer insertFileItem(FileItem fileItem);
 
-    @Insert("INSERT INTO file_node(file_type, original_name, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted) VALUES(#{fileType}, #{originalName}, #{storePath}, #{uploadUserId}, #{sharedUserId}, #{teamId}, #{spaceType}, #{projectId}, #{deletedUserId}, #{parentId}, #{createTime}, #{modifyTime}, #{deleted})")
+    @Insert("INSERT INTO file_node(file_type, original_name, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider) VALUES(#{fileType}, #{originalName}, #{storePath}, #{uploadUserId}, #{sharedUserId}, #{teamId}, #{spaceType}, #{projectId}, #{deletedUserId}, #{parentId}, #{createTime}, #{modifyTime}, #{deleted}, #{storageProvider})")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     Integer insertFolder(Folder folder);
 
@@ -500,4 +512,14 @@ public interface FileMapper {
             @Result(column = "usedStorage", property = "usedStorage")
     })
     List<TeamStorageUsage> sumActiveFileSizeByTeamIds(@Param("teamIds") List<Long> teamIds);
+
+    @Select("""
+            SELECT id FROM file_node
+            WHERE parent_id IS NULL
+              AND (space_type IS NULL OR space_type = 1)
+              AND team_id IS NULL
+              AND upload_user_id = #{userId}
+              AND deleted IN (0, 1)
+            """)
+    List<Long> getPersonalRootFileIds(@Param("userId") Long userId);
 }

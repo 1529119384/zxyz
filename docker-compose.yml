@@ -502,6 +502,12 @@ services:
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
       JASYPT_PASSWORD: ${JASYPT_PASSWORD}
       ADMIN_SERVICE_BASE_URL: ${ADMIN_SERVICE_BASE_URL:-http://zxyz-admin-service}
+      STORAGE_DEFAULT_PROVIDER: ${STORAGE_DEFAULT_PROVIDER:-oss}
+      STORAGE_OSS_ENABLED: ${STORAGE_OSS_ENABLED:-true}
+      STORAGE_LOCAL_ENABLED: ${STORAGE_LOCAL_ENABLED:-false}
+      LOCAL_STORAGE_PATH: ${LOCAL_STORAGE_PATH:-/data/local-storage}
+    volumes:
+      - ./data/local-storage:/data/local-storage
     networks:
       - zxyz-net
     healthcheck:

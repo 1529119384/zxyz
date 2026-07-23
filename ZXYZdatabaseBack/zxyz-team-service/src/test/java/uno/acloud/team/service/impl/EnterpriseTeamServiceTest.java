@@ -14,6 +14,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.TeamPermissionCodes;
 import uno.acloud.common.TeamRoleCodes;
+import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.common.util.TransactionHelper;
 import uno.acloud.common.oss.AvatarUploadSignService;
 import uno.acloud.dto.UserInfoDTO;
@@ -87,17 +88,24 @@ class EnterpriseTeamServiceTest {
     private TransactionHelper transactionHelper;
 
     @Mock
+    private ConfigGetter configGetter;
+
+    @Mock
     private RLock rLock;
 
     private EnterpriseTeamService enterpriseTeamService;
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.when(configGetter.getInt("app.team.default-max-members", 100)).thenReturn(100);
+        org.mockito.Mockito.when(configGetter.getLong("app.team.default-storage-limit-bytes", 107374182400L)).thenReturn(107374182400L);
+        org.mockito.Mockito.when(configGetter.getInt("app.team.min-password-length", 6)).thenReturn(6);
+
         enterpriseTeamService = new EnterpriseTeamService(
                 teamMapper, quotaMapper, userServiceClient, projectServiceClient,
                 fileServiceClient, passwordEncoder, teamPermissionService,
                 teamFileAccessService, teamEventPublisher, avatarUploadSignService,
-                redissonClient, teamEntityMapper, transactionHelper);
+                redissonClient, teamEntityMapper, transactionHelper, configGetter);
         // Mock TransactionHelper to execute lambdas directly (simulates transactional behavior)
         lenient().when(transactionHelper.execute(any())).thenAnswer(invocation -> {
             TransactionHelper.TransactionCallback<?> callback = invocation.getArgument(0);
@@ -158,6 +166,10 @@ class EnterpriseTeamServiceTest {
         // TeamVO conversion
         when(teamPermissionService.listRoleCodes(10L, 1L)).thenReturn(List.of(TeamRoleCodes.OWNER));
         when(teamPermissionService.listPermissionCodes(10L, 1L)).thenReturn(List.of());
+        when(teamEntityMapper.toTeamVO(any(Team.class))).thenAnswer(invocation -> {
+            Team t = invocation.getArgument(0);
+            return new TeamVO(t.getId(), t.getName(), null, null, t.getOwnerUserId(), 0, "", List.of(), null, null);
+        });
 
         TeamVO result = enterpriseTeamService.createTeam(request);
 

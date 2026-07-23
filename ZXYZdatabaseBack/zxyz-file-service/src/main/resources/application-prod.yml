@@ -14,3 +14,11 @@ app:
     base-url: ${PROJECT_SERVICE_BASE_URL:http://zxyz-project-service}
   share-service:
     base-url: ${SHARE_SERVICE_BASE_URL:http://zxyz-share-service}
+  storage:
+    default-provider: ${STORAGE_DEFAULT_PROVIDER:oss}
+    provider:
+      oss:
+        enabled: ${STORAGE_OSS_ENABLED:true}
+      local:
+        enabled: ${STORAGE_LOCAL_ENABLED:false}
+        base-path: ${LOCAL_STORAGE_PATH:./local-storage}

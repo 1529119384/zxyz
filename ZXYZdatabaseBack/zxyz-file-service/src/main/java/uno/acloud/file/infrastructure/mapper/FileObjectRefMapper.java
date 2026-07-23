@@ -16,8 +16,8 @@ import java.util.List;
 public interface FileObjectRefMapper extends BaseMapper<FileObjectRef> {
 
     @Insert({
-            "INSERT INTO file_object_ref (object_key, ref_count, delete_status, delete_retry_count, next_retry_time, last_delete_error, create_time, modify_time)",
-            "VALUES (#{objectKey}, #{increment}, #{activeStatus}, 0, NULL, NULL, NOW(3), NOW(3))",
+            "INSERT INTO file_object_ref (object_key, ref_count, delete_status, delete_retry_count, next_retry_time, last_delete_error, create_time, modify_time, storage_provider)",
+            "VALUES (#{objectKey}, #{increment}, #{activeStatus}, 0, NULL, NULL, NOW(3), NOW(3), #{storageProvider})",
             "ON DUPLICATE KEY UPDATE",
             "ref_count = ref_count + #{increment},",
             "delete_status = #{activeStatus},",
@@ -28,7 +28,8 @@ public interface FileObjectRefMapper extends BaseMapper<FileObjectRef> {
     })
     int incrementReference(@Param("objectKey") String objectKey,
                            @Param("increment") int increment,
-                           @Param("activeStatus") String activeStatus);
+                           @Param("activeStatus") String activeStatus,
+                           @Param("storageProvider") String storageProvider);
 
     @Update({
             "UPDATE file_object_ref",
@@ -42,7 +43,7 @@ public interface FileObjectRefMapper extends BaseMapper<FileObjectRef> {
                            @Param("activeStatus") String activeStatus);
 
     @Select({
-            "SELECT object_key, ref_count, delete_status, delete_retry_count,",
+            "SELECT object_key, ref_count, delete_status, delete_retry_count, storage_provider,",
             "       next_retry_time, last_delete_error, create_time, modify_time",
             "FROM file_object_ref",
             "WHERE object_key = #{objectKey}"
@@ -65,7 +66,7 @@ public interface FileObjectRefMapper extends BaseMapper<FileObjectRef> {
                             @Param("pendingStatus") String pendingStatus);
 
     @Select({
-            "SELECT object_key, ref_count, delete_status, delete_retry_count, next_retry_time, last_delete_error, create_time, modify_time",
+            "SELECT object_key, ref_count, delete_status, delete_retry_count, storage_provider, next_retry_time, last_delete_error, create_time, modify_time",
             "FROM file_object_ref",
             "WHERE ref_count = 0",
             "  AND delete_status = #{pendingStatus}",

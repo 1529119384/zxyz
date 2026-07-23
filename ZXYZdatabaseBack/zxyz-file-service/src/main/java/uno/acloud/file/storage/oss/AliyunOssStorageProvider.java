@@ -110,6 +110,11 @@ public class AliyunOssStorageProvider implements StorageProvider {
     }
 
     @Override
+    public byte[] readFirstBytes(String objectKey, int maxBytes) {
+        return getSignUrl.readFirstBytes(objectKey, maxBytes);
+    }
+
+    @Override
     public void deleteObject(String objectKey) {
         ossDeleter.delete(objectKey);
     }
@@ -122,5 +127,17 @@ public class AliyunOssStorageProvider implements StorageProvider {
     @Override
     public void updateContentDisposition(String objectKey, String originalName) {
         ossMetadataUpdater.updateDownloadFileName(objectKey, originalName);
+    }
+
+    @Override
+    public boolean healthCheck() {
+        try {
+            // 通过检查一个不存在的对象来验证 OSS 连接是否可达
+            // objectExists 内部处理了异常，返回 false 表示连接正常但对象不存在
+            return getSignUrl.objectExists("__health_check__zxyz__");
+        } catch (Exception e) {
+            log.warn("OSS 健康检查失败: {}", e.getMessage());
+            return false;
+        }
     }
 }

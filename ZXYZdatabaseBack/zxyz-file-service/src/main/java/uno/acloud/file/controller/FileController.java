@@ -3,6 +3,7 @@ package uno.acloud.file.controller;
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -13,7 +14,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.Result;
 import uno.acloud.common.SystemPermissionCodes;
@@ -27,20 +30,28 @@ import uno.acloud.file.dto.BatchFileRequest;
 import uno.acloud.file.dto.FileUpdateRequest;
 import uno.acloud.file.dto.HasFileIds;
 import uno.acloud.file.dto.MoveCopyFilesRequest;
+import uno.acloud.file.infrastructure.entity.FileItem;
+import uno.acloud.file.infrastructure.entity.FileNode;
 import uno.acloud.file.service.FileLifecyclePort;
 import uno.acloud.file.service.FileOperationPort;
 import uno.acloud.file.service.FileQueryPort;
 import uno.acloud.file.service.FileUploadPort;
+import uno.acloud.file.storage.StorageProvider;
+import uno.acloud.file.storage.StorageProviderRegistry;
+import uno.acloud.file.storage.UploadInfo;
 import uno.acloud.file.vo.BatchOperationDetailVO;
 import uno.acloud.file.vo.BatchOperationResult;
 import uno.acloud.file.vo.BatchUploadConfirmResultVO;
 import uno.acloud.file.vo.FileListItemVO;
+import uno.acloud.file.vo.FileListPagedResultVO;
 import uno.acloud.vo.FileDownloadUrlVO;
 import uno.acloud.file.vo.FileResourceVO;
 import uno.acloud.file.vo.FileSearchResultVO;
-import uno.acloud.common.oss.OssSignInfo;
 
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @RestController
@@ -52,22 +63,25 @@ public class FileController {
     private final FileQueryPort fileQueryPort;
     private final FileOperationPort fileOperationPort;
     private final FileLifecyclePort fileLifecyclePort;
+    private final StorageProviderRegistry registry;
 
     public FileController(FileUploadPort fileUploadPort, FileQueryPort fileQueryPort,
-                          FileOperationPort fileOperationPort, FileLifecyclePort fileLifecyclePort) {
+                          FileOperationPort fileOperationPort, FileLifecyclePort fileLifecyclePort,
+                          StorageProviderRegistry registry) {
         this.fileUploadPort = fileUploadPort;
         this.fileQueryPort = fileQueryPort;
         this.fileOperationPort = fileOperationPort;
         this.fileLifecyclePort = fileLifecyclePort;
+        this.registry = registry;
     }
 
     @Operation(summary = "获取文件上传签名")
     @Log
     @PostMapping("/uploads")
     @SaCheckPermission(SystemPermissionCodes.FILE_UPLOAD)
-    public Result<OssSignInfo> getUploadSign(@CurrentUser Long userId, @RequestParam String originalName) {
+    public Result<UploadInfo> getUploadSign(@CurrentUser Long userId, @RequestParam String originalName) {
         log.info("用户 {} 请求获取上传签名，原始文件名: {}", userId, originalName);
-        OssSignInfo signInfo = fileUploadPort.getUploadSign(originalName);
+        UploadInfo signInfo = fileUploadPort.getUploadSign(originalName);
         return Result.of(signInfo);
     }
 
@@ -212,6 +226,103 @@ public class FileController {
     public Result<BatchOperationResult> deleteFiles(@CurrentUser Long userId, @Valid @RequestBody BatchFileRequest request) {
         int successCount = fileLifecyclePort.reallyDelete(resolveFileIds(request), userId);
         return Result.of(new BatchOperationResult(successCount));
+    }
+
+    @Operation(summary = "流式下载文件（本地存储等非预签名提供者使用）")
+    @GetMapping("/{fileId}/stream")
+    @SaCheckPermission(SystemPermissionCodes.FILE_READ)
+    public void streamFile(@CurrentUser Long userId, @PathVariable Long fileId,
+                           HttpServletResponse response) {
+        uno.acloud.file.infrastructure.entity.FileNode fileNode = fileQueryPort.getFileNodeForStream(fileId, userId);
+        if (!(fileNode instanceof FileItem fileItem)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持文件夹下载");
+        }
+        StorageProvider provider = registry.resolveForFile(fileItem);
+        if (provider.supportsPresignedDownload()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "该存储提供者不支持流式下载");
+        }
+        response.setContentType("application/octet-stream");
+        response.setHeader("Content-Disposition", "attachment; filename*=utf-8''"
+                + java.net.URLEncoder.encode(fileItem.getOriginalName(), java.nio.charset.StandardCharsets.UTF_8)
+                .replace("+", "%20"));
+        try (OutputStream os = response.getOutputStream()) {
+            provider.streamDownload(fileItem.getUuidName(), os);
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "文件下载失败");
+        }
+    }
+
+    /**
+     * 内部接口：获取文件流式下载信息（供分享服务等调用）
+     */
+    @GetMapping("/internal/files/{fileId}/stream-info")
+    public Result<String> getFileStreamInfo(@PathVariable Long fileId) {
+        FileNode fileNode = fileQueryPort.getFileNodeById(fileId);
+        if (fileNode == null || !(fileNode instanceof FileItem fileItem)) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "文件不存在");
+        }
+        StorageProvider provider = registry.resolveForFile(fileItem);
+        if (provider.supportsPresignedDownload()) {
+            return Result.of(provider.generateDownloadInfo(fileItem.getUuidName(), fileItem.getOriginalName()).getDownloadUrl());
+        } else {
+            return Result.of("/api/files/" + fileId + "/stream");
+        }
+    }
+
+    /**
+     * 内部接口：流式下载文件（供分享服务调用，无需用户认证）
+     */
+    @GetMapping("/internal/files/{fileId}/stream")
+    public void streamFileInternal(@PathVariable Long fileId, HttpServletResponse response) {
+        FileNode fileNode = fileQueryPort.getFileNodeById(fileId);
+        if (fileNode == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "文件不存在");
+        }
+        if (!(fileNode instanceof FileItem fileItem)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持文件夹下载");
+        }
+        StorageProvider provider = registry.resolveForFile(fileItem);
+        if (provider.supportsPresignedDownload()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "该存储提供者不支持流式下载");
+        }
+        response.setContentType("application/octet-stream");
+        response.setHeader("Content-Disposition", "attachment; filename*=utf-8''"
+                + java.net.URLEncoder.encode(fileItem.getOriginalName(), java.nio.charset.StandardCharsets.UTF_8)
+                .replace("+", "%20"));
+        try (OutputStream os = response.getOutputStream()) {
+            provider.streamDownload(fileItem.getUuidName(), os);
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "文件下载失败");
+        }
+    }
+
+    @Operation(summary = "直传上传文件（本地存储等非预签名提供者使用）")
+    @PostMapping(value = "/uploads/direct", consumes = "multipart/form-data")
+    @SaCheckPermission(SystemPermissionCodes.FILE_UPLOAD)
+    @RequiresTeamPermission(value = TeamPermissionCodes.TEAM_FILE_WRITE, teamIdArg = "request.teamId", skipWhenTeamIdMissing = true)
+    public Result<UploadInfo> directUpload(@CurrentUser Long userId,
+                                           @RequestPart("file") MultipartFile file,
+                                           @RequestParam(required = false) Long teamId,
+                                           @RequestParam(required = false) Integer spaceType,
+                                           @RequestParam(required = false) Long projectId,
+                                           @RequestParam(required = false) Long parentId) {
+        if (file == null || file.isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "上传文件不能为空");
+        }
+        try (InputStream is = file.getInputStream()) {
+            UploadInfo result = fileUploadPort.directUpload(
+                    file.getOriginalFilename(), is,
+                    file.getContentType(), parentId, userId);
+            return Result.of(result);
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "文件上传失败");
+        }
     }
 
     private FileResourceVO requireFileResource(Long fileId, Long userId) {

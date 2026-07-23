@@ -3,19 +3,27 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createTeamRole,
   updateTeamRole,
-  deleteTeamRole,
+  deleteTeamRole as deleteTeamRoleApi,
   assignTeamRolePermissions,
   assignMemberRole,
-} from '@/api/permission'
+} from '@/api/teamIm'
 import { handleBusinessError } from '@/utils/error'
 
 /**
  * 团队权限 CRUD 操作 composable。
  * 从 permission/index.vue 中提取，减少主组件复杂度。
  */
-export function useTeamPermissionActions({ canManage, refreshAll, createAutoRoleCode }) {
+export function useTeamPermissionActions({
+  canManage,
+  refreshAll,
+  createAutoRoleCode,
+  teamId,
+  permissionCenter,
+  isBuiltinRole,
+  currentUserId,
+}) {
   async function saveTeamRole(draft) {
-    if (!canManage.value) {
+    if (!canManage.value || !teamId.value) {
       return false
     }
     if (!draft.roleName.trim()) {
@@ -29,11 +37,15 @@ export function useTeamPermissionActions({ canManage, refreshAll, createAutoRole
         description: draft.description.trim(),
       }
       const response = draft.roleId
-        ? await updateTeamRole(draft.roleId, payload)
-        : await createTeamRole(payload)
-      const roleId = response?.data?.id || draft.roleId
+        ? await permissionCenter.updateTeamRolePermissions(teamId.value, draft.roleId, payload)
+        : await createTeamRole(teamId.value, payload)
+      const roleId = response?.id || draft.roleId
       if (roleId) {
-        await assignTeamRolePermissions(roleId, { permissionCodes: draft.permissionCodes })
+        await permissionCenter.updateTeamRolePermissions(
+          teamId.value,
+          roleId,
+          draft.permissionCodes,
+        )
       }
       await refreshAll()
       ElMessage.success('团队角色已保存')
@@ -45,7 +57,7 @@ export function useTeamPermissionActions({ canManage, refreshAll, createAutoRole
   }
 
   async function deleteTeamRole(row) {
-    if (!canManage.value || row?.builtin) {
+    if (!canManage.value || isBuiltinRole(row)) {
       return false
     }
     try {
@@ -54,7 +66,7 @@ export function useTeamPermissionActions({ canManage, refreshAll, createAutoRole
         '删除团队角色',
         { type: 'warning' },
       )
-      await deleteTeamRole(row.id)
+      await deleteTeamRoleApi(teamId.value, row.id)
       await refreshAll()
       ElMessage.success('团队角色已删除')
       return true
@@ -67,21 +79,25 @@ export function useTeamPermissionActions({ canManage, refreshAll, createAutoRole
     }
   }
 
-  async function submitMemberRoleAssign(form, teamId) {
+  async function submitMemberRoleAssign(form) {
     if (!canManage.value) {
       return
     }
     const userId = Number(form.userId)
     if (!Number.isSafeInteger(userId) || userId <= 0) {
-      ElMessage.warning('请先搜索并选择成员')
+      ElMessage.warning('请先选择成员')
       return
     }
     if (!form.roleCode) {
       ElMessage.warning('请选择角色')
       return
     }
+    if (Number(userId) === Number(currentUserId.value)) {
+      ElMessage.warning('不能给自己调整团队角色')
+      return
+    }
     try {
-      await assignMemberRole(teamId, userId, { roleCode: form.roleCode })
+      await assignMemberRole(teamId.value, { userId, roleCode: form.roleCode })
       form.userId = ''
       form.roleCode = ''
       await refreshAll()

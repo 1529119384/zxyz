@@ -10,7 +10,8 @@ import uno.acloud.file.infrastructure.entity.FileItem;
 import uno.acloud.file.infrastructure.entity.FileNode;
 import uno.acloud.file.infrastructure.entity.Folder;
 import uno.acloud.file.infrastructure.mapper.FileMapper;
-import uno.acloud.file.infrastructure.oss.OSSMetadataUpdater;
+import uno.acloud.file.storage.StorageProvider;
+import uno.acloud.file.storage.StorageProviderRegistry;
 import uno.acloud.file.vo.RenameFileVO;
 
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -25,7 +26,7 @@ import java.util.Optional;
 public class FileRenameService {
 
     private final FileMapper fileMapper;
-    private final OSSMetadataUpdater ossMetadataUpdater;
+    private final StorageProviderRegistry registry;
     private final FileDomainValidator fileDomainValidator;
     private final FilePathResolver filePathResolver;
     private final FileAccessGuard fileAccessGuardService;
@@ -33,14 +34,14 @@ public class FileRenameService {
     private final FileResourceChangedPublisher fileResourceChangedPublisher;
 
     public FileRenameService(FileMapper fileMapper,
-                             OSSMetadataUpdater ossMetadataUpdater,
+                             StorageProviderRegistry registry,
                              FileDomainValidator fileDomainValidator,
                              FilePathResolver filePathResolver,
                              FileAccessGuard fileAccessGuardService,
                              FileOperationHelper helper,
                              Optional<FileResourceChangedPublisher> fileResourceChangedPublisher) {
         this.fileMapper = fileMapper;
-        this.ossMetadataUpdater = ossMetadataUpdater;
+        this.registry = registry;
         this.fileDomainValidator = fileDomainValidator;
         this.filePathResolver = filePathResolver;
         this.fileAccessGuardService = fileAccessGuardService;
@@ -129,19 +130,20 @@ public class FileRenameService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "重命名文件失败");
         }
         String uuidName = fileItem.getUuidName();
+        StorageProvider provider = registry.resolveForFile(fileItem);
         if (TransactionSynchronizationManager.isActualTransactionActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
                     try {
-                        ossMetadataUpdater.updateDownloadFileName(uuidName, finalOriginalName);
+                        provider.updateContentDisposition(uuidName, finalOriginalName);
                     } catch (Exception e) {
-                        log.warn("Failed to update OSS metadata after rename for uuidName={}: {}", uuidName, e.getMessage());
+                        log.warn("Failed to update content disposition after rename for uuidName={}: {}", uuidName, e.getMessage());
                     }
                 }
             });
         } else {
-            ossMetadataUpdater.updateDownloadFileName(uuidName, finalOriginalName);
+            provider.updateContentDisposition(uuidName, finalOriginalName);
         }
     }
 

@@ -34,11 +34,11 @@ class FileObjectRefMapperIntegrationTest extends AbstractIntegrationTest {
         String objectKey = "test-oss-object-" + System.nanoTime();
 
         // First insert — creates new row with ref_count = 1
-        int rows1 = fileObjectRefMapper.incrementReference(objectKey, 1, "ACTIVE");
+        int rows1 = fileObjectRefMapper.incrementReference(objectKey, 1, "ACTIVE", "oss");
         assertEquals(1, rows1, "First insert should affect 1 row");
 
         // Second insert — ON DUPLICATE KEY UPDATE increments ref_count
-        int rows2 = fileObjectRefMapper.incrementReference(objectKey, 1, "ACTIVE");
+        int rows2 = fileObjectRefMapper.incrementReference(objectKey, 1, "ACTIVE", "oss");
         assertEquals(1, rows2, "Duplicate key update should affect 1 row");
 
         // Verify final state
@@ -57,7 +57,7 @@ class FileObjectRefMapperIntegrationTest extends AbstractIntegrationTest {
         String objectKey = "test-oss-lifecycle-" + System.nanoTime();
 
         // Step 1: Insert with ref_count = 2
-        fileObjectRefMapper.incrementReference(objectKey, 2, "ACTIVE");
+        fileObjectRefMapper.incrementReference(objectKey, 2, "ACTIVE", "oss");
         FileObjectRef initial = fileObjectRefMapper.selectByKey(objectKey);
         assertEquals(2, initial.getRefCount());
         assertEquals("ACTIVE", initial.getDeleteStatus());

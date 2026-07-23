@@ -13,6 +13,8 @@ import uno.acloud.file.storage.UploadInfo;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -150,6 +152,34 @@ public class LocalDiskStorageProvider implements StorageProvider {
     }
 
     @Override
+    public byte[] readFirstBytes(String objectKey, int maxBytes) {
+        try {
+            Path basePath = Path.of(properties.getBasePath());
+            Path filePath = basePath.resolve(objectKey);
+            if (!Files.exists(filePath)) {
+                return null;
+            }
+            int size = (int) Math.min(maxBytes, Files.size(filePath));
+            if (size <= 0) {
+                return new byte[0];
+            }
+            byte[] bytes = new byte[size];
+            try (FileChannel channel = FileChannel.open(filePath, java.nio.file.StandardOpenOption.READ)) {
+                ByteBuffer buffer = ByteBuffer.wrap(bytes);
+                while (buffer.hasRemaining()) {
+                    if (channel.read(buffer) < 0) {
+                        break;
+                    }
+                }
+            }
+            return bytes;
+        } catch (IOException e) {
+            log.warn("读取本地文件头部字节失败，objectKey: {}", objectKey, e);
+            return null;
+        }
+    }
+
+    @Override
     public void deleteObject(String objectKey) {
         try {
             Path basePath = Path.of(properties.getBasePath());
@@ -195,5 +225,33 @@ public class LocalDiskStorageProvider implements StorageProvider {
     private String buildContentDisposition(String originalName) {
         // 简单实现，实际应该使用 OssContentDispositionUtil 的逻辑
         return "attachment; filename=\"" + originalName + "\"";
+    }
+
+    @Override
+    public boolean healthCheck() {
+        try {
+            Path basePath = Path.of(properties.getBasePath());
+            if (!Files.exists(basePath)) {
+                log.warn("本地存储健康检查失败：basePath 不存在，path={}", basePath);
+                return false;
+            }
+            if (!Files.isDirectory(basePath)) {
+                log.warn("本地存储健康检查失败：basePath 不是目录，path={}", basePath);
+                return false;
+            }
+            // 检查是否可写（尝试创建临时文件）
+            Path tempFile = basePath.resolve(".zxyz_health_check_" + System.currentTimeMillis());
+            try {
+                Files.createFile(tempFile);
+                Files.deleteIfExists(tempFile);
+            } catch (IOException e) {
+                log.warn("本地存储健康检查失败：basePath 不可写，path={}", basePath);
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            log.warn("本地存储健康检查失败: {}", e.getMessage());
+            return false;
+        }
     }
 }

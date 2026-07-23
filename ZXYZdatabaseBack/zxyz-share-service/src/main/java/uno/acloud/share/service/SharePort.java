@@ -9,6 +9,7 @@ import uno.acloud.share.vo.ShareFilesResponseItemVO;
 import uno.acloud.share.vo.ShareMyListItemVO;
 import uno.acloud.share.vo.ShareMyListResponseVO;
 import uno.acloud.share.vo.SharePublicInfoVO;
+import uno.acloud.share.vo.ShareVerifyResponseVO;
 
 import java.util.List;
 
@@ -30,4 +31,9 @@ public interface SharePort {
     List<ShareFilesResponseItemVO> getShareFiles(String shareKey, String path, String shareAccessToken);
 
     ShareDownloadResponseVO getShareDownloadUrl(String shareKey, Long fileId, String shareAccessToken);
+
+    /**
+     * 获取分享文件的流式下载 URL（本地存储等非预签名提供者使用）
+     */
+    ShareDownloadResponseVO getShareStreamUrl(String shareKey, Long fileId, String shareAccessToken);
 }

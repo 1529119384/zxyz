@@ -27,15 +27,19 @@ const buildFileListParams = (parentId, sortOptions = {}) => {
 }
 
 export const fetchFileList = async (parentId, sortOptions = {}) => {
-  const { signal, ...restSortOptions } = sortOptions
+  const { page, pageSize, signal, ...restSortOptions } = sortOptions
   const response = await request.get('/api/files', {
-    params: buildFileListParams(parentId, restSortOptions),
+    params: {
+      ...buildFileListParams(parentId, restSortOptions),
+      ...(page ? { page } : {}),
+      ...(pageSize ? { pageSize } : {}),
+    },
     signal,
   })
 
   return {
     ...response,
-    data: mapSpaceFileEntries(response?.data),
+    data: mapSpaceFileEntries(response?.data?.list ?? response?.data),
   }
 }
 
@@ -66,7 +70,20 @@ export const getFileDownloadUrl = (fileId) => {
 export const getUploadSign = (originalName) => {
   return request.post('/api/files/uploads', null, {
     params: { originalName },
-    // 上传签名和确认上传可能依赖外部存储或批量入库，允许更长等待时间。
+    timeout: UPLOAD_REQUEST_TIMEOUT,
+  })
+}
+
+export const directUpload = (originalName, file, parentId, teamId, spaceType, projectId) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  if (parentId != null) formData.append('parentId', String(parentId))
+  if (teamId != null) formData.append('teamId', String(teamId))
+  if (spaceType != null) formData.append('spaceType', String(spaceType))
+  if (projectId != null) formData.append('projectId', String(projectId))
+
+  return request.post('/api/files/uploads/direct', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
     timeout: UPLOAD_REQUEST_TIMEOUT,
   })
 }

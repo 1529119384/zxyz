@@ -11,6 +11,7 @@ import uno.acloud.share.vo.ShareDownloadResponseVO;
 import uno.acloud.share.vo.ShareFilesResponseItemVO;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
@@ -52,6 +53,24 @@ public class ShareContentProvider {
         return new ShareDownloadResponseVO(fileServiceClient.getShareDownloadUrl(fileId));
     }
 
+    public ShareDownloadResponseVO getShareStreamUrl(String shareKey, Long fileId, String shareAccessToken) {
+        if (fileId == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "fileId 不能为空");
+        }
+        Share share = shareAccessService.requireAccessibleShare(shareKey, shareAccessToken);
+        requireDownloadableSharedFile(share.getId(), fileId, new ShareFileResolveContext());
+
+        // 获取文件信息
+        FileInfoDTO fileInfo = fileServiceClient.getFileInfoById(fileId);
+        if (fileInfo == null || !fileInfo.isActive()) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "文件不存在");
+        }
+
+        // 从 file-service 获取存储流信息（内部接口）
+        String streamInfoUrl = fileServiceClient.getFileStreamInfo(fileId);
+        return new ShareDownloadResponseVO(streamInfoUrl);
+    }
+
     private List<ShareFilesResponseItemVO> listShareFiles(Share share, String normalizedPath, ShareFileResolveContext resolveContext) {
         List<FileInfoDTO> sharedRoots = shareFileResolver.getSharedRootFileInfos(share.getId(), resolveContext);
         List<FileInfoDTO> targetFiles;
@@ -67,8 +86,6 @@ public class ShareContentProvider {
                 .collect(Collectors.toList());
     }
 
-    // TODO: 当前路径解析对每个路径段发起独立 HTTP 调用（N+1），建议在 file-service
-    // 新增批量子文件查询 API，一次获取所有路径段的子文件列表，减少 HTTP 调用次数。
     private FileInfoDTO resolveSharedFolderByPath(List<FileInfoDTO> sharedRoots, String normalizedPath) {
         List<String> segments = shareInputNormalizer.splitPath(normalizedPath);
         if (segments.isEmpty()) {
@@ -82,15 +99,28 @@ public class ShareContentProvider {
         if (!shareValidator.isActive(currentFolder)) {
             throw new BusinessException(ErrorCode.SHARE_STATUS_INVALID, "分享目录已失效");
         }
+
+        // 批量收集所有路径段对应的 parentId，单次 HTTP 调用消除 N+1
+        List<Long> parentIdsToQuery = new java.util.ArrayList<>();
+        for (int i = 1; i < segments.size(); i++) {
+            parentIdsToQuery.add(currentFolder.getId());
+        }
+        if (parentIdsToQuery.isEmpty()) {
+            return currentFolder;
+        }
+        Map<Long, List<FileInfoDTO>> batchResult = fileServiceClient.getShareChildrenByParentIds(parentIdsToQuery);
+
         for (int i = 1; i < segments.size(); i++) {
             String segment = segments.get(i);
-            FileInfoDTO nextFolder = fileServiceClient.getShareChildren(currentFolder.getId()).stream()
+            List<FileInfoDTO> children = batchResult.get(currentFolder.getId());
+            if (children == null || children.isEmpty()) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "path 非法");
+            }
+            FileInfoDTO nextFolder = children.stream()
+                    .filter(FileInfoDTO::isFolder)
                     .filter(fileInfo -> Objects.equals(fileInfo.getOriginalName(), segment))
                     .findFirst()
                     .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "path 非法"));
-            if (!nextFolder.isFolder()) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "path 非法");
-            }
             if (!shareValidator.isActive(nextFolder)) {
                 throw new BusinessException(ErrorCode.SHARE_STATUS_INVALID, "分享目录已失效");
             }

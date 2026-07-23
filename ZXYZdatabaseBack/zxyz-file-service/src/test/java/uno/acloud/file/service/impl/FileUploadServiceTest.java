@@ -5,19 +5,25 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpHeaders;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.FileNodeType;
-import uno.acloud.common.oss.GetSignUrl;
+import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.file.config.ServiceProperties;
 import uno.acloud.file.dto.BatchConfirmUploadRequest;
 import uno.acloud.file.dto.ConfirmUploadRequest;
 import uno.acloud.file.infrastructure.entity.FileItem;
 import uno.acloud.file.infrastructure.entity.Folder;
+import uno.acloud.file.storage.StorageProvider;
+import uno.acloud.file.storage.StorageProviderRegistry;
+import uno.acloud.file.storage.UploadInfo;
+import uno.acloud.file.storage.DownloadInfo;
 import uno.acloud.file.vo.BatchUploadConfirmResultVO;
 
 import java.nio.charset.StandardCharsets;
@@ -28,10 +34,14 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class FileUploadServiceTest {
 
     @Mock
-    private GetSignUrl getSignUrl;
+    private StorageProviderRegistry registry;
+
+    @Mock
+    private StorageProvider defaultProvider;
 
     @Mock
     private FileUploadPersistenceManager fileUploadPersistenceService;
@@ -51,6 +61,9 @@ class FileUploadServiceTest {
     @Mock
     private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
+    @Mock
+    private ConfigGetter configGetter;
+
     private ServiceProperties serviceProperties;
 
     private FileUploadService fileUploadService;
@@ -62,10 +75,18 @@ class FileUploadServiceTest {
         serviceProperties.getProjectService().setBaseUrl(null);
         serviceProperties.setInternalServiceToken("test-token");
 
+        when(registry.getDefaultProvider()).thenReturn(defaultProvider);
+        when(configGetter.getJsonSet(eq("app.file.upload.allowed-extensions"), any()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+        when(configGetter.getJsonSet(eq("app.file.upload.blocked-extensions"), any()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+        when(configGetter.getLong(eq("app.file.upload.max-size-bytes"), anyLong()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+
         fileUploadService = new FileUploadService(
-                getSignUrl, fileUploadPersistenceService, fileDomainValidator,
+                registry, fileUploadPersistenceService, fileDomainValidator,
                 filePathResolver, fileAccessGuardService, restClient,
-                objectMapper, serviceProperties);
+                objectMapper, configGetter, serviceProperties);
     }
 
     // ==================== Upload with sufficient quota — should succeed ====================
@@ -103,7 +124,10 @@ class FileUploadServiceTest {
                 eq(parentId), any(SpaceTarget.class), eq(FileNodeType.FILE),
                 eq("test.txt"), anySet(), any()))
                 .thenReturn("test.txt");
-        when(getSignUrl.getFileUrl("files/uuid-test.txt")).thenReturn("https://oss.example.com/files/uuid-test.txt");
+        when(defaultProvider.generateDownloadInfo(eq("files/uuid-test.txt"), eq("test.txt")))
+                .thenReturn(new DownloadInfo(
+                        "oss", "https://oss.example.com/files/uuid-test.txt",
+                        "test.txt", true));
         when(fileUploadPersistenceService.saveFileItem(any(FileItem.class))).thenReturn(savedFile);
 
         BatchUploadConfirmResultVO result = fileUploadService.confirmUpload(request, userId);
@@ -139,6 +163,12 @@ class FileUploadServiceTest {
         quotaProps.getProjectService().setBaseUrl("http://project-service:18080");
         quotaProps.setInternalServiceToken("test-token");
 
+        ConfigGetter quotaConfigGetter = mock(ConfigGetter.class);
+        when(quotaConfigGetter.getJsonSet(eq("app.file.upload.allowed-extensions"), any()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+        when(quotaConfigGetter.getLong(eq("app.file.upload.max-size-bytes"), anyLong()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+
         // Throw 403 directly from post() — the catch block catches RestClientResponseException
         doThrow(HttpClientErrorException.create(
                 HttpStatus.FORBIDDEN, "Forbidden",
@@ -146,9 +176,9 @@ class FileUploadServiceTest {
                 .when(restClient).post();
 
         FileUploadService quotaService = new FileUploadService(
-                getSignUrl, fileUploadPersistenceService, fileDomainValidator,
+                registry, fileUploadPersistenceService, fileDomainValidator,
                 filePathResolver, fileAccessGuardService, restClient,
-                objectMapper, quotaProps);
+                objectMapper, quotaConfigGetter, quotaProps);
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> quotaService.confirmUpload(request, userId));
@@ -231,7 +261,10 @@ class FileUploadServiceTest {
                 eq(parentId), any(SpaceTarget.class), eq(FileNodeType.FILE),
                 eq("empty.txt"), anySet(), any()))
                 .thenReturn("empty.txt");
-        when(getSignUrl.getFileUrl("files/uuid-empty.txt")).thenReturn("https://oss.example.com/files/uuid-empty.txt");
+        when(defaultProvider.generateDownloadInfo(eq("files/uuid-empty.txt"), eq("empty.txt")))
+                .thenReturn(new DownloadInfo(
+                        "oss", "https://oss.example.com/files/uuid-empty.txt",
+                        "empty.txt", true));
         when(fileUploadPersistenceService.saveFileItem(any(FileItem.class))).thenReturn(savedFile);
 
         BatchUploadConfirmResultVO result = fileUploadService.confirmUpload(request, userId);
@@ -263,13 +296,13 @@ class FileUploadServiceTest {
     @Test
     void getUploadSign_allowedExtension_shouldSucceed() {
         when(fileDomainValidator.validateInputName("report.pdf")).thenReturn("report.pdf");
-        when(getSignUrl.generatePutSignInfo(anyString(), eq("report.pdf")))
-                .thenReturn(new uno.acloud.common.oss.OssSignInfo(
-                        "https://oss.example.com/put", "files/uuid-report.pdf",
+        when(defaultProvider.generateUploadInfo(anyString(), eq("report.pdf")))
+                .thenReturn(new UploadInfo(
+                        "oss", "https://oss.example.com/put", "files/uuid-report.pdf",
                         "https://oss.example.com/files/uuid-report.pdf",
-                        "application/pdf", "attachment", 1700000000L));
+                        "application/pdf", "attachment", 1700000000L, true));
 
-        uno.acloud.common.oss.OssSignInfo result = fileUploadService.getUploadSign("report.pdf");
+        UploadInfo result = fileUploadService.getUploadSign("report.pdf");
         assertNotNull(result);
     }
 
@@ -353,7 +386,7 @@ class FileUploadServiceTest {
         request.setFiles(List.of(item));
 
         // OSS HEAD returns actual size exceeding limit
-        when(getSignUrl.getObjectSize("files/uuid-tampered.txt")).thenReturn(600 * 1024 * 1024L);
+        when(defaultProvider.getObjectSize("files/uuid-tampered.txt")).thenReturn(600 * 1024 * 1024L);
 
         BatchUploadConfirmResultVO result = fileUploadService.confirmUpload(request, userId);
 

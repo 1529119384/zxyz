@@ -8,6 +8,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import uno.acloud.common.config.ConfigGetter;
 
 import java.util.Arrays;
 import java.util.Collection;
@@ -30,14 +31,20 @@ class StorageQuotaCacheServiceTest {
     @Mock
     private FileServiceClient fileServiceClient;
 
+    @Mock
+    private ConfigGetter configGetter;
+
     private ObjectMapper objectMapper;
     private StorageQuotaCacheService service;
 
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper();
+        org.mockito.Mockito.when(configGetter.getInt("app.cache.storage-usage-ttl-minutes", 10)).thenReturn(10);
+        org.mockito.Mockito.when(configGetter.getInt("app.cache.team-permission-ttl-minutes", 5)).thenReturn(5);
+        org.mockito.Mockito.when(configGetter.getInt("app.cache.storage-usage-ttl-seconds", 30)).thenReturn(30);
         service = new StorageQuotaCacheService(redisTemplate, objectMapper,
-                teamServiceClient, fileServiceClient);
+                teamServiceClient, fileServiceClient, configGetter);
     }
 
     // ---- getTeamStorageLimit tests ----

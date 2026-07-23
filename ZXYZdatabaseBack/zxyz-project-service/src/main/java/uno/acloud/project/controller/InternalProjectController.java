@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 import uno.acloud.common.Result;
 import uno.acloud.project.dto.internal.ProjectAccessCheckRequest;
 import uno.acloud.project.mapper.ProjectMapper;
+import uno.acloud.project.mapper.ProjectQuotaMapper;
 import uno.acloud.project.service.ProjectAccessGuardPort;
 
 /**
@@ -26,11 +27,14 @@ public class InternalProjectController {
 
     private final ProjectMapper projectMapper;
     private final ProjectAccessGuardPort projectAccessGuardPort;
+    private final ProjectQuotaMapper projectQuotaMapper;
 
     public InternalProjectController(ProjectMapper projectMapper,
-                                     ProjectAccessGuardPort projectAccessGuardPort) {
+                                     ProjectAccessGuardPort projectAccessGuardPort,
+                                     ProjectQuotaMapper projectQuotaMapper) {
         this.projectMapper = projectMapper;
         this.projectAccessGuardPort = projectAccessGuardPort;
+        this.projectQuotaMapper = projectQuotaMapper;
     }
 
     @Operation(summary = "统计用户负责的活跃项目数")
@@ -45,5 +49,11 @@ public class InternalProjectController {
                                          @Valid @RequestBody ProjectAccessCheckRequest body) {
         projectAccessGuardPort.requireProjectFileAccess(projectId, body.userId());
         return Result.success();
+    }
+
+    @Operation(summary = "查询团队下所有项目配额总和")
+    @GetMapping("/team/{teamId}/quota-sum")
+    public Result<Long> sumProjectQuotaByTeam(@PathVariable Long teamId) {
+        return Result.of(projectQuotaMapper.selectStorageLimitSumByTeamId(teamId));
     }
 }

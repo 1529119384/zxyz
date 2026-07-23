@@ -19,6 +19,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
+import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.im.config.ImNettyProperties;
 
 @Slf4j
@@ -26,25 +27,32 @@ import uno.acloud.im.config.ImNettyProperties;
 @ConditionalOnProperty(prefix = "im.netty", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class ImNettyServer {
 
+    private static final int FALLBACK_MAX_CONTENT_LENGTH = 65536;
+
     private final ImNettyProperties properties;
     private final ImWebSocketAuthHandler authHandler;
     private final ImWebSocketFrameHandler webSocketFrameHandler;
+    private final ConfigGetter configGetter;
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
     private Channel serverChannel;
 
     public ImNettyServer(ImNettyProperties properties,
                          ImWebSocketAuthHandler authHandler,
-                         ImWebSocketFrameHandler webSocketFrameHandler) {
+                         ImWebSocketFrameHandler webSocketFrameHandler,
+                         ConfigGetter configGetter) {
         this.properties = properties;
         this.authHandler = authHandler;
         this.webSocketFrameHandler = webSocketFrameHandler;
+        this.configGetter = configGetter;
     }
 
     @EventListener(ApplicationReadyEvent.class)
     public void start() throws InterruptedException {
         bossGroup = new NioEventLoopGroup(1);
         workerGroup = new NioEventLoopGroup();
+
+        int maxContentLength = configGetter.getInt("app.im.ws.max-content-length", FALLBACK_MAX_CONTENT_LENGTH);
 
         ServerBootstrap bootstrap = new ServerBootstrap()
                 .group(bossGroup, workerGroup)
@@ -57,7 +65,7 @@ public class ImNettyServer {
                         channel.pipeline()
                                 .addLast(new HttpServerCodec())
                                 .addLast(new ChunkedWriteHandler())
-                                .addLast(new HttpObjectAggregator(65536))
+                                .addLast(new HttpObjectAggregator(maxContentLength))
                                 .addLast(authHandler)
                                 .addLast(new WebSocketServerProtocolHandler(properties.getWebsocketPath(), "Bearer", true))
                                 .addLast(webSocketFrameHandler);

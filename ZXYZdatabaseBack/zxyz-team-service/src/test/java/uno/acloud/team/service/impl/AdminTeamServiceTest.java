@@ -5,10 +5,16 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import uno.acloud.dto.UserInfoDTO;
+import uno.acloud.exception.BusinessException;
+import uno.acloud.team.dto.team.UpdateTeamQuotaRequest;
+import uno.acloud.team.entity.Team;
 import uno.acloud.team.infrastructure.client.EmailServiceClient;
 import uno.acloud.team.infrastructure.client.FileServiceClient;
 import uno.acloud.team.infrastructure.client.ImSystemNotificationClient;
+import uno.acloud.team.infrastructure.client.ProjectServiceClient;
 import uno.acloud.team.infrastructure.client.UserServiceClient;
 import uno.acloud.team.mapper.TeamMapper;
 import uno.acloud.team.mapper.TeamQuotaMapper;
@@ -24,6 +30,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class AdminTeamServiceTest {
 
     @Mock
@@ -39,6 +46,9 @@ class AdminTeamServiceTest {
     private FileServiceClient fileServiceClient;
 
     @Mock
+    private ProjectServiceClient projectServiceClient;
+
+    @Mock
     private ImSystemNotificationClient imSystemNotificationClient;
 
     @Mock
@@ -50,7 +60,7 @@ class AdminTeamServiceTest {
     void setUp() {
         adminTeamService = new AdminTeamService(
                 teamMapper, teamQuotaMapper, userServiceClient,
-                fileServiceClient, imSystemNotificationClient, emailServiceClient,
+                fileServiceClient, projectServiceClient, imSystemNotificationClient, emailServiceClient,
                 null);
         // Self-injection for @Transactional proxy — in unit tests, point to the same instance
         adminTeamService.setSelf(adminTeamService);
@@ -116,5 +126,84 @@ class AdminTeamServiceTest {
         assertTrue(result.isEmpty());
         // No batch calls should be made when there are no teams
         verifyNoInteractions(userServiceClient, fileServiceClient);
+    }
+
+    // ==================== updateTeamQuota — CV-3 项目配额总和校验 ====================
+
+    @Test
+    void updateTeamQuota_whenStorageLessThanProjectQuotaSum_shouldThrow() {
+        // 团队存在且活跃
+        Team team = new Team();
+        team.setId(1L);
+        team.setStatus(0);
+        when(teamMapper.selectById(1L)).thenReturn(team);
+        when(teamMapper.countOccupiedMembers(1L)).thenReturn(2);
+
+        // 已用存储空间 500MB（可接受）
+        when(fileServiceClient.sumActiveFileSize(null, 1L, 2, null)).thenReturn(500L * 1024 * 1024);
+
+        // 项目配额总和 2GB > 团队配额 1GB → 应拒绝
+        org.mockito.Mockito.doReturn((long) (2L * 1024 * 1024 * 1024)).when(projectServiceClient).sumProjectQuota(1L);
+
+        UpdateTeamQuotaRequest request = new UpdateTeamQuotaRequest();
+        request.setMemberLimit(10);
+        request.setStorageLimit(1L * 1024 * 1024 * 1024); // 1GB
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> adminTeamService.updateTeamQuota(1L, request));
+        assertTrue(ex.getMessage().contains("项目配额总和"));
+        verify(teamQuotaMapper, never()).upsertQuota(any());
+    }
+
+    @Test
+    void updateTeamQuota_whenStorageGreaterThanProjectQuotaSum_shouldSucceed() {
+        Team team = new Team();
+        team.setId(1L);
+        team.setName("Team A");
+        team.setStatus(0);
+        when(teamMapper.selectById(1L)).thenReturn(team);
+        when(teamMapper.countOccupiedMembers(1L)).thenReturn(2);
+        when(fileServiceClient.sumActiveFileSize(null, 1L, 2, null)).thenReturn(500L * 1024 * 1024);
+        org.mockito.Mockito.doReturn((long) (2L * 1024 * 1024 * 1024)).when(projectServiceClient).sumProjectQuota(1L); // 项目总和 2GB
+
+        UpdateTeamQuotaRequest request = new UpdateTeamQuotaRequest();
+        request.setMemberLimit(10);
+        request.setStorageLimit(2L * 1024 * 1024 * 1024); // 2GB > 500MB
+
+        // listTeams 用于返回结果
+        AdminTeamOverviewVO vo = new AdminTeamOverviewVO(
+                1L, "Team A", null, null, null, 0, 0, 0L, null, null);
+        when(teamMapper.listAdminTeamOverviews()).thenReturn(List.of(vo));
+
+        when(teamQuotaMapper.upsertQuota(any())).thenReturn(1);
+
+        var result = adminTeamService.updateTeamQuota(1L, request);
+        assertNotNull(result);
+        verify(teamQuotaMapper, times(1)).upsertQuota(any());
+    }
+
+    @Test
+    void updateTeamQuota_whenNoProjects_shouldSucceed() {
+        Team team = new Team();
+        team.setId(1L);
+        team.setName("Team A");
+        team.setStatus(0);
+        when(teamMapper.selectById(1L)).thenReturn(team);
+        when(teamMapper.countOccupiedMembers(1L)).thenReturn(2);
+        when(fileServiceClient.sumActiveFileSize(null, 1L, 2, null)).thenReturn(0L);
+        org.mockito.Mockito.doReturn((long) 0).when(projectServiceClient).sumProjectQuota(1L); // 无项目
+
+        UpdateTeamQuotaRequest request = new UpdateTeamQuotaRequest();
+        request.setMemberLimit(10);
+        request.setStorageLimit(1L * 1024 * 1024 * 1024);
+
+        AdminTeamOverviewVO vo = new AdminTeamOverviewVO(
+                1L, "Team A", null, null, null, 0, 0, 0L, null, null);
+        when(teamMapper.listAdminTeamOverviews()).thenReturn(List.of(vo));
+        when(teamQuotaMapper.upsertQuota(any())).thenReturn(1);
+
+        var result = adminTeamService.updateTeamQuota(1L, request);
+        assertNotNull(result);
+        verify(teamQuotaMapper, times(1)).upsertQuota(any());
     }
 }

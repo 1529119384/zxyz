@@ -14,3 +14,24 @@ spring:
     url: ${FILE_DATASOURCE_URL}
     username: ${FILE_DATASOURCE_USERNAME}
     password: ${FILE_DATASOURCE_PASSWORD}
+
+app:
+  file-object-delete:
+    enabled: true
+    batch-size: 20
+    initial-delay-ms: 30000
+    retry-fixed-delay-ms: 60000
+  team-service:
+    base-url: ${TEAM_SERVICE_BASE_URL:http://zxyz-team-service}
+  project-service:
+    base-url: ${PROJECT_SERVICE_BASE_URL:http://zxyz-project-service}
+  share-service:
+    base-url: ${SHARE_SERVICE_BASE_URL:http://zxyz-share-service}
+  storage:
+    default-provider: ${STORAGE_DEFAULT_PROVIDER:oss}
+    provider:
+      oss:
+        enabled: ${STORAGE_OSS_ENABLED:true}
+      local:
+        enabled: ${STORAGE_LOCAL_ENABLED:false}
+        base-path: ${LOCAL_STORAGE_PATH:./local-storage}

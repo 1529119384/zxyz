@@ -3,7 +3,7 @@ package uno.acloud.user.service.impl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
-import uno.acloud.common.ErrorCode;
+import uno.acloud.common.UserErrorCode;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.user.entity.User;
 import uno.acloud.user.mapper.UserMapper;
@@ -30,14 +30,14 @@ public class UserQueryHelper {
     public User requireExistingUser(Long userId) {
         User dbUser = userMapper.getById(userId);
         if (dbUser == null) {
-            throw new BusinessException(ErrorCode.USER_NOT_FOUND, "用户不存在");
+            throw new BusinessException(UserErrorCode.USER_NOT_FOUND, "用户不存在");
         }
         return dbUser;
     }
 
     public CurrentUserVO requireCurrentUser(Long userId) {
         return getCurrentUser(userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND, "用户不存在"));
+                .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND, "用户不存在"));
     }
 
     public Optional<CurrentUserVO> getCurrentUser(Long userId) {
@@ -67,7 +67,7 @@ public class UserQueryHelper {
 
     public void requireUpdated(int updatedRows) {
         if (updatedRows != 1) {
-            throw new BusinessException(ErrorCode.USER_NOT_FOUND, "用户不存在");
+            throw new BusinessException(UserErrorCode.USER_NOT_FOUND, "用户不存在");
         }
     }
 

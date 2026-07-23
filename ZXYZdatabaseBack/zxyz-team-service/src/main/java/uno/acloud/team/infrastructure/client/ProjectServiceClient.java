@@ -49,4 +49,23 @@ public class ProjectServiceClient extends AbstractServiceClient {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "无法验证项目负责人状态，请稍后重试");
         }
     }
+
+    /**
+     * 查询团队下所有活跃项目的配额总和。
+     */
+    public long sumProjectQuota(Long teamId) {
+        try {
+            JsonNode root = getJson("/api/internal/projects/team/{teamId}/quota-sum", teamId);
+            if (root.path("code").asInt() != ErrorCode.SUCCESS) {
+                log.warn("查询项目配额总和返回错误码: teamId={}, code={}", teamId, root.path("code").asInt());
+                throw new BusinessException(ErrorCode.SYSTEM_ERROR, "无法查询项目配额，请稍后重试");
+            }
+            return root.path("data").asLong(0);
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("查询项目配额总和失败: teamId={}", teamId, e);
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "无法查询项目配额，请稍后重试");
+        }
+    }
 }

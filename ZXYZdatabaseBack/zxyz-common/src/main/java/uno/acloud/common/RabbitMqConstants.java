@@ -27,6 +27,7 @@ public final class RabbitMqConstants {
 
     // ---- User routing keys ----
     public static final String ROUTING_KEY_USER_PROFILE_UPDATED = "user.profile.updated";
+    public static final String ROUTING_KEY_USER_DELETED = "user.deleted";
 
     // ---- Audit routing keys ----
     public static final String ROUTING_KEY_AUDIT_LOG = "audit.log";

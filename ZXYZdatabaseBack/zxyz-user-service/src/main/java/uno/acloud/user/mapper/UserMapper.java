@@ -118,6 +118,9 @@ public interface UserMapper extends BaseMapper<User> {
     @Select("SELECT id FROM `user` ORDER BY id ASC")
     List<Long> listAllUserIds();
 
+    @Delete("DELETE FROM `user` WHERE id = #{id}")
+    int deleteById(@Param("id") Long id);
+
     @Select("""
             SELECT DISTINCT email
             FROM `user`

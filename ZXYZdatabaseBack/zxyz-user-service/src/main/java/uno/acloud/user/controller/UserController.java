@@ -1,13 +1,16 @@
 package uno.acloud.user.controller;
 
+import cn.dev33.satoken.annotation.SaCheckRole;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -15,6 +18,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.Result;
+import uno.acloud.common.UserErrorCode;
+import uno.acloud.common.SystemRoleCodes;
 import uno.acloud.common.web.CurrentUser;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.common.oss.AvatarUploadSignRequest;
@@ -26,6 +31,7 @@ import uno.acloud.user.service.impl.AuthService;
 import uno.acloud.user.service.impl.ContactVerificationService;
 import uno.acloud.user.service.impl.LoginRateLimiter;
 import uno.acloud.user.service.impl.RegisterRateLimiter;
+import uno.acloud.user.service.impl.UserAdminService;
 import uno.acloud.user.dto.DefaultTeamRequest;
 import uno.acloud.user.dto.EmailBindRequest;
 import uno.acloud.user.dto.LinkedAccountTrustRequest;
@@ -49,9 +55,6 @@ import java.util.List;
 @Slf4j
 @RestController
 @RequestMapping("/api/users")
-// TODO(P2-26): 用户注销/删除缺少跨服务数据清理流程。需实现 MQ 事件驱动的跨服务清理：
-// 1. 发布 user.deleted 事件；2. file-service 清理用户文件；3. share-service 清理用户分享；
-// 4. im-service 清理用户消息；5. team-service 清理用户团队成员关系。
 @Tag(name = "用户管理", description = "用户注册、登录、资料管理")
 public class UserController {
 
@@ -63,6 +66,7 @@ public class UserController {
     private final LoginRateLimiter loginRateLimiter;
     private final RegisterRateLimiter registerRateLimiter;
     private final AuthServicePort authServicePort;
+    private final UserAdminService userAdminService;
 
     public UserController(AuthService authService,
                           UserProfileService userProfileService,
@@ -71,7 +75,8 @@ public class UserController {
                           CookieHelper cookieHelper,
                           LoginRateLimiter loginRateLimiter,
                           RegisterRateLimiter registerRateLimiter,
-                          AuthServicePort authServicePort) {
+                          AuthServicePort authServicePort,
+                          UserAdminService userAdminService) {
         this.authService = authService;
         this.userProfileService = userProfileService;
         this.contactVerificationService = contactVerificationService;
@@ -80,6 +85,7 @@ public class UserController {
         this.loginRateLimiter = loginRateLimiter;
         this.registerRateLimiter = registerRateLimiter;
         this.authServicePort = authServicePort;
+        this.userAdminService = userAdminService;
     }
 
     @Log
@@ -127,7 +133,7 @@ public class UserController {
     @GetMapping("/me")
     public Result<CurrentUserVO> getCurrentUser(@CurrentUser Long userId) {
         CurrentUserVO currentUser = userProfileService.getCurrentUser(userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND, "用户不存在"));
+                .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND, "用户不存在"));
         return Result.of(currentUser);
     }
 
@@ -220,5 +226,14 @@ public class UserController {
     public Result<List<UserSearchItemVO>> searchUsers(@RequestParam String keyword) {
         authServicePort.checkLogin();
         return Result.of(userProfileService.searchUsers(keyword));
+    }
+
+    @Log
+    @SaCheckRole(SystemRoleCodes.SYSTEM_ADMIN)
+    @Operation(summary = "注销用户（系统管理员）")
+    @DeleteMapping("/{userId}")
+    public Result<Void> deleteUser(@PathVariable Long userId) {
+        userAdminService.deleteUser(userId);
+        return Result.success();
     }
 }

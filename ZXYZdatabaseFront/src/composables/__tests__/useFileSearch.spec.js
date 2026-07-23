@@ -47,7 +47,13 @@ describe('useFileSearch', () => {
 
   it('输入关键词后 500ms 防抖触发搜索', async () => {
     const mockResult = {
-      data: { total: 2, list: [{ id: 1, fileName: '文件A' }, { id: 2, fileName: '文件B' }] },
+      data: {
+        total: 2,
+        list: [
+          { id: 1, fileName: '文件A' },
+          { id: 2, fileName: '文件B' },
+        ],
+      },
     }
     searchFiles.mockResolvedValue(mockResult)
 

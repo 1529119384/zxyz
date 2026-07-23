@@ -9,6 +9,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.domain.model.ImConversation;
 import uno.acloud.im.domain.model.ImMessage;
@@ -46,6 +47,8 @@ class ImMessageServiceTest {
     private SystemNotificationService notificationService;
     @Mock
     private ImDomainEventPublisher domainEventPublisher;
+    @Mock
+    private ConfigGetter configGetter;
 
     private ObjectMapper objectMapper;
     private ImMessageService service;
@@ -54,10 +57,11 @@ class ImMessageServiceTest {
     @SuppressWarnings("unchecked")
     void setUp() {
         objectMapper = new ObjectMapper();
+        org.mockito.Mockito.when(configGetter.getInt("app.im.message.max-text-length", 5000)).thenReturn(5000);
         service = new ImMessageService(
                 conversationService, conversationMapper, imMessageMapper,
                 objectMapper, serialExecutor, mutePolicyService,
-                teamMapper, notificationService, domainEventPublisher);
+                teamMapper, notificationService, domainEventPublisher, configGetter);
 
         // By default, make the serial executor just run the supplier directly
         when(serialExecutor.executeMessageWrite(anyLong(), any(Supplier.class)))

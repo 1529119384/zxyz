@@ -2,8 +2,9 @@ package uno.acloud.common;
 
 import org.springframework.http.HttpStatus;
 
-// TODO(P3-01): 当前使用 int 常量，建议逐步迁移到领域特定枚举（UserErrorCode、ShareErrorCode 等），
-// 提高类型安全性和 IDE 自动补全支持。迁移需分批进行，先新增枚举类，再逐步替换 int 引用。
+// TODO(P3-01): 用户领域（UserErrorCode）已完成枚举化。ShareErrorCode、TeamErrorCode、ProjectErrorCode
+// 也已就绪。后续迁移步骤：将各域调用点从 int 常量切换为枚举，保留 int 常量仅供兼容。
+// 新代码必须使用对应领域枚举（如 UserErrorCode.USER_NOT_FOUND），不得直接使用 ErrorCode 的 int 常量。
 public final class ErrorCode {
 
     // ===== 通用 =====
@@ -18,9 +19,15 @@ public final class ErrorCode {
     public static final int SEARCH_KEYWORD_EMPTY = 4600;
     public static final int SYSTEM_ERROR = 5000;
 
-    // ===== 用户领域（建议新代码使用 {@link UserErrorCode} 枚举） =====
+    // ===== 用户领域（已迁移至 {@link UserErrorCode} 枚举，此处保留仅供向后兼容） =====
+    /** @deprecated 使用 {@link UserErrorCode#USER_NOT_FOUND} */
+    @Deprecated
     public static final int USER_NOT_FOUND = 4001;
+    /** @deprecated 使用 {@link UserErrorCode#LOGIN_FAILED} */
+    @Deprecated
     public static final int LOGIN_FAILED = 4100;
+    /** @deprecated 使用 {@link UserErrorCode#USERNAME_EXISTS} */
+    @Deprecated
     public static final int USERNAME_EXISTS = 4101;
 
     // ===== 分享领域（建议新代码使用 {@link ShareErrorCode} 枚举） =====
@@ -71,6 +78,14 @@ public final class ErrorCode {
             case SEARCH_KEYWORD_EMPTY -> HttpStatus.UNPROCESSABLE_ENTITY;
             default -> HttpStatus.INTERNAL_SERVER_ERROR;
         };
+    }
+
+    /**
+     * 根据领域错误码标记映射 HTTP 状态码（重载方法，接受枚举参数）。
+     * 供 {@link uno.acloud.exception.BusinessException} 及 Handler 在持有 {@link ErrorCodeMarker} 时使用。
+     */
+    public static HttpStatus resolveHttpStatus(ErrorCodeMarker marker) {
+        return resolveHttpStatus(marker.getCode());
     }
 
     private ErrorCode() {

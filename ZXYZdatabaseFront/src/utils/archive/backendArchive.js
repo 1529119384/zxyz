@@ -59,6 +59,7 @@ export function joinArchivePath(basePath, fileName) {
 export async function collectFileEntry(file, basePath) {
   const response = await getFileDownloadUrl(file.id)
   const downloadUrl = response?.data?.downloadUrl
+  const directDownload = response?.data?.directDownload
 
   if (!downloadUrl) {
     throw new Error(`未获取到下载链接: ${file.fileName}`)
@@ -68,6 +69,7 @@ export async function collectFileEntry(file, basePath) {
     fileName: file.fileName,
     archivePath: joinArchivePath(basePath, file.fileName),
     downloadUrl,
+    directDownload,
   }
 }
 

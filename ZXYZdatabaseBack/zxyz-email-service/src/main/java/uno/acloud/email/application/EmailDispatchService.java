@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.email.config.EmailProperties;
 import uno.acloud.email.domain.EmailRecord;
 import uno.acloud.email.domain.EmailRecordStatus;
@@ -33,7 +34,8 @@ public class EmailDispatchService {
 
     private static final int MAX_SUBJECT_LENGTH = 255;
     private static final int MAX_BUSINESS_LENGTH = 64;
-    private static final int MAX_ATTEMPTS = 4;
+    /** 邮件最大重试次数 fallback */
+    private static final int FALLBACK_MAX_ATTEMPTS = 4;
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
 
     private final EmailRecordMapper emailRecordMapper;
@@ -43,6 +45,8 @@ public class EmailDispatchService {
     private final EmailProperties emailProperties;
     private final EmailSendingAvailabilityService emailSendingAvailabilityService;
     private final Executor emailTaskExecutor;
+    private final ConfigGetter configGetter;
+    private final int maxAttempts;
 
     public EmailDispatchService(EmailRecordMapper emailRecordMapper,
                                 EmailTemplateMapper emailTemplateMapper,
@@ -50,7 +54,8 @@ public class EmailDispatchService {
                                 SimpleJavaMailSender simpleJavaMailSender,
                                 EmailProperties emailProperties,
                                 EmailSendingAvailabilityService emailSendingAvailabilityService,
-                                @Qualifier("emailTaskExecutor") Executor emailTaskExecutor) {
+                                @Qualifier("emailTaskExecutor") Executor emailTaskExecutor,
+                                ConfigGetter configGetter) {
         this.emailRecordMapper = emailRecordMapper;
         this.emailTemplateMapper = emailTemplateMapper;
         this.templateRenderer = templateRenderer;
@@ -58,6 +63,8 @@ public class EmailDispatchService {
         this.emailProperties = emailProperties;
         this.emailSendingAvailabilityService = emailSendingAvailabilityService;
         this.emailTaskExecutor = emailTaskExecutor;
+        this.configGetter = configGetter;
+        this.maxAttempts = configGetter.getInt("app.email.max-retry-count", FALLBACK_MAX_ATTEMPTS);
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -170,7 +177,7 @@ public class EmailDispatchService {
         record.setContentHtml(requireText(contentHtml, "邮件内容不能为空"));
         record.setStatus(EmailRecordStatus.PENDING);
         record.setAttemptCount(0);
-        record.setMaxAttempts(MAX_ATTEMPTS);
+        record.setMaxAttempts(maxAttempts);
         record.setScheduledTime(scheduledTime);
         record.setBusinessType(optionalText(businessType, MAX_BUSINESS_LENGTH, "业务类型不能超过 64 个字符"));
         record.setBusinessId(optionalText(businessId, MAX_BUSINESS_LENGTH, "业务 ID 不能超过 64 个字符"));
@@ -239,7 +246,7 @@ public class EmailDispatchService {
     private void handleSendFailure(EmailRecord record, Exception e) {
         String failureReason = normalizeFailureReason(e);
         int attemptCount = record.getAttemptCount() == null ? 1 : record.getAttemptCount();
-        int maxAttempts = record.getMaxAttempts() == null ? MAX_ATTEMPTS : record.getMaxAttempts();
+        int maxAttempts = record.getMaxAttempts() == null ? this.maxAttempts : record.getMaxAttempts();
         if (attemptCount >= maxAttempts) {
             emailRecordMapper.markFailed(record.getId(), failureReason);
             log.warn("邮件发送最终失败：recordId={}, recipient={}, reason={}", record.getId(), record.getRecipient(), failureReason, e);

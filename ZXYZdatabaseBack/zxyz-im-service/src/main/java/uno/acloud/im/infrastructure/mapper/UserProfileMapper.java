@@ -1,6 +1,7 @@
 package uno.acloud.im.infrastructure.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -43,6 +44,9 @@ public interface UserProfileMapper extends BaseMapper<UserProfile> {
             ON DUPLICATE KEY UPDATE update_time = update_time
             """)
     int insertPlaceholder(@Param("userId") Long userId, @Param("username") String username);
+
+    @Delete("DELETE FROM im_user_profile WHERE user_id = #{userId}")
+    int deleteByUserId(@Param("userId") Long userId);
 
     @Insert("<script>" +
             "INSERT INTO im_user_profile (user_id, username, name, avatar, create_time, update_time) VALUES " +

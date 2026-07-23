@@ -25,15 +25,21 @@ public class FileObjectReferenceManager {
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public void retainReference(String objectKey) {
+    public void retainReference(String objectKey, String storageProvider) {
         String normalizedKey = normalizeObjectKey(objectKey);
         if (normalizedKey == null) {
             return;
         }
-        int updatedRows = fileObjectRefMapper.incrementReference(normalizedKey, 1, FileObjectDeleteStatus.ACTIVE);
+        String providerId = StringUtils.trimToNull(storageProvider) != null ? storageProvider : "oss";
+        int updatedRows = fileObjectRefMapper.incrementReference(normalizedKey, 1, FileObjectDeleteStatus.ACTIVE, providerId);
         if (updatedRows <= 0) {
             throw new BusinessException(ErrorCode.FILE_STATE_INVALID, "文件对象引用计数增加失败");
         }
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void retainReference(String objectKey) {
+        retainReference(objectKey, null);
     }
 
     @Transactional(rollbackFor = Exception.class)

@@ -25,7 +25,7 @@ public class FileUploadPersistenceManager {
         if (insertedRows == null || insertedRows != 1 || fileItem.getId() == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "保存文件信息失败");
         }
-        fileObjectReferenceService.retainReference(fileItem.getUuidName());
+        fileObjectReferenceService.retainReference(fileItem.getUuidName(), fileItem.getStorageProvider());
         return fileItem;
     }
 }

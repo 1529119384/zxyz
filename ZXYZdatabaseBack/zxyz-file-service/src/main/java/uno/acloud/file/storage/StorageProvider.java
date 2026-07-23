@@ -53,6 +53,28 @@ public interface StorageProvider {
                                   String contentType, String contentDisposition);
 
     /**
+     * 生成上传信息（便捷方法，自动解析 MIME 类型和 Content-Disposition）
+     *
+     * @param objectKey    对象键
+     * @param originalName 原始文件名
+     * @return 上传信息
+     */
+    default UploadInfo generateUploadInfo(String objectKey, String originalName) {
+        String contentType = org.springframework.http.MediaTypeFactory.getMediaType(originalName)
+                .map(Object::toString)
+                .orElse("application/octet-stream");
+        String encodedName;
+        try {
+            encodedName = java.net.URLEncoder.encode(originalName, java.nio.charset.StandardCharsets.UTF_8)
+                    .replace("+", "%20");
+        } catch (Exception e) {
+            encodedName = originalName;
+        }
+        String contentDisposition = "attachment; filename*=utf-8''" + encodedName;
+        return generateUploadInfo(objectKey, originalName, contentType, contentDisposition);
+    }
+
+    /**
      * 生成下载信息
      *
      * @param objectKey    对象键
@@ -98,6 +120,18 @@ public interface StorageProvider {
     Long getObjectSize(String objectKey);
 
     /**
+     * 读取对象的前 N 个字节，用于 magic bytes 文件类型检测。
+     * 不支持时返回 null。
+     *
+     * @param objectKey 对象键
+     * @param maxBytes  最大读取字节数
+     * @return 读取的字节数组，失败或不支持时返回 null
+     */
+    default byte[] readFirstBytes(String objectKey, int maxBytes) {
+        throw new UnsupportedOperationException("此存储提供者不支持读取文件头部字节");
+    }
+
+    /**
      * 删除单个对象
      *
      * @param objectKey 对象键
@@ -118,4 +152,11 @@ public interface StorageProvider {
      * @param originalName 新的原始文件名
      */
     void updateContentDisposition(String objectKey, String originalName);
+
+    /**
+     * 健康检查
+     *
+     * @return 提供者是否可用
+     */
+    boolean healthCheck();
 }

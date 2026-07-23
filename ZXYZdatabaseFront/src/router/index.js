@@ -18,6 +18,7 @@ const AccountSettings = () => import('@/views/setting/AccountSettings.vue')
 const TeamAdminSettings = () => import('@/views/setting/TeamAdmin.vue')
 const SystemAdminSettings = () => import('@/views/setting/SystemAdmin.vue')
 const ConfigAdminSettings = () => import('@/views/setting/ConfigAdmin.vue')
+const StorageAdminSettings = () => import('@/views/setting/StorageAdmin.vue')
 const PermissionCenter = () => import('@/views/permission/index.vue')
 const ChatHome = () => import('@/views/chat/index.vue')
 const Projects = () => import('@/views/projects/index.vue')
@@ -97,6 +98,12 @@ const router = createRouter({
               path: 'config-admin',
               name: 'configAdminSettings',
               component: ConfigAdminSettings,
+              beforeEnter: requireSystemAdminRole(),
+            },
+            {
+              path: 'storage-admin',
+              name: 'storageAdminSettings',
+              component: StorageAdminSettings,
               beforeEnter: requireSystemAdminRole(),
             },
             {

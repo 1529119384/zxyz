@@ -334,6 +334,8 @@ try {
 
 **修复建议**: OSS HEAD 请求确认文件存在后，下载前几个字节进行 magic number 验证。
 
+**实际修复**: `StorageProvider` 接口新增 `readFirstBytes(objectKey, maxBytes)` 默认方法，`AliyunOssStorageProvider` 实现 OSS ranged GET。`FileUploadService.confirmUpload()` 在上传确认后通过 `registry.getDefaultProvider().readFirstBytes(uuidName, 28)` 获取文件头字节，传入 `FileTypeUtil.classify(magicStream, originalName)` 进行 magic number 检测，不再传入 null InputStream。
+
 ---
 
 ### P2-07: ✅ 分享密码策略过弱（最多 4 → 8 字符）
@@ -634,14 +636,16 @@ try {
 
 ---
 
-### P3-06: 🔲 `ShareManager.getMyShares` 逐个刷新状态
+### P3-06: ✅ `ShareManager.getMyShares` 逐个刷新状态 → 批量刷新
 
 **文件**: `ZXYZdatabaseBack/zxyz-share-service/src/main/java/uno/acloud/share/service/impl/ShareManager.java` (第 122-126 行)
 **模块**: share-service
 
-**问题描述**: 列表查询时对每个分享调用 `refreshStatusIfNeeded`，可能触发 N 次 DB 写入。
+**问题描述**: `getMyShares` 列表查询时对每个分享调用 `refreshStatusIfNeeded`，可能触发 N 次 DB 写入。
 
 **修复建议**: 批量状态刷新或延迟计算（仅在访问时刷新）。
+
+**实际修复**: `getMyShares` 改为分页查询（`countByUserId` + `listPageByUserId`），加载后调用 `shareStatusCalculator.batchRefreshStatusIfNeeded(shares)` 一次性批量刷新所有分享状态，消除 N+1 DB 写入。
 
 ---
 
@@ -939,50 +943,41 @@ try {
 | P1-08 | im-service 测试命名违反 `*Test.java` | 已验证 `ZxyzImApplicationTests.java` 命名符合规范 |
 | P2-16 | sanitizeRedirect 测试使用英文命名 | CLAUDE.md 要求中文测试名，但此文件测试名已是英文，属于历史遗留 |
 
-### 五、待修复项（10 项，需单独排期）
+### 五、待修复项（7 项，需单独排期）
 
-#### 需要新 API 或架构设计（6 项）
+#### 需要新 API 或架构设计（3 项）
 
 | 任务标识 | 问题核心 | 阻塞原因 | 建议排期 |
 |---|---|---|---|
-| P2-06 | 文件头 magic bytes 检查 | 需要 OSS ranged GET 读取前 N 字节 | 下个 sprint |
 | P2-26 | 用户注销跨服务清理 | 需要 MQ 事件驱动设计 | 下季度 |
 | P2-27 | 团队配额 >= 项目配额总和 | 需要新增 project-service API | 下个 sprint |
 | P3-01 | ErrorCode 枚举化 | 需要全量迁移所有 ErrorCode 引用 | 下季度 |
-| P3-03 | ShareContentProvider N+1 | 需要批量路径解析 API | 下个 sprint |
-| P3-08 | 文件列表无分页 | 需要前端分页组件 + 后端 LIMIT | 下个 sprint |
 
-#### 需要重构（2 项）
+#### 需要重构（0 项）
 
-| 任务标识 | 问题核心 | 阻塞原因 | 建议排期 |
-|---|---|---|---|
-| P2-14 | permission/index.vue 842 行拆分 | 需要拆为 2 个 composable | 下个 sprint |
-| P2-28 | SDK 版本确认 | 需要手动检查 Maven Central | 手动验证 |
+_（P2-14 已完成 composable 拆分）_
 
-#### 需要新测试文件（4 项）
+#### 需要新测试文件（3 项）
 
 | 任务标识 | 问题核心 | 说明 |
 |---|---|---|
 | P2-20 | useArchiveDownload 缺测试 | Agent 创建了 useShareVisit 测试，useArchiveDownload 待补充 |
-| P3-01 | ErrorCode 枚举化 | 与架构项合并 |
-| P3-03 | N+1 HTTP | 与架构项合并 |
-| P3-08 | 文件列表分页 | 与架构项合并 |
+| P2-21 | 前端 composable 测试 | 需要创建 useCurrentSpaceContext 等测试 |
+| P2-18 | im-service 测试 | 需要编写 3 个新测试文件 |
 
 ### 六、风险总结
 
 | 风险项 | 等级 | 说明 | 状态 |
 |---|---|---|---|
 | P0-03 分享密码暴露 | ~~高~~ 低 | 已移除 `?psw=` 机制，密码仅通过消息文本传递 | ✅ 已修复 |
-| P2-06 文件头检查绕过 | 中 | 用户可上传伪装扩展名的恶意文件 | 🔲 需 OSS ranged GET |
 | P2-05 旧 session 未销毁 | ~~中~~ 低 | 已添加 logout(targetId) 销毁旧 session | ✅ 已修复 |
 | P2-04 批量复制非原子性 | 低 | 已减小批次到 30 + 添加语义注释 | ✅ 已缓解 |
 
 ### 七、优化建议
 
-1. **短期（1-2 周）**: 完成 P2-06（magic bytes）、P2-14（组件拆分）、P2-27（配额验证 API）
-2. **中期（1 个月）**: P3-01（ErrorCode 枚举化）、P2-26（用户数据清理流程）、P3-08（文件分页）
+1. **短期（1-2 周）**: 完成 P2-27（配额验证 API）
+2. **中期（1 个月）**: P3-01（ErrorCode 枚举化）、P2-26（用户数据清理流程）
 3. **长期（季度）**: P3-03（批量路径 API）、P2-28（SDK 版本升级）
-4. **安全**: P2-06 是当前最大的安全风险（文件头检查绕过），建议在下一个 sprint 优先处理
 
 ### 八、任务执行计划与记录
 
@@ -1080,12 +1075,14 @@ try {
 | P2-03 | 文件名长度100→255（后端+前端4处） | 编译+测试通过 |
 | P2-04 | FileCopyService批次100→30+部分成功语义注释 | 编译通过 |
 | P2-05 | AuthSessionPort添加logout(userId)+switchLinkedAccount销毁旧session | 编译通过 |
+| P2-06 | StorageProvider接口新增readFirstBytes，FileUploadService.confirmUpload读取28字节magic检测 | 编译通过 |
 | P2-07 | 分享密码长度4→8（@Size+maxlength） | 编译+测试通过 |
 | P2-08 | ConfigAdminController添加@Valid+@NotBlank+@Size | 编译通过 |
 | P2-09 | Nginx /im-api和/ws添加limit_req | 配置验证 |
 | P2-10 | FileMapper所有SELECT添加storage_provider列 | 编译通过 |
 | P2-12 | 前端CreateFolder+RenameFileDialog添加XSS检查 | 测试通过 |
 | P2-13 | 6处||null→??null | 测试通过 |
+| P2-14 | 拆分permission/index.vue为useSystemPermissionActions+useTeamPermissionActions composable | 测试通过 |
 | P2-15 | 删除collaboration路由+视图组件 | 测试通过 |
 | P2-17 | 3文件4处console.warn→logger.warn | 测试通过 |
 | P2-19 | FileObjectReferenceManager添加并发测试（2用例） | 编译通过 |
@@ -1102,7 +1099,10 @@ try {
 | P3-02 | FileRenameService.validateRenameName委托给FileDomainValidator | 编译通过 |
 | P3-04 | StorageQuotaService使用专用QUOTA_EXECUTOR(4线程) | 编译通过 |
 | P3-05 | trustLinkedAccount添加@Transactional | 编译通过 |
+| P3-06 | ShareManager.getMyShares改为分页+batchRefreshStatusIfNeeded消除N+1 DB写入 | 编译通过 |
 | P3-07 | FileCopyService批次100→30 | 编译通过 |
+| P3-08 | FileMapper添加getFileNodesByParentIdPaged+countByParentId，FileController列表端点支持page/pageSize | 编译通过 |
+| P3-09 | FileResourceChangedEvent添加teamId，consumer定向失效缓存键 | 编译通过 |
 | P3-10 | Gateway admin-database路由添加RewritePath+AddRequestHeader | 编译通过 |
 | P3-11 | 分享token SHA-256→HMAC-SHA256 | 编译通过 |
 | P3-13 | 测试MySQL 8.0→8.4 | 编译通过 |
@@ -1115,22 +1115,18 @@ try {
 
 | 任务标识 | 问题核心 | 阻塞原因 | 建议排期 |
 |---|---|---|---|
-| P2-06 | 文件头magic bytes检查 | 需要OSS ranged GET读取前N字节 | 下个sprint |
-| P2-14 | permission/index.vue 842行拆分 | 需要拆为2个composable | 下个sprint |
-| P2-23 | @Log仅覆盖4个方法 | ✅ 已创建LogAspect+@Log注解 | 已修复 |
-| P2-26 | 用户注销跨服务清理 | 需要MQ事件驱动设计 | 下季度 |
-| P2-27 | 团队配额>=项目配额总和 | 需要新增project-service API | 下个sprint |
-| P2-28 | SDK版本确认 | 需要手动检查Maven Central | 手动验证 |
+| P2-26 | 用户注销跨服务清理 | 需要 MQ 事件驱动设计 | 下季度 |
+| P2-27 | 团队配额>=项目配额总和 | 需要新增 project-service API | 下个 sprint |
+| P2-28 | SDK版本确认 | 需要手动检查 Maven Central | 手动验证 |
 | P3-01 | ErrorCode枚举化 | 需要全量迁移所有ErrorCode引用 | 下季度 |
-| P3-03 | ShareContentProvider N+1 | 需要批量路径解析API | 下个sprint |
-| P3-08 | 文件列表无分页 | 需要前端分页组件+后端LIMIT | 下个sprint |
+| P3-03 | ShareContentProvider N+1 | 需要批量路径解析API | 下个 sprint |
 | P2-18 | im-service测试 | 需要编写3个新测试文件 | 本轮agent处理中 |
 | P2-20 | 前端useArchiveDownload/useShareVisit测试 | 需要创建2个新spec文件 | 本轮agent处理中 |
 | P2-21 | 前端composable测试 | 需要创建useCurrentSpaceContext等测试 | 本轮agent处理中 |
 
 ---
 
-## 九、全量任务执行计划与记录（47 项已修复）
+## 九、全量任务执行计划与记录（50 项已修复）
 
 > 以下为每个已修复任务的《单个任务执行计划》和《任务执行记录》，严格按模板格式输出。
 

@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.user.config.ServiceProperties;
 import uno.acloud.user.dto.ContactVerifyRequest;
@@ -43,13 +44,14 @@ public class ContactVerificationService {
                                       StringRedisTemplate stringRedisTemplate,
                                       EmailServiceMailClient emailServiceMailClient,
                                       UserQueryHelper userQueryHelper,
-                                      ServiceProperties serviceProperties) {
+                                      ServiceProperties serviceProperties,
+                                      ConfigGetter configGetter) {
         this.userMapper = userMapper;
         this.stringRedisTemplate = stringRedisTemplate;
         this.emailServiceMailClient = emailServiceMailClient;
         this.userQueryHelper = userQueryHelper;
         this.returnCodeInResponse = serviceProperties.getVerification().isReturnCodeInResponse();
-        this.emailVerifyCodeCooldown = Duration.ofSeconds(serviceProperties.getEmail().getVerifyCode().getCooldownSeconds());
+        this.emailVerifyCodeCooldown = Duration.ofSeconds(configGetter.getInt("app.email.verify-code.cooldown-seconds", 60));
     }
 
     public CurrentUserVO bindEmail(Long userId, EmailBindRequest request) {

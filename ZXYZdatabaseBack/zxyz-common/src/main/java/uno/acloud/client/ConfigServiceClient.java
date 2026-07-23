@@ -27,8 +27,9 @@ public class ConfigServiceClient extends AbstractServiceClient {
 
     private static final String NULL_SENTINEL = "§NULL§";
 
+    /** 本地缓存 TTL：1 分钟（配置变更通过 Redis Pub/Sub 主动失效） */
     private final Cache<String, String> cache = Caffeine.newBuilder()
-            .expireAfterWrite(5, TimeUnit.MINUTES)
+            .expireAfterWrite(1, TimeUnit.MINUTES)
             .maximumSize(200)
             .build();
 
@@ -55,7 +56,10 @@ public class ConfigServiceClient extends AbstractServiceClient {
     public String get(String key) {
         String value = cache.get(key, k -> {
             try {
-                JsonNode root = getJson("/api/admin/configs/" + k);
+                JsonNode root = getJsonOptional("/api/admin/configs/" + k);
+                if (root == null) {
+                    return NULL_SENTINEL;
+                }
                 JsonNode data = root.path("data");
                 if (data.isMissingNode() || data.isNull()) {
                     return NULL_SENTINEL;

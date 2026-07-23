@@ -2,6 +2,7 @@ package uno.acloud.share.service.impl;
 
 import org.springframework.stereotype.Component;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.UserErrorCode;
 import uno.acloud.dto.FileInfoDTO;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.share.infrastructure.client.ShareFileServiceClient;
@@ -33,7 +34,7 @@ public class ShareValidator {
     public InternalUserInfoVO requireUser(Long userId) {
         InternalUserInfoVO user = shareUserQueryClient.getUserInfo(userId);
         if (user == null) {
-            throw new BusinessException(ErrorCode.USER_NOT_FOUND, "用户不存在");
+            throw new BusinessException(UserErrorCode.USER_NOT_FOUND, "用户不存在");
         }
         return user;
     }

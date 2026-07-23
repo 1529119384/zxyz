@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.exception.BusinessException;
 
 import java.time.Duration;
@@ -13,18 +14,26 @@ import java.time.Duration;
 @Component
 public class LoginRateLimiter {
 
-    private static final int IP_LIMIT_PER_MINUTE = 20;
-    private static final int USERNAME_LIMIT_PER_MINUTE = 5;
+    /** 每分钟每 IP 登录上限 fallback */
+    private static final int FALLBACK_IP_LIMIT_PER_MINUTE = 20;
+    /** 每分钟每用户名登录上限 fallback */
+    private static final int FALLBACK_USERNAME_LIMIT_PER_MINUTE = 5;
 
     private final StringRedisTemplate stringRedisTemplate;
+    private final ConfigGetter configGetter;
+    private final int ipLimitPerMinute;
+    private final int usernameLimitPerMinute;
 
-    public LoginRateLimiter(StringRedisTemplate stringRedisTemplate) {
+    public LoginRateLimiter(StringRedisTemplate stringRedisTemplate, ConfigGetter configGetter) {
         this.stringRedisTemplate = stringRedisTemplate;
+        this.configGetter = configGetter;
+        this.ipLimitPerMinute = configGetter.getInt("app.rate-limit.login.ip-per-minute", FALLBACK_IP_LIMIT_PER_MINUTE);
+        this.usernameLimitPerMinute = configGetter.getInt("app.rate-limit.login.username-per-minute", FALLBACK_USERNAME_LIMIT_PER_MINUTE);
     }
 
     public void checkAndIncrement(String ip, String username) {
-        requireLimit("zxyz:user:login:ip:" + (ip == null || ip.isBlank() ? "unknown" : ip), IP_LIMIT_PER_MINUTE);
-        requireLimit("zxyz:user:login:username:" + username, USERNAME_LIMIT_PER_MINUTE);
+        requireLimit("zxyz:user:login:ip:" + (ip == null || ip.isBlank() ? "unknown" : ip), ipLimitPerMinute);
+        requireLimit("zxyz:user:login:username:" + username, usernameLimitPerMinute);
     }
 
     private void requireLimit(String key, int limit) {

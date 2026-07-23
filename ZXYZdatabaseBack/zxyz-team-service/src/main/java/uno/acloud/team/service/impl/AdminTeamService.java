@@ -14,6 +14,7 @@ import uno.acloud.team.entity.TeamQuota;
 import uno.acloud.team.infrastructure.client.EmailServiceClient;
 import uno.acloud.team.infrastructure.client.FileServiceClient;
 import uno.acloud.team.infrastructure.client.ImSystemNotificationClient;
+import uno.acloud.team.infrastructure.client.ProjectServiceClient;
 import uno.acloud.team.infrastructure.client.UserServiceClient;
 import uno.acloud.team.mapper.TeamMapper;
 import uno.acloud.team.mapper.TeamQuotaMapper;
@@ -43,6 +44,7 @@ public class AdminTeamService implements AdminTeamPort {
     private final TeamQuotaMapper teamQuotaMapper;
     private final UserServiceClient userServiceClient;
     private final FileServiceClient fileServiceClient;
+    private final ProjectServiceClient projectServiceClient;
     private final ImSystemNotificationClient imSystemNotificationClient;
     private final EmailServiceClient emailServiceClient;
     private AdminTeamService self;
@@ -51,6 +53,7 @@ public class AdminTeamService implements AdminTeamPort {
                             TeamQuotaMapper teamQuotaMapper,
                             UserServiceClient userServiceClient,
                             FileServiceClient fileServiceClient,
+                            ProjectServiceClient projectServiceClient,
                             ImSystemNotificationClient imSystemNotificationClient,
                             EmailServiceClient emailServiceClient,
                             @Lazy AdminTeamService self) {
@@ -58,6 +61,7 @@ public class AdminTeamService implements AdminTeamPort {
         this.teamQuotaMapper = teamQuotaMapper;
         this.userServiceClient = userServiceClient;
         this.fileServiceClient = fileServiceClient;
+        this.projectServiceClient = projectServiceClient;
         this.imSystemNotificationClient = imSystemNotificationClient;
         this.emailServiceClient = emailServiceClient;
         this.self = self;
@@ -110,6 +114,13 @@ public class AdminTeamService implements AdminTeamPort {
         long usedStorage = fileServiceClient.sumActiveFileSize(null, teamId, 2, null);
         if (storageLimit < usedStorage) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "团队空间上限不能小于当前已使用空间");
+        }
+
+        // CV-3: 校验团队配额不小于项目配额总和
+        long projectQuotaSum = projectServiceClient.sumProjectQuota(teamId);
+        if (projectQuotaSum > 0 && storageLimit < projectQuotaSum) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                    "团队存储配额不能小于项目配额总和: " + projectQuotaSum);
         }
 
         // Phase 2: DB transaction

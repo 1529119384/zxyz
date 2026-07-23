@@ -165,7 +165,9 @@ describe('resolveSpaceRequestParams（独立函数）', () => {
   })
 
   it('优先使用 spaceContext.resolveRequestParams', () => {
-    const context = { resolveRequestParams: vi.fn(() => ({ teamId: 1, spaceType: 2, projectId: 3 })) }
+    const context = {
+      resolveRequestParams: vi.fn(() => ({ teamId: 1, spaceType: 2, projectId: 3 })),
+    }
 
     const result = resolveSpaceRequestParams(context, { teamId: 10 })
 

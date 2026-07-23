@@ -2,37 +2,39 @@
 const DEFAULT_UPLOAD_TIMEOUT = 5 * 60 * 1000
 
 export function uploadToOss(uploadUrl, file, options = {}) {
-  const { onUploadProgress, contentType, contentDisposition, timeout } = options
+  // ... existing code
+}
+
+/**
+ * 后端直传上传（用于本地存储等非预签名存储提供者）。
+ * 将文件直接 POST 到后端上传接口。
+ */
+export function uploadToBackend(file, parentId, teamId, spaceType, projectId) {
+  const formData = new FormData()
+  formData.append('file', file)
+  if (parentId != null) formData.append('parentId', String(parentId))
+  if (teamId != null) formData.append('teamId', String(teamId))
+  if (spaceType != null) formData.append('spaceType', String(spaceType))
+  if (projectId != null) formData.append('projectId', String(projectId))
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
 
-    xhr.open('PUT', uploadUrl, true)
-    xhr.timeout = timeout ?? DEFAULT_UPLOAD_TIMEOUT
+    xhr.open('POST', '/api/files/uploads/direct', true)
+    xhr.timeout = DEFAULT_UPLOAD_TIMEOUT
 
-    if (contentType) {
-      xhr.setRequestHeader('Content-Type', contentType)
-    }
-    if (contentDisposition) {
-      xhr.setRequestHeader('Content-Disposition', contentDisposition)
-    }
-
-    if (typeof onUploadProgress === 'function') {
-      xhr.upload.onprogress = (event) => {
-        onUploadProgress({
-          loaded: event.loaded,
-          total: event.total || file.size,
-        })
-      }
-    }
-
+    // 让浏览器自动设置 Content-Type（含 boundary）
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
-        resolve(xhr.response)
+        try {
+          resolve(JSON.parse(xhr.responseText))
+        } catch (e) {
+          resolve(xhr.responseText)
+        }
         return
       }
 
-      const error = new Error(`OSS upload failed: status ${xhr.status}`)
+      const error = new Error(`Backend upload failed: status ${xhr.status}`)
       error.response = {
         status: xhr.status,
         data: xhr.responseText,
@@ -41,7 +43,7 @@ export function uploadToOss(uploadUrl, file, options = {}) {
     }
 
     xhr.onerror = () => {
-      const error = new Error('OSS upload failed: network error')
+      const error = new Error('Backend upload failed: network error')
       error.response = {
         status: xhr.status || 0,
         data: xhr.responseText,
@@ -50,7 +52,7 @@ export function uploadToOss(uploadUrl, file, options = {}) {
     }
 
     xhr.ontimeout = () => {
-      const error = new Error('OSS upload failed: timeout')
+      const error = new Error('Backend upload failed: timeout')
       error.response = {
         status: 0,
         data: null,
@@ -58,6 +60,6 @@ export function uploadToOss(uploadUrl, file, options = {}) {
       reject(error)
     }
 
-    xhr.send(file)
+    xhr.send(formData)
   })
 }

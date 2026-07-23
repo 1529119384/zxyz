@@ -18,6 +18,7 @@ import uno.acloud.vo.FileDownloadUrlVO;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 调用 file-service 的 HTTP 客户端（分享服务专用）。
@@ -95,6 +96,51 @@ public class ShareFileServiceClient extends FileStorageClient {
         }
     }
 
+    public Map<Long, List<FileInfoDTO>> getShareChildrenByParentIds(List<Long> parentIds) {
+        if (parentIds == null || parentIds.isEmpty()) {
+            return Map.of();
+        }
+        try {
+            String responseBody = restClient().post()
+                    .uri(baseUrl() + "/api/internal/files/batch-share-children")
+                    .header(InternalServiceHeaders.TOKEN_HEADER, internalServiceToken())
+                    .body(objectMapper().createObjectNode().putPOJO("parentIds", parentIds))
+                    .retrieve()
+                    .body(String.class);
+            return parseBatchShareChildrenResponse(responseBody);
+        } catch (BusinessException e) {
+            throw e;
+        } catch (RestClientResponseException e) {
+            throw ServiceResponseParser.parseErrorResponse(objectMapper(), e, "批量获取分享子文件失败");
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "批量获取分享子文件失败");
+        }
+    }
+
+    private Map<Long, List<FileInfoDTO>> parseBatchShareChildrenResponse(String responseBody) throws Exception {
+        JsonNode data = ServiceResponseParser.parseSuccessData(objectMapper(), responseBody, "批量获取分享子文件失败");
+        if (!data.isObject()) {
+            return Map.of();
+        }
+        Map<Long, List<FileInfoDTO>> result = new java.util.HashMap<>();
+        data.fields().forEachRemaining(entry -> {
+            long key = Long.parseLong(entry.getKey());
+            List<FileInfoDTO> list = new ArrayList<>();
+            JsonNode arrayNode = entry.getValue();
+            if (arrayNode.isArray()) {
+                for (JsonNode item : arrayNode) {
+                    try {
+                        list.add(objectMapper().treeToValue(item, FileInfoDTO.class));
+                    } catch (Exception e) {
+                        throw new RuntimeException("解析分享子文件项失败", e);
+                    }
+                }
+            }
+            result.put(key, list);
+        });
+        return result;
+    }
+
     public String getShareDownloadUrl(Long fileId) {
         try {
             String responseBody = restClient().get()
@@ -110,6 +156,27 @@ public class ShareFileServiceClient extends FileStorageClient {
             throw ServiceResponseParser.parseErrorResponse(objectMapper(), e, "获取分享下载链接失败");
         } catch (Exception e) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "获取分享下载链接失败");
+        }
+    }
+
+    /**
+     * 获取文件流式下载信息（用于分享服务流式下载场景）
+     */
+    public String getFileStreamInfo(Long fileId) {
+        try {
+            String responseBody = restClient().get()
+                    .uri(baseUrl() + "/api/internal/files/{fileId}/stream-info", fileId)
+                    .header(InternalServiceHeaders.TOKEN_HEADER, internalServiceToken())
+                    .retrieve()
+                    .body(String.class);
+            JsonNode data = ServiceResponseParser.parseSuccessData(objectMapper(), responseBody, "获取文件流信息失败");
+            return data.asText();
+        } catch (BusinessException e) {
+            throw e;
+        } catch (RestClientResponseException e) {
+            throw ServiceResponseParser.parseErrorResponse(objectMapper(), e, "获取文件流信息失败");
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "获取文件流信息失败");
         }
     }
 

@@ -1,7 +1,4 @@
-<!-- TODO(P2-14): 本组件 842 行，违反单一职责。建议拆分为：
-     1. useSystemPermissionActions.js - 系统权限 CRUD 操作
-     2. useTeamPermissionActions.js - 团队权限 CRUD 操作
-     3. permission/index.vue - 仅保留布局和路由逻辑 -->
+<!-- 权限管理页：系统权限 + 团队权限。CRUD 操作委托给 composable。 -->
 <template>
   <section class="permission-page">
     <header class="permission-header">
@@ -38,9 +35,9 @@
               readonly-text="当前为只读模式，系统角色不可编辑。"
               empty-text="暂无系统角色"
               :is-builtin-role="isBuiltinSystemRole"
-              :format-permission="formatSystemPermission"
-              :save-role="saveSystemRoleFromPanel"
-              :delete-role="deleteSystemRoleFromPanel"
+              :format-permission="formatPermissionLabel"
+              :save-role="systemActions.saveSystemRole"
+              :delete-role="systemActions.deleteSystemRole"
             />
 
             <div class="auxiliary-grid">
@@ -86,7 +83,7 @@
                   <el-button
                     type="primary"
                     :disabled="!canManageSystemRoles"
-                    @click="submitUserRoleAssign"
+                    @click="systemActions.submitUserRoleAssign(userRoleForm)"
                     >保存</el-button
                   >
                 </div>
@@ -169,9 +166,9 @@
               readonly-text="当前为只读模式，团队角色不可编辑。"
               empty-text="暂无团队角色"
               :is-builtin-role="isBuiltinTeamRole"
-              :format-permission="formatTeamPermission"
-              :save-role="saveTeamRoleFromPanel"
-              :delete-role="deleteTeamRoleFromPanel"
+              :format-permission="formatPermissionLabel"
+              :save-role="teamActions.saveTeamRole"
+              :delete-role="teamActions.deleteTeamRole"
             />
 
             <div class="auxiliary-grid">
@@ -214,7 +211,7 @@
                   <el-button
                     type="primary"
                     :disabled="!canAssignTeamMemberRole"
-                    @click="submitMemberRoleAssign"
+                    @click="teamActions.submitMemberRoleAssign(memberRoleForm)"
                     >保存</el-button
                   >
                 </div>
@@ -280,22 +277,18 @@
 <script setup>
 import { computed, onMounted, reactive, ref, unref, watch } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute } from 'vue-router'
 
 import RoleManagementPanel from '@/components/RoleManagementPanel.vue'
 import {
-  assignSystemRolePermissions,
-  assignUserRole,
-  createSystemRole,
-  deleteSystemRole,
   fetchSystemPermissionAudit,
   fetchSystemPermissions,
   fetchSystemRoles,
-  updateSystemRole,
 } from '@/api/permission'
 import { searchUsers } from '@/api/user'
+import { useSystemPermissionActions } from '@/composables/useSystemPermissionActions'
 import { useTeamManagement } from '@/composables/team/useTeamManagement'
+import { useTeamPermissionActions } from '@/composables/useTeamPermissionActions'
 import { TEAM_PERMISSION_WORKBENCH_CODES } from '@/constants/teamPermissions'
 import { useCurrentUserStore } from '@/store/currentUser'
 import { useTeamStore } from '@/store/team'
@@ -483,11 +476,6 @@ async function loadTeamPermissionData(teamId) {
   })
 }
 
-function createAutoRoleCode(prefix) {
-  const random = Math.random().toString(36).slice(2, 8)
-  return `${prefix}_custom_${Date.now()}_${random}`
-}
-
 function formatPermissionLabel(permission) {
   if (!permission) {
     return ''
@@ -495,19 +483,6 @@ function formatPermissionLabel(permission) {
   const name = permission.permissionName || permission.name || ''
   const code = permission.permissionCode || permission.code || ''
   return name && code ? `${name} (${code})` : name || code
-}
-
-function findPermissionLabel(permissions, code) {
-  const permission = readArray(permissions).find((item) => item.permissionCode === code)
-  return permission ? formatPermissionLabel(permission) : code
-}
-
-function formatSystemPermission(code) {
-  return findPermissionLabel(safeSystemPermissions.value, code)
-}
-
-function formatTeamPermission(code) {
-  return findPermissionLabel(safeTeamPermissions.value, code)
 }
 
 function isBuiltinSystemRole(row) {
@@ -548,179 +523,22 @@ async function searchSystemUsers(keyword) {
   }
 }
 
-async function saveSystemRoleFromPanel(draft) {
-  if (!canManageSystemRoles.value) {
-    return false
-  }
-  if (!draft.roleName.trim()) {
-    ElMessage.warning('请输入角色名称')
-    return false
-  }
-  try {
-    const payload = {
-      roleName: draft.roleName.trim(),
-      roleCode: draft.roleId ? draft.roleCode : createAutoRoleCode('system'),
-      description: draft.description.trim(),
-    }
-    const response = draft.roleId
-      ? await updateSystemRole(draft.roleId, payload)
-      : await createSystemRole(payload)
-    const roleId = response?.data?.id || draft.roleId
-    if (roleId) {
-      await assignSystemRolePermissions(roleId, { permissionCodes: draft.permissionCodes })
-    }
-    await refreshAll()
-    ElMessage.success('系统角色已保存')
-    return true
-  } catch (error) {
-    handleBusinessError(error, '保存系统角色失败')
-    return false
-  }
-}
+const systemActions = useSystemPermissionActions({
+  canManage: canManageSystemRoles,
+  refreshAll,
+  createAutoRoleCode,
+  isBuiltinRole: isBuiltinSystemRole,
+})
 
-async function deleteSystemRoleFromPanel(row) {
-  if (!canManageSystemRoles.value || isBuiltinSystemRole(row)) {
-    return false
-  }
-  try {
-    await ElMessageBox.confirm(
-      `确认删除系统角色“${row.roleName || row.roleCode}”？删除后不可恢复。`,
-      '删除系统角色',
-      { type: 'warning' },
-    )
-    await deleteSystemRole(row.id)
-    await refreshAll()
-    ElMessage.success('系统角色已删除')
-    return true
-  } catch (error) {
-    if (error === 'cancel' || error === 'close') {
-      return false
-    }
-    handleBusinessError(error, '删除系统角色失败')
-    return false
-  }
-}
-
-async function submitUserRoleAssign() {
-  if (!canManageSystemRoles.value) {
-    return
-  }
-  const userId = Number(userRoleForm.userId)
-  if (!Number.isSafeInteger(userId) || userId <= 0) {
-    ElMessage.warning('请先搜索并选择用户')
-    return
-  }
-  if (!userRoleForm.roleCode) {
-    ElMessage.warning('请选择角色')
-    return
-  }
-  if (userId === Number(currentUserId.value)) {
-    ElMessage.warning('不能给自己赋予系统角色')
-    return
-  }
-  try {
-    await assignUserRole(userId, { roleCode: userRoleForm.roleCode })
-    userRoleForm.userId = ''
-    userRoleForm.roleCode = ''
-    systemUserOptions.value = []
-    await refreshAll()
-    ElMessage.success('系统角色任命已更新')
-  } catch (error) {
-    handleBusinessError(error, '更新系统角色任命失败')
-  }
-}
-
-async function saveTeamRoleFromPanel(draft) {
-  if (!canManageTeamRoles.value) {
-    return false
-  }
-  if (!selectedTeamId.value) {
-    ElMessage.warning('请先选择团队')
-    return false
-  }
-  if (!draft.roleName.trim()) {
-    ElMessage.warning('请输入角色名称')
-    return false
-  }
-  try {
-    const payload = {
-      roleName: draft.roleName.trim(),
-      roleCode: draft.roleId ? draft.roleCode : createAutoRoleCode('team'),
-      description: draft.description.trim(),
-    }
-    const response = await permissionCenter.saveTeamRole(
-      selectedTeamId.value,
-      payload,
-      draft.roleId,
-    )
-    const roleId = response?.id || draft.roleId
-    if (roleId) {
-      await permissionCenter.updateTeamRolePermissions(
-        selectedTeamId.value,
-        roleId,
-        draft.permissionCodes,
-      )
-    }
-    await refreshAll()
-    ElMessage.success('团队角色已保存')
-    return true
-  } catch (error) {
-    handleBusinessError(error, '保存团队角色失败')
-    return false
-  }
-}
-
-async function deleteTeamRoleFromPanel(row) {
-  if (!canManageTeamRoles.value || isBuiltinTeamRole(row)) {
-    return false
-  }
-  try {
-    await ElMessageBox.confirm(
-      `确认删除团队角色“${row.roleName || row.roleCode}”？删除后不可恢复。`,
-      '删除团队角色',
-      { type: 'warning' },
-    )
-    await permissionCenter.removeTeamRole(selectedTeamId.value, row.id)
-    await refreshAll()
-    ElMessage.success('团队角色已删除')
-    return true
-  } catch (error) {
-    if (error === 'cancel' || error === 'close') {
-      return false
-    }
-    handleBusinessError(error, '删除团队角色失败')
-    return false
-  }
-}
-
-async function submitMemberRoleAssign() {
-  if (!canAssignTeamMemberRole.value) {
-    return
-  }
-  if (!memberRoleForm.userId) {
-    ElMessage.warning('请选择成员')
-    return
-  }
-  if (!memberRoleForm.roleCode) {
-    ElMessage.warning('请选择角色')
-    return
-  }
-  if (Number(memberRoleForm.userId) === Number(currentUserId.value)) {
-    ElMessage.warning('不能给自己调整团队角色')
-    return
-  }
-  try {
-    await permissionCenter.updateTeamMemberRole(
-      selectedTeamId.value,
-      memberRoleForm.userId,
-      memberRoleForm.roleCode,
-    )
-    await refreshAll()
-    ElMessage.success('团队角色任命已更新')
-  } catch (error) {
-    handleBusinessError(error, '更新团队角色任命失败')
-  }
-}
+const teamActions = useTeamPermissionActions({
+  canManage: canManageTeamRoles,
+  refreshAll,
+  createAutoRoleCode,
+  teamId: selectedTeamId,
+  permissionCenter,
+  isBuiltinRole: isBuiltinTeamRole,
+  currentUserId,
+})
 
 onMounted(() => {
   refreshAll()
@@ -730,6 +548,11 @@ function readArray(value) {
   // Element Plus 表格只接受数组，权限数据在切换团队/权限时统一兜底。
   const resolved = unref(value)
   return Array.isArray(resolved) ? resolved : []
+}
+
+function createAutoRoleCode(prefix) {
+  const random = Math.random().toString(36).slice(2, 8)
+  return `${prefix}_custom_${Date.now()}_${random}`
 }
 </script>
 

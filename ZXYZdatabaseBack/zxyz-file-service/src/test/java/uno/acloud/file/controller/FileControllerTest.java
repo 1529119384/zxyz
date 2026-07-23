@@ -11,12 +11,13 @@ import uno.acloud.file.service.FileLifecyclePort;
 import uno.acloud.file.service.FileOperationPort;
 import uno.acloud.file.service.FileQueryPort;
 import uno.acloud.file.service.FileUploadPort;
+import uno.acloud.file.storage.StorageProviderRegistry;
+import uno.acloud.file.storage.UploadInfo;
 import uno.acloud.file.vo.BatchOperationDetailVO;
 import uno.acloud.file.vo.FileListItemVO;
 import uno.acloud.file.vo.FileResourceVO;
 import uno.acloud.file.vo.FileSearchResultVO;
 import uno.acloud.vo.FileDownloadUrlVO;
-import uno.acloud.common.oss.OssSignInfo;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -36,12 +37,14 @@ class FileControllerTest {
     private FileOperationPort fileOperationPort;
     @Mock
     private FileLifecyclePort fileLifecyclePort;
+    @Mock
+    private StorageProviderRegistry registry;
 
     private FileController fileController;
 
     @BeforeEach
     void setUp() {
-        fileController = new FileController(fileUploadPort, fileQueryPort, fileOperationPort, fileLifecyclePort);
+        fileController = new FileController(fileUploadPort, fileQueryPort, fileOperationPort, fileLifecyclePort, registry);
     }
 
     // ==================== Service delegation tests ====================
@@ -53,11 +56,11 @@ class FileControllerTest {
 
     @Test
     void getUploadSign_delegatesToFileUploadPort() {
-        OssSignInfo signInfo = new OssSignInfo("https://oss.example.com/put", "key", "https://oss.example.com/key",
-                "application/octet-stream", "attachment", 1700000000L);
+        UploadInfo signInfo = new UploadInfo("oss", "https://oss.example.com/put", "files/key",
+                "https://oss.example.com/files/key", "application/octet-stream", "attachment", 1700000000L, true);
         when(fileUploadPort.getUploadSign("test.txt")).thenReturn(signInfo);
 
-        OssSignInfo result = fileUploadPort.getUploadSign("test.txt");
+        UploadInfo result = fileUploadPort.getUploadSign("test.txt");
 
         assertNotNull(result);
         assertEquals("https://oss.example.com/put", result.getUploadUrl());
@@ -121,7 +124,7 @@ class FileControllerTest {
 
     @Test
     void getFileDownloadUrl_delegatesToFileQueryPort() {
-        FileDownloadUrlVO downloadUrl = new FileDownloadUrlVO(100L, "https://download.example.com/file");
+        FileDownloadUrlVO downloadUrl = new FileDownloadUrlVO(100L, "https://download.example.com/file", true, "file.txt");
         when(fileQueryPort.getFileDownloadUrl(100L, 1L)).thenReturn(downloadUrl);
 
         FileDownloadUrlVO result = fileQueryPort.getFileDownloadUrl(100L, 1L);

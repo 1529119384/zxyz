@@ -3,7 +3,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createSystemRole,
   updateSystemRole,
-  deleteSystemRole,
+  deleteSystemRole as deleteSystemRoleApi,
   assignSystemRolePermissions,
   assignUserRole,
 } from '@/api/permission'
@@ -13,7 +13,12 @@ import { handleBusinessError } from '@/utils/error'
  * 系统权限 CRUD 操作 composable。
  * 从 permission/index.vue 中提取，减少主组件复杂度。
  */
-export function useSystemPermissionActions({ canManage, refreshAll, createAutoRoleCode }) {
+export function useSystemPermissionActions({
+  canManage,
+  refreshAll,
+  createAutoRoleCode,
+  isBuiltinRole,
+}) {
   async function saveSystemRole(draft) {
     if (!canManage.value) {
       return false
@@ -31,7 +36,7 @@ export function useSystemPermissionActions({ canManage, refreshAll, createAutoRo
       const response = draft.roleId
         ? await updateSystemRole(draft.roleId, payload)
         : await createSystemRole(payload)
-      const roleId = response?.data?.id || draft.roleId
+      const roleId = response?.id || draft.roleId
       if (roleId) {
         await assignSystemRolePermissions(roleId, { permissionCodes: draft.permissionCodes })
       }
@@ -45,7 +50,7 @@ export function useSystemPermissionActions({ canManage, refreshAll, createAutoRo
   }
 
   async function deleteSystemRole(row) {
-    if (!canManage.value || row?.builtin) {
+    if (!canManage.value || isBuiltinRole(row)) {
       return false
     }
     try {
@@ -54,7 +59,7 @@ export function useSystemPermissionActions({ canManage, refreshAll, createAutoRo
         '删除系统角色',
         { type: 'warning' },
       )
-      await deleteSystemRole(row.id)
+      await deleteSystemRoleApi(row.id)
       await refreshAll()
       ElMessage.success('系统角色已删除')
       return true

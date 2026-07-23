@@ -6,6 +6,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.email.config.EmailProperties;
 import uno.acloud.email.domain.EmailRecord;
 import uno.acloud.email.domain.EmailRecordStatus;
@@ -41,6 +42,9 @@ class EmailDispatchServiceTest {
     @Mock
     private EmailSendingAvailabilityService emailSendingAvailabilityService;
 
+    @Mock
+    private ConfigGetter configGetter;
+
     @Test
     void sendByTemplateShouldRenderAndInsertPendingRecord() {
         EmailTemplate template = new EmailTemplate();
@@ -53,6 +57,7 @@ class EmailDispatchServiceTest {
             record.setId(11L);
             return 1;
         });
+        when(configGetter.getInt("app.email.max-retry-count", 4)).thenReturn(4);
         EmailProperties properties = new EmailProperties();
         properties.setAsync(false);
         EmailDispatchService service = new EmailDispatchService(
@@ -62,7 +67,8 @@ class EmailDispatchServiceTest {
                 simpleJavaMailSender,
                 properties,
                 emailSendingAvailabilityService,
-                Runnable::run
+                Runnable::run,
+                configGetter
         );
 
         Long recordId = service.sendByTemplate(
@@ -100,7 +106,8 @@ class EmailDispatchServiceTest {
                 simpleJavaMailSender,
                 properties,
                 emailSendingAvailabilityService,
-                Runnable::run
+                Runnable::run,
+                configGetter
         );
 
         BusinessException exception = assertThrows(BusinessException.class,
@@ -131,7 +138,8 @@ class EmailDispatchServiceTest {
                 simpleJavaMailSender,
                 properties,
                 emailSendingAvailabilityService,
-                Runnable::run
+                Runnable::run,
+                configGetter
         );
 
         assertFalse(service.dispatchRecord(12L));

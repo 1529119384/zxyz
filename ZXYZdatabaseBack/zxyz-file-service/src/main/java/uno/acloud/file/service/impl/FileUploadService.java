@@ -10,24 +10,28 @@ import uno.acloud.common.FileDeleteStatus;
 import uno.acloud.common.InternalServiceHeaders;
 import uno.acloud.common.FileNodeType;
 import uno.acloud.common.FileSpaceType;
+import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.file.config.ServiceProperties;
 import uno.acloud.file.dto.BatchConfirmUploadRequest;
 import uno.acloud.file.dto.ConfirmUploadRequest;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.file.infrastructure.entity.FileItem;
-import uno.acloud.common.oss.GetSignUrl;
-import uno.acloud.file.service.FileUploadPort;
 import uno.acloud.common.util.FileNameUtil;
 import static uno.acloud.common.util.FileNameUtil.BLOCKED_EXTENSIONS;
+import uno.acloud.file.service.FileUploadPort;
+import uno.acloud.file.storage.StorageProvider;
+import uno.acloud.file.storage.StorageProviderRegistry;
+import uno.acloud.file.storage.UploadInfo;
 import uno.acloud.file.util.FileTypeUtil;
 import uno.acloud.file.vo.BatchUploadConfirmResultVO;
-import uno.acloud.common.oss.OssSignInfo;
 import uno.acloud.file.vo.UploadConfirmItemResultVO;
 
+import java.io.InputStream;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -39,7 +43,8 @@ public class FileUploadService implements FileUploadPort {
 
     private static final String FILE_OBJECT_PREFIX = "files/";
 
-    private static final Set<String> ALLOWED_EXTENSIONS = Set.of(
+    /** 允许上传的文件扩展名白名单 fallback（热配置不可用时使用） */
+    private static final Set<String> FALLBACK_ALLOWED_EXTENSIONS = Set.of(
             // 文档
             "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "csv", "rtf",
             // 图片
@@ -56,9 +61,17 @@ public class FileUploadService implements FileUploadPort {
             "odt", "ods", "odp", "key", "epub"
     );
 
-    private static final long MAX_FILE_SIZE_BYTES = 500 * 1024 * 1024; // 500MB
+    /** 危险文件扩展名黑名单 fallback（热配置不可用时使用） */
+    private static final Set<String> FALLBACK_BLOCKED_EXTENSIONS = Set.of(
+            ".exe", ".bat", ".cmd", ".scr", ".pif", ".com",
+            ".js", ".vbs", ".vbe", ".ps1", ".psm1", ".msi",
+            ".wsf", ".wsh", ".hta", ".cpl", ".msc", ".reg"
+    );
 
-    private final GetSignUrl getSignUrl;
+    /** 单文件最大上传大小 fallback（500MB，热配置不可用时使用） */
+    private static final long FALLBACK_MAX_FILE_SIZE_BYTES = 500L * 1024L * 1024L;
+
+    private final StorageProviderRegistry registry;
     private final FileUploadPersistenceManager fileUploadPersistenceService;
     private final FileDomainValidator fileDomainValidator;
     private final FilePathResolver filePathResolver;
@@ -67,16 +80,21 @@ public class FileUploadService implements FileUploadPort {
     private final ObjectMapper objectMapper;
     private final String projectServiceBaseUrl;
     private final String internalServiceToken;
+    private final ConfigGetter configGetter;
+    private final Set<String> allowedExtensions;
+    private final Set<String> blockedExtensions;
+    private final long maxFileSizeBytes;
 
-    public FileUploadService(GetSignUrl getSignUrl,
+    public FileUploadService(StorageProviderRegistry registry,
                              FileUploadPersistenceManager fileUploadPersistenceService,
                              FileDomainValidator fileDomainValidator,
                              FilePathResolver filePathResolver,
                              FileAccessGuard fileAccessGuardService,
                              RestClient restClient,
                              ObjectMapper objectMapper,
+                             ConfigGetter configGetter,
                              ServiceProperties serviceProperties) {
-        this.getSignUrl = getSignUrl;
+        this.registry = registry;
         this.fileUploadPersistenceService = fileUploadPersistenceService;
         this.fileDomainValidator = fileDomainValidator;
         this.filePathResolver = filePathResolver;
@@ -85,14 +103,63 @@ public class FileUploadService implements FileUploadPort {
         this.objectMapper = objectMapper;
         this.projectServiceBaseUrl = serviceProperties.getProjectService().getBaseUrl();
         this.internalServiceToken = serviceProperties.getInternalServiceToken();
+        this.configGetter = configGetter;
+        this.allowedExtensions = configGetter.getJsonSet("app.file.upload.allowed-extensions", FALLBACK_ALLOWED_EXTENSIONS);
+        this.blockedExtensions = configGetter.getJsonSet("app.file.upload.blocked-extensions", FALLBACK_BLOCKED_EXTENSIONS);
+        this.maxFileSizeBytes = configGetter.getLong("app.file.upload.max-size-bytes", FALLBACK_MAX_FILE_SIZE_BYTES);
     }
 
-    public OssSignInfo getUploadSign(String originalName) {
+    public UploadInfo getUploadSign(String originalName) {
         validateFileExtension(originalName);
         validateAllowedExtension(originalName);
         String normalizedName = fileDomainValidator.validateInputName(originalName);
         String uuidName = FILE_OBJECT_PREFIX + FileNameUtil.uuidName(normalizedName);
-        return getSignUrl.generatePutSignInfo(uuidName, normalizedName);
+        return registry.getDefaultProvider().generateUploadInfo(uuidName, normalizedName);
+    }
+
+    public UploadInfo directUpload(String originalName, InputStream inputStream,
+                                   String contentType, Long parentId, Long userId) {
+        validateFileExtension(originalName);
+        validateAllowedExtension(originalName);
+        String normalizedName = fileDomainValidator.validateInputName(originalName);
+        String uuidName = FILE_OBJECT_PREFIX + FileNameUtil.uuidName(normalizedName);
+
+        StorageProvider provider = registry.getDefaultProvider();
+        if (!provider.supportsPresignedUpload()) {
+            long bytesWritten = provider.receiveUpload(uuidName, inputStream, contentType,
+                    buildContentDisposition(normalizedName));
+            if (bytesWritten > this.maxFileSizeBytes) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "文件大小超过限制（最大 500MB）");
+            }
+        } else {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "当前存储提供者不支持直传上传");
+        }
+
+        String fileUrl = provider.generateDownloadInfo(uuidName, normalizedName).getDownloadUrl();
+        ConfirmUploadRequest targetRequest = new ConfirmUploadRequest();
+        targetRequest.setParentId(parentId);
+        SpaceTarget target = resolveUploadTarget(targetRequest, userId);
+        FileItem fileItem = saveFileInfo(uuidName, normalizedName, null, parentId, target, userId, fileUrl);
+        return new UploadInfo(
+                provider.providerId(),
+                fileUrl,
+                uuidName,
+                fileUrl,
+                contentType != null ? contentType : "application/octet-stream",
+                buildContentDisposition(normalizedName),
+                null,
+                false
+        );
+    }
+
+    private String buildContentDisposition(String originalName) {
+        try {
+            String encodedName = java.net.URLEncoder.encode(originalName, java.nio.charset.StandardCharsets.UTF_8)
+                    .replace("+", "%20");
+            return "attachment; filename*=utf-8''" + encodedName;
+        } catch (Exception e) {
+            return "attachment; filename=\"" + originalName + "\"";
+        }
     }
 
     private void validateFileExtension(String fileName) {
@@ -105,7 +172,7 @@ public class FileUploadService implements FileUploadPort {
             return;
         }
         String ext = lower.substring(lastDot);
-        if (BLOCKED_EXTENSIONS.contains(ext)) {
+        if (blockedExtensions.contains(ext)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的文件类型");
         }
     }
@@ -120,7 +187,7 @@ public class FileUploadService implements FileUploadPort {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的文件类型: 文件缺少扩展名");
         }
         String ext = lower.substring(lastDot + 1);
-        if (!ALLOWED_EXTENSIONS.contains(ext)) {
+        if (!allowedExtensions.contains(ext)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的文件类型: ." + ext);
         }
     }
@@ -217,10 +284,11 @@ public class FileUploadService implements FileUploadPort {
         Long parentId = request == null ? null : request.getParentId();
         try {
             validateConfirmUploadItem(request);
-            // OSS HEAD 请求校验实际文件大小，防止客户端篡改 fileSize
-            Long ossSize = getSignUrl.getObjectSize(request.getObjectKey());
-            if (ossSize != null && ossSize > MAX_FILE_SIZE_BYTES) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "文件大小超过限制（最大 500MB）");
+            // 存储 HEAD 请求校验实际文件大小，防止客户端篡改 fileSize
+            Long ossSize = registry.getDefaultProvider().getObjectSize(request.getObjectKey());
+            if (ossSize != null && ossSize > this.maxFileSizeBytes) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST,
+                        "文件大小超过限制（最大 " + formatFileSize(maxFileSizeBytes) + "）");
             }
             SpaceTarget target = resolveUploadTarget(request, userId);
             requireUploadAccess(target, userId);
@@ -235,7 +303,7 @@ public class FileUploadService implements FileUploadPort {
             );
             reservedNames.add(finalName);
 
-            String fileUrl = getSignUrl.getFileUrl(request.getObjectKey());
+            String fileUrl = registry.getDefaultProvider().generateDownloadInfo(request.getObjectKey(), request.getOriginalName()).getDownloadUrl();
             FileItem fileItem = saveFileInfo(request.getObjectKey(), finalName, request.getFileSize(), request.getParentId(), target, userId, fileUrl);
             log.info("确认上传成功 objectKey={}, originalName={}, finalName={}, fileUrl={}",
                     request.getObjectKey(), request.getOriginalName(), finalName, fileUrl);
@@ -280,8 +348,9 @@ public class FileUploadService implements FileUploadPort {
         if (request.getFileSize() == null || request.getFileSize() < 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "fileSize 非法");
         }
-        if (request.getFileSize() > MAX_FILE_SIZE_BYTES) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "文件大小超过限制（最大 500MB）");
+        if (request.getFileSize() > this.maxFileSizeBytes) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                    "文件大小超过限制（最大 " + formatFileSize(maxFileSizeBytes) + "）");
         }
         if (request.getParentId() == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "parentId 不能为空");
@@ -325,9 +394,9 @@ public class FileUploadService implements FileUploadPort {
         FileItem fileItem = FileItem.create();
         fileItem.setUuidName(uuidName);
         fileItem.setOriginalName(originalName);
-        // 从 OSS 读取文件头部字节用于 magic bytes 类型检测
+        // 从存储读取文件头部字节用于 magic bytes 类型检测
         java.io.InputStream magicStream = null;
-        byte[] firstBytes = getSignUrl.readFirstBytes(uuidName, 28);
+        byte[] firstBytes = registry.getDefaultProvider().readFirstBytes(uuidName, 28);
         if (firstBytes != null) {
             magicStream = new java.io.ByteArrayInputStream(firstBytes);
         }
@@ -343,6 +412,21 @@ public class FileUploadService implements FileUploadPort {
         fileItem.setCreateTime(LocalDateTime.now());
         fileItem.setModifyTime(LocalDateTime.now());
         fileItem.setDeleted(FileDeleteStatus.NORMAL);
+        fileItem.setStorageProvider(registry.getDefaultProvider().providerId());
         return fileUploadPersistenceService.saveFileItem(fileItem);
+    }
+
+    /** 将字节数格式化为可读字符串（KB/MB/GB） */
+    private static String formatFileSize(long bytes) {
+        if (bytes >= 1024L * 1024L * 1024L) {
+            return (bytes / (1024L * 1024L * 1024L)) + " GB";
+        }
+        if (bytes >= 1024L * 1024L) {
+            return (bytes / (1024L * 1024L)) + " MB";
+        }
+        if (bytes >= 1024L) {
+            return (bytes / 1024L) + " KB";
+        }
+        return bytes + " B";
     }
 }

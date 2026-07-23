@@ -3,6 +3,7 @@ package uno.acloud.user.service.impl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.UserErrorCode;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.user.dto.LinkedAccountTrustRequest;
 import uno.acloud.user.entity.User;
@@ -54,7 +55,7 @@ public class AccountLinkingService {
         User target = userQueryHelper.requireExistingUser(targetUserId);
         String password = optionalText(request.getPassword());
         if (!userQueryHelper.passwordMatched(password, target)) {
-            throw new BusinessException(ErrorCode.LOGIN_FAILED, "目标账号密码错误");
+            throw new BusinessException(UserErrorCode.LOGIN_FAILED, "目标账号密码错误");
         }
         userMapper.upsertAccountSwitchTrust(userId, targetUserId);
         userMapper.upsertAccountSwitchTrust(targetUserId, userId);
@@ -79,7 +80,7 @@ public class AccountLinkingService {
                 teamServicePermissionClient.getSystemPermissionsByUserId(targetId)
         );
         CurrentUserVO targetCurrentUser = userProfileService.getCurrentUser(target.getId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND, "目标用户不存在"));
+                .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND, "目标用户不存在"));
         return new AccountSwitchVO(token, "Bearer", true, targetCurrentUser);
     }
 

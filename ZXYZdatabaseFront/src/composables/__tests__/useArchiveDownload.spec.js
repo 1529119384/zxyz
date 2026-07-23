@@ -21,8 +21,14 @@ describe('useArchiveDownload', () => {
   })
 
   it('应打开弹窗并设置默认名称', () => {
-    const resolveOpenState = vi.fn(() => ({ opened: true, defaultName: '项目文件', context: { id: 1 } }))
-    const { openArchiveNameDialog, archiveDialogVisible, archiveDefaultName } = useArchiveDownload({ resolveOpenState })
+    const resolveOpenState = vi.fn(() => ({
+      opened: true,
+      defaultName: '项目文件',
+      context: { id: 1 },
+    }))
+    const { openArchiveNameDialog, archiveDialogVisible, archiveDefaultName } = useArchiveDownload({
+      resolveOpenState,
+    })
 
     const result = openArchiveNameDialog({ type: 'project' })
     expect(result).toBe(true)
@@ -42,7 +48,8 @@ describe('useArchiveDownload', () => {
 
   it('未提交时应关闭弹窗', async () => {
     const resolveOpenState = vi.fn(() => ({ opened: true }))
-    const { openArchiveNameDialog, closeArchiveNameDialog, archiveDialogVisible } = useArchiveDownload({ resolveOpenState })
+    const { openArchiveNameDialog, closeArchiveNameDialog, archiveDialogVisible } =
+      useArchiveDownload({ resolveOpenState })
 
     openArchiveNameDialog({})
     expect(archiveDialogVisible.value).toBe(true)
@@ -55,7 +62,9 @@ describe('useArchiveDownload', () => {
     runArchiveDownload.mockImplementation((opts) => {
       // 模拟 setSubmitting 被调用
       opts.setSubmitting?.(true)
-      return new Promise((r) => { resolveDownload = r })
+      return new Promise((r) => {
+        resolveDownload = r
+      })
     })
 
     const buildRunnerOptions = vi.fn(() => ({
@@ -63,8 +72,13 @@ describe('useArchiveDownload', () => {
       setSubmitting: vi.fn(),
     }))
     const resolveOpenState = vi.fn(() => ({ opened: true }))
-    const { openArchiveNameDialog, handleArchiveDownloadSubmit, closeArchiveNameDialog, archiveDialogVisible, archiveSubmitting } =
-      useArchiveDownload({ resolveOpenState, buildRunnerOptions })
+    const {
+      openArchiveNameDialog,
+      handleArchiveDownloadSubmit,
+      closeArchiveNameDialog,
+      archiveDialogVisible,
+      archiveSubmitting,
+    } = useArchiveDownload({ resolveOpenState, buildRunnerOptions })
 
     openArchiveNameDialog({})
     handleArchiveDownloadSubmit('download.zip')

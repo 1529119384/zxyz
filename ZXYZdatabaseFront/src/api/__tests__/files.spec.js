@@ -28,13 +28,14 @@ describe('files API', () => {
     vi.clearAllMocks()
   })
 
-  it('应调用 GET /api/files 获取文件列表', async () => {
-    request.get.mockResolvedValue({ data: [] })
-    await fetchFileList(1, { teamId: 10, sortField: 'name' })
+  it('应调用 GET /api/files 获取文件列表（分页格式）', async () => {
+    request.get.mockResolvedValue({ data: { list: [{ id: 1 }], total: 1 } })
+    const result = await fetchFileList(1, { teamId: 10, sortField: 'name', page: 1, pageSize: 20 })
     expect(request.get).toHaveBeenCalledWith('/api/files', {
-      params: { parentId: 1, teamId: 10, sortField: 'name' },
+      params: { parentId: 1, teamId: 10, sortField: 'name', page: 1, pageSize: 20 },
       signal: undefined,
     })
+    expect(result.data).toEqual([{ id: 1 }])
   })
 
   it('应调用 GET /api/files/search 搜索文件', async () => {

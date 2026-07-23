@@ -5,6 +5,7 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.UserErrorCode;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.user.dto.LoginRequest;
 import uno.acloud.user.dto.RegisterRequest;
@@ -38,7 +39,7 @@ public class AuthService {
     public String login(LoginRequest request) {
         User dbUser = userMapper.getByLoginIdentifier(request.getUsername());
         if (dbUser == null || !userQueryHelper.passwordMatched(request.getPassword(), dbUser)) {
-            throw new BusinessException(ErrorCode.LOGIN_FAILED, "用户名或密码错误");
+            throw new BusinessException(UserErrorCode.LOGIN_FAILED, "用户名或密码错误");
         }
 
         Long userId = dbUser.getId();
@@ -86,7 +87,7 @@ public class AuthService {
             return userMapper.addByUsernameAndPassword(user);
         } catch (DuplicateKeyException e) {
             log.warn("用户 {} 注册失败，用户名已存在", user.getUsername(), e);
-            throw new BusinessException(ErrorCode.USERNAME_EXISTS, "用户名已存在");
+            throw new BusinessException(UserErrorCode.USERNAME_EXISTS, "用户名已存在");
         }
     }
 

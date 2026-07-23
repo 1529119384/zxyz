@@ -130,6 +130,12 @@ spring:
               filters:
                 - RewritePath=/api/admin/(?<segment>.*), /${segment}
 
+            # 存储提供者管理路由：/api/admin/storage-providers/** → file-service
+            - id: file-service-storage-providers
+              uri: lb://zxyz-file-service
+              predicates:
+                - Path=/api/admin/storage-providers/**
+
             # 项目服务路由：项目、成员、目录、配额、申请、存储用量 → project-service
             - id: project-service
               uri: lb://zxyz-project-service

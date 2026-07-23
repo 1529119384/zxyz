@@ -8,6 +8,7 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.exception.BusinessException;
 
 import java.time.Duration;
@@ -20,24 +21,31 @@ import java.util.UUID;
 public class WsTicketService {
 
     private static final String TICKET_PREFIX = "ws:ticket:";
-    private static final Duration TICKET_TTL = Duration.ofSeconds(30);
+    /** WebSocket 票据有效期 fallback（30 秒） */
+    private static final int FALLBACK_TICKET_TTL_SECONDS = 30;
 
     private static final RedisScript<String> GETDEL_SCRIPT =
             new DefaultRedisScript<>("local v = redis.call('GET', KEYS[1]); redis.call('DEL', KEYS[1]); return v;", String.class);
 
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
+    private final ConfigGetter configGetter;
+    private final Duration ticketTtl;
 
-    public WsTicketService(StringRedisTemplate stringRedisTemplate, ObjectMapper objectMapper) {
+    public WsTicketService(StringRedisTemplate stringRedisTemplate,
+                           ObjectMapper objectMapper,
+                           ConfigGetter configGetter) {
         this.stringRedisTemplate = stringRedisTemplate;
         this.objectMapper = objectMapper;
+        this.configGetter = configGetter;
+        this.ticketTtl = Duration.ofSeconds(configGetter.getInt("app.im.ws.ticket-ttl-seconds", FALLBACK_TICKET_TTL_SECONDS));
     }
 
     public String createTicket(Long userId, String saToken) {
         try {
             String uuid = UUID.randomUUID().toString();
             String json = objectMapper.writeValueAsString(new TicketInfo(userId, saToken));
-            stringRedisTemplate.opsForValue().set(TICKET_PREFIX + uuid, json, TICKET_TTL);
+            stringRedisTemplate.opsForValue().set(TICKET_PREFIX + uuid, json, ticketTtl);
             return uuid;
         } catch (Exception e) {
             log.warn("Failed to create WebSocket ticket: userId={}", userId, e);

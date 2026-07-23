@@ -1,10 +1,10 @@
 package uno.acloud.audit.service;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import uno.acloud.audit.mapper.OperateLogMapper;
+import uno.acloud.common.config.ConfigGetter;
 
 import java.time.LocalDateTime;
 
@@ -24,9 +24,9 @@ public class AuditLogCleanupService {
     private final int retentionDays;
 
     public AuditLogCleanupService(OperateLogMapper operateLogMapper,
-                                  @Value("${audit.cleanup.retention-days:90}") int retentionDays) {
+                                  ConfigGetter configGetter) {
         this.operateLogMapper = operateLogMapper;
-        this.retentionDays = retentionDays;
+        this.retentionDays = configGetter.getInt("app.audit.retention-days", 90);
     }
 
     @Scheduled(cron = "0 0 3 * * ?")

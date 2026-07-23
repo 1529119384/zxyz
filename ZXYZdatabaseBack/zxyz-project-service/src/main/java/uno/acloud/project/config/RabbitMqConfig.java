@@ -19,6 +19,7 @@ public class RabbitMqConfig {
 
     public static final String QUEUE_FILE_EVENTS = "zxyz.project.file-events";
     public static final String QUEUE_TEAM_MEMBER_EVENTS = "zxyz.project.team-member-events";
+    public static final String QUEUE_USER_EVENTS = "zxyz.project.user-events";
 
     private static final String X_DEAD_LETTER_EXCHANGE = "x-dead-letter-exchange";
     private static final String DLX_EXCHANGE = RabbitMqConstants.DLX_EXCHANGE;
@@ -67,6 +68,20 @@ public class RabbitMqConfig {
     public Binding teamMemberRemovedBinding(Queue teamMemberEventsQueue, TopicExchange topicExchange) {
         return BindingBuilder.bind(teamMemberEventsQueue).to(topicExchange)
                 .with(RabbitMqConstants.ROUTING_KEY_TEAM_MEMBER_REMOVED);
+    }
+
+    @Bean
+    public Queue userEventsQueue() {
+        return QueueBuilder.durable(QUEUE_USER_EVENTS)
+                .withArgument(X_DEAD_LETTER_EXCHANGE, DLX_EXCHANGE)
+                .withArgument("x-message-ttl", MESSAGE_TTL)
+                .build();
+    }
+
+    @Bean
+    public Binding userEventsBinding(Queue userEventsQueue, TopicExchange topicExchange) {
+        return BindingBuilder.bind(userEventsQueue).to(topicExchange)
+                .with(RabbitMqConstants.ROUTING_KEY_USER_DELETED);
     }
 
     @Bean

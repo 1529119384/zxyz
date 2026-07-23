@@ -24,4 +24,13 @@ public interface ProjectQuotaMapper extends BaseMapper<ProjectQuota> {
             LIMIT 1
             """)
     ProjectQuota getByProjectId(@Param("projectId") Long projectId);
+
+    @Select("""
+            SELECT COALESCE(SUM(storage_limit), 0)
+            FROM project_quota pq
+            JOIN project p ON p.id = pq.project_id
+            WHERE p.team_id = #{teamId}
+              AND p.status = 0
+            """)
+    Long selectStorageLimitSumByTeamId(@Param("teamId") Long teamId);
 }

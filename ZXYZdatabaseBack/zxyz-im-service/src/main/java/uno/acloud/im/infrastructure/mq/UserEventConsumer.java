@@ -8,6 +8,7 @@ import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 import uno.acloud.common.RabbitMqConstants;
+import uno.acloud.common.event.UserDeletedEvent;
 import uno.acloud.common.event.UserProfileUpdatedEvent;
 import uno.acloud.im.application.InternalUserProfileSyncService;
 import uno.acloud.im.config.RabbitMqConfig;
@@ -43,15 +44,15 @@ public class UserEventConsumer {
     @RabbitListener(queues = RabbitMqConfig.QUEUE_USER_EVENTS)
     public void handleUserEvent(String message) {
         try {
-            UserProfileUpdatedEvent event = objectMapper.readValue(message, UserProfileUpdatedEvent.class);
-            String eventType = event.eventType();
+            UserProfileUpdatedEvent baseEvent = objectMapper.readValue(message, UserProfileUpdatedEvent.class);
+            String eventType = baseEvent.eventType();
             if (eventType == null || eventType.isEmpty()) {
                 log.warn("MQ: 用户事件消息缺少 eventType 字段，丢弃消息: {}", message);
                 return;
             }
 
             // 幂等性检查：使用 eventType + userId 作为去重 key，防止重复消费
-            long userId = event.userId();
+            long userId = baseEvent.userId();
             String idempotencyKey = IDEMPOTENCY_KEY_PREFIX + eventType + ":" + userId;
             if (!redisTemplate.opsForValue().setIfAbsent(idempotencyKey, "1", IDEMPOTENCY_TTL_HOURS, TimeUnit.HOURS)) {
                 log.warn("MQ: 重复用户事件消息，跳过处理: key={}", idempotencyKey);
@@ -59,9 +60,14 @@ public class UserEventConsumer {
             }
 
             if (RabbitMqConstants.ROUTING_KEY_USER_PROFILE_UPDATED.equals(eventType)) {
+                UserProfileUpdatedEvent event = objectMapper.readValue(message, UserProfileUpdatedEvent.class);
                 InternalUserProfileSyncRequest request = toSyncRequest(event);
                 userProfileSyncService.syncUserProfile(request);
                 log.debug("MQ: 用户资料同步完成: userId={}", userId);
+            } else if (RabbitMqConstants.ROUTING_KEY_USER_DELETED.equals(eventType)) {
+                UserDeletedEvent deletedEvent = objectMapper.readValue(message, UserDeletedEvent.class);
+                userProfileSyncService.removeUserProfile(deletedEvent.userId());
+                log.info("MQ: 用户资料删除同步完成: userId={}", deletedEvent.userId());
             } else {
                 log.debug("MQ: 未知用户事件类型: {}", eventType);
             }

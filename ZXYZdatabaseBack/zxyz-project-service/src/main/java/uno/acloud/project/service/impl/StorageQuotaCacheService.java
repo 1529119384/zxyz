@@ -7,6 +7,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.stereotype.Service;
+import uno.acloud.common.config.ConfigGetter;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -23,13 +24,6 @@ import uno.acloud.project.vo.StorageUsageVO;
 @Service
 public class StorageQuotaCacheService {
 
-    private static final Duration TEAM_STORAGE_LIMIT_TTL = Duration.ofMinutes(10);
-    private static final Duration TEAM_MEMBER_LIST_TTL = Duration.ofMinutes(5);
-    private static final Duration SYSTEM_ADMIN_IDS_TTL = Duration.ofMinutes(5);
-    private static final Duration USAGE_TTL = Duration.ofSeconds(30);
-    private static final Duration USER_TEAM_IDS_TTL = Duration.ofMinutes(5);
-    private static final Duration SYSTEM_ROLES_TTL = Duration.ofMinutes(5);
-
     private static final String KEY_PREFIX = "zxyz:project:quota:";
     private static final String TEAM_STORAGE_LIMIT_KEY = KEY_PREFIX + "team:storage:";
     private static final String TEAM_MEMBER_LIST_KEY = KEY_PREFIX + "team:members:";
@@ -44,15 +38,32 @@ public class StorageQuotaCacheService {
     private final ObjectMapper objectMapper;
     private final TeamServiceClient teamServiceClient;
     private final FileServiceClient fileServiceClient;
+    private final ConfigGetter configGetter;
+
+    // TTL values loaded from hot config (fallback values match previous defaults)
+    private final Duration teamStorageLimitTtl;
+    private final Duration teamMemberListTtl;
+    private final Duration systemAdminIdsTtl;
+    private final Duration usageTtl;
+    private final Duration userTeamIdsTtl;
+    private final Duration systemRolesTtl;
 
     public StorageQuotaCacheService(StringRedisTemplate redisTemplate,
                                     ObjectMapper objectMapper,
                                     TeamServiceClient teamServiceClient,
-                                    FileServiceClient fileServiceClient) {
+                                    FileServiceClient fileServiceClient,
+                                    ConfigGetter configGetter) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.teamServiceClient = teamServiceClient;
         this.fileServiceClient = fileServiceClient;
+        this.configGetter = configGetter;
+        this.teamStorageLimitTtl = Duration.ofMinutes(configGetter.getInt("app.cache.storage-usage-ttl-minutes", 10));
+        this.teamMemberListTtl = Duration.ofMinutes(configGetter.getInt("app.cache.team-permission-ttl-minutes", 5));
+        this.systemAdminIdsTtl = Duration.ofMinutes(configGetter.getInt("app.cache.team-permission-ttl-minutes", 5));
+        this.usageTtl = Duration.ofSeconds(configGetter.getInt("app.cache.storage-usage-ttl-seconds", 30));
+        this.userTeamIdsTtl = Duration.ofMinutes(configGetter.getInt("app.cache.team-permission-ttl-minutes", 5));
+        this.systemRolesTtl = Duration.ofMinutes(configGetter.getInt("app.cache.team-permission-ttl-minutes", 5));
     }
 
     // ==================== Team storage limit ====================
@@ -72,7 +83,7 @@ public class StorageQuotaCacheService {
         }
         Long limit = teamServiceClient.getTeamStorageLimit(teamId);
         try {
-            redisTemplate.opsForValue().set(key, limit == null ? "null" : String.valueOf(limit), TEAM_STORAGE_LIMIT_TTL);
+            redisTemplate.opsForValue().set(key, limit == null ? "null" : String.valueOf(limit), teamStorageLimitTtl);
         } catch (Exception e) {
             log.warn("写入团队存储上限缓存失败: teamId={}", teamId, e);
         }
@@ -96,7 +107,7 @@ public class StorageQuotaCacheService {
         }
         List<Long> members = teamServiceClient.listTeamMemberUserIds(teamId);
         try {
-            redisTemplate.opsForValue().set(key, objectMapper.writeValueAsString(members), TEAM_MEMBER_LIST_TTL);
+            redisTemplate.opsForValue().set(key, objectMapper.writeValueAsString(members), teamMemberListTtl);
         } catch (Exception e) {
             log.warn("写入团队成员列表缓存失败: teamId={}", teamId, e);
         }
@@ -120,7 +131,7 @@ public class StorageQuotaCacheService {
         }
         List<Long> adminIds = teamServiceClient.listSystemAdminUserIds();
         try {
-            redisTemplate.opsForValue().set(key, objectMapper.writeValueAsString(adminIds), SYSTEM_ADMIN_IDS_TTL);
+            redisTemplate.opsForValue().set(key, objectMapper.writeValueAsString(adminIds), systemAdminIdsTtl);
         } catch (Exception e) {
             log.warn("写入系统管理员列表缓存失败", e);
         }
@@ -147,7 +158,7 @@ public class StorageQuotaCacheService {
         }
         long size = fileServiceClient.sumActiveFileSize(userId, teamId, spaceType, projectId);
         try {
-            redisTemplate.opsForValue().set(key, String.valueOf(size), USAGE_TTL);
+            redisTemplate.opsForValue().set(key, String.valueOf(size), usageTtl);
         } catch (Exception e) {
             log.warn("写入活跃文件大小缓存失败: key={}", key, e);
         }
@@ -175,7 +186,7 @@ public class StorageQuotaCacheService {
         }
         long size = fileServiceClient.sumPersonalStorageByUsers(userIds);
         try {
-            redisTemplate.opsForValue().set(key, String.valueOf(size), USAGE_TTL);
+            redisTemplate.opsForValue().set(key, String.valueOf(size), usageTtl);
         } catch (Exception e) {
             log.warn("写入个人存储用量缓存失败: key={}", key, e);
         }
@@ -199,7 +210,7 @@ public class StorageQuotaCacheService {
         }
         List<Long> teamIds = teamServiceClient.listUserTeamIds(userId);
         try {
-            redisTemplate.opsForValue().set(key, objectMapper.writeValueAsString(teamIds), USER_TEAM_IDS_TTL);
+            redisTemplate.opsForValue().set(key, objectMapper.writeValueAsString(teamIds), userTeamIdsTtl);
         } catch (Exception e) {
             log.warn("写入用户团队列表缓存失败: userId={}", userId, e);
         }
@@ -223,7 +234,7 @@ public class StorageQuotaCacheService {
         }
         List<String> roles = teamServiceClient.getSystemRolesByUserId(userId);
         try {
-            redisTemplate.opsForValue().set(key, objectMapper.writeValueAsString(roles), SYSTEM_ROLES_TTL);
+            redisTemplate.opsForValue().set(key, objectMapper.writeValueAsString(roles), systemRolesTtl);
         } catch (Exception e) {
             log.warn("写入用户系统角色缓存失败: userId={}", userId, e);
         }
@@ -260,7 +271,7 @@ public class StorageQuotaCacheService {
                 + ":" + safeLong(userId)
                 + ":" + safeLong(projectId);
         try {
-            redisTemplate.opsForValue().set(key, objectMapper.writeValueAsString(vo), USAGE_TTL);
+            redisTemplate.opsForValue().set(key, objectMapper.writeValueAsString(vo), usageTtl);
         } catch (Exception e) {
             log.warn("写入存储用量 VO 缓存失败: key={}", key, e);
         }

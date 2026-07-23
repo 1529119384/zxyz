@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.domain.event.ImDomainEventType;
 import uno.acloud.im.domain.enums.MessageType;
@@ -27,7 +28,8 @@ import java.util.Set;
 @Service
 public class ImMessageService {
 
-    private static final int MAX_TEXT_LENGTH = 5000;
+    /** IM 消息最大文本长度 fallback */
+    private static final int FALLBACK_MAX_TEXT_LENGTH = 5000;
 
     private final ConversationService conversationService;
     private final ConversationMapper conversationMapper;
@@ -38,6 +40,8 @@ public class ImMessageService {
     private final TeamMapper teamMapper;
     private final SystemNotificationService notificationService;
     private final ImDomainEventPublisher domainEventPublisher;
+    private final ConfigGetter configGetter;
+    private final int maxTextLength;
 
     public ImMessageService(ConversationService conversationService,
                             ConversationMapper conversationMapper,
@@ -47,7 +51,8 @@ public class ImMessageService {
                             TeamMutePolicyService mutePolicyService,
                             TeamMapper teamMapper,
                             SystemNotificationService notificationService,
-                            ImDomainEventPublisher domainEventPublisher) {
+                            ImDomainEventPublisher domainEventPublisher,
+                            ConfigGetter configGetter) {
         this.conversationService = conversationService;
         this.conversationMapper = conversationMapper;
         this.imMessageMapper = imMessageMapper;
@@ -57,6 +62,8 @@ public class ImMessageService {
         this.teamMapper = teamMapper;
         this.notificationService = notificationService;
         this.domainEventPublisher = domainEventPublisher;
+        this.configGetter = configGetter;
+        this.maxTextLength = configGetter.getInt("app.im.message.max-text-length", FALLBACK_MAX_TEXT_LENGTH);
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -179,8 +186,9 @@ public class ImMessageService {
         if (value.isEmpty()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "消息内容不能为空");
         }
-        if (value.length() > MAX_TEXT_LENGTH) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "消息内容长度不能超过 5000");
+        if (value.length() > maxTextLength) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                    "消息内容长度不能超过 " + maxTextLength);
         }
         return value;
     }

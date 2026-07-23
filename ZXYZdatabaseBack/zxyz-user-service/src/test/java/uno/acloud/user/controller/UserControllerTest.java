@@ -8,6 +8,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.UserErrorCode;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.user.config.CookieHelper;
 import uno.acloud.user.dto.LoginRequest;
@@ -22,6 +23,7 @@ import uno.acloud.user.vo.CurrentUserVO;
 import uno.acloud.user.vo.LoginVO;
 import uno.acloud.common.Result;
 import uno.acloud.satoken.AuthServicePort;
+import uno.acloud.user.service.impl.UserAdminService;
 
 import java.util.List;
 import java.util.Optional;
@@ -50,6 +52,9 @@ class UserControllerTest {
     @Mock
     private AuthServicePort authServicePort;
 
+    @Mock
+    private UserAdminService userAdminService;
+
     private UserController userController;
 
     @BeforeEach
@@ -57,7 +62,7 @@ class UserControllerTest {
         userController = new UserController(
                 authService, userProfileService, contactVerificationService,
                 accountLinkingService, cookieHelper, loginRateLimiter, registerRateLimiter,
-                authServicePort);
+                authServicePort, userAdminService);
     }
 
     // ==================== login — valid credentials ====================
@@ -103,11 +108,11 @@ class UserControllerTest {
         httpRequest.setRemoteAddr("127.0.0.1");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
-        when(authService.login(request)).thenThrow(new BusinessException(ErrorCode.LOGIN_FAILED, "用户名或密码错误"));
+        when(authService.login(request)).thenThrow(new BusinessException(UserErrorCode.LOGIN_FAILED, "用户名或密码错误"));
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> userController.login(request, httpRequest, response));
-        assertEquals(ErrorCode.LOGIN_FAILED, ex.getErrorCode());
+        assertEquals(UserErrorCode.LOGIN_FAILED.getCode(), ex.getErrorCode());
 
         // Cookies should NOT be set
         verify(cookieHelper, never()).setAuthCookies(any(), anyString());

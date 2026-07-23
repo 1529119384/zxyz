@@ -8,6 +8,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.user.config.ServiceProperties;
 import uno.acloud.user.dto.ContactVerifyRequest;
@@ -42,6 +43,9 @@ class ContactVerificationServiceTest {
     @Mock
     private UserQueryHelper userQueryHelper;
 
+    @Mock
+    private ConfigGetter configGetter;
+
     private ContactVerificationService contactVerificationService;
 
     private ServiceProperties serviceProperties;
@@ -50,11 +54,12 @@ class ContactVerificationServiceTest {
     void setUp() {
         serviceProperties = new ServiceProperties();
         serviceProperties.getVerification().setReturnCodeInResponse(true);
-        serviceProperties.getEmail().getVerifyCode().setCooldownSeconds(60);
+
+        org.mockito.Mockito.when(configGetter.getInt("app.email.verify-code.cooldown-seconds", 60)).thenReturn(60);
 
         contactVerificationService = new ContactVerificationService(
                 userMapper, stringRedisTemplate, emailServiceMailClient,
-                userQueryHelper, serviceProperties);
+                userQueryHelper, serviceProperties, configGetter);
     }
 
     private User userWithEmail(Long id, String email, boolean emailVerified) {

@@ -12,6 +12,7 @@ import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.web.client.RestClient;
 import uno.acloud.client.ConfigServiceClient;
+import uno.acloud.common.config.ConfigGetter;
 
 /**
  * 配置客户端自动配置。
@@ -48,16 +49,34 @@ public class ConfigClientAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnBean(RestClient.Builder.class)
+    @ConditionalOnMissingBean
+    public ConfigGetter configGetter(
+            RestClient.Builder restClientBuilder,
+            @org.springframework.beans.factory.annotation.Value("${app.admin-service.base-url}") String baseUrl,
+            @org.springframework.beans.factory.annotation.Value("${app.internal-service-token:}") String internalServiceToken,
+            ObjectMapper objectMapper) {
+        return new ConfigGetter(
+                restClientBuilder.build(),
+                baseUrl,
+                internalServiceToken,
+                objectMapper
+        );
+    }
+
+    @Bean
     @ConditionalOnBean(ConfigServiceClient.class)
     public RedisMessageListenerContainer configChangeListener(
             RedisConnectionFactory connectionFactory,
-            ConfigServiceClient configServiceClient) {
+            ConfigServiceClient configServiceClient,
+            ConfigGetter configGetter) {
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();
         container.setConnectionFactory(connectionFactory);
         container.addMessageListener(
                 (message, pattern) -> {
                     String key = new String(message.getBody());
                     configServiceClient.onConfigChanged(key);
+                    configGetter.onConfigChanged(key);
                 },
                 new ChannelTopic(CONFIG_CHANGED_TOPIC)
         );

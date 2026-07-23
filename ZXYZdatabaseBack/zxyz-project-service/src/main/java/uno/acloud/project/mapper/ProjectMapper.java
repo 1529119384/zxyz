@@ -1,6 +1,7 @@
 package uno.acloud.project.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -62,4 +63,7 @@ public interface ProjectMapper extends BaseMapper<Project> {
 
     @Update("UPDATE project SET status = 1, update_time = NOW() WHERE id = #{projectId}")
     int archiveProject(@Param("projectId") Long projectId);
+
+    @Delete("DELETE FROM project_member WHERE user_id = #{userId}")
+    int deleteByUserId(@Param("userId") Long userId);
 }

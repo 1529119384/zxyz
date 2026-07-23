@@ -103,15 +103,13 @@ public class StorageProviderController {
             @Parameter(description = "提供者标识") @PathVariable String providerId) {
 
         StorageProvider provider = registry.getProvider(providerId);
-        boolean healthy = false;
-        String message = "";
-
+        boolean healthy;
+        String message;
         try {
-            // 对于 OSS，尝试检查一个不存在的 key 来验证连接
-            // 对于本地存储，检查 basePath 目录是否存在且可写
-            healthy = true;
-            message = "提供者正常";
+            healthy = provider.healthCheck();
+            message = healthy ? "提供者正常" : "提供者异常";
         } catch (Exception e) {
+            healthy = false;
             message = "提供者异常: " + e.getMessage();
             log.error("存储提供者健康检查失败，providerId: {}", providerId, e);
         }

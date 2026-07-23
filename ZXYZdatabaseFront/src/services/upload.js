@@ -1,11 +1,11 @@
-import { confirmUpload, createFolder, getUploadSign } from '@/api/files'
+import { confirmUpload, createFolder, getUploadSign, directUpload } from '@/api/files'
 import {
   createUploadFailResult,
   normalizeFolderCreateResult,
   normalizeUploadConfirmResult,
 } from '@/models/upload'
 import { getErrorDetail, logUploadError } from '@/utils/error'
-import { uploadToOss } from '@/utils/oss'
+import { uploadToOss, uploadToBackend } from '@/utils/oss'
 import { validateFiles } from '@/utils/fileValidation'
 
 export async function uploadFileWithPresign(file, parentId, onProgress, options = {}) {
@@ -20,6 +20,7 @@ export async function uploadFileWithPresign(file, parentId, onProgress, options 
   let objectKey = ''
   let contentType = ''
   let contentDisposition = ''
+  let directUpload = false
 
   try {
     const signRes = await getUploadSign(file.name)
@@ -27,11 +28,12 @@ export async function uploadFileWithPresign(file, parentId, onProgress, options 
     objectKey = signRes.data.objectKey
     contentType = signRes.data.contentType || ''
     contentDisposition = signRes.data.contentDisposition || ''
+    directUpload = signRes.data.directUpload || false
 
-    if (!contentType) {
+    if (!contentType && !directUpload) {
       throw new Error('Missing contentType from getUploadSign response')
     }
-    if (!contentDisposition) {
+    if (!contentDisposition && !directUpload) {
       throw new Error('Missing contentDisposition from getUploadSign response')
     }
   } catch (error) {
@@ -40,19 +42,37 @@ export async function uploadFileWithPresign(file, parentId, onProgress, options 
   }
 
   try {
-    await uploadToOss(uploadUrl, file, {
-      onUploadProgress: onProgress,
-      contentType,
-      contentDisposition,
-    })
+    if (directUpload) {
+      // 后端直传：直接 POST 到后端 API
+      await uploadToBackend(file, parentId, teamId, spaceType, projectId)
+    } else {
+      // OSS 预签名直传
+      await uploadToOss(uploadUrl, file, {
+        onUploadProgress: onProgress,
+        contentType,
+        contentDisposition,
+      })
+    }
   } catch (error) {
-    logUploadError('upload to oss failed', file, error, {
+    logUploadError('upload failed', file, error, {
       uploadUrl,
       objectKey,
       contentType,
       contentDisposition,
+      directUpload,
     })
-    throw new Error(`上传到 OSS 失败：${getErrorDetail(error)}`)
+    throw new Error(`上传失败：${getErrorDetail(error)}`)
+  }
+
+  // 直传已完成（无需确认），预签名上传需要确认
+  if (directUpload) {
+    return {
+      originalName: file.name,
+      fileSize: file.size,
+      parentId,
+      status: 'success',
+      clientRequestId,
+    }
   }
 
   try {

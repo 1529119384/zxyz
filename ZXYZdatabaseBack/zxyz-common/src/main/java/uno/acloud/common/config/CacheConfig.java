@@ -21,6 +21,7 @@ import java.util.Map;
 
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
 import org.springframework.data.redis.cache.RedisCacheManager;
+import uno.acloud.common.config.ConfigGetter;
 
 /**
  * Spring Cache 抽象层配置，使用 Redis 作为缓存后端。
@@ -43,15 +44,10 @@ import org.springframework.data.redis.cache.RedisCacheManager;
 @EnableCaching
 public class CacheConfig {
 
-    /** 默认缓存 TTL：30 分钟 */
-    private static final Duration DEFAULT_TTL = Duration.ofMinutes(30);
+    private final ConfigGetter configGetter;
 
-    /** 缓存名 → 自定义 TTL 映射 */
-    private static final Map<String, Duration> CUSTOM_TTL = new HashMap<>();
-
-    static {
-        CUSTOM_TTL.put("team-permission", Duration.ofMinutes(5));
-        CUSTOM_TTL.put("project-access", Duration.ofMinutes(10));
+    public CacheConfig(ConfigGetter configGetter) {
+        this.configGetter = configGetter;
     }
 
     @Bean
@@ -66,8 +62,15 @@ public class CacheConfig {
 
         GenericJackson2JsonRedisSerializer jsonSerializer = new GenericJackson2JsonRedisSerializer(om);
 
+        int defaultTtlMinutes = configGetter.getInt("app.cache.default-ttl-minutes", 30);
+        Duration defaultTtl = Duration.ofMinutes(defaultTtlMinutes);
+
+        Map<String, Duration> customTtl = new HashMap<>();
+        customTtl.put("team-permission", Duration.ofMinutes(configGetter.getInt("app.cache.team-permission-ttl-minutes", 5)));
+        customTtl.put("project-access", Duration.ofMinutes(configGetter.getInt("app.cache.project-access-ttl-minutes", 10)));
+
         RedisCacheConfiguration defaultConfig = RedisCacheConfiguration.defaultCacheConfig()
-                .entryTtl(DEFAULT_TTL)
+                .entryTtl(defaultTtl)
                 .serializeKeysWith(
                         RedisSerializationContext.SerializationPair.fromSerializer(new StringRedisSerializer()))
                 .serializeValuesWith(
@@ -75,7 +78,7 @@ public class CacheConfig {
                 .disableCachingNullValues();
 
         Map<String, RedisCacheConfiguration> configMap = new HashMap<>();
-        CUSTOM_TTL.forEach((name, ttl) ->
+        customTtl.forEach((name, ttl) ->
                 configMap.put(name, defaultConfig.entryTtl(ttl)));
 
         return RedisCacheManager.builder(connectionFactory)

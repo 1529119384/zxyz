@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.UserErrorCode;
 import uno.acloud.common.InputNormalizer;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.common.oss.AvatarUploadSignRequest;
@@ -103,7 +104,7 @@ public class UserProfileService {
         String oldPassword = optionalText(request.getOldPassword());
         String newPassword = optionalText(request.getNewPassword());
         if (!userQueryHelper.passwordMatched(oldPassword, dbUser)) {
-            throw new BusinessException(ErrorCode.LOGIN_FAILED, "当前密码错误");
+            throw new BusinessException(UserErrorCode.LOGIN_FAILED, "当前密码错误");
         }
         userQueryHelper.requireUpdated(userMapper.updatePassword(userId, passwordEncoder.encode(newPassword)));
         return userQueryHelper.requireCurrentUser(userId);

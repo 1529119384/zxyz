@@ -74,12 +74,13 @@ public abstract class AbstractServiceClient {
                 .failureRateThreshold(50)
                 .waitDurationInOpenState(Duration.ofSeconds(30))
                 .build());
-        // 重试在外层，熔断在内层：每次重试都经过熔断器判断
         return retry.executeSupplier(() -> cb.executeSupplier(() -> {
             try {
                 return action.get();
             } catch (BusinessException e) {
                 throw e;
+            } catch (RestClientResponseException e) {
+                throw parseErrorResponse(e, serviceName() + "调用失败: " + e.getStatusCode());
             } catch (Exception e) {
                 throw new BusinessException(ErrorCode.SYSTEM_ERROR,
                         serviceName() + "调用失败: " + e.getMessage());
@@ -123,6 +124,32 @@ public abstract class AbstractServiceClient {
                     .retrieve()
                     .body(String.class);
             return readJsonNode(body);
+        });
+    }
+
+    /**
+     * 发送 JSON GET 请求，404 响应时返回 null（不抛出异常）。
+     * <p>适用于资源可能不存在的查询场景，避免调用方额外处理 HTTP 404。</p>
+     *
+     * @param path        请求路径模板（相对于 baseUrl）
+     * @param uriVariables URI 模板变量值
+     * @return 响应 JSON 根节点；404 时返回 null
+     */
+    protected JsonNode getJsonOptional(String path, Object... uriVariables) {
+        return executeWithResilience(() -> {
+            try {
+                String body = restClient.get()
+                        .uri(baseUrl + path, uriVariables)
+                        .headers(this::internalHeaders)
+                        .retrieve()
+                        .body(String.class);
+                return readJsonNode(body);
+            } catch (RestClientResponseException e) {
+                if (e.getStatusCode().value() == 404) {
+                    return null;
+                }
+                throw parseErrorResponse(e, serviceName() + "请求失败: " + path);
+            }
         });
     }
 

@@ -21,25 +21,33 @@ export function useFileDownload(options) {
   async function getDownloadUrl(row) {
     const response = await getFileDownloadUrl(row.id)
     const downloadUrl = response?.data?.downloadUrl
+    const directDownload = response?.data?.directDownload
+    const fileName = response?.data?.fileName || row.fileName || row.originalName
 
     if (!downloadUrl) {
       throw new Error('未获取到下载链接')
     }
 
-    return downloadUrl
+    return { downloadUrl, directDownload, fileName }
   }
 
   async function downloadFile(row) {
-    const downloadUrl = await getDownloadUrl(row)
+    const { downloadUrl, directDownload, fileName } = await getDownloadUrl(row)
     if (!downloadUrl) {
       return
     }
 
-    await downloadBlobByUrl(downloadUrl, row.fileName)
+    if (directDownload) {
+      // 直传下载：直接使用预签名 URL
+      await downloadBlobByUrl(downloadUrl, fileName)
+    } else {
+      // 流式下载：调用后端流式下载接口
+      await downloadBlobByUrl(downloadUrl, fileName)
+    }
   }
 
   async function copyDownloadLink(row) {
-    const downloadUrl = await getDownloadUrl(row)
+    const { downloadUrl } = await getDownloadUrl(row)
     if (!downloadUrl) {
       return
     }
