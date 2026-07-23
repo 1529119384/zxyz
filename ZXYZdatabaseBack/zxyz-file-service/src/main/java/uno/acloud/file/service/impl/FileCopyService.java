@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.FileDeleteStatus;
+import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.file.infrastructure.entity.FileItem;
 import uno.acloud.file.infrastructure.entity.FileNode;
@@ -25,8 +26,9 @@ public class FileCopyService {
     /**
      * Maximum number of file/folder nodes allowed in a single copy transaction.
      * Beyond this limit the operation is rejected to avoid excessively long transactions.
+     * <p>可通过热配置 {@code app.file.copy.max-nodes-per-transaction} 动态调整。</p>
      */
-    private static final int MAX_COPY_NODES_PER_TRANSACTION = 500;
+    private static final int FALLBACK_MAX_COPY_NODES_PER_TRANSACTION = 500;
 
     private final FileMapper fileMapper;
     private final FileDomainValidator fileDomainValidator;
@@ -35,6 +37,8 @@ public class FileCopyService {
     private final FileObjectReferenceManager fileObjectReferenceService;
     private final FileOperationHelper helper;
     private final TransactionTemplate transactionTemplate;
+    private final ConfigGetter configGetter;
+    private final int maxCopyNodesPerTransaction;
 
     public FileCopyService(FileMapper fileMapper,
                            FileDomainValidator fileDomainValidator,
@@ -42,7 +46,8 @@ public class FileCopyService {
                            FileAccessGuard fileAccessGuardService,
                            FileObjectReferenceManager fileObjectReferenceService,
                            FileOperationHelper helper,
-                           TransactionTemplate transactionTemplate) {
+                           TransactionTemplate transactionTemplate,
+                           ConfigGetter configGetter) {
         this.fileMapper = fileMapper;
         this.fileDomainValidator = fileDomainValidator;
         this.filePathResolver = filePathResolver;
@@ -50,6 +55,8 @@ public class FileCopyService {
         this.fileObjectReferenceService = fileObjectReferenceService;
         this.helper = helper;
         this.transactionTemplate = transactionTemplate;
+        this.configGetter = configGetter;
+        this.maxCopyNodesPerTransaction = configGetter.getInt("app.file.copy.max-nodes-per-transaction", FALLBACK_MAX_COPY_NODES_PER_TRANSACTION);
     }
 
     public BatchOperationDetailVO copyFiles(List<Long> fileIds, Long targetParentId, Long requestedTeamId, Long userId) {
@@ -84,9 +91,9 @@ public class FileCopyService {
 
         // Guard: reject excessively large copy operations to avoid long-running transactions
         int totalNodes = topLevelNodes.size() + childrenMap.values().stream().mapToInt(List::size).sum();
-        if (totalNodes > MAX_COPY_NODES_PER_TRANSACTION) {
+        if (totalNodes > this.maxCopyNodesPerTransaction) {
             throw new BusinessException(ErrorCode.BAD_REQUEST,
-                    "单次复制文件数量过多（" + totalNodes + "），请分批操作（上限 " + MAX_COPY_NODES_PER_TRANSACTION + "）");
+                    "单次复制文件数量过多（" + totalNodes + "），请分批操作（上限 " + this.maxCopyNodesPerTransaction + "）");
         }
 
         return executeCopyInTransaction(topLevelNodes, targetParentId, target, targetFolder, childrenMap, userId);
