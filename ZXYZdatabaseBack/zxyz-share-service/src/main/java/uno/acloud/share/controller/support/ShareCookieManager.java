@@ -11,12 +11,15 @@ import org.springframework.stereotype.Component;
 import uno.acloud.share.infrastructure.entity.Share;
 
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
+import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
 import java.util.Objects;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 @Component
 public class ShareCookieManager {
@@ -61,12 +64,13 @@ public class ShareCookieManager {
 
     public String buildAccessToken(Share share, String cookieSecret) {
         String raw = share.getShareKey() + "|" + StringUtils.defaultString(share.getPassword()) + "|" + share.getUserId()
-                + "|" + share.getCreateTime() + "|" + cookieSecret;
+                + "|" + share.getCreateTime();
         try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(raw.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 not available", e);
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(cookieSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            return HexFormat.of().formatHex(mac.doFinal(raw.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException | InvalidKeyException e) {
+            throw new IllegalStateException("HmacSHA256 not available", e);
         }
     }
 

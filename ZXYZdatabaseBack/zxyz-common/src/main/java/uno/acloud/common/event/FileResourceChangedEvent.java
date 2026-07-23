@@ -14,7 +14,9 @@ public record FileResourceChangedEvent(
         Long parentId,
         String storePath,
         Integer deleted,
-        LocalDateTime modifyTime
+        LocalDateTime modifyTime,
+        Long teamId,
+        Long projectId
 ) implements BaseEvent.EventBody {
 
     public FileResourceChangedEvent {
@@ -24,6 +26,12 @@ public record FileResourceChangedEvent(
 
     public static FileResourceChangedEvent of(String eventType, Long fileId, Long parentId,
                                                String storePath, Integer deleted, LocalDateTime modifyTime) {
-        return new FileResourceChangedEvent(eventType, 0, 0, fileId, parentId, storePath, deleted, modifyTime);
+        return new FileResourceChangedEvent(eventType, 0, 0, fileId, parentId, storePath, deleted, modifyTime, null, null);
+    }
+
+    public static FileResourceChangedEvent of(String eventType, Long fileId, Long parentId,
+                                               String storePath, Integer deleted, LocalDateTime modifyTime,
+                                               Long teamId, Long projectId) {
+        return new FileResourceChangedEvent(eventType, 0, 0, fileId, parentId, storePath, deleted, modifyTime, teamId, projectId);
     }
 }

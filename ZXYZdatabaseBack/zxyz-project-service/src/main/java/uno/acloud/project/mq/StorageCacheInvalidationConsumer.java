@@ -31,8 +31,21 @@ public class StorageCacheInvalidationConsumer {
     @RabbitListener(queues = RabbitMqConfig.QUEUE_FILE_EVENTS)
     public void handleFileEvent(String message) {
         try {
-            cacheService.invalidateAllUsageCaches();
-            log.debug("文件资源变更事件已处理，存储用量缓存已失效");
+            // 解析 teamId 做定向缓存失效，避免全量清除导致雪崩
+            Long teamId = null;
+            try {
+                com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(message);
+                teamId = root.path("teamId").asLong(0);
+                if (teamId <= 0) teamId = null;
+            } catch (Exception ignored) {
+            }
+            if (teamId != null) {
+                cacheService.invalidateTeamCache(teamId);
+                log.debug("文件资源变更事件已处理，团队缓存已失效: teamId={}", teamId);
+            } else {
+                cacheService.invalidateAllUsageCaches();
+                log.debug("文件资源变更事件已处理，存储用量缓存已全量失效");
+            }
         } catch (Exception e) {
             log.error("处理文件资源变更事件失败（将重试）", e);
             throw new RuntimeException("处理文件资源变更事件失败", e);

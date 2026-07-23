@@ -119,8 +119,9 @@ public class ShareManager {
             return new ShareMyListResponseVO(total, List.<ShareMyListItemVO>of());
         }
 
-        List<ShareMyListItemVO> rows = shareMapper.listPageByUserId(userId, offset, safePageSize).stream()
-                .map(shareStatusCalculator::refreshStatusIfNeeded)
+        List<Share> shares = shareMapper.listPageByUserId(userId, offset, safePageSize);
+        shareStatusCalculator.batchRefreshStatusIfNeeded(shares);
+        List<ShareMyListItemVO> rows = shares.stream()
                 .map(this::toShareMyListItemVO)
                 .collect(Collectors.toList());
         return new ShareMyListResponseVO(total, rows);
@@ -170,11 +171,9 @@ public class ShareManager {
     }
 
     public String buildShareUrl(String shareKey, String password, boolean autoFillPassword) {
-        String baseUrl = StringUtils.removeEnd(shareProperties.getFrontendBaseUrl(), "/") + SHARE_PATH_PREFIX + shareKey;
-        if (autoFillPassword && StringUtils.isNotBlank(password)) {
-            return baseUrl + "?psw=" + password;
-        }
-        return baseUrl;
+        // 安全修复：不再将密码嵌入 URL 查询参数（避免密码出现在浏览器历史、日志、Referer 头中）。
+        // 密码通过 buildShareMessage() 在复制文本中单独展示。
+        return StringUtils.removeEnd(shareProperties.getFrontendBaseUrl(), "/") + SHARE_PATH_PREFIX + shareKey;
     }
 
     private boolean resolveNeedPassword(ShareCreateRequest request) {

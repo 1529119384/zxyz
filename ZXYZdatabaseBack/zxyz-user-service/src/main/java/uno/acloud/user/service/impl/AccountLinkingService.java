@@ -48,6 +48,7 @@ public class AccountLinkingService {
                 .toList();
     }
 
+    @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
     public LinkedAccountVO trustLinkedAccount(Long userId, Long targetUserId, LinkedAccountTrustRequest request) {
         requireLinkedTarget(userId, targetUserId);
         User target = userQueryHelper.requireExistingUser(targetUserId);
@@ -69,6 +70,8 @@ public class AccountLinkingService {
         Long targetId = target.getId();
         String targetUsername = target.getUsername();
         teamServicePermissionClient.ensureDefaultRole(targetId, targetUsername);
+        // 先销毁目标用户旧 session，避免多个 session 同时有效
+        authSessionService.logout(targetId);
         String token = authSessionService.createLoginSession(
                 targetId,
                 targetUsername,

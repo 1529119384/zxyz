@@ -240,7 +240,12 @@ public class FileLifecycleService implements FileLifecyclePort {
             if (parentId == null || parentId == -1L || !checkedParentIds.add(parentId)) {
                 continue;
             }
+            int depth = 0;
             while (parentId != null && parentId != -1L) {
+                if (depth++ > 1000) {
+                    log.warn("cleanupOrphanFolders: exceeded max depth for parentId={}, possible circular reference", parentId);
+                    break;
+                }
                 if (fileMapper.countActiveChildren(parentId) == 0) {
                     fileMapper.reallyDeleteByIds(List.of(parentId), userId);
                     log.info("清理孤立父文件夹: parentId={}", parentId);

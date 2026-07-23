@@ -13,6 +13,9 @@ import uno.acloud.file.infrastructure.mapper.FileMapper;
 import uno.acloud.file.infrastructure.oss.OSSMetadataUpdater;
 import uno.acloud.file.vo.RenameFileVO;
 
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -86,34 +89,15 @@ public class FileRenameService {
     }
 
     private String validateRenameName(String newName) {
-        if (newName == null) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "newName 不能为空");
-        }
-        String normalizedName = newName.trim();
-        if (normalizedName.isEmpty()) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "newName 不能为空");
-        }
-        if (normalizedName.length() > 100) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "newName 长度不能超过 100");
-        }
-        if (normalizedName.contains("/") || normalizedName.contains("\\")) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "文件名不能包含路径分隔符");
-        }
-        if (".".equals(normalizedName) || "..".equals(normalizedName)) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "文件名不能为 . 或 ..");
-        }
-        if (normalizedName.matches(".*[<>&\"'].*")) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "文件名不能包含特殊字符");
-        }
-        return normalizedName;
+        return fileDomainValidator.validateInputName(newName);
     }
 
     private void validateFinalOriginalName(String originalName) {
         if (originalName == null || originalName.isBlank()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "文件名不能为空");
         }
-        if (originalName.length() > 100) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "文件名长度不能超过 100");
+        if (originalName.length() > 255) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "文件名长度不能超过 255");
         }
     }
 
@@ -144,7 +128,21 @@ public class FileRenameService {
         if (updatedRows != 1) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "重命名文件失败");
         }
-        ossMetadataUpdater.updateDownloadFileName(fileItem.getUuidName(), finalOriginalName);
+        String uuidName = fileItem.getUuidName();
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    try {
+                        ossMetadataUpdater.updateDownloadFileName(uuidName, finalOriginalName);
+                    } catch (Exception e) {
+                        log.warn("Failed to update OSS metadata after rename for uuidName={}: {}", uuidName, e.getMessage());
+                    }
+                }
+            });
+        } else {
+            ossMetadataUpdater.updateDownloadFileName(uuidName, finalOriginalName);
+        }
     }
 
     private void renameFolderTree(Folder folder, String finalOriginalName, String newStorePath) {

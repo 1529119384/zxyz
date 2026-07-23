@@ -28,4 +28,9 @@ public class SaTokenAuthSessionService implements AuthSessionPort {
         authServicePort.setSessionAttribute(userId, EXTRA_PERMISSION, permissions);
         return authServicePort.getTokenValue();
     }
+
+    @Override
+    public void logout(Long userId) {
+        authServicePort.logout(userId);
+    }
 }

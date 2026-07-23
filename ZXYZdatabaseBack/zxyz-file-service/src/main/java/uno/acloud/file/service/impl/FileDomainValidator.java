@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
 public class FileDomainValidator {
 
     private final FileMapper fileMapper;
-    private final java.util.Map<String, List<String>> nameCache = new java.util.HashMap<>();
+    private final java.util.Map<String, List<String>> nameCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     public List<Long> normalizeFileIds(List<Long> fileIds) {
         if (fileIds == null || fileIds.isEmpty()) {
@@ -160,8 +160,8 @@ public class FileDomainValidator {
         if (normalizedName.isEmpty()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "文件名不能为空");
         }
-        if (normalizedName.length() > 100) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "文件名长度不能超过 100");
+        if (normalizedName.length() > 255) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "文件名长度不能超过 255");
         }
         if (normalizedName.contains("/") || normalizedName.contains("\\")) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "文件名不能包含路径分隔符");
@@ -169,7 +169,7 @@ public class FileDomainValidator {
         if (".".equals(normalizedName) || "..".equals(normalizedName)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "文件名不能为 . 或 ..");
         }
-        if (normalizedName.matches(".*[<>&\"'].*")) {
+        if (normalizedName.matches(".*[<>&\"':*?|].*")) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "文件名不能包含特殊字符");
         }
         return normalizedName;

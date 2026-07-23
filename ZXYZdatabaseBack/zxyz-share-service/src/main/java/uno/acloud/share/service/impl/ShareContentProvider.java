@@ -67,6 +67,8 @@ public class ShareContentProvider {
                 .collect(Collectors.toList());
     }
 
+    // TODO: 当前路径解析对每个路径段发起独立 HTTP 调用（N+1），建议在 file-service
+    // 新增批量子文件查询 API，一次获取所有路径段的子文件列表，减少 HTTP 调用次数。
     private FileInfoDTO resolveSharedFolderByPath(List<FileInfoDTO> sharedRoots, String normalizedPath) {
         List<String> segments = shareInputNormalizer.splitPath(normalizedPath);
         if (segments.isEmpty()) {

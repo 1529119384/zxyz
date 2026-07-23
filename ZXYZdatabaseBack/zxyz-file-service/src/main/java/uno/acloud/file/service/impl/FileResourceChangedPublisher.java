@@ -71,7 +71,9 @@ public class FileResourceChangedPublisher {
                     snapshot.getParentId(),
                     snapshot.getStorePath(),
                     snapshot.getDeleted(),
-                    snapshot.getModifyTime()
+                    snapshot.getModifyTime(),
+                    snapshot.getTeamId(),
+                    null
             );
             publish(eventType, event);
         }

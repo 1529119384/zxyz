@@ -41,6 +41,7 @@ import uno.acloud.user.vo.CurrentUserVO;
 import uno.acloud.user.vo.LinkedAccountVO;
 import uno.acloud.user.vo.LoginVO;
 import uno.acloud.user.vo.UserSearchItemVO;
+import uno.acloud.common.audit.Log;
 import uno.acloud.satoken.AuthServicePort;
 
 import java.util.List;
@@ -48,6 +49,9 @@ import java.util.List;
 @Slf4j
 @RestController
 @RequestMapping("/api/users")
+// TODO(P2-26): 用户注销/删除缺少跨服务数据清理流程。需实现 MQ 事件驱动的跨服务清理：
+// 1. 发布 user.deleted 事件；2. file-service 清理用户文件；3. share-service 清理用户分享；
+// 4. im-service 清理用户消息；5. team-service 清理用户团队成员关系。
 @Tag(name = "用户管理", description = "用户注册、登录、资料管理")
 public class UserController {
 
@@ -78,6 +82,7 @@ public class UserController {
         this.authServicePort = authServicePort;
     }
 
+    @Log
     @Operation(summary = "用户登录")
     @PostMapping("/login")
     public Result<LoginVO> login(@Valid @RequestBody LoginRequest request,
@@ -100,6 +105,7 @@ public class UserController {
         return Result.success();
     }
 
+    @Log
     @Operation(summary = "用户注册")
     @PostMapping("/register")
     public Result<String> register(@Valid @RequestBody RegisterRequest request,

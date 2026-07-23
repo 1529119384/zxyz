@@ -34,9 +34,9 @@ public class ShareCleanupClient extends AbstractServiceClient {
             postJson("/api/internal/shares/cleanup-by-files",
                     objectMapper().createObjectNode().putPOJO("fileIds", fileIds));
         } catch (RestClientResponseException e) {
-            log.warn("调用分享服务清理分享条目失败: {}", e.getResponseBodyAsString());
+            log.error("调用分享服务清理分享条目失败(重试已耗尽): {}", e.getResponseBodyAsString());
         } catch (Exception e) {
-            log.warn("调用分享服务清理分享条目失败", e);
+            log.error("调用分享服务清理分享条目失败(重试已耗尽)", e);
         }
     }
 }

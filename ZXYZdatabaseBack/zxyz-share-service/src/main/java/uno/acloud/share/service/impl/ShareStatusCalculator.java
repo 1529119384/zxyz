@@ -9,6 +9,7 @@ import uno.acloud.share.infrastructure.entity.Share;
 import uno.acloud.share.infrastructure.mapper.ShareMapper;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Objects;
 
 @Component
@@ -57,5 +58,19 @@ public class ShareStatusCalculator {
 
     public int defaultZero(Integer value) {
         return value == null ? 0 : value;
+    }
+
+    /**
+     * 批量刷新状态：先计算所有状态，再批量更新需要变更的记录，避免 N+1 写入。
+     */
+    public List<Share> batchRefreshStatusIfNeeded(List<Share> shares) {
+        for (Share share : shares) {
+            int nextStatus = calculateShareStatus(share);
+            if (!Objects.equals(share.getStatus(), nextStatus)) {
+                shareMapper.updateStatusByIdAndCurrentStatus(share.getId(), share.getStatus(), nextStatus);
+                share.setStatus(nextStatus);
+            }
+        }
+        return shares;
     }
 }

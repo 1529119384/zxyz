@@ -14,6 +14,11 @@ import uno.acloud.file.infrastructure.mapper.FileObjectRefMapper;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -139,5 +144,68 @@ class FileObjectReferenceManagerTest {
         );
         // Ensure decrement was called only once (deduplicated)
         verify(fileObjectRefMapper, times(1)).decrementReference(anyString(), anyInt(), anyString());
+    }
+
+    // ---- 并发测试 ----
+
+    @Test
+    void releaseReferences_concurrentReleasesDoNotCorruptState() throws InterruptedException {
+        int threadCount = 10;
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch startLatch = new CountDownLatch(1);
+        AtomicInteger successCount = new AtomicInteger(0);
+
+        // 每次 decrementReference 返回 1（表示成功释放）
+        when(fileObjectRefMapper.decrementReference(eq("oss-concurrent"), eq(1), eq(FileObjectDeleteStatus.ACTIVE)))
+                .thenReturn(1);
+
+        for (int i = 0; i < threadCount; i++) {
+            executor.submit(() -> {
+                try {
+                    startLatch.await();
+                    manager.releaseReferences(List.of("oss-concurrent"));
+                    successCount.incrementAndGet();
+                } catch (Exception ignored) {
+                }
+            });
+        }
+
+        startLatch.countDown(); // 所有线程同时开始
+        executor.shutdown();
+        assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
+
+        // 验证 decrementReference 被调用了 threadCount 次
+        verify(fileObjectRefMapper, times(threadCount))
+                .decrementReference("oss-concurrent", 1, FileObjectDeleteStatus.ACTIVE);
+    }
+
+    @Test
+    void releaseReferences_concurrentDuplicateKeysAreGroupedPerThread() throws InterruptedException {
+        // 每个线程释放相同的 key，但各线程内部的 groupingBy 是独立的
+        int threadCount = 5;
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch startLatch = new CountDownLatch(1);
+
+        when(fileObjectRefMapper.decrementReference(eq("oss-grouped"), eq(2), eq(FileObjectDeleteStatus.ACTIVE)))
+                .thenReturn(1);
+
+        for (int i = 0; i < threadCount; i++) {
+            executor.submit(() -> {
+                try {
+                    startLatch.await();
+                    // 每个线程释放两个相同的 key
+                    manager.releaseReferences(List.of("oss-grouped", "oss-grouped"));
+                } catch (Exception ignored) {
+                }
+            });
+        }
+
+        startLatch.countDown();
+        executor.shutdown();
+        assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
+
+        // 每个线程内 groupingBy 会将两个相同 key 合并为一次 decrement(count=2)
+        verify(fileObjectRefMapper, times(threadCount))
+                .decrementReference("oss-grouped", 2, FileObjectDeleteStatus.ACTIVE);
     }
 }

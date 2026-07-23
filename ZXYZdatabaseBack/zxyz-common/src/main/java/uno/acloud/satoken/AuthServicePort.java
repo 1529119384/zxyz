@@ -88,6 +88,13 @@ public interface AuthServicePort {
      */
     void logout();
 
+    /**
+     * 注销指定用户的登录会话（强制踢出）。
+     *
+     * @param userId 用户 ID
+     */
+    void logout(long userId);
+
     // ---- Session operations ----
 
     /**

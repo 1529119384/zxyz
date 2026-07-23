@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import uno.acloud.common.Result;
+import uno.acloud.common.audit.Log;
 import uno.acloud.common.SystemPermissionCodes;
 import uno.acloud.common.web.CurrentUser;
 import uno.acloud.share.dto.ShareCreateRequest;
@@ -33,6 +34,7 @@ public class ShareController {
 
     private final SharePort shareService;
 
+    @Log
     @PostMapping
     @Operation(summary = "创建分享链接")
     @SaCheckPermission(SystemPermissionCodes.SHARE_CREATE)

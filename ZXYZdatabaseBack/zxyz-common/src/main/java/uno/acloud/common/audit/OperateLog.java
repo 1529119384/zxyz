@@ -30,5 +30,7 @@ public class OperateLog implements Serializable {
     private String methodName;
     private String methodParams;
     private String returnValue;
+    private String beforeValue;
+    private String afterValue;
     private Long costTime;
 }

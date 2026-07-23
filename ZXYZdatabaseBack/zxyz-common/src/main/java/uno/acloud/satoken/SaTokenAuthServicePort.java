@@ -58,6 +58,11 @@ public class SaTokenAuthServicePort implements AuthServicePort {
         StpUtil.logout();
     }
 
+    @Override
+    public void logout(long userId) {
+        StpUtil.logout(userId);
+    }
+
     // ---- Session operations ----
 
     @Override

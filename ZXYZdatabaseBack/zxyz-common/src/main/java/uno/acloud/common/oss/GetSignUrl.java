@@ -3,6 +3,7 @@ package uno.acloud.common.oss;
 import com.aliyun.sdk.service.oss2.OSSClient;
 import com.aliyun.sdk.service.oss2.PresignOptions;
 import com.aliyun.sdk.service.oss2.models.GetObjectRequest;
+import com.aliyun.sdk.service.oss2.models.GetObjectResult;
 import com.aliyun.sdk.service.oss2.models.HeadObjectRequest;
 import com.aliyun.sdk.service.oss2.models.PresignResult;
 import com.aliyun.sdk.service.oss2.models.PutObjectRequest;
@@ -12,12 +13,14 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.http.MediaTypeFactory;
 import org.springframework.stereotype.Component;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.util.FileNameUtil;
 import uno.acloud.common.util.oss.OssContentDispositionUtil;
 import uno.acloud.exception.BusinessException;
 
 import java.time.Instant;
 import java.util.Locale;
-import java.util.Set;
+
+import static uno.acloud.common.util.FileNameUtil.BLOCKED_EXTENSIONS;
 
 @Slf4j
 @Component
@@ -27,12 +30,6 @@ public class GetSignUrl {
     @Value("${app.oss.sign-expire-seconds:3600}")
     private long signExpireSeconds;
     private static final String DEFAULT_CONTENT_TYPE = "application/octet-stream";
-
-    private static final Set<String> BLOCKED_EXTENSIONS = Set.of(
-            ".exe", ".bat", ".cmd", ".scr", ".pif", ".com",
-            ".js", ".vbs", ".vbe", ".ps1", ".psm1", ".msi",
-            ".wsf", ".wsh", ".hta", ".cpl", ".msc", ".reg"
-    );
 
     private final OSSProperties ossProperties;
     private final OSSClient ossClient;
@@ -144,6 +141,32 @@ public class GetSignUrl {
             return response.contentLength();
         } catch (Exception e) {
             log.warn("获取 OSS 对象大小失败，objectKey: {}", objectKey, e);
+            return null;
+        }
+    }
+
+    /**
+     * 读取 OSS 对象的前 N 个字节，用于 magic bytes 文件类型检测。
+     * 失败时返回 null（不影响上传流程）。
+     */
+    public byte[] readFirstBytes(String objectKey, int maxBytes) {
+        if (objectKey == null || objectKey.isBlank()) {
+            return null;
+        }
+        try {
+            GetObjectRequest request = GetObjectRequest.newBuilder()
+                    .bucket(ossProperties.getBucket())
+                    .key(objectKey)
+                    .build();
+            GetObjectResult result = ossClient.getObject(request);
+            byte[] buffer = new byte[maxBytes];
+            int bytesRead = result.body().read(buffer);
+            if (bytesRead <= 0) {
+                return null;
+            }
+            return bytesRead == maxBytes ? buffer : java.util.Arrays.copyOf(buffer, bytesRead);
+        } catch (Exception e) {
+            log.debug("读取 OSS 对象头部字节失败，objectKey: {}", objectKey);
             return null;
         }
     }

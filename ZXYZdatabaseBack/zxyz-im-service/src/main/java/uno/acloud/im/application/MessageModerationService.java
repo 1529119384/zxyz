@@ -72,7 +72,7 @@ public class MessageModerationService {
 
         String reason = request == null ? null : optionalText(request.getReason());
         if (imMessageMapper.recallMessage(messageId, operatorUserId, reason) != 1) {
-            throw new BusinessException(ErrorCode.TEAM_INVITATION_INVALID, "消息状态已变化");
+            throw new BusinessException(ErrorCode.CONCURRENT_OPERATION, "消息状态已变化");
         }
         ImMessage recalled = imMessageMapper.getById(messageId);
         MessageRecallVO recall = new MessageRecallVO(

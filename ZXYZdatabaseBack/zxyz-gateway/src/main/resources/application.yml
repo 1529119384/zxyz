@@ -118,6 +118,9 @@ spring:
               uri: lb://zxyz-project-service
               predicates:
                 - Path=/api/admin/database/**
+              filters:
+                - RewritePath=/api/admin/database(?<segment>/?.*), /api/database/internal${segment}
+                - AddRequestHeader=X-Internal-Service-Token, ${INTERNAL_SERVICE_TOKEN}
 
             # 管理后台通用路由：/api/admin/** → admin-service（剥离 /api/admin 前缀）
             - id: admin-service

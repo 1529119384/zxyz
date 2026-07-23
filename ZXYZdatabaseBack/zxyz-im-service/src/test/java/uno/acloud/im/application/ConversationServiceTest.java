@@ -182,4 +182,48 @@ class ConversationServiceTest {
         assertEquals(1, result.size());
         assertEquals(10L, result.get(0).getId());
     }
+
+    // ---- requireWritableConversation tests ----
+
+    @Test
+    void requireWritableConversation_shouldPassWhenNotReadOnly() {
+        ImConversation conversation = new ImConversation();
+        conversation.setId(10L);
+        conversation.setReadOnly(Boolean.FALSE);
+        when(conversationMapper.getConversationById(10L)).thenReturn(conversation);
+
+        assertDoesNotThrow(() -> service.requireWritableConversation(10L));
+    }
+
+    @Test
+    void requireWritableConversation_shouldThrowWhenReadOnly() {
+        ImConversation conversation = new ImConversation();
+        conversation.setId(10L);
+        conversation.setReadOnly(Boolean.TRUE);
+        when(conversationMapper.getConversationById(10L)).thenReturn(conversation);
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> service.requireWritableConversation(10L));
+
+        assertEquals(ErrorCode.TEAM_PERMISSION_DENIED, ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("归档"));
+    }
+
+    @Test
+    void requireWritableConversation_shouldPassWhenConversationNotFound() {
+        when(conversationMapper.getConversationById(99L)).thenReturn(null);
+
+        // conversation 不存在时不抛异常（后续业务逻辑会处理）
+        assertDoesNotThrow(() -> service.requireWritableConversation(99L));
+    }
+
+    @Test
+    void requireWritableConversation_shouldPassWhenReadOnlyIsNull() {
+        ImConversation conversation = new ImConversation();
+        conversation.setId(10L);
+        conversation.setReadOnly(null);
+        when(conversationMapper.getConversationById(10L)).thenReturn(conversation);
+
+        assertDoesNotThrow(() -> service.requireWritableConversation(10L));
+    }
 }

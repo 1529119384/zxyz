@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.AllArgsConstructor;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import uno.acloud.common.util.MaskingSerializer;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -28,7 +30,9 @@ public class User implements Serializable {
     private String name;
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String password;
+    @JsonSerialize(using = MaskingSerializer.class)
     private String email;
+    @JsonSerialize(using = MaskingSerializer.class)
     private String phone;
     private String avatar;
     private Boolean emailVerified;

@@ -101,7 +101,9 @@ public class FileCopyService {
         FileOperationHelper.CopyTargetContext rootTargetContext = new FileOperationHelper.CopyTargetContext(targetParentId, target);
         List<BatchOperationDetailVO.ItemDetail> details = new ArrayList<>();
 
-        List<List<FileNode>> batches = partition(topLevelNodes, 100);
+        // 注意：分批独立事务，后续批次失败时前面批次已提交（部分成功语义）。
+        // 调用方应通过返回的 BatchOperationDetailVO 中的 status 字段判断每个节点的处理结果。
+        List<List<FileNode>> batches = partition(topLevelNodes, 30);
         for (List<FileNode> batch : batches) {
             try {
                 transactionTemplate.executeWithoutResult(status -> {

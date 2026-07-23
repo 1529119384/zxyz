@@ -41,7 +41,8 @@ public interface FileMapper {
                     @Result(column = "parent_id", property = "parentId"),
                     @Result(column = "create_time", property = "createTime"),
                     @Result(column = "modify_time", property = "modifyTime"),
-                    @Result(column = "deleted", property = "deleted")
+                    @Result(column = "deleted", property = "deleted"),
+                    @Result(column = "storage_provider", property = "storageProvider")
             }
     )
     @TypeDiscriminator(
@@ -61,10 +62,10 @@ public interface FileMapper {
                     @Case(value = "0", type = Folder.class)
             }
     )
-    @Select("SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted FROM file_node WHERE id = #{fileId}")
+    @Select("SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider FROM file_node WHERE id = #{fileId}")
     FileNode getFileNodeById(Long fileId);
 
-    @Select("SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted FROM file_node WHERE id = #{fileId} AND deleted = 0")
+    @Select("SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider FROM file_node WHERE id = #{fileId} AND deleted = 0")
     FileNode getActiveFileNodeById(Long fileId);
 
     @Select("SELECT COUNT(*) FROM file_node WHERE parent_id = #{parentId} AND deleted = 0")
@@ -75,7 +76,7 @@ public interface FileMapper {
 
     @Select({
             "<script>",
-            "SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted FROM file_node WHERE id IN",
+            "SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider FROM file_node WHERE deleted = 0 AND id IN",
             "<foreach collection='fileIds' item='fileId' open='(' separator=',' close=')'>",
             "#{fileId}",
             "</foreach>",
@@ -84,9 +85,11 @@ public interface FileMapper {
     @ResultMap("fileNodeResultMap")
     List<FileNode> getFileNodesByIds(@Param("fileIds") List<Long> fileIds);
 
+    // TODO(P3-08): 当前文件列表查询加载目录所有子项到内存并 Java 排序，无 LIMIT。
+    // 建议添加 LIMIT/OFFSET 分页，将 ORDER BY 推入 SQL，避免大目录内存溢出。
     @Select({
             "<script>",
-            "SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted",
+            "SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider",
             "FROM file_node",
             "WHERE parent_id = #{parentId} AND deleted = 0",
             "<choose>",
@@ -117,7 +120,47 @@ public interface FileMapper {
 
     @Select({
             "<script>",
-            "SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, deleted_user_id, parent_id, create_time, modify_time, deleted",
+            "SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider",
+            "FROM file_node",
+            "WHERE parent_id = #{parentId} AND deleted = 0",
+            "<choose>",
+            "  <when test='spaceType != null and spaceType == 3'>AND space_type = 3 AND project_id = #{projectId}</when>",
+            "  <when test='teamId == null'>AND (space_type IS NULL OR space_type = 1) AND team_id IS NULL AND (#{userId} IS NULL OR upload_user_id = #{userId})</when>",
+            "  <otherwise>AND team_id = #{teamId}</otherwise>",
+            "</choose>",
+            "ORDER BY file_type DESC, original_name ASC",
+            "LIMIT #{limit} OFFSET #{offset}",
+            "</script>"
+    })
+    @ResultMap("fileNodeResultMap")
+    List<FileNode> getFileNodesByParentIdPaged(@Param("parentId") Long parentId,
+                                               @Param("teamId") Long teamId,
+                                               @Param("spaceType") Integer spaceType,
+                                               @Param("projectId") Long projectId,
+                                               @Param("userId") Long userId,
+                                               @Param("limit") int limit,
+                                               @Param("offset") int offset);
+
+    @Select({
+            "<script>",
+            "SELECT COUNT(*) FROM file_node",
+            "WHERE parent_id = #{parentId} AND deleted = 0",
+            "<choose>",
+            "  <when test='spaceType != null and spaceType == 3'>AND space_type = 3 AND project_id = #{projectId}</when>",
+            "  <when test='teamId == null'>AND (space_type IS NULL OR space_type = 1) AND team_id IS NULL AND (#{userId} IS NULL OR upload_user_id = #{userId})</when>",
+            "  <otherwise>AND team_id = #{teamId}</otherwise>",
+            "</choose>",
+            "</script>"
+    })
+    int countByParentId(@Param("parentId") Long parentId,
+                        @Param("teamId") Long teamId,
+                        @Param("spaceType") Integer spaceType,
+                        @Param("projectId") Long projectId,
+                        @Param("userId") Long userId);
+
+    @Select({
+            "<script>",
+            "SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider",
             "FROM file_node",
             "WHERE parent_id = #{parentId}",
             "<choose>",
@@ -135,14 +178,14 @@ public interface FileMapper {
         return getChildrenByParentIdWithDeleted(parentId, null, null);
     }
 
-    @Select("SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted FROM file_node WHERE parent_id = #{parentId}")
+    @Select("SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider FROM file_node WHERE parent_id = #{parentId}")
     @ResultMap("fileNodeResultMap")
     List<FileNode> getShareChildrenByParentIdWithDeleted(@Param("parentId") Long parentId);
 
     @Select({
             "<script>",
             "SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path,",
-            "       upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted",
+            "       upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider",
             "FROM file_node f",
             "WHERE f.deleted = 1",
             "  AND NOT EXISTS (",
@@ -193,7 +236,7 @@ public interface FileMapper {
             "WITH RECURSIVE descendants AS (",
             "    SELECT id, file_type, uuid_name, original_name, category, file_size, file_url,",
             "           store_path, upload_user_id, shared_user_id, team_id, space_type, project_id,",
-            "           deleted_user_id, parent_id, create_time, modify_time, deleted",
+            "           deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider",
             "    FROM file_node",
             "    WHERE parent_id IN",
             "    <foreach collection='parentIds' item='parentId' open='(' separator=',' close=')'>",
@@ -203,12 +246,12 @@ public interface FileMapper {
             "    UNION ALL",
             "    SELECT c.id, c.file_type, c.uuid_name, c.original_name, c.category, c.file_size, c.file_url,",
             "           c.store_path, c.upload_user_id, c.shared_user_id, c.team_id, c.space_type, c.project_id,",
-            "           c.deleted_user_id, c.parent_id, c.create_time, c.modify_time, c.deleted",
+            "           c.deleted_user_id, c.parent_id, c.create_time, c.modify_time, c.deleted, c.storage_provider",
             "    FROM file_node c",
             "    INNER JOIN descendants d ON c.parent_id = d.id",
             "    WHERE c.deleted = 0",
             ")",
-            "SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted FROM descendants",
+            "SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider FROM descendants",
             "</script>"
     })
     @ResultMap("fileNodeResultMap")

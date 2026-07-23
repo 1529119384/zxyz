@@ -53,7 +53,7 @@ public abstract class AbstractLogAspect {
         String returnValue = truncate(serializeResult(result));
         long costTime = end - start;
         OperateLog operateLog = new OperateLog(null, getServiceName(), operateUserId, operateTime,
-                className, methodName, methodParams, returnValue, costTime);
+                className, methodName, methodParams, returnValue, null, null, costTime);
         auditEventPublisher.publish(operateLog);
         return result;
     }

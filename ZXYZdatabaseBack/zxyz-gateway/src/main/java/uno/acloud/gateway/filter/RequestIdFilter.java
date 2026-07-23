@@ -2,6 +2,7 @@ package uno.acloud.gateway.filter;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
@@ -45,6 +46,8 @@ public class RequestIdFilter implements GlobalFilter, Ordered {
                 exchange.getRequest().getMethod(),
                 exchange.getRequest().getURI().getPath());
 
-        return chain.filter(mutatedExchange);
+        MDC.put("requestId", finalRequestId);
+        return chain.filter(mutatedExchange)
+                .doFinally(signal -> MDC.remove("requestId"));
     }
 }

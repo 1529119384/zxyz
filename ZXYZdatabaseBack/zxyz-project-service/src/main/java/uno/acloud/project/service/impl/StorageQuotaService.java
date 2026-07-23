@@ -18,10 +18,14 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 @Service
 public class StorageQuotaService implements StorageQuotaPort {
+
+    private static final ExecutorService QUOTA_EXECUTOR = Executors.newFixedThreadPool(4);
 
     private final FileServiceClient fileServiceClient;
     private final UserQuotaClient userQuotaClient;
@@ -149,9 +153,9 @@ public class StorageQuotaService implements StorageQuotaPort {
     private PersonalLimitContext resolvePersonalLimitContext(Long userId) {
         // C6: Pre-warm cache — fetch system roles and user team IDs in parallel
         CompletableFuture<List<String>> rolesFuture = CompletableFuture.supplyAsync(
-                () -> cacheService.getSystemRolesByUserId(userId));
+                () -> cacheService.getSystemRolesByUserId(userId), QUOTA_EXECUTOR);
         CompletableFuture<List<Long>> teamIdsFuture = CompletableFuture.supplyAsync(
-                () -> cacheService.listUserTeamIds(userId));
+                () -> cacheService.listUserTeamIds(userId), QUOTA_EXECUTOR);
         CompletableFuture.allOf(rolesFuture, teamIdsFuture).join();
 
         if (rolesFuture.join().contains(SystemRoleCodes.SYSTEM_ADMIN)) {

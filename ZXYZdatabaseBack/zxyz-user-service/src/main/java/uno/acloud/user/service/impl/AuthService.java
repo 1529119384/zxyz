@@ -44,7 +44,7 @@ public class AuthService {
         Long userId = dbUser.getId();
         String username = dbUser.getUsername();
         teamServicePermissionClient.ensureDefaultRole(userId, username);
-        log.info("用户 {} 登录成功", username);
+        log.info("用户 {} 登录成功", uno.acloud.common.util.LogMaskingUtil.maskUsername(username));
         return authSessionService.createLoginSession(
                 userId,
                 username,

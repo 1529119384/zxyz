@@ -2,6 +2,8 @@ package uno.acloud.common;
 
 import org.springframework.http.HttpStatus;
 
+// TODO(P3-01): 当前使用 int 常量，建议逐步迁移到领域特定枚举（UserErrorCode、ShareErrorCode 等），
+// 提高类型安全性和 IDE 自动补全支持。迁移需分批进行，先新增枚举类，再逐步替换 int 引用。
 public final class ErrorCode {
 
     // ===== 通用 =====

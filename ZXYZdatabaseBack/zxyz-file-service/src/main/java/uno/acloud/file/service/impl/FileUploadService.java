@@ -18,6 +18,7 @@ import uno.acloud.file.infrastructure.entity.FileItem;
 import uno.acloud.common.oss.GetSignUrl;
 import uno.acloud.file.service.FileUploadPort;
 import uno.acloud.common.util.FileNameUtil;
+import static uno.acloud.common.util.FileNameUtil.BLOCKED_EXTENSIONS;
 import uno.acloud.file.util.FileTypeUtil;
 import uno.acloud.file.vo.BatchUploadConfirmResultVO;
 import uno.acloud.common.oss.OssSignInfo;
@@ -37,12 +38,6 @@ import java.util.Set;
 public class FileUploadService implements FileUploadPort {
 
     private static final String FILE_OBJECT_PREFIX = "files/";
-
-    private static final Set<String> BLOCKED_EXTENSIONS = Set.of(
-            ".exe", ".bat", ".cmd", ".scr", ".pif", ".com",
-            ".js", ".vbs", ".vbe", ".ps1", ".psm1", ".msi",
-            ".wsf", ".wsh", ".hta", ".cpl", ".msc", ".reg"
-    );
 
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of(
             // 文档
@@ -202,9 +197,11 @@ public class FileUploadService implements FileUploadPort {
             if (e.getStatusCode().value() == 403) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "存储空间不足");
             }
-            log.warn("调用存储配额校验失败: {}", e.getResponseBodyAsString());
+            log.error("调用存储配额校验失败(status={}): {}", e.getStatusCode().value(), e.getResponseBodyAsString(), e);
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "存储配额校验服务异常，请稍后重试");
         } catch (Exception e) {
-            log.warn("调用存储配额校验失败", e);
+            log.error("调用存储配额校验失败", e);
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "存储配额校验服务不可用，请稍后重试");
         }
     }
 
@@ -328,7 +325,13 @@ public class FileUploadService implements FileUploadPort {
         FileItem fileItem = FileItem.create();
         fileItem.setUuidName(uuidName);
         fileItem.setOriginalName(originalName);
-        fileItem.setCategory(FileTypeUtil.classify(null, originalName));
+        // 从 OSS 读取文件头部字节用于 magic bytes 类型检测
+        java.io.InputStream magicStream = null;
+        byte[] firstBytes = getSignUrl.readFirstBytes(uuidName, 28);
+        if (firstBytes != null) {
+            magicStream = new java.io.ByteArrayInputStream(firstBytes);
+        }
+        fileItem.setCategory(FileTypeUtil.classify(magicStream, originalName));
         fileItem.setFileSize(fileSize);
         fileItem.setStorePath(filePathResolver.buildStorePath(parentId, originalName));
         fileItem.setFileUrl(fileUrl);

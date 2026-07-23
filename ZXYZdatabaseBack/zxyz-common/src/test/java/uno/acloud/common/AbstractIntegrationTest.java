@@ -29,7 +29,7 @@ import org.springframework.test.context.DynamicPropertySource;
 @Tag("integration")
 public abstract class AbstractIntegrationTest {
 
-    static final MySQLContainer<?> mysql = new MySQLContainer<>(DockerImageName.parse("mysql:8.0"))
+    static final MySQLContainer<?> mysql = new MySQLContainer<>(DockerImageName.parse("mysql:8.4"))
             .withDatabaseName("test")
             .withUsername("test")
             .withPassword("test")
