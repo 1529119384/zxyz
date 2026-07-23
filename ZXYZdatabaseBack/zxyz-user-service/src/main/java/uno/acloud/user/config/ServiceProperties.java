@@ -12,7 +12,6 @@ public class ServiceProperties {
     private String internalServiceToken;
     private final AuthCookie auth = new AuthCookie();
     private final Verification verification = new Verification();
-    private final EmailConfig email = new EmailConfig();
 
     public ServiceUrl getTeamService() {
         return teamService;
@@ -40,10 +39,6 @@ public class ServiceProperties {
 
     public Verification getVerification() {
         return verification;
-    }
-
-    public EmailConfig getEmail() {
-        return email;
     }
 
     public static class ServiceUrl {
@@ -104,26 +99,6 @@ public class ServiceProperties {
 
         public void setReturnCodeInResponse(boolean returnCodeInResponse) {
             this.returnCodeInResponse = returnCodeInResponse;
-        }
-    }
-
-    public static class EmailConfig {
-        private final VerifyCode verifyCode = new VerifyCode();
-
-        public VerifyCode getVerifyCode() {
-            return verifyCode;
-        }
-
-        public static class VerifyCode {
-            private long cooldownSeconds = 60;
-
-            public long getCooldownSeconds() {
-                return cooldownSeconds;
-            }
-
-            public void setCooldownSeconds(long cooldownSeconds) {
-                this.cooldownSeconds = cooldownSeconds;
-            }
         }
     }
 }

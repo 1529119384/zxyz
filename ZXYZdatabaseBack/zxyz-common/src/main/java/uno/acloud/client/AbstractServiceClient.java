@@ -28,6 +28,9 @@ import java.util.function.Supplier;
  *
  * <p>构造参数由子类从各自的 {@code ServiceProperties} 注入后传入，
  * 基类不使用 {@code @Value}，避免与子类配置来源冲突。</p>
+ *
+ * <p>Resilience4j 参数（重试 3 次/500ms、熔断 10 窗口/50%/30s）属于基础设施层常量，
+ * 不在热配置消费范围内，不接入 ConfigGetter。</p>
  */
 @Slf4j
 public abstract class AbstractServiceClient {

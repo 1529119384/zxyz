@@ -9,6 +9,7 @@
 - [1. 环境要求](#1-环境要求)
 - [2. 服务架构总览](#2-服务架构总览)
 - [3. 快速部署步骤](#3-快速部署步骤)
+- [3.1 自托管 Runner 安装（CI/CD 加速）](#31-自托管-runner-安装cicd-加速)
 - [4. 环境变量详解](#4-环境变量详解)
 - [5. 数据库初始化说明](#5-数据库初始化说明)
 - [6. Dockerfile 解析](#6-dockerfile-解析)
@@ -17,6 +18,7 @@
 - [9. 常见问题排查](#9-常见问题排查)
 - [10. 生产环境部署建议](#10-生产环境部署建议)
 - [11. 维护与更新操作](#11-维护与更新操作)
+- [12. 阿里云 ACR 镜像仓库配置](#12-阿里云-acr-镜像仓库配置)
 
 ---
 
@@ -170,6 +172,74 @@ curl http://localhost:${HTTP_PORT:-80}/actuator/health
 
 所有容器的 `STATUS` 显示为 `healthy` 后，在浏览器访问 `http://服务器IP` 即可打开前端页面。
 
+
+### 3.1 自托管 Runner 安装（CI/CD 加速）
+
+GitHub-hosted Runner 在国内存在队列等待和 Docker 层缓存丢失问题。将 Runner 安装到部署服务器上可显著缩短 CI/CD 耗时。
+
+**前提条件**：
+- 服务器已安装 Docker Engine 20.10+ 和 Docker Compose 2.0+
+- 服务器 CPU >= 2 核，内存 >= 4 GB（构建 Java 镜像需要 ~2GB）
+- 服务器已安装 Git
+
+**安装步骤**：
+
+```bash
+# 1. 创建 runner 用户（建议不要用 root）
+useradd -m -s /bin/bash github-runner
+usermod -aG docker github-runner
+su - github-runner
+
+# 2. 下载 runner 包（从 GitHub 仓库 Settings -> Actions -> Runners 获取最新版本）
+mkdir actions-runner && cd actions-runner
+curl -o actions-runner-linux-x64.tar.gz -L \
+  https://github.com/actions/runner/releases/download/v2.321.0/actions-runner-linux-x64-2.321.0.tar.gz
+tar xzf actions-runner-linux-x64.tar.gz
+
+# 3. 配置并注册 runner
+./config.sh --url https://github.com/1529119384/zxyz --token <TOKEN>
+
+# 4. 安装并启动 systemd 服务
+sudo ./svc.sh install github-runner
+sudo ./svc.sh start
+
+# 5. 验证状态
+sudo systemctl status actions.runner.1529119384.zxyz
+```
+
+**获取 Token**：GitHub 仓库 -> Settings -> Actions -> Runners -> New runner -> 复制 token。
+
+**CI/CD 配置变更**：
+
+在 `.github/workflows/ci-cd.yml` 中将需要自托管的 job `runs-on` 改为 `self-hosted`：
+
+```yaml
+jobs:
+  build-and-push:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ZXYZdatabaseBack/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/zxyz-project-service:${{ inputs.tag }}
+```
+
+**注意事项**：
+- 自托管 Runner 执行的是仓库代码，请确保仓库权限可控
+- 构建时 CPU/内存占用较高，建议在低峰期推送
+- Runner 更新：重新下载新版本包后执行 `./svc.sh stop && ./config.sh ... && ./svc.sh start`
+- 若服务器重启，Runner 会自动恢复（systemd 服务）
+
+---
 ### 3.5 停止与清理
 
 ```bash
@@ -825,4 +895,102 @@ cp backups/redis_20260608_030000.rdb data/redis/dump.rdb
 
 # 3. 启动
 docker compose start
+```
+
+---
+
+## 12. 阿里云 ACR 镜像仓库配置
+
+### 12.1 注册阿里云容器镜像服务
+
+1. 登录 [阿里云容器镜像服务控制台](https://cr.console.aliyun.com)
+2. 创建命名空间（如 `zxyz`）
+3. 在命名空间下创建以下仓库：
+   - `zxyz-project-service`
+   - `zxyz-im-service`
+   - `zxyz-email-service`
+   - `zxyz-user-service`
+   - `zxyz-share-service`
+   - `zxyz-file-service`
+   - `zxyz-team-service`
+   - `zxyz-audit-service`
+   - `zxyz-gateway`
+   - `zxyz-frontend-nginx`
+4. 在仓库的「镜像加速器」或「访问凭证」中获取用户名和密码
+
+### 12.2 GitHub Secrets 配置
+
+在 GitHub 仓库 Settings → Secrets and variables → Actions 中添加：
+
+| Secret 名称 | 说明 |
+|---|---|
+| `ACR_USERNAME` | 阿里云 ACR 用户名（通常是阿里云账号名或 RAM 子账号） |
+| `ACR_PASSWORD` | 阿里云 ACR 密码或 AccessKey |
+
+### 12.3 CI/CD 配置变更
+
+修改 `.github/workflows/ci-cd.yml`：
+
+1. 镜像前缀改为 ACR 地址：
+```yaml
+env:
+  IMAGE_PREFIX: registry.cn-shenzhen.aliyuncs.com/zxyz/
+```
+
+2. 登录步骤改为 ACR：
+```yaml
+- name: Login to ACR
+  uses: docker/login-action@v3
+  with:
+    registry: registry.cn-shenzhen.aliyuncs.com
+    username: ${{ secrets.ACR_USERNAME }}
+    password: ${{ secrets.ACR_PASSWORD }}
+```
+
+3. 镜像标签改为 ACR 地址：
+```yaml
+tags: |
+  registry.cn-shenzhen.aliyuncs.com/zxyz/${{ matrix.name }}:${{ tag }}
+```
+
+### 12.4 服务器配置
+
+服务器 `/www/zxyz/.env` 更新：
+
+```bash
+IMAGE_PREFIX=registry.cn-shenzhen.aliyuncs.com/zxyz/
+```
+
+服务器 Docker 登录 ACR：
+
+```bash
+docker login registry.cn-shenzhen.aliyuncs.com -u <ACR_USERNAME> -p <ACR_PASSWORD>
+```
+
+若服务器在国内网络，建议配置 Docker 镜像加速器（`/etc/docker/daemon.json`）：
+
+```json
+{
+  "registry-mirrors": [
+    "https://registry.cn-shenzhen.aliyuncs.com"
+  ]
+}
+```
+
+修改后重启 Docker：
+
+```bash
+sudo systemctl restart docker
+```
+
+### 12.5 快速切换脚本
+
+使用 `scripts/setup-acr.sh` 一键切换 CI/CD 和本地配置到 ACR：
+
+```bash
+# 切换镜像源到 ACR
+./scripts/setup-acr.sh enable
+
+# 切换回 GHCR
+./scripts/setup-acr.sh disable
 ```

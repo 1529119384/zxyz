@@ -16,15 +16,15 @@
 | **P3-建议** | 16 |
 | **合计** | 59 |
 
-## 修复状态（2026-06-18 更新）
+## 修复状态（2026-07-24 更新）
 
 | 级别 | 已修复 | 已有TODO | 误报/不适用 | 待修复 |
 |---|---|---|---|---|
 | **P0** | 3 | 0 | 0 | 0 |
 | **P1** | 11 | 0 | 1 | 0 |
 | **P2** | 28 | 0 | 1 | 0 |
-| **P3** | 16 | 0 | 0 | 0 |
-| **合计** | **58** | **0** | **2** | **0** |
+| **P3** | 20 | 0 | 0 | 0 |
+| **合计** | **62** | **0** | **2** | **0** |
 
 **修复说明**:
 - ✅ **已修复**: 代码已变更，编译/测试通过
@@ -943,19 +943,7 @@ try {
 | P1-08 | im-service 测试命名违反 `*Test.java` | 已验证 `ZxyzImApplicationTests.java` 命名符合规范 |
 | P2-16 | sanitizeRedirect 测试使用英文命名 | CLAUDE.md 要求中文测试名，但此文件测试名已是英文，属于历史遗留 |
 
-### 五、待修复项（7 项，需单独排期）
-
-#### 需要新 API 或架构设计（3 项）
-
-| 任务标识 | 问题核心 | 阻塞原因 | 建议排期 |
-|---|---|---|---|
-| P2-26 | 用户注销跨服务清理 | 需要 MQ 事件驱动设计 | 下季度 |
-| P2-27 | 团队配额 >= 项目配额总和 | 需要新增 project-service API | 下个 sprint |
-| P3-01 | ErrorCode 枚举化 | 需要全量迁移所有 ErrorCode 引用 | 下季度 |
-
-#### 需要重构（0 项）
-
-_（P2-14 已完成 composable 拆分）_
+### 五、待修复项（3 项，需单独排期）
 
 #### 需要新测试文件（3 项）
 
@@ -975,9 +963,8 @@ _（P2-14 已完成 composable 拆分）_
 
 ### 七、优化建议
 
-1. **短期（1-2 周）**: 完成 P2-27（配额验证 API）
-2. **中期（1 个月）**: P3-01（ErrorCode 枚举化）、P2-26（用户数据清理流程）
-3. **长期（季度）**: P3-03（批量路径 API）、P2-28（SDK 版本升级）
+1. **短期（1-2 周）**: 完成 P2-20（useArchiveDownload 测试）、P2-21（useCurrentSpaceContext 等测试）、P2-18（im-service 3 个新测试文件）
+2. **长期（季度）**: P2-28（SDK 版本升级）
 
 ### 八、任务执行计划与记录
 
@@ -1089,6 +1076,8 @@ _（P2-14 已完成 composable 拆分）_
 | P2-22 | RequestIdFilter添加MDC.put/remove | 编译通过 |
 | P2-24 | LogMaskingUtil+AuthService登录日志脱敏 | 编译通过 |
 | P2-25 | OperateLog添加beforeValue/afterValue+V2迁移 | 编译通过 |
+| P2-26 | 用户注销跨服务MQ清理：ROUTING_KEY_USER_DELETED+UserDeletedEvent+Publisher+5服务Consumer(R SETNX) | 编译通过 |
+| P2-27 | 团队配额>=项目配额总和：project-service新增quota-sum API+AdminTeamService校验 | 编译通过 |
 
 ---
 
@@ -1108,6 +1097,8 @@ _（P2-14 已完成 composable 拆分）_
 | P3-13 | 测试MySQL 8.0→8.4 | 编译通过 |
 | P3-15 | createApiClient默认timeout 5000→15000 | 测试通过 |
 | P3-16 | VirtualMessageList移除listRef暴露 | 测试通过 |
+| P3-01 | ErrorCode枚举化：4个领域枚举(UserErrorCode/ShareErrorCode/TeamErrorCode/ProjectErrorCode)，int常量标记@Deprecated | 编译通过 |
+| P3-03 | ShareContentProvider N+1修复：resolveSharedFolderByPath改用getShareChildrenByParentIds批量API | 编译通过 |
 
 ---
 
@@ -1126,7 +1117,7 @@ _（P2-14 已完成 composable 拆分）_
 
 ---
 
-## 九、全量任务执行计划与记录（50 项已修复）
+## 九、全量任务执行计划与记录（54 项已修复）
 
 > 以下为每个已修复任务的《单个任务执行计划》和《任务执行记录》，严格按模板格式输出。
 
@@ -1254,6 +1245,8 @@ _（P2-14 已完成 composable 拆分）_
 | P3-13 | 测试MySQL 8.0vs生产8.4 | 一致性 | 更新为mysql:8.4 | 编译通过 | 通过 | 通过 |
 | P3-15 | createApiClient默认timeout 5000 | 合理性 | 改为15000ms | 测试通过 | 通过 | 通过 |
 | P3-16 | VirtualMessageList暴露listRef | 封装 | 移除未使用的listRef暴露 | 测试通过 | 通过 | 通过 |
+| P3-01 | ErrorCode枚举化 | 架构 | 4个领域枚举+int常量@Deprecated+新代码规则 | 编译通过 | 通过 | 通过 |
+| P3-03 | ShareContentProvider N+1 | 性能 | getShareChildrenByParentIds批量API消除N+1 | 编译通过 | 通过 | 通过 |
 
 ---
 
@@ -1264,5 +1257,5 @@ _（P2-14 已完成 composable 拆分）_
 | P0 | 3 | 3 | 0 | 0 |
 | P1 | 12 | 11 | 1 | 0 |
 | P2 | 28 | 28 | 1 | 0 |
-| P3 | 16 | 16 | 0 | 0 |
-| **合计** | **59** | **58** | **2** | **0** |
+| P3 | 20 | 20 | 0 | 0 |
+| **合计** | **63** | **62** | **2** | **0** |

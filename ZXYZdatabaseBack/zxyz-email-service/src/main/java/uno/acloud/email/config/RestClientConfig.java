@@ -9,6 +9,11 @@ import org.springframework.web.client.RestClient;
 import java.net.http.HttpClient;
 import java.time.Duration;
 
+/**
+ * RestClient 基础设施配置。
+ * <p>仅配置 HTTP 连接超时和读取超时，属于基础设施层参数，
+ * 不在热配置消费范围内（不接入 ConfigGetter）。</p>
+ */
 @Configuration
 public class RestClientConfig {
 
