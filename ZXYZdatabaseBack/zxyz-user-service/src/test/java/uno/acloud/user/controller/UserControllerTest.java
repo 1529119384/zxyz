@@ -176,11 +176,11 @@ class UserControllerTest {
         httpRequest.setRemoteAddr("127.0.0.1");
 
         when(authService.register(request))
-                .thenThrow(new BusinessException(ErrorCode.USERNAME_EXISTS, "用户名已存在"));
+                .thenThrow(new BusinessException(UserErrorCode.USERNAME_EXISTS, "用户名已存在"));
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> userController.register(request, httpRequest));
-        assertEquals(ErrorCode.USERNAME_EXISTS, ex.getErrorCode());
+        assertEquals(UserErrorCode.USERNAME_EXISTS.getCode(), ex.getErrorCode());
     }
 
     // ==================== register — rate limited ====================

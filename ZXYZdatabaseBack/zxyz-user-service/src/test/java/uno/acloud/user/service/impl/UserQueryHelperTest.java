@@ -6,7 +6,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import uno.acloud.common.ErrorCode;
+import uno.acloud.common.UserErrorCode;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.user.entity.User;
 import uno.acloud.user.mapper.UserMapper;
@@ -37,7 +37,7 @@ class UserQueryHelperTest {
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> userQueryHelper.requireExistingUser(99L));
-        assertEquals(ErrorCode.USER_NOT_FOUND, ex.getErrorCode());
+        assertEquals(UserErrorCode.USER_NOT_FOUND.getCode(), ex.getErrorCode());
     }
 
     @Test
@@ -89,7 +89,7 @@ class UserQueryHelperTest {
     void requireUpdated_throwsWhenZeroRows() {
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> userQueryHelper.requireUpdated(0));
-        assertEquals(ErrorCode.USER_NOT_FOUND, ex.getErrorCode());
+        assertEquals(UserErrorCode.USER_NOT_FOUND.getCode(), ex.getErrorCode());
     }
 
     @Test
