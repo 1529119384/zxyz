@@ -30,6 +30,11 @@ on:
         required: false
         type: boolean
         default: false
+      fast_deploy:
+        description: '快速部署（跳过部署健康检查等待）'
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -64,6 +69,7 @@ jobs:
       docker-config: ${{ steps.filter.outputs.docker-config }}
       backend-any: ${{ steps.backend-any.outputs.changed }}
       tag: ${{ steps.tag.outputs.tag }}
+      skip_quality: ${{ steps.skip-quality.outputs.skip_quality }}
     steps:
       - uses: actions/checkout@v4
 
@@ -136,6 +142,15 @@ jobs:
             echo "tag=dev" >> $GITHUB_OUTPUT
           fi
 
+      - name: Determine skip quality
+        id: skip-quality
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/dev" ] && [ "${{ github.event_name }}" = "push" ]; then
+            echo "skip_quality=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip_quality=false" >> $GITHUB_OUTPUT
+          fi
+
   # ============================================================
   # Job 2a: 前端质量检查（与后端并行）
   # ============================================================
@@ -143,7 +158,8 @@ jobs:
     needs: detect-changes
     if: |
       needs.detect-changes.outputs.frontend == 'true' &&
-      !(github.event_name == 'workflow_dispatch' && github.event.inputs.skip_quality == 'true')
+      !(github.event_name == 'workflow_dispatch' && github.event.inputs.skip_quality == 'true') &&
+      needs.detect-changes.outputs.skip_quality != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -171,7 +187,8 @@ jobs:
     needs: detect-changes
     if: |
       needs.detect-changes.outputs.backend-any == 'true' &&
-      !(github.event_name == 'workflow_dispatch' && github.event.inputs.skip_quality == 'true')
+      !(github.event_name == 'workflow_dispatch' && github.event.inputs.skip_quality == 'true') &&
+      needs.detect-changes.outputs.skip_quality != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -336,6 +353,7 @@ jobs:
         uses: appleboy/ssh-action@v1
         env:
           SSH_KEY: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') && secrets.PROD_SSH_KEY || secrets.DEV_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
+          FAST_DEPLOY: ${{ github.event.inputs.fast_deploy || 'false' }}
           BACKEND_COMMON: ${{ needs.detect-changes.outputs.backend-common }}
           PROJECT_SVC: ${{ needs.detect-changes.outputs.project-service }}
           IM_SVC: ${{ needs.detect-changes.outputs.im-service }}
@@ -355,7 +373,7 @@ jobs:
           key: ${{ env.SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
           timeout: 600s
-          envs: BACKEND_COMMON,PROJECT_SVC,IM_SVC,EMAIL_SVC,USER_SVC,SHARE_SVC,FILE_SVC,TEAM_SVC,AUDIT_SVC,ADMIN_SVC,GATEWAY_SVC,FRONTEND_SVC,DOCKER_CFG
+          envs: BACKEND_COMMON,PROJECT_SVC,IM_SVC,EMAIL_SVC,USER_SVC,SHARE_SVC,FILE_SVC,TEAM_SVC,AUDIT_SVC,ADMIN_SVC,GATEWAY_SVC,FRONTEND_SVC,DOCKER_CFG,FAST_DEPLOY
           script: |
             #!/bin/bash
             set +e
@@ -423,32 +441,38 @@ jobs:
             echo "===== Restarting services ====="
             docker compose up -d $UP_FLAGS "${UPDATE_SVC[@]}"
 
-            # --- 分层健康检查 ---
-            # 普通服务：6 次 × 5s = 30s
-            echo "===== Waiting for common services ====="
-            for i in $(seq 1 6); do
-              if ! docker compose ps 2>/dev/null | grep -qE "(im-service|email-service|user-service|share-service|file-service|team-service|audit-service|admin-service|frontend-nginx).*(unhealthy|starting)"; then
-                echo "Common services ready"
-                break
-              fi
-              if [ "$i" -eq 6 ]; then
-                echo "WARN: Common services not all healthy, continuing"
-              fi
-              sleep 5
-            done
+            # --- 健康检查（fast_deploy 时跳过） ---
+            if [ "$FAST_DEPLOY" = "true" ]; then
+              echo "===== Fast deploy: skipping health checks, sleep 10s ====="
+              sleep 10
+            else
+              # --- 分层健康检查 ---
+              # 普通服务：6 次 × 5s = 30s
+              echo "===== Waiting for common services ====="
+              for i in $(seq 1 6); do
+                if ! docker compose ps 2>/dev/null | grep -qE "(im-service|email-service|user-service|share-service|file-service|team-service|audit-service|admin-service|frontend-nginx).*(unhealthy|starting)"; then
+                  echo "Common services ready"
+                  break
+                fi
+                if [ "$i" -eq 6 ]; then
+                  echo "WARN: Common services not all healthy, continuing"
+                fi
+                sleep 5
+              done
 
-            # Gateway：12 次 × 5s = 60s
-            echo "===== Waiting for gateway ====="
-            for i in $(seq 1 12); do
-              if ! docker compose ps 2>/dev/null | grep -q "gateway.*(unhealthy|starting)"; then
-                echo "Gateway ready"
-                break
-              fi
-              if [ "$i" -eq 12 ]; then
-                echo "WARN: Gateway startup timeout, continuing"
-              fi
-              sleep 5
-            done
+              # Gateway：12 次 × 5s = 60s
+              echo "===== Waiting for gateway ====="
+              for i in $(seq 1 12); do
+                if ! docker compose ps 2>/dev/null | grep -q "gateway.*(unhealthy|starting)"; then
+                  echo "Gateway ready"
+                  break
+                fi
+                if [ "$i" -eq 12 ]; then
+                  echo "WARN: Gateway startup timeout, continuing"
+                fi
+                sleep 5
+              done
+            fi
 
             echo "===== Container status ====="
             docker compose ps
