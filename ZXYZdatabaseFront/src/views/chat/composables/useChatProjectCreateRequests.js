@@ -1,5 +1,6 @@
 import { ElMessage } from 'element-plus'
 
+import { logger } from '@/utils/logger'
 import { approveProjectCreateRequest, rejectProjectCreateRequest } from '@/api/project'
 import {
   formatProjectQuotaText,
@@ -41,8 +42,8 @@ export function useChatProjectCreateRequests({ chatStore, reviewingApplicationId
       await Promise.all([
         imChat
           .loadConversationMessages(message.conversationId || imChat.activeConversationId)
-          .catch((err) => console.warn('Operation failed:', err)),
-        imChat.loadConversations().catch((err) => console.warn('Operation failed:', err)),
+          .catch((err) => logger.warn('Operation failed:', err)),
+        imChat.loadConversations().catch((err) => logger.warn('Operation failed:', err)),
       ])
     } catch (error) {
       handleBusinessError(error, '处理项目组申请失败')

@@ -142,7 +142,6 @@ defineExpose({
   scrollToBottom,
   scrollToItem,
   isNearBottomRef,
-  listRef,
 })
 </script>
 

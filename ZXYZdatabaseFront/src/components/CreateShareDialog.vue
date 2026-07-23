@@ -34,8 +34,8 @@
               <el-input
                 v-model="form.password"
                 class="password-input"
-                maxlength="4"
-                placeholder="请输入4位提取码"
+                maxlength="8"
+                placeholder="请输入提取码（最多8位）"
                 @input="handlePasswordInput"
               />
               <el-button link type="primary" @click="resetPassword"> 重新生成 </el-button>

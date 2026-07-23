@@ -1,3 +1,7 @@
+<!-- TODO(P2-14): 本组件 842 行，违反单一职责。建议拆分为：
+     1. useSystemPermissionActions.js - 系统权限 CRUD 操作
+     2. useTeamPermissionActions.js - 团队权限 CRUD 操作
+     3. permission/index.vue - 仅保留布局和路由逻辑 -->
 <template>
   <section class="permission-page">
     <header class="permission-header">

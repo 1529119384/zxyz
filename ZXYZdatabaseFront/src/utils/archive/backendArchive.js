@@ -18,9 +18,9 @@ export function getArchiveTargets(selectedItems = [], spaceParams = {}) {
       id: item.id,
       type: item.type,
       fileName: item.fileName || '',
-      teamId: item.teamId || spaceParams.teamId || null,
-      spaceType: item.spaceType || spaceParams.spaceType || null,
-      projectId: item.projectId || spaceParams.projectId || null,
+      teamId: item.teamId ?? spaceParams.teamId ?? null,
+      spaceType: item.spaceType ?? spaceParams.spaceType ?? null,
+      projectId: item.projectId ?? spaceParams.projectId ?? null,
     }))
 }
 

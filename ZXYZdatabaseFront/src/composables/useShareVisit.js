@@ -30,7 +30,8 @@ export function useShareVisit() {
   const autoVerifyKey = ref('')
 
   const shareKey = computed(() => String(route.params.shareKey || ''))
-  const autoFillPassword = computed(() => sanitizeSharePassword(route.query.psw || ''))
+  // 安全修复：不再从 URL 查询参数读取密码（避免密码暴露在浏览器历史和日志中）
+  const autoFillPassword = computed(() => '')
   const canViewContent = computed(() => Boolean(shareInfo.value?.canViewContent))
 
   async function passByPassword(password, silent = false) {

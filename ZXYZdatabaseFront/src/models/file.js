@@ -19,7 +19,7 @@ function mapFullFileEntry(item = {}) {
     storePath: item.storePath || '',
     createTime: item.createTime ?? null,
     modifyTime: item.modifyTime ?? null,
-    virtualType: item.virtualType || null,
+    virtualType: item.virtualType ?? null,
     projectId: item.projectId ?? null,
     conversationId: item.conversationId ?? null,
   }

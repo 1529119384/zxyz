@@ -215,7 +215,7 @@ export function createRealtimeDomain(state, deps) {
         content: '',
         fileCard: null,
         recallByUserId: envelope.payload?.recallByUserId ?? null,
-        recallTime: envelope.payload?.recallTime || null,
+        recallTime: envelope.payload?.recallTime ?? null,
         recallReason: envelope.payload?.recallReason || '',
       })
       markBucketChanged()
@@ -374,7 +374,7 @@ export function createRealtimeDomain(state, deps) {
         fileSize: item.fileSize ?? null,
         parentId: item.parentId ?? null,
         storePath: item.storePath || '',
-        modifyTime: item.modifyTime || null,
+        modifyTime: item.modifyTime ?? null,
       })),
     }
   }

@@ -63,7 +63,6 @@ const router = createRouter({
           meta: { showSearch: true, space: 'team' },
         },
         { path: 'my-share', name: 'myShare', component: MyShare },
-        { path: 'collaboration', name: 'collaboration', redirect: '/chat' },
         { path: 'projects', name: 'projects', component: Projects },
         {
           path: 'projects/:projectId/space',

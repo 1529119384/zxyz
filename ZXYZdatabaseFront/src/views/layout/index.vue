@@ -132,9 +132,6 @@ const activeMenuIndex = computed(() => {
   if (route.matched.some((record) => record.name === 'settingRoot' || record.name === 'setting')) {
     return '/setting'
   }
-  if (route.name === 'collaboration') {
-    return '/chat'
-  }
   if (route.name === 'projectSpace') {
     return '/team-space'
   }
@@ -176,7 +173,7 @@ const routeViewKey = computed(() => {
 
 onMounted(() => {
   chatStore.ensureConnected()
-  imWorkspace.loadChatNavigation().catch((err) => console.warn('Operation failed:', err))
+  imWorkspace.loadChatNavigation().catch((err) => logger.warn('Operation failed:', err))
 })
 
 onUnmounted(() => {

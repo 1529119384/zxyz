@@ -1,6 +1,8 @@
 import { watch } from 'vue'
 import { useWindowFocus, useDocumentVisibility } from '@vueuse/core'
 
+import { logger } from '@/utils/logger'
+
 export function useChatVisibilitySync({ imChat }) {
   function refreshVisibleConversation() {
     if (
@@ -9,7 +11,7 @@ export function useChatVisibilitySync({ imChat }) {
     ) {
       imChat
         .loadConversationMessages(imChat.activeConversationId)
-        .catch((err) => console.warn('Operation failed:', err))
+        .catch((err) => logger.warn('Operation failed:', err))
     }
   }
 

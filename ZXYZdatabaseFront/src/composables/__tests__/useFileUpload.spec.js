@@ -14,11 +14,14 @@ vi.mock('@/composables/useCurrentSpaceContext', () => ({
 }))
 
 vi.mock('@/utils/uploadProgress', () => ({
-  createProgressTracker: vi.fn(() => ({ track: vi.fn(), reset: vi.fn() })),
+  calculateUploadPercentage: vi.fn(() => 0),
+  getUploadTrackingKey: vi.fn(() => 'key-1'),
+  sumUploadedBytes: vi.fn(() => 0),
 }))
 
 vi.mock('@/utils/nameConflict', () => ({
-  detectConflicts: vi.fn(() => []),
+  buildBatchPredictedNames: vi.fn(() => []),
+  FILE_TYPE: { FILE: 1, FOLDER: 0 },
 }))
 
 vi.mock('@/utils/id', () => ({
@@ -26,7 +29,7 @@ vi.mock('@/utils/id', () => ({
 }))
 
 vi.mock('@/utils/fileValidation', () => ({
-  validateFiles: vi.fn(() => ({ valid: [], invalid: [] })),
+  validateFiles: vi.fn(() => ({ valid: [], rejected: [] })),
   MAX_FILE_SIZE: 5368709120,
   DANGEROUS_EXTENSIONS: ['.exe', '.bat', '.cmd', '.sh', '.js'],
 }))

@@ -110,7 +110,7 @@ function redirectToLogin() {
 export function createApiClient(options = {}) {
   const {
     baseURL,
-    timeout = 5000,
+    timeout = 15000,
     onTokenExpired = 'redirect',
     errorMessagePrefix = '',
     enableRawBlob = false,

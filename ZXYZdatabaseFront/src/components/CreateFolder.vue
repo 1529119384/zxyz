@@ -47,8 +47,12 @@ function validateFolderName(value) {
     return '文件夹名称不能包含 / 或 \\'
   }
 
-  if (name.length > 100) {
-    return '文件夹名称长度不能超过 100 个字符'
+  if (/[<>"'&]/.test(name)) {
+    return '文件夹名称不能包含 < > " \' & 等特殊字符'
+  }
+
+  if (name.length > 255) {
+    return '文件夹名称长度不能超过 255 个字符'
   }
 
   return true
