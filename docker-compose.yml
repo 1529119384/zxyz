@@ -672,6 +672,8 @@ services:
         condition: service_healthy
       nacos:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
@@ -799,6 +801,10 @@ services:
           cpus: '0.25'
     depends_on:
       nacos:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: prod
