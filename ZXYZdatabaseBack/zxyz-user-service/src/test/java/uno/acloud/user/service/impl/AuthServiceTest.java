@@ -8,6 +8,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.UserErrorCode;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.user.dto.LoginRequest;
 import uno.acloud.user.dto.RegisterRequest;
@@ -61,7 +62,7 @@ class AuthServiceTest {
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> authService.login(request));
-        assertEquals(ErrorCode.LOGIN_FAILED, ex.getErrorCode());
+        assertEquals(UserErrorCode.LOGIN_FAILED.getCode(), ex.getErrorCode());
     }
 
     @Test
@@ -80,7 +81,7 @@ class AuthServiceTest {
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> authService.login(request));
-        assertEquals(ErrorCode.LOGIN_FAILED, ex.getErrorCode());
+        assertEquals(UserErrorCode.LOGIN_FAILED.getCode(), ex.getErrorCode());
     }
 
     @Test
