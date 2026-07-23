@@ -12,6 +12,7 @@ import org.redisson.api.RedissonClient;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.UserErrorCode;
 import uno.acloud.common.TeamPermissionCodes;
 import uno.acloud.common.TeamRoleCodes;
 import uno.acloud.common.config.ConfigGetter;
@@ -206,7 +207,7 @@ class EnterpriseTeamServiceTest {
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> enterpriseTeamService.createTeam(request));
-        assertEquals(ErrorCode.USERNAME_EXISTS, ex.getErrorCode());
+        assertEquals(UserErrorCode.USERNAME_EXISTS.getCode(), ex.getErrorCode());
         assertTrue(ex.getMessage().contains("已存在"));
 
         // Lock should still be released
