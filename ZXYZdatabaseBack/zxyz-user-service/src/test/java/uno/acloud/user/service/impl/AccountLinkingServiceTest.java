@@ -6,6 +6,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.UserErrorCode;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.user.dto.LinkedAccountTrustRequest;
 import uno.acloud.user.entity.User;
@@ -130,7 +131,7 @@ class AccountLinkingServiceTest {
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> accountLinkingService.trustLinkedAccount(userId, targetUserId, request));
-        assertEquals(ErrorCode.LOGIN_FAILED, ex.getErrorCode());
+        assertEquals(UserErrorCode.LOGIN_FAILED.getCode(), ex.getErrorCode());
         assertTrue(ex.getMessage().contains("密码错误"));
     }
 

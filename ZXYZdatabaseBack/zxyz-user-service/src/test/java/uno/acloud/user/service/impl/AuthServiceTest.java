@@ -160,7 +160,7 @@ class AuthServiceTest {
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> authService.register(request));
-        assertEquals(ErrorCode.USERNAME_EXISTS, ex.getErrorCode());
+        assertEquals(UserErrorCode.USERNAME_EXISTS.getCode(), ex.getErrorCode());
     }
 
     @Test
