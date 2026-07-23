@@ -31,6 +31,7 @@ NO_PULL=false
 NO_HEALTH=false
 VALIDATE_ONLY=false
 CLEAN_NACOS=false
+BUILD_FIRST=false
 SERVICES=()
 
 while [[ $# -gt 0 ]]; do
@@ -40,6 +41,7 @@ while [[ $# -gt 0 ]]; do
     --all)          SERVICES=("${ALL_APP_SERVICES[@]}"); shift ;;
     --validate)     VALIDATE_ONLY=true; shift ;;
     --clean-nacos)  CLEAN_NACOS=true; shift ;;
+    --build)        BUILD_FIRST=true; shift ;;
     -*)             echo "Unknown option: $1"; exit 1 ;;
     *)              SERVICES+=("$1"); shift ;;
   esac
@@ -74,7 +76,7 @@ if [ -f "$SCRIPT_DIR/validate-env.sh" ] && [ -f "$DEPLOY_DIR/.env" ]; then
 fi
 
 if [ ${#SERVICES[@]} -eq 0 ]; then
-  echo "Usage: deploy-fast.sh [--no-pull] [--no-health] [--all] [--validate] [--clean-nacos] <service> [service...]"
+  echo "Usage: deploy-fast.sh [--no-pull] [--no-health] [--build] [--all] [--validate] [--clean-nacos] <service> [service...]"
   echo ""
   echo "Available services:"
   for s in "${ALL_APP_SERVICES[@]}"; do
@@ -88,12 +90,35 @@ cd "$DEPLOY_DIR"
 echo "===== Fast Deploy ====="
 echo "Services: ${SERVICES[*]}"
 echo "Pull:     $([ "$NO_PULL" = true ] && echo "SKIP" || echo "YES")"
+echo "Build:    $([ "$BUILD_FIRST" = true ] && echo "YES" || echo "SKIP")"
 echo "Health:   $([ "$NO_HEALTH" = true ] && echo "SKIP" || echo "WAIT")"
 echo "Nacos:    $([ "$CLEAN_NACOS" = true ] && echo "CLEAN" || echo "SKIP")"
 echo ""
 
+# --- 构建镜像 ---
+if [ "$BUILD_FIRST" = true ]; then
+  echo "===== Building images ====="
+  for svc in "${SERVICES[@]}"; do
+    module="zxyz-${svc}"
+    echo "Building $svc (module: $module)..."
+    cd "$DEPLOY_DIR/../ZXYZdatabaseBack"
+    mvn -B -T 1C -pl "$module" -am package -DskipTests || {
+      echo "ERROR: Maven build failed for $module"
+      exit 1
+    }
+    echo "Building Docker image for $svc..."
+    cd "$DEPLOY_DIR"
+    docker compose build "$svc" || {
+      echo "ERROR: Docker build failed for $svc"
+      exit 1
+    }
+  done
+  echo "Build complete"
+  echo ""
+fi
+
 # --- 拉取镜像 ---
-if [ "$NO_PULL" = false ]; then
+if [ "$NO_PULL" = false ] && [ "$BUILD_FIRST" = false ]; then
   echo "===== Pulling images ====="
   for svc in "${SERVICES[@]}"; do
     docker compose pull "$svc" &
@@ -104,7 +129,12 @@ fi
 
 # --- 重启容器 ---
 echo "===== Restarting ====="
-docker compose up -d "${SERVICES[@]}"
+if [ "$BUILD_FIRST" = true ]; then
+  # 本地构建后仅重启自身，不重启依赖服务
+  docker compose up -d --no-deps "${SERVICES[@]}"
+else
+  docker compose up -d "${SERVICES[@]}"
+fi
 
 # --- 等待容器 running 状态（非健康） ---
 echo "===== Waiting for containers to start ====="
