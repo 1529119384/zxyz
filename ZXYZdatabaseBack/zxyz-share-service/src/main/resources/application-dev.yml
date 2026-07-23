@@ -1,4 +1,6 @@
 spring:
+  main:
+    lazy-initialization: true
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: ${SHARE_DATASOURCE_URL:jdbc:mysql://localhost:3306/zxyz_share?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}

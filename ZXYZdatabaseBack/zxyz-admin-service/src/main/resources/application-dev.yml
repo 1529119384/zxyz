@@ -1,4 +1,7 @@
 # 本地开发默认配置，生产环境不要激活 dev profile。
+spring:
+  main:
+    lazy-initialization: true
 config:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver

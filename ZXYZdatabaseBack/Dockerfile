@@ -13,7 +13,9 @@
 #   - zxyz-admin-service
 # -----------------------------------------------------------------------------
 
-FROM maven:3.9-eclipse-temurin-17 AS builder
+# 使用预构建基础镜像（已缓存 Maven 依赖），需要时手动重建：
+#   docker build -t aclouda/zxyz-maven-base:latest -f ZXYZdatabaseBack/Dockerfile.base ZXYZdatabaseBack/
+FROM aclouda/zxyz-maven-base:latest AS builder
 
 WORKDIR /workspace
 
@@ -31,10 +33,6 @@ COPY ZXYZdatabaseBack/zxyz-user-service/pom.xml ./zxyz-user-service/pom.xml
 COPY ZXYZdatabaseBack/zxyz-audit-service/pom.xml ./zxyz-audit-service/pom.xml
 COPY ZXYZdatabaseBack/zxyz-admin-service/pom.xml ./zxyz-admin-service/pom.xml
 
-ARG MODULE
-RUN test -n "${MODULE}" \
-    && mvn -B -T 1C -pl "${MODULE}" -am dependency:go-offline
-
 # 复制源码后执行目标模块打包。
 # 分两步：先构建 zxyz-common 的 test-jar（部分服务依赖其测试工具类），
 # 再用 -Dmaven.test.skip=true 打包目标模块（跳过测试编译和执行）。
@@ -43,10 +41,12 @@ RUN mvn -B -T 1C -pl zxyz-common -am install -Dmaven.test.skip=false -DskipTests
     && mvn -B -T 1C -pl "${MODULE}" -am package -Dmaven.test.skip=true \
     && find "${MODULE}/target" -maxdepth 1 -type f -name "${MODULE}-*.jar" ! -name "original-*.jar" -exec cp {} /tmp/app.jar \;
 
-FROM eclipse-temurin:17-jre
+# Alpine 瘦身：eclipse-temurin:17-jre-alpine 体积更小。
+# 阻塞点检查：项目仅使用 Netty NIO（纯 Java），不依赖 netty-transport-native，
+# 因此 Alpine musl libc 不会影响 Netty 功能。
+FROM eclipse-temurin:17-jre-alpine
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache curl
 
 WORKDIR /app
 
