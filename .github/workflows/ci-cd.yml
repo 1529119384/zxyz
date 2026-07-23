@@ -183,10 +183,8 @@ jobs:
           java-version: 17
           cache: maven
 
-      # 注意：当前后端 Dockerfile 跳过测试（-Dmaven.test.skip=true），
-      # 因为测试源码存在编译问题。待修复后应改为 mvn test。
-      - name: Backend compile
-        run: cd ZXYZdatabaseBack && mvn -B compile -Dmaven.test.skip=true
+      - name: Backend compile and test
+        run: cd ZXYZdatabaseBack && mvn -B test
 
   # ============================================================
   # Job 3: 构建并推送镜像（只构建有变更的服务，仅 push 触发）
