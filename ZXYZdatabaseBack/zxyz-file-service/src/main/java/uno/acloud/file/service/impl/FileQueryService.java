@@ -90,7 +90,7 @@ public class FileQueryService implements FileQueryPort {
                         .map(fileConverter::toFileListItemVO)
                         .sorted(buildFileListComparator(sortOption))
                         .collect(Collectors.toList());
-        return new FileListPagedResultVO(total, fileList);
+        return new FileListPagedResultVO(finalPage, finalPageSize, total, fileList);
     }
 
     @Override

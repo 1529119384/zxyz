@@ -102,14 +102,18 @@ public class FileController {
     @GetMapping
     @SaCheckPermission(SystemPermissionCodes.FILE_READ)
     @RequiresTeamPermission(value = TeamPermissionCodes.TEAM_FILE_READ, skipWhenTeamIdMissing = true)
-    public Result<List<FileListItemVO>> getFileList(@CurrentUser Long userId,
+    public Result<FileListPagedResultVO> getFileList(@CurrentUser Long userId,
                               @RequestParam Long parentId,
                               @RequestParam(required = false) Long teamId,
                               @RequestParam(required = false) Integer spaceType,
                               @RequestParam(required = false) Long projectId,
                               @RequestParam(required = false) String sortField,
-                              @RequestParam(required = false) String sortOrder) {
-        return Result.of(fileQueryPort.getFileListByParentId(parentId, teamId, spaceType, projectId, sortField, sortOrder, userId));
+                              @RequestParam(required = false) String sortOrder,
+                              @RequestParam(defaultValue = "1") Integer page,
+                              @RequestParam(defaultValue = "50") Integer pageSize) {
+        FileListPagedResultVO result = fileQueryPort.getFileListByParentId(
+                parentId, teamId, spaceType, projectId, sortField, sortOrder, page, pageSize, userId);
+        return Result.of(result);
     }
 
     @Operation(summary = "获取文件详情")

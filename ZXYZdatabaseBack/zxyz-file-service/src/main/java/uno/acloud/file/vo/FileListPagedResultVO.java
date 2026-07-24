@@ -18,6 +18,12 @@ public class FileListPagedResultVO implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
+    @Schema(description = "当前页码", example = "1")
+    private Integer page;
+
+    @Schema(description = "每页大小", example = "50")
+    private Integer pageSize;
+
     @Schema(description = "子项总数", example = "100")
     private Long total;
 

@@ -45,6 +45,7 @@ const navItems = computed(() => [
   { name: 'teamAdminSettings', label: '创建团队', visible: canCreateTeam.value },
   { name: 'systemAdminSettings', label: '系统运营', visible: canCreateTeam.value },
   { name: 'configAdminSettings', label: '配置管理', visible: true },
+  { name: 'storageAdminSettings', label: '存储管理', visible: canCreateTeam.value },
   { name: 'permissionCenter', label: '权限管理', visible: canShowPermissionCenter.value },
 ])
 const visibleNavItems = computed(() => navItems.value.filter((item) => item.visible))
