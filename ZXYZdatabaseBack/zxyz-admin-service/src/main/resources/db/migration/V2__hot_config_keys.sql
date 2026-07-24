@@ -58,6 +58,7 @@ INSERT INTO `sys_config` (`config_key`, `config_value`, `config_type`, `value_ty
 
 -- 邮件设置
 ('app.email.max-retry-count', '4', 'SYSTEM', 'NUMBER', '邮件最大重试次数', '4', 1),
+('app.email.verify-code-cooldown-seconds', '60', 'SYSTEM', 'NUMBER', '邮箱验证码冷却时间（秒）', '60', 1),
 
 -- 文件复制 + 审计 + 头像
 ('app.file.copy.max-nodes-per-tx', '500', 'FEATURE', 'NUMBER', '单次复制最大节点数', '500', 1),

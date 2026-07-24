@@ -122,6 +122,12 @@ spring:
                 - RewritePath=/api/admin/database(?<segment>/?.*), /api/database/internal${segment}
                 - AddRequestHeader=X-Internal-Service-Token, ${INTERNAL_SERVICE_TOKEN}
 
+            # 存储提供者管理路由：/api/admin/storage-providers/** → file-service
+            - id: file-service-storage-providers
+              uri: lb://zxyz-file-service
+              predicates:
+                - Path=/api/admin/storage-providers/**
+
             # 管理后台通用路由：/api/admin/** → admin-service（剥离 /api/admin 前缀）
             - id: admin-service
               uri: lb://zxyz-admin-service
@@ -129,12 +135,6 @@ spring:
                 - Path=/api/admin/**
               filters:
                 - RewritePath=/api/admin/(?<segment>.*), /${segment}
-
-            # 存储提供者管理路由：/api/admin/storage-providers/** → file-service
-            - id: file-service-storage-providers
-              uri: lb://zxyz-file-service
-              predicates:
-                - Path=/api/admin/storage-providers/**
 
             # 项目服务路由：项目、成员、目录、配额、申请、存储用量 → project-service
             - id: project-service

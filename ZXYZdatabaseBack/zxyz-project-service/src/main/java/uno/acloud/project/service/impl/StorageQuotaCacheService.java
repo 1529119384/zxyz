@@ -58,7 +58,7 @@ public class StorageQuotaCacheService {
         this.teamServiceClient = teamServiceClient;
         this.fileServiceClient = fileServiceClient;
         this.configGetter = configGetter;
-        this.teamStorageLimitTtl = Duration.ofMinutes(configGetter.getInt("app.cache.storage-usage-ttl-minutes", 10));
+        this.teamStorageLimitTtl = Duration.ofSeconds(configGetter.getInt("app.cache.storage-usage-ttl-seconds", 10));
         this.teamMemberListTtl = Duration.ofMinutes(configGetter.getInt("app.cache.team-permission-ttl-minutes", 5));
         this.systemAdminIdsTtl = Duration.ofMinutes(configGetter.getInt("app.cache.team-permission-ttl-minutes", 5));
         this.usageTtl = Duration.ofSeconds(configGetter.getInt("app.cache.storage-usage-ttl-seconds", 30));

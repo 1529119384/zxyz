@@ -68,7 +68,7 @@ public class LocalDiskStorageProvider implements StorageProvider {
                 contentType,
                 contentDisposition,
                 null,  // 无过期时间
-                false  // 非直传，需要经过后端
+                true   // 本地存储：前端直传到后端 multipart 端点
         );
     }
 
@@ -78,7 +78,7 @@ public class LocalDiskStorageProvider implements StorageProvider {
                 providerId(),
                 null,  // 本地存储无预签名 URL
                 originalName,
-                false  // 非直下，需要经过后端
+                true   // 本地存储：前端直连后端 stream 端点
         );
     }
 

@@ -65,10 +65,15 @@ export async function collectFileEntry(file, basePath) {
     throw new Error(`未获取到下载链接: ${file.fileName}`)
   }
 
+  const effectiveDownloadUrl =
+    directDownload === false
+      ? `/api/files/${file.id}/stream`
+      : downloadUrl
+
   return {
     fileName: file.fileName,
     archivePath: joinArchivePath(basePath, file.fileName),
-    downloadUrl,
+    downloadUrl: effectiveDownloadUrl,
     directDownload,
   }
 }

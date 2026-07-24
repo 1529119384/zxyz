@@ -56,7 +56,7 @@ public class FileCopyService {
         this.helper = helper;
         this.transactionTemplate = transactionTemplate;
         this.configGetter = configGetter;
-        this.maxCopyNodesPerTransaction = configGetter.getInt("app.file.copy.max-nodes-per-transaction", FALLBACK_MAX_COPY_NODES_PER_TRANSACTION);
+        this.maxCopyNodesPerTransaction = configGetter.getInt("app.file.copy.max-nodes-per-tx", FALLBACK_MAX_COPY_NODES_PER_TRANSACTION);
     }
 
     public BatchOperationDetailVO copyFiles(List<Long> fileIds, Long targetParentId, Long requestedTeamId, Long userId) {

@@ -3,8 +3,11 @@ package uno.acloud.file.storage.oss;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
+import uno.acloud.common.ErrorCode;
+import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.common.oss.GetSignUrl;
 import uno.acloud.common.oss.OssSignInfo;
+import uno.acloud.exception.BusinessException;
 import uno.acloud.file.infrastructure.oss.OSSDeleter;
 import uno.acloud.file.infrastructure.oss.OSSMetadataUpdater;
 import uno.acloud.file.storage.DownloadInfo;
@@ -13,7 +16,9 @@ import uno.acloud.file.storage.UploadInfo;
 
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 阿里云 OSS 存储提供者
@@ -26,21 +31,55 @@ import java.util.List;
 @ConditionalOnProperty(name = "app.storage.provider.oss.enabled", havingValue = "true", matchIfMissing = true)
 public class AliyunOssStorageProvider implements StorageProvider {
 
+    /** 危险文件扩展名黑名单 fallback（与 FileUploadService 一致） */
+    private static final Set<String> FALLBACK_BLOCKED_EXTENSIONS = Set.of(
+            ".exe", ".bat", ".cmd", ".scr", ".pif", ".com",
+            ".js", ".vbs", ".vbe", ".ps1", ".psm1", ".msi",
+            ".wsf", ".wsh", ".hta", ".cpl", ".msc", ".reg"
+    );
+
     private final GetSignUrl getSignUrl;
     private final OSSDeleter ossDeleter;
     private final OSSMetadataUpdater ossMetadataUpdater;
+    private final ConfigGetter configGetter;
+    private final Set<String> blockedExtensions;
 
     public AliyunOssStorageProvider(GetSignUrl getSignUrl,
                                     OSSDeleter ossDeleter,
-                                    OSSMetadataUpdater ossMetadataUpdater) {
+                                    OSSMetadataUpdater ossMetadataUpdater,
+                                    ConfigGetter configGetter) {
         this.getSignUrl = getSignUrl;
         this.ossDeleter = ossDeleter;
         this.ossMetadataUpdater = ossMetadataUpdater;
+        this.configGetter = configGetter;
+        this.blockedExtensions = new LinkedHashSet<>(configGetter.getJsonSet(
+                "app.file.upload.blocked-extensions", FALLBACK_BLOCKED_EXTENSIONS));
     }
 
     @Override
     public String providerId() {
         return "oss";
+    }
+
+    /**
+     * 校验文件扩展名是否在黑名单中。
+     *
+     * @param fileName 原始文件名
+     * @throws BusinessException 扩展名在黑名单中时抛出
+     */
+    private void validateBlockedExtension(String fileName) {
+        if (fileName == null || fileName.isBlank()) {
+            return;
+        }
+        String lower = fileName.toLowerCase(java.util.Locale.ROOT);
+        int lastDot = lower.lastIndexOf('.');
+        if (lastDot < 0) {
+            return;
+        }
+        String ext = lower.substring(lastDot);
+        if (blockedExtensions.contains(ext)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的文件类型");
+        }
     }
 
     @Override
@@ -61,6 +100,7 @@ public class AliyunOssStorageProvider implements StorageProvider {
     @Override
     public UploadInfo generateUploadInfo(String objectKey, String originalName,
                                          String contentType, String contentDisposition) {
+        validateBlockedExtension(originalName);
         OssSignInfo signInfo = getSignUrl.generatePutSignInfo(
                 objectKey, originalName, contentType, contentDisposition);
 
@@ -78,6 +118,7 @@ public class AliyunOssStorageProvider implements StorageProvider {
 
     @Override
     public DownloadInfo generateDownloadInfo(String objectKey, String originalName) {
+        validateBlockedExtension(originalName);
         String downloadUrl = getSignUrl.generateGetSignUrl(objectKey, originalName);
 
         return new DownloadInfo(

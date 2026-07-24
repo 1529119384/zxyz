@@ -13,14 +13,10 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.http.MediaTypeFactory;
 import org.springframework.stereotype.Component;
 import uno.acloud.common.ErrorCode;
-import uno.acloud.common.util.FileNameUtil;
 import uno.acloud.common.util.oss.OssContentDispositionUtil;
 import uno.acloud.exception.BusinessException;
 
 import java.time.Instant;
-import java.util.Locale;
-
-import static uno.acloud.common.util.FileNameUtil.BLOCKED_EXTENSIONS;
 
 @Slf4j
 @Component
@@ -40,7 +36,6 @@ public class GetSignUrl {
     }
 
     public OssSignInfo generatePutSignInfo(String objectKey, String originalName) {
-        validateFileExtension(originalName);
         return generatePutSignInfo(
                 objectKey,
                 originalName,
@@ -53,7 +48,6 @@ public class GetSignUrl {
                                            String originalName,
                                            String contentType,
                                            String contentDisposition) {
-        validateFileExtension(originalName);
         if (objectKey == null || objectKey.isBlank()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "生成上传签名失败：objectKey 不能为空");
         }
@@ -178,7 +172,6 @@ public class GetSignUrl {
         if (originalName == null || originalName.isBlank()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "生成下载签名失败：originalName 不能为空");
         }
-        validateFileExtension(originalName);
 
         Instant expireAt = Instant.now().plusMillis(signExpireSeconds * 1000L);
         try {
@@ -196,21 +189,6 @@ public class GetSignUrl {
         } catch (Exception e) {
             log.error("生成 OSS 下载签名异常，objectKey: {}", objectKey, e);
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "操作失败，请稍后重试");
-        }
-    }
-
-    private void validateFileExtension(String fileName) {
-        if (fileName == null || fileName.isBlank()) {
-            return;
-        }
-        String lower = fileName.toLowerCase(Locale.ROOT);
-        int lastDot = lower.lastIndexOf('.');
-        if (lastDot < 0) {
-            return;
-        }
-        String ext = lower.substring(lastDot);
-        if (BLOCKED_EXTENSIONS.contains(ext)) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的文件类型");
         }
     }
 

@@ -37,12 +37,13 @@ export function useFileDownload(options) {
       return
     }
 
-    if (directDownload) {
-      // 直传下载：直接使用预签名 URL
+    if (directDownload !== false) {
+      // 直下：直接使用预签名 URL（OSS 等）
       await downloadBlobByUrl(downloadUrl, fileName)
     } else {
-      // 流式下载：调用后端流式下载接口
-      await downloadBlobByUrl(downloadUrl, fileName)
+      // 流式下载：调用后端流式下载接口（本地存储等）
+      const streamUrl = `/api/files/${row.id}/stream`
+      await downloadBlobByUrl(streamUrl, fileName)
     }
   }
 

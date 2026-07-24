@@ -94,6 +94,18 @@
       </el-table>
 
       <div v-if="isSearchMode" class="search-result-info">共找到 {{ searchTotal }} 个结果</div>
+
+      <el-pagination
+        v-if="!isSearchMode"
+        v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
+        :page-sizes="[20, 50, 100, 200]"
+        :total="total"
+        layout="total, sizes, prev, pager, next"
+        class="pagination-bar"
+        @current-change="spaceFileList.refresh"
+        @size-change="spaceFileList.refresh"
+      />
     </div>
 
     <div
@@ -204,6 +216,8 @@ const spaceFileList = useSpaceFileList({
   sortState,
   spaceContext,
 })
+
+const { currentPage, pageSize, total, resetPage } = spaceFileList
 
 const fileSearch = useFileSearch({
   searchText: computed(() => props.searchText),
@@ -359,6 +373,10 @@ async function runRefreshSafely(options) {
 let stopped = false
 let pruneSelectionTimer = null
 
+watch(currentParentId, () => {
+  resetPage()
+})
+
 watch(
   [currentPath, navigationReady, spaceContext.requestParams],
   async ([_path, ready]) => {
@@ -479,6 +497,12 @@ defineExpose({
   font-size: 13px;
   user-select: text;
   -webkit-user-select: text;
+}
+
+.pagination-bar {
+  padding: 12px 0 0;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .sort-header {

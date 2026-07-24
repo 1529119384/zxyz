@@ -25,13 +25,16 @@ import {
  * 空间文件列表组合函数，负责加载和刷新当前目录下的文件列表。
  *
  * @param {UseSpaceFileListOptions} options - 配置项。
- * @returns {{ list: import('vue').Ref<Array>, loading: import('vue').Ref<boolean>, refresh: Function }} 空间文件列表状态与操作方法。
+ * @returns {{ list: import('vue').Ref<Array>, loading: import('vue').Ref<boolean>, currentPage: import('vue').Ref<number>, pageSize: import('vue').Ref<number>, total: import('vue').Ref<number>, resetPage: Function, refresh: Function }} 空间文件列表状态与操作方法。
  */
 export function useSpaceFileList(options) {
   const { currentId, sortState, spaceContext, teamId, spaceType, projectId } = options
 
   const list = ref([])
   const loading = ref(false)
+  const currentPage = ref(1)
+  const pageSize = ref(50)
+  const total = ref(0)
   let latestRefreshToken = 0
 
   function resolveSpaceParams() {
@@ -73,9 +76,19 @@ export function useSpaceFileList(options) {
       const fileList = await fetchFileList(currentId.value, {
         ...(sortState?.value || {}),
         ...spaceParams,
+        page: currentPage.value,
+        pageSize: pageSize.value,
       })
       if (refreshToken !== latestRefreshToken) return
-      const entries = Array.isArray(fileList.data) ? fileList.data : []
+      const paged = fileList.data && typeof fileList.data === 'object'
+      const entries = Array.isArray(paged ? fileList.data.list : fileList.data)
+        ? paged
+          ? fileList.data.list
+          : fileList.data
+        : []
+      if (paged && fileList.data.total != null) {
+        total.value = fileList.data.total
+      }
 
       if (
         spaceParams.spaceType === SPACE_TYPE.TEAM &&
@@ -99,9 +112,17 @@ export function useSpaceFileList(options) {
     }
   }
 
+  function resetPage() {
+    currentPage.value = 1
+  }
+
   return {
     list,
     loading,
+    currentPage,
+    pageSize,
+    total,
+    resetPage,
     refresh,
   }
 }

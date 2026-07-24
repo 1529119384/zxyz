@@ -15,13 +15,20 @@ export function useShareFileDownload() {
 
   async function downloadFile(row) {
     const response = await getPublicShareDownloadUrl(shareKey.value, row.id)
-    const downloadUrl = response?.data?.downloadUrl
+    const { downloadUrl, directDownload, fileName } = response?.data || {}
+
+    if (directDownload === false) {
+      // 本地存储：使用后端流式下载接口
+      const streamUrl = `/api/public/shares/${shareKey.value}/files/${row.id}/stream`
+      await downloadBlobByUrl(streamUrl, fileName || row.fileName)
+      return
+    }
 
     if (!downloadUrl) {
       throw new Error('未获取到下载链接')
     }
 
-    await downloadBlobByUrl(downloadUrl, row.fileName)
+    await downloadBlobByUrl(downloadUrl, fileName || row.fileName)
   }
 
   return {
