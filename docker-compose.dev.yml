@@ -1,0 +1,48 @@
+services:
+  mysql:
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: zxyz_${SERVICE_DB_SUFFIX:-project}
+    volumes:
+      - ${DATA_DIR:-./data}/mysql:/var/lib/mysql
+
+  nacos:
+    ports:
+      - "${NACOS_PORT:-8848}:8848"
+      - "${NACOS_CONSOLE_PORT:-8080}:8080"
+    environment:
+      MODE: standalone
+      SPRING_DATASOURCE_PLATFORM: mysql
+      MYSQL_SERVICE_HOST: mysql
+      MYSQL_SERVICE_PORT: 3306
+      MYSQL_SERVICE_DB_NAME: nacos
+      MYSQL_SERVICE_USER: root
+      MYSQL_SERVICE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN}
+      NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY:-serverIdentity}
+      NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE:-security}
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-CHANGE_ME_NACOS}
+    volumes:
+      - ${DATA_DIR:-./data}/nacos:/home/nacos/data
+      - ${DATA_DIR:-./data}/nacos-logs:/home/nacos/logs
+
+  redis:
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: ["sh", "-c", "redis-server --appendonly yes --requirepass \"$${REDIS_PASSWORD}\""]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - ${DATA_DIR:-./data}/redis:/data
+
+  rabbitmq:
+    ports:
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
+      - "${RABBITMQ_AMQP_PORT:-5672}:5672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    volumes:
+      - ${DATA_DIR:-./data}/rabbitmq:/var/lib/rabbitmq
