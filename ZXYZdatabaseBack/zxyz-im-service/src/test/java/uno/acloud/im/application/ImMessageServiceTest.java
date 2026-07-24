@@ -9,6 +9,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import uno.acloud.common.ErrorCode;
+import static uno.acloud.common.TeamErrorCode.*;
 import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.domain.model.ImConversation;
@@ -163,13 +164,13 @@ class ImMessageServiceTest {
         Long conversationId = 10L;
         Long senderUserId = 100L;
 
-        doThrow(new BusinessException(ErrorCode.TEAM_PERMISSION_DENIED, "项目群聊已归档，只允许查看历史消息"))
+        doThrow(new BusinessException(TEAM_PERMISSION_DENIED.getCode(), "项目群聊已归档，只允许查看历史消息"))
                 .when(conversationService).requireWritableConversation(conversationId);
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> service.storeTextMessage(senderUserId, conversationId, "cid-001", "hello"));
 
-        assertEquals(ErrorCode.TEAM_PERMISSION_DENIED, ex.getErrorCode());
+        assertEquals(TEAM_PERMISSION_DENIED.getCode(), ex.getErrorCode());
         verify(imMessageMapper, never()).insert(any(ImMessage.class));
     }
 

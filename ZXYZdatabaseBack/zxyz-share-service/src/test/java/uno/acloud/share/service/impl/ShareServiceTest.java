@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import uno.acloud.common.ErrorCode;
+import static uno.acloud.common.ShareErrorCode.*;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.share.dto.ShareCreateRequest;
 import uno.acloud.share.dto.ShareVerifyRequest;
@@ -93,11 +93,11 @@ class ShareServiceTest {
         request.setPassword("wrong-password");
 
         when(shareAccessService.verifyShare(request, null))
-                .thenThrow(new BusinessException(ErrorCode.SHARE_PASSWORD_INVALID, "提取码错误"));
+                .thenThrow(new BusinessException(SHARE_PASSWORD_INVALID.getCode(), "提取码错误"));
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> shareService.verifyShare(request, null));
-        assertEquals(ErrorCode.SHARE_PASSWORD_INVALID, ex.getErrorCode());
+        assertEquals(SHARE_PASSWORD_INVALID.getCode(), ex.getErrorCode());
         assertTrue(ex.getMessage().contains("提取码错误"));
     }
 
@@ -110,10 +110,10 @@ class ShareServiceTest {
         request.setPassword("any-password");
 
         when(shareAccessService.verifyShare(request, null))
-                .thenThrow(new BusinessException(ErrorCode.SHARE_EXPIRED, "分享已过期"));
+                .thenThrow(new BusinessException(SHARE_EXPIRED.getCode(), "分享已过期"));
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> shareService.verifyShare(request, null));
-        assertEquals(ErrorCode.SHARE_EXPIRED, ex.getErrorCode());
+        assertEquals(SHARE_EXPIRED.getCode(), ex.getErrorCode());
     }
 }

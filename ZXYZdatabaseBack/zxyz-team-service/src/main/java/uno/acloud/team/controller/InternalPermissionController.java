@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.TeamErrorCode;
 import uno.acloud.common.Result;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.team.dto.permission.AssignTeamMemberRoleRequest;
@@ -63,7 +64,7 @@ public class InternalPermissionController {
     public Result<Void> check(@Valid @RequestBody PermissionCheckRequest request) {
         boolean allowed = permissionService.hasTeamPermission(request.getUserId(), request.getTeamId(), request.getPermissionCode());
         if (!allowed) {
-            throw new BusinessException(ErrorCode.TEAM_PERMISSION_DENIED, "缺少团队权限: " + request.getPermissionCode());
+            throw new BusinessException(TeamErrorCode.TEAM_PERMISSION_DENIED.getCode(), "缺少团队权限: " + request.getPermissionCode());
         }
         return Result.success();
     }

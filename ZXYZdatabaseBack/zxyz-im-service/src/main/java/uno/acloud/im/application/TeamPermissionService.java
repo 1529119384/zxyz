@@ -6,6 +6,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.ErrorCode;
+import uno.acloud.common.TeamErrorCode;
 import uno.acloud.common.InternalServiceHeaders;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.config.ServiceProperties;
@@ -65,7 +67,7 @@ public class TeamPermissionService {
     /** 要求成员有某权限，无权限则抛出异常 */
     public void requirePermission(Long teamId, Long userId, String permissionCode) {
         if (!hasPermission(teamId, userId, permissionCode)) {
-            throw new BusinessException(ErrorCode.TEAM_PERMISSION_DENIED, "缺少团队权限: " + permissionCode);
+            throw new BusinessException(TeamErrorCode.TEAM_PERMISSION_DENIED.getCode(), "缺少团队权限: " + permissionCode);
         }
     }
 

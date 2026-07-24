@@ -1,7 +1,7 @@
 package uno.acloud.im.application;
 
 import org.springframework.stereotype.Service;
-import uno.acloud.common.ErrorCode;
+import uno.acloud.common.TeamErrorCode;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.domain.model.ImConversation;
 import uno.acloud.im.infrastructure.mapper.ConversationMapper;
@@ -24,7 +24,7 @@ public class TeamMutePolicyService {
             return;
         }
         if (managementMapper.getActiveMute(conversation.getTeamId(), userId) != null) {
-            throw new BusinessException(ErrorCode.TEAM_PERMISSION_DENIED, "你已被团队禁言，暂时无法发送消息");
+            throw new BusinessException(TeamErrorCode.TEAM_PERMISSION_DENIED.getCode(), "你已被团队禁言，暂时无法发送消息");
         }
     }
 }

@@ -2,6 +2,7 @@ package uno.acloud.team.service.impl;
 
 import org.springframework.stereotype.Service;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.TeamErrorCode;
 
 import uno.acloud.common.TeamPermissionCodes;
 import uno.acloud.exception.BusinessException;
@@ -29,7 +30,7 @@ public class TeamFileAccessService implements TeamFileAccessPort {
             throw new BusinessException(ErrorCode.NO_LOGIN, "用户未登录");
         }
         if (teamFileAccessMapper.countActiveMember(teamId, userId) < 1) {
-            throw new BusinessException(ErrorCode.TEAM_PERMISSION_DENIED, "你不在该团队中，无法访问团队文件");
+            throw new BusinessException(TeamErrorCode.TEAM_PERMISSION_DENIED.getCode(), "你不在该团队中，无法访问团队文件");
         }
     }
 
@@ -49,7 +50,7 @@ public class TeamFileAccessService implements TeamFileAccessPort {
     public void check(long userId, long teamId, String permissionCode) {
         requireTeamMember(teamId, userId);
         if (!hasPermission(userId, teamId, permissionCode)) {
-            throw new BusinessException(ErrorCode.TEAM_PERMISSION_DENIED, "缺少团队权限: " + permissionCode);
+            throw new BusinessException(TeamErrorCode.TEAM_PERMISSION_DENIED.getCode(), "缺少团队权限: " + permissionCode);
         }
     }
 

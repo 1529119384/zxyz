@@ -5,6 +5,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.ShareErrorCode;
 import uno.acloud.share.common.ShareStatus;
 import uno.acloud.share.common.ShareStatusMeta;
 import uno.acloud.exception.BusinessException;
@@ -82,7 +83,7 @@ public class ShareAccessManager {
     public Share requireAccessibleShare(String shareKey, String shareAccessToken) {
         Share share = requireAvailableShare(shareKey);
         if (StringUtils.isNotBlank(share.getPassword()) && !hasValidAccessToken(share, shareAccessToken)) {
-            throw new BusinessException(ErrorCode.SHARE_STATUS_INVALID, "请先通过分享校验");
+            throw new BusinessException(ShareErrorCode.SHARE_STATUS_INVALID.getCode(), "请先通过分享校验");
         }
         return share;
     }
@@ -101,7 +102,7 @@ public class ShareAccessManager {
         }
         Share share = shareMapper.getByShareKey(shareKey.trim());
         if (share == null) {
-            throw new BusinessException(ErrorCode.SHARE_NOT_FOUND, "分享不存在");
+            throw new BusinessException(ShareErrorCode.SHARE_NOT_FOUND.getCode(), "分享不存在");
         }
         return share;
     }
@@ -118,7 +119,7 @@ public class ShareAccessManager {
             return;
         }
         if (!passwordEncoder.matches(StringUtils.trimToEmpty(rawPassword), share.getPassword())) {
-            throw new BusinessException(ErrorCode.SHARE_PASSWORD_INVALID, "提取码错误");
+            throw new BusinessException(ShareErrorCode.SHARE_PASSWORD_INVALID.getCode(), "提取码错误");
         }
     }
 

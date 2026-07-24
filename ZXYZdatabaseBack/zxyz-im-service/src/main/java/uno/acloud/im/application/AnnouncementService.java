@@ -6,6 +6,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.ErrorCode;
+import uno.acloud.common.TeamErrorCode;
 import uno.acloud.common.TeamPermissionCodes;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.domain.enums.MessageType;
@@ -56,7 +58,7 @@ public class AnnouncementService {
         teamPermissionService.requirePermission(teamId, operatorUserId, TeamPermissionCodes.TEAM_ANNOUNCEMENT_PUBLISH);
         Long conversationId = conversationMapper.getTeamConversationId(teamId);
         if (conversationId == null) {
-            throw new BusinessException(ErrorCode.TEAM_NOT_FOUND, "团队会话不存在");
+            throw new BusinessException(TeamErrorCode.TEAM_NOT_FOUND.getCode(), "团队会话不存在");
         }
         String title = requireText(request == null ? null : request.getTitle(), "公告标题不能为空", 120, "内容长度不能超过 120");
         String content = requireText(request == null ? null : request.getContent(), "公告内容不能为空", 5000, "内容长度不能超过 5000");

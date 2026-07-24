@@ -15,6 +15,7 @@ import uno.acloud.project.service.TeamFileAccessPort;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import static uno.acloud.common.ProjectErrorCode.*;
 
 @ExtendWith(MockitoExtension.class)
 class ProjectAccessGuardServiceTest {
@@ -118,7 +119,7 @@ class ProjectAccessGuardServiceTest {
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> projectAccessGuardService.requireProjectAccess(projectId, userId));
-        assertEquals(ErrorCode.PROJECT_NOT_FOUND, ex.getErrorCode());
+        assertEquals(PROJECT_NOT_FOUND.getCode(), ex.getErrorCode());
         assertTrue(ex.getMessage().contains("项目组不存在"));
     }
 }

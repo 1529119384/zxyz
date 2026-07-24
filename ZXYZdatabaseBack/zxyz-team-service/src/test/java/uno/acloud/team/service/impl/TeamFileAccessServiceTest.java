@@ -6,6 +6,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import uno.acloud.common.ErrorCode;
+import static uno.acloud.common.TeamErrorCode.*;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.team.mapper.TeamFileAccessMapper;
 
@@ -47,7 +48,7 @@ class TeamFileAccessServiceTest {
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> teamFileAccessService.requireTeamMember(1L, 10L));
-        assertEquals(ErrorCode.TEAM_PERMISSION_DENIED, ex.getErrorCode());
+        assertEquals(TEAM_PERMISSION_DENIED.getCode(), ex.getErrorCode());
     }
 
     @Test
@@ -120,7 +121,7 @@ class TeamFileAccessServiceTest {
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> teamFileAccessService.check(10L, 1L, "team:file:read"));
-        assertEquals(ErrorCode.TEAM_PERMISSION_DENIED, ex.getErrorCode());
+        assertEquals(TEAM_PERMISSION_DENIED.getCode(), ex.getErrorCode());
     }
 
     @Test
@@ -133,7 +134,7 @@ class TeamFileAccessServiceTest {
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> teamFileAccessService.check(10L, 1L, "team:file:read"));
-        assertEquals(ErrorCode.TEAM_PERMISSION_DENIED, ex.getErrorCode());
+        assertEquals(TEAM_PERMISSION_DENIED.getCode(), ex.getErrorCode());
         assertTrue(ex.getMessage().contains("team:file:read"));
     }
 

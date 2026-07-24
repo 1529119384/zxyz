@@ -5,6 +5,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.ErrorCode;
+import uno.acloud.common.TeamErrorCode;
 import uno.acloud.common.TeamRoleCodes;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.domain.enums.ConversationMemberStatus;
@@ -82,13 +84,13 @@ public class InternalTeamSyncService {
         }
         Team team = teamMapper.getTeamById(request.getTeamId());
         if (team == null) {
-            throw new BusinessException(ErrorCode.TEAM_NOT_FOUND, "IM 团队投影不存在");
+            throw new BusinessException(TeamErrorCode.TEAM_NOT_FOUND.getCode(), "IM 团队投影不存在");
         }
         team.setName(requireText(request.getName(), "团队名称不能为空"));
         team.setAvatar(optionalText(request.getAvatar()));
         team.setDescription(optionalText(request.getDescription(), 500, "团队描述长度不能超过 500"));
         if (teamMapper.updateTeamProfile(team) != 1) {
-            throw new BusinessException(ErrorCode.TEAM_NOT_FOUND, "IM 团队投影不存在");
+            throw new BusinessException(TeamErrorCode.TEAM_NOT_FOUND.getCode(), "IM 团队投影不存在");
         }
         if (request.getOwnerUserId() != null) {
             upsertProfile(request.getOwnerUserId(), request.getOwnerUsername(), request.getOwnerName(), null);

@@ -3,6 +3,7 @@ package uno.acloud.share.service.impl;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.ShareErrorCode;
 import uno.acloud.dto.FileInfoDTO;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.share.infrastructure.client.ShareFileServiceClient;
@@ -97,7 +98,7 @@ public class ShareContentProvider {
                 .findFirst()
                 .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "path 非法"));
         if (!shareValidator.isActive(currentFolder)) {
-            throw new BusinessException(ErrorCode.SHARE_STATUS_INVALID, "分享目录已失效");
+            throw new BusinessException(ShareErrorCode.SHARE_STATUS_INVALID.getCode(), "分享目录已失效");
         }
 
         // 批量收集所有路径段对应的 parentId，单次 HTTP 调用消除 N+1
@@ -122,7 +123,7 @@ public class ShareContentProvider {
                     .findFirst()
                     .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "path 非法"));
             if (!shareValidator.isActive(nextFolder)) {
-                throw new BusinessException(ErrorCode.SHARE_STATUS_INVALID, "分享目录已失效");
+                throw new BusinessException(ShareErrorCode.SHARE_STATUS_INVALID.getCode(), "分享目录已失效");
             }
             currentFolder = nextFolder;
         }
@@ -135,13 +136,13 @@ public class ShareContentProvider {
             throw new BusinessException(ErrorCode.NOT_FOUND, "文件不存在");
         }
         if (!shareValidator.isActive(fileInfo)) {
-            throw new BusinessException(ErrorCode.SHARE_STATUS_INVALID, "文件已失效，无法下载");
+            throw new BusinessException(ShareErrorCode.SHARE_STATUS_INVALID.getCode(), "文件已失效，无法下载");
         }
         if (StringUtils.isBlank(fileInfo.getUuidName())) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "下载对象不存在");
         }
         if (!shareFileResolver.isFileInShareScope(shareId, fileInfo, resolveContext)) {
-            throw new BusinessException(ErrorCode.SHARE_FILE_OUT_OF_SCOPE, "文件不在分享范围内");
+            throw new BusinessException(ShareErrorCode.SHARE_FILE_OUT_OF_SCOPE.getCode(), "文件不在分享范围内");
         }
         return fileInfo;
     }

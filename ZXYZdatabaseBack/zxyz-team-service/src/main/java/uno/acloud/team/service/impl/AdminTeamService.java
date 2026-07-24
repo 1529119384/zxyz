@@ -5,6 +5,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.TeamErrorCode;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.team.dto.system.BroadcastSystemMessageRequest;
 import uno.acloud.team.dto.system.ScheduledEmailBatchRequest;
@@ -101,7 +102,7 @@ public class AdminTeamService implements AdminTeamPort {
         // Phase 1: Pre-transaction validation + HTTP calls
         Team team = teamMapper.selectById(teamId);
         if (team == null || !Integer.valueOf(0).equals(team.getStatus())) {
-            throw new BusinessException(ErrorCode.TEAM_NOT_FOUND, "团队不存在");
+            throw new BusinessException(TeamErrorCode.TEAM_NOT_FOUND.getCode(), "团队不存在");
         }
 
         int memberLimit = normalizePositive(request == null ? null : request.getMemberLimit(), "团队人数上限必须大于 0");

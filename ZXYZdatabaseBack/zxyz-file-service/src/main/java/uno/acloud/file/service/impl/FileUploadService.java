@@ -17,7 +17,6 @@ import uno.acloud.file.dto.ConfirmUploadRequest;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.file.infrastructure.entity.FileItem;
 import uno.acloud.common.util.FileNameUtil;
-import static uno.acloud.common.util.FileNameUtil.BLOCKED_EXTENSIONS;
 import uno.acloud.file.service.FileUploadPort;
 import uno.acloud.file.storage.StorageProvider;
 import uno.acloud.file.storage.StorageProviderRegistry;

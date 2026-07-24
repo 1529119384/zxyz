@@ -10,6 +10,8 @@ import org.springframework.util.StringUtils;
 import uno.acloud.common.util.TransactionHelper;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.UserErrorCode;
+import uno.acloud.common.TeamErrorCode;
+import uno.acloud.common.UserErrorCode;
 import uno.acloud.common.TeamPermissionCodes;
 import uno.acloud.common.TeamRoleCodes;
 import uno.acloud.exception.BusinessException;
@@ -240,7 +242,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
         UserInfoDTO owner = userServiceClient.getUserById(team.getOwnerUserId());
 
         if (teamMapper.updateTeamProfile(team) != 1) {
-            throw new NotFoundException(ErrorCode.TEAM_NOT_FOUND, "团队不存在");
+            throw new NotFoundException(TeamErrorCode.TEAM_NOT_FOUND.getCode(), "团队不存在");
         }
         teamEventPublisher.publishTeamUpdated(team, owner);
         return toTeamVO(team, operatorUserId);
@@ -340,7 +342,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
                 throw new ValidationException("成员状态只能为 0 或 1");
             }
             if (teamMapper.updateMemberStatus(teamId, targetUserId, status) != 1) {
-                throw new NotFoundException(ErrorCode.TEAM_NOT_FOUND, "成员不存在");
+                throw new NotFoundException(TeamErrorCode.TEAM_NOT_FOUND.getCode(), "成员不存在");
             }
             List<TeamMember> members = teamMapper.listMembers(teamId);
             Map<Long, UserInfoDTO> userMap = buildMemberUserMap(members);
@@ -348,7 +350,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
                     .filter(member -> targetUserId.equals(member.getUserId()))
                     .findFirst()
                     .map(m -> toMemberVO(m, userMap))
-                    .orElseThrow(() -> new NotFoundException(ErrorCode.TEAM_NOT_FOUND, "成员不存在"));
+                    .orElseThrow(() -> new NotFoundException(TeamErrorCode.TEAM_NOT_FOUND.getCode(), "成员不存在"));
         } finally {
             if (acquired && lock.isHeldByCurrentThread()) {
                 lock.unlock();
@@ -361,12 +363,12 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
         teamFileAccessService.check(operatorUserId, teamId, TeamPermissionCodes.TEAM_MEMBER_REMOVE);
         Team team = requireTeam(teamId);
         if (targetUserId.equals(team.getOwnerUserId())) {
-            throw new ForbiddenException(ErrorCode.TEAM_PERMISSION_DENIED, "不能移除团队大管理员");
+            throw new ForbiddenException(TeamErrorCode.TEAM_PERMISSION_DENIED.getCode(), "不能移除团队大管理员");
         }
 
         // HTTP call — guard check before transaction
         if (projectServiceClient.countActiveProjectsLedBy(targetUserId) > 0) {
-            throw new ForbiddenException(ErrorCode.TEAM_PERMISSION_DENIED, "成员仍是项目负责人，请先移交负责人");
+            throw new ForbiddenException(TeamErrorCode.TEAM_PERMISSION_DENIED.getCode(), "成员仍是项目负责人，请先移交负责人");
         }
 
         RLock lock = redissonClient.getLock("zxyz:team:member:" + teamId);
@@ -384,7 +386,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
             // DB operations — inside transaction via TransactionHelper
             transactionHelper.executeWithoutResult(status -> {
                 if (teamMapper.removeMember(teamId, targetUserId) != 1) {
-                    throw new NotFoundException(ErrorCode.TEAM_NOT_FOUND, "成员不存在");
+                    throw new NotFoundException(TeamErrorCode.TEAM_NOT_FOUND.getCode(), "成员不存在");
                 }
                 teamPermissionService.clearMemberRole(teamId, targetUserId);
             });
@@ -414,17 +416,17 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
             Team team = requireTeam(teamId);
             TeamMember member = teamMapper.getActiveMember(teamId, userId);
             if (member == null) {
-                throw new NotFoundException(ErrorCode.TEAM_NOT_FOUND, "团队不存在或你不在该团队中");
+                throw new NotFoundException(TeamErrorCode.TEAM_NOT_FOUND.getCode(), "团队不存在或你不在该团队中");
             }
             if (TeamRoleCodes.OWNER.equals(member.getRoleCode()) && teamMapper.countActiveOwners(teamId) <= 1) {
-                throw new ForbiddenException(ErrorCode.TEAM_PERMISSION_DENIED, "最后一个大管理员不能直接退出团队");
+                throw new ForbiddenException(TeamErrorCode.TEAM_PERMISSION_DENIED.getCode(), "最后一个大管理员不能直接退出团队");
             }
             if (projectServiceClient.countActiveProjectsLedBy(userId) > 0) {
-                throw new ForbiddenException(ErrorCode.TEAM_PERMISSION_DENIED, "你仍是项目负责人，请先移交负责人");
+                throw new ForbiddenException(TeamErrorCode.TEAM_PERMISSION_DENIED.getCode(), "你仍是项目负责人，请先移交负责人");
             }
             transactionHelper.executeWithoutResult(status -> {
                 if (teamMapper.removeMember(team.getId(), userId) != 1) {
-                    throw new NotFoundException(ErrorCode.TEAM_NOT_FOUND, "成员不存在");
+                    throw new NotFoundException(TeamErrorCode.TEAM_NOT_FOUND.getCode(), "成员不存在");
                 }
                 teamPermissionService.clearMemberRole(team.getId(), userId);
             });
@@ -470,7 +472,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
         teamFileAccessService.check(operatorUserId, teamId, TeamPermissionCodes.TEAM_STORAGE_ALLOCATE);
         TeamMember existing = teamMapper.getActiveMember(teamId, targetUserId);
         if (existing == null) {
-            throw new NotFoundException(ErrorCode.TEAM_NOT_FOUND, "成员不存在");
+            throw new NotFoundException(TeamErrorCode.TEAM_NOT_FOUND.getCode(), "成员不存在");
         }
         teamMapper.updateMemberStorageLimit(teamId, targetUserId, personalStorageLimit);
     }
@@ -478,7 +480,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
     public Team requireTeam(Long teamId) {
         Team team = teamMapper.selectById(teamId);
         if (team == null || !Integer.valueOf(0).equals(team.getStatus())) {
-            throw new NotFoundException(ErrorCode.TEAM_NOT_FOUND, "团队不存在");
+            throw new NotFoundException(TeamErrorCode.TEAM_NOT_FOUND.getCode(), "团队不存在");
         }
         return team;
     }
@@ -497,7 +499,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
         }
         try {
             if (teamMapper.countCurrentMemberships(userId) > 0 && teamMapper.getActiveMember(teamId, userId) == null) {
-                throw new BusinessException(ErrorCode.TEAM_MEMBER_EXISTS, "一个账号只能属于一个团队");
+                throw new BusinessException(TeamErrorCode.TEAM_MEMBER_EXISTS.getCode(), "一个账号只能属于一个团队");
             }
             TeamMember member = new TeamMember();
             member.setTeamId(teamId);
@@ -509,7 +511,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
             try {
                 teamMapper.upsertMember(member);
             } catch (DuplicateKeyException e) {
-                throw new BusinessException(ErrorCode.TEAM_MEMBER_EXISTS, "一个账号只能属于一个团队");
+                throw new BusinessException(TeamErrorCode.TEAM_MEMBER_EXISTS.getCode(), "一个账号只能属于一个团队");
             }
         } finally {
             if (userLockAcquired && userLock.isHeldByCurrentThread()) {

@@ -78,7 +78,7 @@ public class LocalDiskStorageProvider implements StorageProvider {
                 providerId(),
                 null,  // 本地存储无预签名 URL
                 originalName,
-                true   // 本地存储：前端直连后端 stream 端点
+                false   // 本地存储：前端传到后端
         );
     }
 

@@ -5,6 +5,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import uno.acloud.common.util.TransactionHelper;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.ShareErrorCode;
 import uno.acloud.share.common.ShareStatus;
 import uno.acloud.dto.FileInfoDTO;
 import uno.acloud.exception.BusinessException;
@@ -134,7 +135,7 @@ public class ShareManager {
         }
         Share share = shareMapper.getByIdAndUserId(shareId, userId);
         if (share == null) {
-            throw new BusinessException(ErrorCode.SHARE_NOT_FOUND, "分享不存在");
+            throw new BusinessException(ShareErrorCode.SHARE_NOT_FOUND.getCode(), "分享不存在");
         }
         share = shareStatusCalculator.refreshStatusIfNeeded(share);
         return toShareMyListItemVO(share);
@@ -146,7 +147,7 @@ public class ShareManager {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "shareId 不能为空");
         }
         if (shareMapper.getByIdAndUserId(shareId, userId) == null) {
-            throw new BusinessException(ErrorCode.SHARE_NOT_FOUND, "分享不存在");
+            throw new BusinessException(ShareErrorCode.SHARE_NOT_FOUND.getCode(), "分享不存在");
         }
         shareMapper.updateStatusByIdAndUserId(shareId, userId, ShareStatus.CANCELED);
     }

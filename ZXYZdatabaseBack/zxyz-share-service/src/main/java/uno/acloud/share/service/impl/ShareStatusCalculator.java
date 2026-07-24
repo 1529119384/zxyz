@@ -2,6 +2,7 @@ package uno.acloud.share.service.impl;
 
 import org.springframework.stereotype.Component;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.ShareErrorCode;
 import uno.acloud.share.common.ShareStatus;
 import uno.acloud.share.common.ShareStatusMeta;
 import uno.acloud.exception.BusinessException;
@@ -45,13 +46,13 @@ public class ShareStatusCalculator {
 
     public BusinessException invalidShareException(Integer status) {
         return switch (status) {
-            case ShareStatus.CANCELED -> new BusinessException(ErrorCode.SHARE_STATUS_INVALID, "分享已取消",
+            case ShareStatus.CANCELED -> new BusinessException(ShareErrorCode.SHARE_STATUS_INVALID.getCode(), "分享已取消",
                     ShareStatusMeta.toData(ShareStatus.CANCELED));
-            case ShareStatus.EXPIRED -> new BusinessException(ErrorCode.SHARE_EXPIRED, "分享已过期",
+            case ShareStatus.EXPIRED -> new BusinessException(ShareErrorCode.SHARE_EXPIRED.getCode(), "分享已过期",
                     ShareStatusMeta.toData(ShareStatus.EXPIRED));
-            case ShareStatus.ACCESS_LIMIT_REACHED -> new BusinessException(ErrorCode.SHARE_STATUS_INVALID, "分享访问次数已用尽",
+            case ShareStatus.ACCESS_LIMIT_REACHED -> new BusinessException(ShareErrorCode.SHARE_STATUS_INVALID.getCode(), "分享访问次数已用尽",
                     ShareStatusMeta.toData(ShareStatus.ACCESS_LIMIT_REACHED));
-            default -> new BusinessException(ErrorCode.SHARE_NOT_FOUND, "分享不存在",
+            default -> new BusinessException(ShareErrorCode.SHARE_NOT_FOUND.getCode(), "分享不存在",
                     ShareStatusMeta.toData(ShareStatus.CANCELED));
         };
     }

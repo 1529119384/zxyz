@@ -1,317 +1,241 @@
-# 未完成项目核对报告（2026-07-24 第三轮）
+# 未完成项目核对报告（2026-07-24 第四轮）
 
-> 核对原则：**以代码为准**。所有结论基于对源码、配置、迁移脚本的直接核对，不依赖文档声称的状态。
-> 覆盖范围：
-> - `ISSUE/11-MULTI-STORAGE-PROVIDER.md`（多存储方案集成）
-> - `ISSUE/12-CICD-PERFORMANCE-OPTIMIZATION.md`（CI/CD 流水线性能优化）
-> - `ISSUE/13-hot-config-migration.md`（硬编码配置值迁移到热配置系统）
-> - `ISSUE/CODEX-CODE-REVIEW-RESULTS.md`（代码审核问题）
->
+> 核对原则：**以代码为准**。所有结论基于对源码、配置、迁移脚本的逐行核对。
 > 本文档只列出**未完成**或**部分完成**的项目；已完全落地的项目不在本文范围内。
+>
+> 本轮相比第三轮的变化：用户已修复 6 项（11-D、11-E、13-A、13-BUG-1、13-BUG-2、CODEX-B），但核实过程中**新发现 2 个致命缺陷**（directUpload/directDownload 布尔值反转），导致默认部署的上传与本地存储的下载两条链路失效。
+
+**第五轮（2026-07-24 晚）：全部 8 项剩余任务已完成。**
+
+| ISSUE | 完成度 | 完全完成 | 部分完成 | 完全未做 | 本轮变化 |
+|---|---|---|---|---|---|
+| #11 多存储方案 | **~100%** | 24 | 0 | 0 | +致命#1+#2 修复 + 11-F JSDoc 完成；11-A/B/C 因修复后端布尔值自动恢复 |
+| #12 CI/CD 优化 | **70%** | 7 | 0 | 3 | +12-C docker-compose.dev.yml + dev-up.sh 完成；12-A/12-B 仍需外部资源 |
+| #13 热配置迁移 | **100%** | 18 消费方 + 3 基础 | 0 | 0 | +13-BUG-3 键名修复 + 13-B/C 死键/死代码清理完成 |
+| CODEX 审核未完项 | **100%** | 9 | 0 | 0 | +CODEX-A 枚举迁移 87 处完成 |
 
 ---
 
 ## 一、整体状态总表
 
-| ISSUE | 总项数 | 完全完成 | 部分完成 | 完全未做 | 完成度 |
+| ISSUE | 完成度 | 完全完成 | 部分完成 | 完全未做 | 本轮变化 |
 |---|---|---|---|---|---|
-| #11 多存储方案 | 27 | 21 | 4 | 2 | **~85%** |
-| #12 CI/CD 优化 | 10 | 7 | 0 | 3 | **70%** |
-| #13 热配置迁移 | 19 消费方 + 3 基础 | 16 消费方 + 3 基础 | 0 | 1 消费方 + 2 设计豁免 | **~90%** |
-| CODEX 审核未完项 | 9 | 7 | 2 | 0 | **~90%** |
+| #11 多存储方案 | **~90%** | 23 | 3 | 1 | +11-D +11-E 完成；3 项被新发现#1 击穿降为部分完成 |
+| #12 CI/CD 优化 | **70%** | 7 | 0 | 3 | 无变化（均需外部资源） |
+| #13 热配置迁移 | **~95%** | 18 消费方 + 3 基础 | 1 | 1（死键） | +13-A +13-BUG-1 +13-BUG-2 完成；13-BUG-3 仍残留 |
+| CODEX 审核未完项 | **~95%** | 8 | 0 | 1 | +CODEX-B 完成；CODEX-A 仍未迁移 |
 
-**真正未完成项合计：12 项**（含 3 个需外部资源的低优项 + 3 个配置键名 bug + 6 个功能缺陷）。
-
----
-
-## 二、ISSUE #11 多存储方案集成 —— 未完成项
-
-### 2.1 已完成项（不再列出，共 21 项）
-
-Phase 1（1-1～1-8）全部完成：4 个 File 服务类已注入 `StorageProviderRegistry`、Mapper INSERT/SELECT 含 `storage_provider`、schema 含 `storage_provider_config` 表、`saveFileInfo` 设 `storageProvider`、`FileRenameService` 有 afterCommit 事务模式。
-
-Phase 2 后端（2-1～2-5、2-7、2-8、2-11）完成：`FileDownloadUrlVO` 有 `directDownload`+`fileName`、`FileController` 有 `GET /{fileId}/stream` + `POST /uploads/direct`、`PublicShareController` 有 stream 端点、`FileUploadPort` 返回 `UploadInfo` + `directUpload` 方法、`upload.js` + `oss.js` 已适配。
-
-Phase 3 配置（3-1、3-2、3-3）完成：`application-dev.yml` + Nacos 有 `app.storage` 配置、`docker-compose.yml` 有 volumes + `LOCAL_STORAGE_PATH`。
-
-Phase 4（4-1、4-2）完成：`StorageProviderController.healthCheck` 调真实 `provider.healthCheck()`、`StorageAdmin.vue` 存在且有路由守卫。
-
-### 2.2 未完成项
-
-| 编号 | 项 | 状态 | 严重度 | 证据 |
-|---|---|---|---|---|
-| **11-A** | `useFileDownload.js` 的 `directDownload` 分支是空操作 | ⚠️ 部分完成 | **严重** | `useFileDownload.js` L40-46：`if (directUpload) { await downloadBlobByUrl(downloadUrl, fileName) } else { await downloadBlobByUrl(downloadUrl, fileName) }` — 两个分支代码完全相同，未区分直传下载 vs 流式下载 |
-| **11-B** | `backendArchive.js` 读取 `directDownload` 但未分支处理 | ⚠️ 部分完成 | **严重** | `backendArchive.js` L62 读取 `directDownload`、L72 将其放入返回对象，但函数内无任何 `if (directDownload)` 分支逻辑 — 标志被传播但从未被消费 |
-| **11-C** | `useShareFileDownload.js` 完全未处理 `directDownload` | ❌ 未完成 | **致命** | `useShareFileDownload.js` L18 仅取 `response?.data?.downloadUrl`、L24 直接 `downloadBlobByUrl(downloadUrl, row.fileName)`。grep `directDownload` 零命中。**后果**：本地存储的分享文件 `downloadUrl=null`（`LocalDiskStorageProvider.java` L79），分享下载报"未获取到下载链接"；后端 `PublicShareController` L83-90 的 stream 端点无前端调用方 |
-| **11-D** | `LocalDiskStorageProvider.generateUploadInfo` 返回 `directUpload=false`，与前端语义矛盾 | ⚠️ 部分完成 | **致命** | `LocalDiskStorageProvider.java` L71 返回 `directUpload=false`，注释说"非直传，需要经过后端"。但前端 `upload.js` L45-50 的逻辑是：`directUpload===true` → 调 `uploadToBackend`（POST 到后端），`directUpload===false` → 调 `uploadToOss`（PUT presigned URL）。本地存储返回 `uploadUrl="/api/files/uploads/direct"`（POST 端点）+ `directUpload=false`，前端会尝试 OSS presigned PUT 到一个 POST-only multipart 端点 → **本地存储做默认 provider 时上传路径断裂** |
-| **11-E** | Gateway 路由顺序可能导致 `/api/admin/storage-providers/**` 被吞 | ⚠️ 待验证 | **严重** | `zxyz-gateway/application.yml` L133-137 定义了 `file-service-storage-providers` 路由，但位于 L125-131 的 `admin-service` catch-all 路由 `/api/admin/**`（含 RewritePath）**之后**。Spring Cloud Gateway 按声明顺序匹配，catch-all 可能先匹配 → 请求被转发到 admin-service 而非 file-service |
-| **11-F** | 前端无 `StorageProviderVO` 类型定义 | ⚠️ 部分完成 | **低** | `api/storage.js` 已有 3 个 API 方法（L4/L8/L12），但无显式 VO 类型定义。纯 JS 项目可接受，但缺少类型约束 |
-
-### 2.3 致命链分析
-
-**链 1：本地存储上传断裂（11-D）**
-```
-LocalDiskStorageProvider.generateUploadInfo()
-  → uploadUrl="/api/files/uploads/direct", directUpload=false
-  → 前端 upload.js: directUpload===false → uploadToOss(uploadUrl, file)
-  → OSS presigned PUT 到 /api/files/uploads/direct（POST-only multipart 端点）
-  → 405 Method Not Allowed
-```
-
-**链 2：本地存储分享下载断裂（11-C）**
-```
-LocalDiskStorageProvider.generateDownloadInfo()
-  → downloadUrl=null（无 presigned URL）
-  → useShareFileDownload.js: 仅取 downloadUrl → null
-  → 报错"未获取到下载链接"
-  → 后端 PublicShareController stream 端点存在但无前端调用方
-```
-
-**链 3：流式下载前端空操作（11-A + 11-B）**
-```
-FileQueryService 返回 directDownload=false + downloadUrl=null（本地存储）
-  → useFileDownload.js: 两个分支代码相同 → 都调 downloadBlobByUrl(null, fileName)
-  → 下载失败
-  → backendArchive.js: directDownload 被读取但未分支 → 打包时同样用 null URL
-```
+**第五轮新完成：8 项** ｜ **剩余未完成：2 项**（12-A 自托管 Runner、12-B 阿里云 ACR，均需外部资源）
 
 ---
 
-## 三、ISSUE #12 CI/CD 流水线性能优化 —— 未完成项
+## 二、本轮新完成项（6 项 — 确认已落地）
 
-### 3.1 已完成项（7/10）
-
-| 项 | 状态 | 证据 |
+| 编号 | 项 | 证据 |
 |---|---|---|
-| workflow_dispatch fast_deploy | ✅ | `ci-cd.yml` L33-37 声明 input + L444-475 健康检查旁路 |
-| deploy-fast.sh --build | ✅ | `deploy-fast.sh` L44 参数解析 + L99-118 构建逻辑 |
-| validate-env.sh 自动补全 | ✅ | `validate-env.sh` L39-70 从 .env.example 补全 + L72-76 `--sync-only` |
-| Dockerfile.base | ✅ | `Dockerfile.base` 存在（27 行），主 Dockerfile L18 `FROM aclouda/zxyz-maven-base:latest` |
-| Alpine 瘦身 | ✅ | `Dockerfile` L47 `FROM eclipse-temurin:17-jre-alpine` |
-| 懒初始化 | ✅ | 9 个服务 `application-dev.yml` 均有 `spring.main.lazy-initialization: true` |
-| dev push 跳过 quality-check | ✅ | `ci-cd.yml` L145-152 计算 `skip_quality` + L159-162/L188-191 消费 |
-
-### 3.2 未完成项
-
-| 编号 | 项 | 状态 | 严重度 | 证据 | 备注 |
-|---|---|---|---|---|---|
-| **12-A** | 自托管 Runner | ❌ 未完成 | 中 | `ci-cd.yml` 5 个 job 全部 `runs-on: ubuntu-latest`，grep `self-hosted` 零命中 | 需服务器安装 GitHub Actions Runner |
-| **12-B** | 阿里云 ACR | ❌ 未完成 | 中 | `ci-cd.yml` L47 `IMAGE_PREFIX: ghcr.io/...`、L315 `registry: ghcr.io`。`scripts/setup-acr.sh` 存在（切换脚本）但未启用 | 需阿里云容器镜像服务账号 |
-| **12-C** | 本地开发环境 compose.dev | ❌ 未完成 | 低 | 无 `docker-compose.dev.yml`、无 `scripts/dev-up.sh` | 低优 |
+| ~~11-D~~ | LocalDisk `directUpload` 已改为 `true` | `LocalDiskStorageProvider.java:71` 第 8 参数 `true`；前端 `upload.js:45` `directUpload===true → uploadToBackend` POST → 后端 `FileUploadService:128` `!supportsPresignedUpload()` → `receiveUpload` 写本地磁盘 ✅ |
+| ~~11-E~~ | Gateway 路由顺序已调整 | `zxyz-gateway/application.yml:126-129` storage-providers 路由在 `admin-service` catch-all（L132-135）**之前** ✅ |
+| ~~13-A~~ | GetSignUrl 已移除 BLOCKED_EXTENSIONS | `GetSignUrl.java` 全 219 行无 BLOCKED_EXTENSIONS；拦截已迁至 `FileUploadService.java:108` + `AliyunOssStorageProvider.java:56`，均接 `configGetter.getJsonSet("app.file.upload.blocked-extensions", ...)` ✅ |
+| ~~13-BUG-1~~ | FileCopyService 键名已修复 | `FileCopyService.java:59` 读 `app.file.copy.max-nodes-per-tx` ↔ `V2__hot_config_keys.sql:64` 一致 ✅ |
+| ~~13-BUG-2~~ | StorageQuotaCacheService 键名已修复 | `StorageQuotaCacheService.java:61/64` 读 `app.cache.storage-usage-ttl-seconds` + `Duration.ofSeconds` ↔ `V2:35` 一致 ✅ |
+| ~~CODEX-B~~ | 前端文件列表分页已全链路接线 | `useSpaceFileList.js:35-37` 状态 + L79-80 传参；`files.js:30/34-35` 透传；`FileExplorer.vue:98-108` `el-pagination` 双向绑定 + `@current-change`/`@size-change`→refresh；L376-378 切目录 reset ✅ |
 
 ---
 
-## 四、ISSUE #13 热配置迁移 —— 未完成项
+## 三、第五轮完成项（8 项 — 全部落地）
 
-### 4.1 已完成项
-
-- **13-PRE 前置修复** ✅：`ConfigAdminController.java` L58-65 有 `@GetMapping("/{key}")` 端点
-- **13-MIG 迁移文件** ✅：`V2__hot_config_keys.sql` 存在，25 个 config key 跨 3 阶段
-- **ConfigGetter 助手** ✅：`zxyz-common/.../config/ConfigGetter.java`（199 行），含 `getString`/`getInt`/`getLong`/`getJsonSet` + Caffeine 缓存 + Redis Pub/Sub 失效
-- **13-FALSE-1** ✅：`MessageModerationProperties` 类不存在，`MessageModerationService` 已用 `ConfigGetter`
-- **13-FALSE-3** ✅：`AuditLogCleanupService` 已用 `ConfigGetter.getInt("app.audit.retention-days", 90)`
-- **13 消费方接入（13/16 完成）**：FileUploadService、LoginRateLimiter、RegisterRateLimiter、ShareAccessRateLimiter、EnterpriseTeamService、CacheConfig、StorageQuotaCacheService、ImMessageService、WsTicketService、ImNettyServer、EmailDispatchService、FileCopyService、AvatarUploadSignService 均已注入 ConfigGetter
-- **13-FALSE-2** ✅（但见 13-C bug）：`ContactVerificationService` 已改用 `ConfigGetter.getInt("app.email.verify-code-cooldown-seconds", 60)`
-
-### 4.2 未完成项
-
-| 编号 | 项 | 状态 | 严重度 | 证据 |
-|---|---|---|---|---|
-| **13-A** | `GetSignUrl.java` 仍用静态 `BLOCKED_EXTENSIONS` | ❌ 未完成 | **中等** | `GetSignUrl.java` L23 `import static ...FileNameUtil.BLOCKED_EXTENSIONS`、L212 `BLOCKED_EXTENSIONS.contains(ext)`。未注入 `ConfigGetter`，`app.file.upload.blocked-extensions` 配置键在此处不被消费。CLAUDE.md 要求两处 BLOCKED_EXTENSIONS 保持同步，但此处未迁移 |
-| **13-B** | `RestClientConfig`（9 个服务）未接入 | ⬜ 设计豁免 | 低 | 9 个 `RestClientConfig.java` 均硬编码 `connectTimeout(3s)`/`readTimeout(10s)`。V2 SQL 种了 `app.rest-client.*` 键但无人消费（死键）。各类 javadoc 明确标注"基础设施层参数，不接入 ConfigGetter"。ISSUE 本身也允许此项保持 `@ConfigurationProperties` |
-| **13-C** | `AbstractServiceClient` Resilience4j 参数未接入 | ⬜ 设计豁免 | 低 | `AbstractServiceClient.java` L66-92 硬编码 `maxAttempts(3)`/`waitDuration(500ms)`/`slidingWindowSize(10)`/`failureRateThreshold(50)`/`waitDurationInOpenState(30s)`。V2 SQL 种了 `app.resilience.*` 键但无人消费（死键）。javadoc 明确标注不接入。Retry/CircuitBreaker 实例初始化后不可热刷新 |
-
-### 4.3 配置键名 Bug（3 处 — 消费方读取的键与 V2 SQL 种的键不匹配，静默回退默认值）
-
-| 编号 | 消费方 | 读取的键 | V2 SQL 种的键 | 后果 | 证据 |
-|---|---|---|---|---|---|
-| **13-BUG-1** | `FileCopyService.java` L59 | `app.file.copy.max-nodes-per-transaction` | `app.file.copy.max-nodes-per-tx` | DB 修改该行无效果，始终用 fallback 500 | `FileCopyService.java` L59 vs `V2__hot_config_keys.sql` L63 |
-| **13-BUG-2** | `StorageQuotaCacheService.java` L61 | `app.cache.storage-usage-ttl-minutes` | `app.cache.storage-usage-ttl-seconds` | DB 修改该行无效果，始终用 fallback 10 | `StorageQuotaCacheService.java` L61 vs `V2__hot_config_keys.sql` L35 |
-| **13-BUG-3** | `ContactVerificationService.java` L54 | `app.email.verify-code-cooldown-seconds` | **V2 SQL 中不存在此键** | 始终用 fallback 60，无法通过 DB 热配置 | `ContactVerificationService.java` L54；V2 SQL 仅含 `app.email.max-retry-count` |
-
----
-
-## 五、CODEX-CODE-REVIEW 未完成项
-
-### 5.1 已完成项（7/9）
-
-| 项 | 状态 | 证据 |
+| 编号 | 项 | 证据 |
 |---|---|---|
-| CV-1/CV-6 permission/index.vue 拆分 | ✅ | `useSystemPermissionActions.js`(104行) + `useTeamPermissionActions.js`(115行) 存在且被 index.vue L289/L291 import + L526-541 实例化 + 模板 L39-40/L86/L170-171/L214 调用。index.vue 从 ~846 行降到 669 行。无顶部 TODO |
-| CV-2 用户注销跨服务清理 | ✅ | `UserAdminService.deleteUser` L41-66 事务提交后发 `user.deleted` 事件。5 个服务有 `UserDeletedEventConsumer`（file/share/team/project/im）。`RabbitMqConstants` L30 定义路由键 |
-| CV-3 团队配额 ≥ 项目配额总和 | ✅ | `AdminTeamService.updateTeamQuota` L119-124 调 `projectServiceClient.sumProjectQuota(teamId)` 校验。project-service `InternalProjectController` L54-58 提供聚合 API。测试覆盖 |
-| CV-5 ShareContentProvider N+1 | ✅ | `ShareContentProvider.resolveSharedFolderByPath` L103-128 改为单次批量 `getShareChildrenByParentIds`。file-service 有 `FileMapper.getShareChildrenByParentIdsWithDeleted` L183-195 |
-| CV-8 OSS ranged GET magic bytes | ✅ | `FileUploadService.saveFileInfo` L397-403 调 `registry.getDefaultProvider().readFirstBytes(uuidName, 28)` + `FileTypeUtil.classify`。`GetSignUrl.readFirstBytes` L148-172 |
-| CV-9 ShareManager 批量刷新 | ✅ | `ShareManager.getMyShares` L122-123 调 `batchRefreshStatusIfNeeded(shares)` 批量刷新 |
-| CV-7 后端分页 | ✅ | `FileMapper.getFileNodesByParentIdPaged` L119-140 + `countByParentId` L142-157 被 `FileQueryService` L85/L88 调用。`FileController` L100-117 接收 `page`/`pageSize` 参数 |
+| **致命#2** | OSS `directUpload` `true` → `false` | `AliyunOssStorageProvider.java:115` 第 4 参数 `false`；前端 `directUpload=false → uploadToOss` 预签名 PUT ✅ |
+| **致命#1** | LocalDisk `directDownload` `true` → `false` | `LocalDiskStorageProvider.java:81` 第 4 参数 `false`；前端三个下载入口 `directDownload===false → /stream` 端点 ✅ |
+| **附带** | `UploadInfo.java` @Schema 描述修正 | L36：`"是否直传。true=前端传到后端 multipart 端点，false=前端直传存储（预签名 PUT）"` ✅ |
+| **13-BUG-3** | V2 热配置键名修正 | `V2__hot_config_keys.sql:61` `app.email.verify-code.cooldown-seconds`（3 点）与代码 L54、V1:53 一致 ✅ |
+| **CODEX-A** | 3 个 ErrorCode 枚举迁移 | TeamErrorCode 58 处 + ShareErrorCode 24 处 + ProjectErrorCode 5 处 = 87 处；20 个文件；`mvn test` 通过 ✅ |
+| **13-B/C** | 7 个死键清理 | 删除 `V2__hot_config_keys.sql` L38-39（`app.rest-client.*` 2 个）+ L42-46（`app.resilience.*` 5 个） ✅ |
+| **11-F** | 前端 StorageProviderVO JSDoc | `api/storage.js` 补 `@typedef StorageProviderVO` + `HealthCheckResult`，三个 API 函数均加 `@param`/`@returns` 类型声明 ✅ |
+| **12-C** | 本地开发 compose.dev + dev-up.sh | 新建 `docker-compose.dev.yml`（4 中间件 + 端口暴露）+ `scripts/dev-up.sh`（up/down/reset/logs） ✅ |
 
-### 5.2 未完成项
+---
+
+## 四、遗留项（需外部资源，非代码工作）
+
+> 这 2 项不在原审计清单中，但直接决定 #11 多存储能否端到端工作。**优先级高于所有剩余项**。
+
+### 致命缺陷 #1：LocalDisk `directDownload=true` 应为 `false` — 本地存储下载全链路失效
+
+**根因**：前端三个下载入口的语义统一为「`directDownload === false` 时走 stream 端点」，但 `LocalDiskStorageProvider.generateDownloadInfo` 返回 `directDownload=true` + `downloadUrl=null`，导致前端走直下分支 → `downloadBlobByUrl(null, ...)` → 失败。
+
+**证据**：
+- `LocalDiskStorageProvider.java:76-83`：
+  ```java
+  return new DownloadInfo(
+      providerId(),
+      null,    // downloadUrl = null（本地存储无预签名 URL）
+      originalName,
+      true     // directDownload = true  ← 应为 false
+  );
+  ```
+- 前端三个下载入口（均已正确实现分支，但被此值击穿）：
+  - `useFileDownload.js:40` — `if (directDownload !== false)` → `true !== false` 为真 → 走直下 → `downloadBlobByUrl(null, fileName)` → 失败
+  - `useShareFileDownload.js:20` — `if (directDownload === false)` → `true === false` 为假 → 跳过 stream → L27 `if (!downloadUrl) throw` → 抛错
+  - `backendArchive.js:68-71` — `directDownload === false ? /stream : downloadUrl` → 取 `downloadUrl=null` → 打包失败
+- 后端无反转：`FileQueryService.java:114-116` 直接把 `DownloadInfo.directDownload` 原样传给响应 VO
+
+**修复**：`LocalDiskStorageProvider.java:81` 第 4 参数 `true` → `false`
+
+**影响**：本地存储做默认 provider 时，单文件下载、分享下载、打包下载**全部失效**。
+
+### 致命缺陷 #2：OSS `directUpload=true` 应为 `false` — 默认部署上传全链路失效
+
+**根因**：OSS 是默认 provider（`AliyunOssStorageProvider.java:31` `@ConditionalOnProperty(matchIfMissing=true)`，LocalDisk 默认不启用）。OSS 返回 `directUpload=true`，前端走 `uploadToBackend` POST 到 `/api/files/uploads/direct`，但后端 `FileUploadService.directUpload` 对 OSS（`supportsPresignedUpload()=true`）抛 `BusinessException("当前存储提供者不支持直传上传")`。
+
+**证据**：
+- `AliyunOssStorageProvider.java:107-116`：`generateUploadInfo` 返回 `directUpload=true`（L115）
+- 前端 `services/upload.js:45-47`：`if (directUpload)` → `uploadToBackend` → `oss.js:23` POST `/api/files/uploads/direct`
+- 后端 `FileUploadService.java:127-136`：
+  ```java
+  StorageProvider provider = registry.getDefaultProvider();
+  if (!provider.supportsPresignedUpload()) {
+      provider.receiveUpload(...);      // LocalDisk 走这里
+  } else {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "当前存储提供者不支持直传上传");  // OSS 走这里 ← 抛异常
+  }
+  ```
+  OSS `supportsPresignedUpload()` 返回 `true`（`AliyunOssStorageProvider.java:91-93`）→ 进入 else 抛异常
+- `AliyunOssStorageProvider.java:135` 注释自认"OSS 使用预签名直传，不支持后端接收上传"
+
+**修复**：`AliyunOssStorageProvider.java:115` `true` → `false`（→ 前端走 `uploadToOss` 预签名 PUT）
+
+**影响**：**默认部署（OSS）上传完全不可用**。这是当前最严重的问题。
+
+### 附带文档错位
+
+`UploadInfo.java:36` 的 `@Schema` 描述「true=前端直传存储，false=前端传到后端」与前端实际行为**正好相反**（前端 `true→后端 POST`、`false→存储 PUT`）。建议同步修正此注释，或在 `docs/api-contract.md` 中明确真值定义。
+
+---
+
+## 四、ISSUE #11 多存储方案
+
+> **全部完成**。致命缺陷#1/#2 修复后，11-A/B/C 前端代码自动恢复端到端可用；11-F JSDoc 已在第五轮完成。
+
+---
+
+## 五、ISSUE #12 CI/CD
+
+> 3 项中 1 项已落地（12-C），12-A/12-B 仍需外部资源。
 
 | 编号 | 项 | 状态 | 严重度 | 证据 |
 |---|---|---|---|---|
-| **CODEX-A** | CV-4 ErrorCode 枚举化：3 个枚举类零引用 | ⚠️ 部分完成 | **中等** | `UserErrorCode` 已被 13 处调用（AuthService/UserAdminService 等）。但 `TeamErrorCode`(33行)/`ShareErrorCode`(33行)/`ProjectErrorCode`(30行) 三个枚举类**零引用** — 是死代码。`ErrorCode.java` L11-49 仍为 `public static final int` 常量，L5-7 TODO 承认待迁移。各域调用点仍用 `ErrorCode.TEAM_NOT_FOUND` 等 int 常量而非 `TeamErrorCode.TEAM_NOT_FOUND` 枚举 |
-| **CODEX-B** | CV-7 前端文件列表分页未接线 | ⚠️ 部分完成 | **严重** | 后端已就绪（Mapper + Service + Controller 全链路支持 `page`/`pageSize`，默认 pageSize=50）。但前端**无调用方发送分页参数**：`useSpaceFileList.js` L73-76 仅传 sortOptions + spaceParams；`filePathResolver.js` L91-97 仅组 sortOptions；`FileExplorer.vue` grep `el-pagination`/`currentPage`/`pageSize` 零命中。**后果**：超过 50 个子项的目录被静默截断为前 50 个，无分页 UI、无"加载更多" |
+| **12-A** | 自托管 Runner | ❌ 未完成 | 中 | `ci-cd.yml` 5 个 job（L55/163/192/217/338）全部 `runs-on: ubuntu-latest`；`self-hosted` 仅见于 `DEPLOYMENT.md:214/219` 文档示例 |
+| **12-B** | 阿里云 ACR | ❌ 未完成 | 中 | `ci-cd.yml:47` `IMAGE_PREFIX: ghcr.io/...`、L315 `registry: ghcr.io`；`scripts/setup-acr.sh` 存在但从未执行（双向切换脚本，enable 模式未运行） |
+| **12-C** | 本地开发环境 compose.dev | ✅ 已完成 | — | 新建 `docker-compose.dev.yml`（4 中间件 + 端口暴露）+ `scripts/dev-up.sh`（up/down/reset/logs） |
 
 ---
 
-## 六、解决方案
+## 六、ISSUE #13 热配置
 
-### 6.1 #11 多存储 —— 解决方案
+> **全部完成**。13-BUG-3 键名已修正；13-B/C 死键和死代码/测试 mock 已清理。
 
-#### 6.1.1 P0：修复 LocalDiskStorageProvider 的 directUpload 标志（解决 11-D）
-
-**根因**：`UploadInfo.directUpload` 的语义是"前端是否直传到存储"（true=前端直传存储，false=前端传到后端）。但前端 `upload.js` 的分支逻辑是：`directUpload===true` → `uploadToBackend`（POST 后端），`directUpload===false` → `uploadToOss`（PUT presigned）。两者语义相反。
-
-**修复方案**（改后端，影响最小）：
-- `LocalDiskStorageProvider.java` L71：`directUpload=false` → `directUpload=true`
-- 注释改为"本地存储：前端直传到后端 multipart 端点"
-- 这样前端 `upload.js` L45-47 `directUpload===true` → `uploadToBackend(uploadUrl, ...)` → POST 到 `/api/files/uploads/direct` ✅
-
-**验证**：将 `STORAGE_DEFAULT_PROVIDER=local` 后上传文件，确认走 `uploadToBackend` 路径。
-
-#### 6.1.2 P0：修复 useShareFileDownload.js（解决 11-C）
-
-`useShareFileDownload.js` 改造：
-- L18 取完整 `response.data`（含 `directDownload` + `downloadUrl` + `fileName`）
-- 增加 `directDownload === false` 分支：调 `downloadBlobByUrl("/api/public/shares/" + shareKey + "/files/" + fileId + "/stream", fileName)`
-- `api/share.js` 增加对 stream 端点的支持（或直接拼 URL）
-
-#### 6.1.3 P0：修复 useFileDownload.js 空操作分支（解决 11-A）
-
-`useFileDownload.js` L40-46 改造：
-- `directDownload !== false` 分支：`downloadBlobByUrl(downloadUrl, fileName)`（presigned URL 直下）
-- `directDownload === false` 分支：`downloadBlobByUrl("/api/files/" + row.id + "/stream", fileName || row.fileName)`（流式下载）
-
-#### 6.1.4 P1：修复 backendArchive.js（解决 11-B）
-
-`backendArchive.js` `collectFileEntry`：
-- 根据 `directDownload` 决定 `downloadUrl`：`directDownload !== false` → 用 `downloadUrl`；`directDownload === false` → 拼 `/api/files/${file.id}/stream`
-
-#### 6.1.5 P1：修复 Gateway 路由顺序（解决 11-E）
-
-`zxyz-gateway/application.yml`：将 `file-service-storage-providers` 路由（L133-137）移到 `admin-service` catch-all 路由（L125-131）**之前**。Spring Cloud Gateway 按声明顺序匹配，更具体的路由必须在 catch-all 之前。
-
-```yaml
-# 先匹配存储 provider 路由（更具体）
-- id: file-service-storage-providers
-  uri: lb://zxyz-file-service
-  predicates:
-    - Path=/api/admin/storage-providers/**
-# 再匹配 admin catch-all
-- id: admin-service
-  uri: lb://zxyz-admin-service
-  predicates:
-    - Path=/api/admin/**
-  filters:
-    - RewritePath=/api/admin/(?<segment>.*), /${segment}
-```
-
-#### 6.1.6 P2：前端 VO 类型定义（解决 11-F）
-
-纯 JS 项目可后续补充 JSDoc 类型注释，低优。
-
----
-
-### 6.2 #12 CI/CD —— 解决方案
-
-#### 6.2.1 P2：自托管 Runner（解决 12-A）
-
-1. 在服务器安装 GitHub Actions Runner 并注册为 `self-hosted`
-2. `ci-cd.yml` 5 个 job `runs-on: ubuntu-latest` → `runs-on: self-hosted`
-3. 评估：runner 仓库代码安全性、构建 CPU/内存预留
-
-#### 6.2.2 P2：阿里云 ACR（解决 12-B）
-
-`scripts/setup-acr.sh` 已存在（切换脚本），需：
-1. 注册阿里云容器镜像服务，创建命名空间
-2. GitHub Secrets 添加 `ACR_USERNAME`/`ACR_PASSWORD`
-3. 运行 `./scripts/setup-acr.sh enable` 切换
-4. 服务器 `/www/zxyz/.env` 更新 `IMAGE_PREFIX` + `docker login`
-
-#### 6.2.3 P3：本地开发环境（解决 12-C）
-
-1. 新增 `docker-compose.dev.yml`：仅含 MySQL/Redis/RabbitMQ/Nacos
-2. 新增 `scripts/dev-up.sh` 一键启动中间件
-
----
-
-### 6.3 #13 热配置 —— 解决方案
-
-#### 6.3.1 P1：迁移 GetSignUrl 的 BLOCKED_EXTENSIONS（解决 13-A）
-
-`GetSignUrl.java` 是 `zxyz-common` 中的 OSS 工具类，被 `AliyunOssStorageProvider` 包装。两种方案：
-- **方案 A（推荐）**：在 `AliyunOssStorageProvider` 层面拦截扩展名校验，从 `GetSignUrl` 中移除 `BLOCKED_EXTENSIONS` 检查，改为在 `FileUploadService` 统一用 `configGetter.getJsonSet("app.file.upload.blocked-extensions", FALLBACK)` 校验
-- **方案 B**：给 `GetSignUrl` 注入 `ConfigGetter`（但 `GetSignUrl` 是 common 包的工具类，注入 Spring Bean 不太合适）
-
-#### 6.3.2 P0：修复 3 个配置键名 Bug（解决 13-BUG-1/2/3）
-
-| Bug | 修复方式 |
-|---|---|
-| **13-BUG-1** | `FileCopyService.java` L59：`app.file.copy.max-nodes-per-transaction` → `app.file.copy.max-nodes-per-tx`（与 V2 SQL L63 一致） |
-| **13-BUG-2** | `StorageQuotaCacheService.java` L61：`app.cache.storage-usage-ttl-minutes` → `app.cache.storage-usage-ttl-seconds`（与 V2 SQL L35 一致），并将 `Duration.ofMinutes(...)` 改为 `Duration.ofSeconds(...)` |
-| **13-BUG-3** | `V2__hot_config_keys.sql` 增加 `app.email.verify-code-cooldown-seconds`（值 60，类型 NUMBER）的 INSERT 行；或新建 V3 迁移文件补充 |
-
-#### 6.3.3 P3：清理死键（解决 13-B、13-C）
-
-V2 SQL 中 `app.rest-client.*`（2 键）和 `app.resilience.*`（5 键）无人消费。可选择：
-- 删除这些死键（如果确定永不接入）
-- 或保留并标注 `-- TODO: 待 RestClientConfig/AbstractServiceClient 接入` 注释
-
----
-
-### 6.4 CODEX 审核未完成项 —— 解决方案
-
-#### 6.4.1 P2：迁移 3 个 ErrorCode 枚举的调用点（解决 CODEX-A）
-
-`TeamErrorCode`/`ShareErrorCode`/`ProjectErrorCode` 枚举类已存在但零引用。需逐域迁移调用点：
-- **TeamErrorCode**：grep `ErrorCode.TEAM_NOT_FOUND`/`ErrorCode.TEAM_*` 的调用点 → 替换为 `TeamErrorCode.TEAM_NOT_FOUND.getCode()` 等
-- **ShareErrorCode**：grep `ErrorCode.SHARE_*` → 替换为 `ShareErrorCode.*`
-- **ProjectErrorCode**：grep `ErrorCode.PROJECT_*` → 替换为 `ProjectErrorCode.*`
-- 每个域迁移后移除 `ErrorCode.java` 中对应的 deprecated int 常量
-- 验证：`mvn test` 全通过
-
-#### 6.4.2 P1：前端文件列表分页接线（解决 CODEX-B）
-
-后端已就绪，仅需前端改造：
-1. `composables/useSpaceFileList.js`：增加 `currentPage`/`pageSize` 响应式状态，`fetchFileList` 时传入 `page`/`pageSize` 参数
-2. `FileExplorer.vue`：底部增加 `<el-pagination>` 组件，绑定 `currentPage`/`pageSize`，`@current-change` 触发重新加载
-3. `api/files.js` `fetchFileList` 已支持 `page`/`pageSize` 参数（L30-35），无需改 API 层
-4. 验证：超过 50 个子项的目录可翻页加载
-
----
-
-## 七、推荐执行顺序
-
-| 优先级 | 编号 | 任务 | 预估工作量 | 依赖 |
+| 编号 | 项 | 状态 | 严重度 | 证据 |
 |---|---|---|---|---|
-| **P0** | 13-BUG-1/2/3 | 修复 3 个配置键名 Bug | 0.5 天 | 无 |
-| **P0** | 11-D | 修复 LocalDiskStorageProvider directUpload 标志 | 0.5 天 | 无 |
-| **P0** | 11-C | 修复 useShareFileDownload.js | 0.5 天 | 11-D |
-| **P0** | 11-A | 修复 useFileDownload.js 空操作分支 | 0.5 天 | 11-D |
-| **P0** | 11-E | 修复 Gateway 路由顺序 | 0.5 天 | 无 |
-| **P1** | 11-B | 修复 backendArchive.js | 0.5 天 | 11-D |
-| **P1** | CODEX-B | 前端文件列表分页接线 | 1 天 | 无 |
-| **P1** | 13-A | 迁移 GetSignUrl BLOCKED_EXTENSIONS | 1 天 | 无 |
-| **P2** | CODEX-A | 迁移 3 个 ErrorCode 枚举调用点 | 2 天 | 无 |
-| **P2** | 12-A | 自托管 Runner | 0.5 天 + 服务器 | 需服务器 |
-| **P2** | 12-B | 阿里云 ACR | 0.5 天 + 账号 | 需账号 |
-| **P3** | 12-C | 本地开发环境 | 1 天 | 无 |
-| **P3** | 13-B/C | 清理死键或保留注释 | 0.5 天 | 无 |
-| **P3** | 11-F | 前端 VO 类型定义 | 0.5 天 | 无 |
+| ~~13-BUG-3~~ | V2 键名修正 | ✅ 已完成 | — | `V2__hot_config_keys.sql:61` `app.email.verify-code.cooldown-seconds`（3 点）与代码 `ContactVerificationService.java:54`、V1:53 一致 |
+| ~~13-B/C~~ | 死键 + 死代码清理 | ✅ 已完成 | — | 见下方 6.3 清理明细 |
 
-**总预估**：P0 ~2.5 天 + P1 ~2.5 天 + P2 ~3 天 + P3 ~2 天 ≈ **10 工作日**（不含外部资源等待）。
+### 6.1 已清理明细（第五轮）
+
+| 清理项 | 文件 | 变更 |
+|---|---|---|
+| 7 个死键删除 | `V2__hot_config_keys.sql` | 删除 L38-39（`app.rest-client.*` 2 个）+ L42-46（`app.resilience.*` 5 个） |
+| 死导入删除 | `FileUploadService.java:20` | 删除 `import static ...BLOCKED_EXTENSIONS` |
+| 死常量删除 | `FileNameUtil.java:10` | 删除 `BLOCKED_EXTENSIONS` + 移除 `import java.util.Set` |
+| Javadoc 修正 | `FileCopyService.java:29` | `max-nodes-per-transaction` → `max-nodes-per-tx` |
+| 测试 mock 修正 | `FileCopyServiceTest.java:59` | `max-nodes-per-transaction` → `max-nodes-per-tx` |
+| 冗余 mock 删除 | `StorageQuotaCacheServiceTest.java:43` | 删除冗余 `storage-usage-ttl-minutes` mock |
 
 ---
 
-## 八、附：核对过程元数据
+## 七、CODEX 审核未完成项
 
-- 后端核对路径：`D:\code\databaseZXYZ\zxyz\ZXYZdatabaseBack\`（11 个 Maven 模块）
-- 前端核对路径：`D:\code\databaseZXYZ\zxyz\ZXYZdatabaseFront\src\`
-- 根仓库核对路径：`D:\code\databaseZXYZ\zxyz\`（docker-compose.yml、deploy/、scripts/、sql/、nacos-config/、.github/workflows/）
-- 核对工具：Glob / Grep / Read / Agent（4 个并行 explore 子代理）
-- 核对范围：全部关键文件，逐行验证
-- 核对批次：2026-07-24 第三轮（用户修改后重新核对）
-- 关键发现：
-  - #11 Phase 1 全部完成（4 个服务类已注入 Registry），Phase 2 后端完成，前端有 3 处分支未真正实现 + 1 处 directUpload 语义反转
-  - #13 前置 + 迁移 + ConfigGetter + 13/16 消费方完成，但 3 个键名 Bug 导致热配置静默失效
-  - CODEX 7/9 完成，ErrorCode 枚举化仅 User 域迁移，前端分页后端就绪但前端未接线
+> **全部完成**。CODEX-A 枚举迁移 87 处，20 文件，`mvn test` 通过。
+
+---
+
+## 八、解决方案
+
+### 8.1 P0：修复 2 个致命缺陷（最高优先级）✅ 已完成
+
+| 编号 | 修复 | 文件:行号 | 状态 |
+|---|---|---|---|
+| **致命#2** | OSS `directUpload` `true` → `false` | `AliyunOssStorageProvider.java:115` | ✅ |
+| **致命#1** | LocalDisk `directDownload` `true` → `false` | `LocalDiskStorageProvider.java:81` | ✅ |
+| 附带 | 修正 `UploadInfo.java:36` @Schema 描述 | `UploadInfo.java:36` | ✅ |
+
+> 修复后 11-A/B/C 三项自动恢复端到端可用，#11 完成度跃升至 ~100%。
+
+### 8.2 P1：修复 13-BUG-3 ✅ 已完成
+
+`V2__hot_config_keys.sql:61` 键名 `app.email.verify-code-cooldown-seconds` → `app.email.verify-code.cooldown-seconds`（与代码 L54、V1:53 一致）。
+
+### 8.3 P2：CODEX-A 枚举迁移 ✅ 已完成
+
+三域迁移总计 87 处，20 文件：
+- `TeamErrorCode`：58 处替换（19 个文件：13 源 + 6 测试）
+- `ShareErrorCode`：24 处替换（6 个文件：4 源 + 2 测试）
+- `ProjectErrorCode`：5 处替换（4 个文件：2 源 + 2 测试）
+
+模式：`ErrorCode.XXX` → `XxxErrorCode.XXX.getCode()`，测试文件用静态导入。`mvn test` 通过。`ErrorCode.java` 原 int 常量保留（向后兼容）。
+
+### 8.4 P2：清理死键与死代码 ✅ 已完成
+
+- 删除 `V2__hot_config_keys.sql` L38-39、L42-46（7 个死键）
+- 删除 `FileUploadService.java:20` 死导入
+- 删除 `FileNameUtil.java:10` 死常量 + 移除 `import java.util.Set`
+- 修正 `FileCopyService.java:29` javadoc 键名
+- 修正 `FileCopyServiceTest.java:59` mock 键名
+- 删除 `StorageQuotaCacheServiceTest.java:43` 冗余 mock
+
+### 8.5 P3：已完成（原需外部资源 / 无依赖）
+
+| 编号 | 任务 | 状态 | 说明 |
+|---|---|---|---|
+| ~~12-C~~ | 本地开发 compose | ✅ | 新建 `docker-compose.dev.yml`（4 中间件 + 端口暴露）+ `scripts/dev-up.sh`（up/down/reset/logs） |
+| ~~11-F~~ | 前端 VO JSDoc | ✅ | `api/storage.js` 补 `@typedef StorageProviderVO` + `HealthCheckResult`，三个 API 函数均加类型声明 |
+
+### 8.6 P3：仍需外部资源
+
+| 编号 | 任务 | 前置条件 |
+|---|---|---|
+| 12-A | 安装 GitHub Actions Runner → `ci-cd.yml` 5 个 job `runs-on: self-hosted` | 服务器 |
+| 12-B | 注册阿里云 ACR → 配 Secrets → 运行 `scripts/setup-acr.sh enable` | 阿里云账号 |
+
+---
+
+## 九、推荐执行顺序
+
+| 优先级 | 编号 | 任务 | 预估 | 依赖 | 状态 |
+|---|---|---|---|---|---|
+| **P0** | 致命#2 | OSS `directUpload` → `false` | 5 分钟 | 无 | ✅ |
+| **P0** | 致命#1 | LocalDisk `directDownload` → `false` | 5 分钟 | 无 | ✅ |
+| **P0** | 附带 | 修正 `UploadInfo.java` @Schema 描述 | 5 分钟 | 无 | ✅ |
+| **P1** | 13-BUG-3 | 修正 V2 SQL 键名 | 10 分钟 | 无 | ✅ |
+| **P2** | CODEX-A | 迁移 3 个 ErrorCode 枚举调用点 | 2 天 | 无 | ✅ |
+| **P2** | 13-B/C + 清理 | 清理 7 死键 + 6 死代码/测试 | 0.5 天 | 无 | ✅ |
+| **P3** | 12-C | 本地开发 compose | 1 天 | 无 | ✅ |
+| **P3** | 11-F | 前端 VO JSDoc | 0.5 天 | 无 | ✅ |
+| **P3** | 12-A | 自托管 Runner | 0.5 天 + 服务器 | 需服务器 | ❌ |
+| **P3** | 12-B | 阿里云 ACR | 0.5 天 + 账号 | 需账号 | ❌ |
+
+**总预估**：P0 ~15 分钟 + P1 ~10 分钟 + P2 ~2.5 天 + P3 ~1.5 天 = **全部代码工作已完成**，剩余 2 项需外部资源。
+
+---
+
+## 十、附：核对元数据
+
+- 核对方式：4 个并行 explore 子代理 + 3 个并行实施子代理（枚举迁移）
+- 核对批次：2026-07-24 第五轮（全部 8 项落地）
+- 关键变更：
+  - 致命缺陷修复：OSS `directUpload=false`、LocalDisk `directDownload=false`，恢复默认上传 + 本地下载链路
+  - 枚举迁移：TeamErrorCode/ShareErrorCode/ProjectErrorCode 共 87 处调用点
+  - 死键/死代码清理：7 死键 + 死导入 + 死常量 + 3 处测试 mock 修正
+  - 本地开发环境：`docker-compose.dev.yml` + `scripts/dev-up.sh`
+  - 前端类型注解：`api/storage.js` JSDoc `@typedef`

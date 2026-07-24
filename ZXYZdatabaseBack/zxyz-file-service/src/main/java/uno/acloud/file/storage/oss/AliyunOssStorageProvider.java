@@ -112,7 +112,7 @@ public class AliyunOssStorageProvider implements StorageProvider {
                 signInfo.getContentType(),
                 signInfo.getContentDisposition(),
                 signInfo.getExpireAt(),
-                true  // OSS 支持直传
+                false  // OSS：前端直传存储（预签名 PUT）
         );
     }
 

@@ -6,6 +6,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.TeamErrorCode;
 import uno.acloud.common.TeamPermissionPolicy;
 import uno.acloud.common.util.BatchPermissionHelper;
 import uno.acloud.exception.BusinessException;
@@ -91,7 +92,7 @@ public class RoleManagementService {
             auditLogService.writeTeamAudit(teamId, operatorUserId, "team_role:create", "team_role", role.getId(), null, roleCode);
         } else {
             if (Integer.valueOf(1).equals(role.getBuiltin())) {
-                throw new BusinessException(ErrorCode.TEAM_PERMISSION_DENIED, "内置角色不允许修改编码");
+                throw new BusinessException(TeamErrorCode.TEAM_PERMISSION_DENIED.getCode(), "内置角色不允许修改编码");
             }
             role.setRoleName(roleName);
             role.setDescription(description);
@@ -108,7 +109,7 @@ public class RoleManagementService {
     public void deleteRole(Long teamId, Long roleId, Long operatorUserId) {
         TeamRoleEntity role = requireRole(teamId, roleId);
         if (Integer.valueOf(1).equals(role.getBuiltin())) {
-            throw new BusinessException(ErrorCode.TEAM_PERMISSION_DENIED, "内置角色不允许删除");
+            throw new BusinessException(TeamErrorCode.TEAM_PERMISSION_DENIED.getCode(), "内置角色不允许删除");
         }
         teamPermissionMapper.deleteRolePermissions(teamId, roleId);
         teamPermissionMapper.deleteRole(teamId, roleId);
@@ -126,7 +127,7 @@ public class RoleManagementService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "userId 不能为空");
         }
         if (teamMapper.getActiveMember(teamId, userId) == null) {
-            throw new BusinessException(ErrorCode.TEAM_NOT_FOUND, "用户不在团队中");
+            throw new BusinessException(TeamErrorCode.TEAM_NOT_FOUND.getCode(), "用户不在团队中");
         }
         String beforeRole = getMemberRoleCode(teamId, userId);
         assignMemberRoleInternal(teamId, userId, requireText(request.getRoleCode(), "roleCode 不能为空"));

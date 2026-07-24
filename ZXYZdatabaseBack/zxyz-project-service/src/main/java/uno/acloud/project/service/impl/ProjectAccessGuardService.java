@@ -4,6 +4,7 @@ import uno.acloud.project.service.TeamFileAccessPort;
 
 import org.springframework.stereotype.Service;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.ProjectErrorCode;
 import uno.acloud.common.TeamPermissionCodes;
 import uno.acloud.project.entity.Project;
 import uno.acloud.exception.BusinessException;
@@ -57,7 +58,7 @@ public class ProjectAccessGuardService implements ProjectAccessGuardPort {
     private Project requireProject(Long projectId) {
         Project project = projectMapper.selectById(projectId);
         if (project == null) {
-            throw new NotFoundException(ErrorCode.PROJECT_NOT_FOUND, "项目组不存在");
+            throw new NotFoundException(ProjectErrorCode.PROJECT_NOT_FOUND.getCode(), "项目组不存在");
         }
         if (Integer.valueOf(1).equals(project.getStatus())) {
             throw new BusinessException(ErrorCode.FILE_STATE_INVALID, "项目组已归档");

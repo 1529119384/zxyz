@@ -3,6 +3,8 @@ package uno.acloud.im.application;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.ErrorCode;
+import uno.acloud.common.TeamErrorCode;
 import uno.acloud.common.TeamPermissionCodes;
 import uno.acloud.common.TeamRoleCodes;
 import uno.acloud.exception.BusinessException;
@@ -42,7 +44,7 @@ public class TeamLifecycleService {
     public void leaveTeam(Long userId, Long teamId) {
         TeamMember member = teamService.requireActiveMember(teamId, userId);
         if (TeamRoleCodes.OWNER.equals(member.getRoleCode()) && teamMapper.countActiveOwners(teamId) <= 1) {
-            throw new BusinessException(ErrorCode.TEAM_PERMISSION_DENIED, "最后一个大管理员不能直接退出团队");
+            throw new BusinessException(TeamErrorCode.TEAM_PERMISSION_DENIED.getCode(), "最后一个大管理员不能直接退出团队");
         }
         deactivateTeamAccess(teamId, userId);
         notifyManagers(teamId, SystemNotificationType.TEAM_MEMBER_LEFT, "成员已退出团队", "有成员退出了团队。", userId.longValue());

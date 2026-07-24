@@ -3,6 +3,8 @@ package uno.acloud.im.application;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.ErrorCode;
+import uno.acloud.common.TeamErrorCode;
 import uno.acloud.common.TeamPermissionCodes;
 import uno.acloud.common.TeamRoleCodes;
 import uno.acloud.exception.BusinessException;
@@ -70,7 +72,7 @@ public class TeamInvitationService {
         userProfileService.ensurePlaceholder(inviteeUserId);
 
         if (teamMapper.getActiveMember(teamId, inviteeUserId) != null) {
-            throw new BusinessException(ErrorCode.TEAM_MEMBER_EXISTS, "用户已在该团队中");
+            throw new BusinessException(TeamErrorCode.TEAM_MEMBER_EXISTS.getCode(), "用户已在该团队中");
         }
 
         TeamInvitation existing = invitationMapper.getPendingByTeamAndInvitee(teamId, inviteeUserId);
@@ -111,11 +113,11 @@ public class TeamInvitationService {
         TeamInvitation invitation = requirePendingInvitation(userId, invitationId);
         if (invitation.getExpireTime() != null && invitation.getExpireTime().isBefore(LocalDateTime.now())) {
             invitationMapper.updateStatus(invitationId, InvitationStatus.EXPIRED);
-            throw new BusinessException(ErrorCode.TEAM_INVITATION_EXPIRED, "邀请已过期");
+            throw new BusinessException(TeamErrorCode.TEAM_INVITATION_EXPIRED.getCode(), "邀请已过期");
         }
 
         if (invitationMapper.updateStatus(invitationId, InvitationStatus.ACCEPTED) != 1) {
-            throw new BusinessException(ErrorCode.TEAM_INVITATION_INVALID, "邀请状态已变化");
+            throw new BusinessException(TeamErrorCode.TEAM_INVITATION_INVALID.getCode(), "邀请状态已变化");
         }
 
         TeamMember member = new TeamMember();
@@ -143,7 +145,7 @@ public class TeamInvitationService {
     public TeamInvitationVO reject(Long userId, Long invitationId) {
         TeamInvitation invitation = requirePendingInvitation(userId, invitationId);
         if (invitationMapper.updateStatus(invitationId, InvitationStatus.REJECTED) != 1) {
-            throw new BusinessException(ErrorCode.TEAM_INVITATION_INVALID, "邀请状态已变化");
+            throw new BusinessException(TeamErrorCode.TEAM_INVITATION_INVALID.getCode(), "邀请状态已变化");
         }
         systemNotificationService.markBusinessRead(userId, BUSINESS_TYPE_INVITATION, invitationId);
         invitation.setStatus(InvitationStatus.REJECTED);
@@ -157,10 +159,10 @@ public class TeamInvitationService {
         }
         TeamInvitation invitation = invitationMapper.selectById(invitationId);
         if (invitation == null || !userId.equals(invitation.getInviteeUserId())) {
-            throw new BusinessException(ErrorCode.TEAM_INVITATION_INVALID, "邀请不存在");
+            throw new BusinessException(TeamErrorCode.TEAM_INVITATION_INVALID.getCode(), "邀请不存在");
         }
         if (!Integer.valueOf(InvitationStatus.PENDING).equals(invitation.getStatus())) {
-            throw new BusinessException(ErrorCode.TEAM_INVITATION_INVALID, "邀请已处理");
+            throw new BusinessException(TeamErrorCode.TEAM_INVITATION_INVALID.getCode(), "邀请已处理");
         }
         return invitation;
     }

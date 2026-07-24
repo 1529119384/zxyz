@@ -56,7 +56,7 @@ class FileCopyServiceTest {
 
     @BeforeEach
     void setUp() {
-        when(configGetter.getInt(eq("app.file.copy.max-nodes-per-transaction"), anyInt())).thenReturn(500);
+        when(configGetter.getInt(eq("app.file.copy.max-nodes-per-tx"), anyInt())).thenReturn(500);
         fileCopyService = new FileCopyService(
                 fileMapper, fileDomainValidator, filePathResolver,
                 fileAccessGuardService, fileObjectReferenceService, helper, transactionTemplate, configGetter);

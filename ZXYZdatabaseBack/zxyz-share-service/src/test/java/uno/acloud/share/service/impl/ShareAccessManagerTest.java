@@ -6,7 +6,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import uno.acloud.common.ErrorCode;
+import static uno.acloud.common.ShareErrorCode.*;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.share.common.ShareStatus;
 import uno.acloud.share.config.ShareProperties;
@@ -87,7 +87,7 @@ class ShareAccessManagerTest {
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> shareAccessManager.verifyShare(request, null));
-        assertEquals(ErrorCode.SHARE_NOT_FOUND, ex.getErrorCode());
+        assertEquals(SHARE_NOT_FOUND.getCode(), ex.getErrorCode());
     }
 
     @Test
@@ -99,11 +99,11 @@ class ShareAccessManagerTest {
         when(shareMapper.getByShareKey("abc123")).thenReturn(share);
         when(shareStatusCalculator.refreshStatusIfNeeded(share)).thenReturn(share);
         when(shareStatusCalculator.invalidShareException(ShareStatus.EXPIRED))
-                .thenReturn(new BusinessException(ErrorCode.SHARE_EXPIRED, "分享已过期"));
+                .thenReturn(new BusinessException(SHARE_EXPIRED.getCode(), "分享已过期"));
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> shareAccessManager.verifyShare(request, null));
-        assertEquals(ErrorCode.SHARE_EXPIRED, ex.getErrorCode());
+        assertEquals(SHARE_EXPIRED.getCode(), ex.getErrorCode());
     }
 
     @Test
@@ -138,7 +138,7 @@ class ShareAccessManagerTest {
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> shareAccessManager.verifyShare(request, null));
-        assertEquals(ErrorCode.SHARE_PASSWORD_INVALID, ex.getErrorCode());
+        assertEquals(SHARE_PASSWORD_INVALID.getCode(), ex.getErrorCode());
     }
 
     @Test
@@ -154,11 +154,11 @@ class ShareAccessManagerTest {
         // After quota exhausted, refreshStatusIfNeeded is called again; status stays NORMAL
         // so invalidShareException is called with the current share status (NORMAL=0)
         when(shareStatusCalculator.invalidShareException(ShareStatus.NORMAL))
-                .thenReturn(new BusinessException(ErrorCode.SHARE_STATUS_INVALID, "分享访问次数已用尽"));
+                .thenReturn(new BusinessException(SHARE_STATUS_INVALID.getCode(), "分享访问次数已用尽"));
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> shareAccessManager.verifyShare(request, null));
-        assertEquals(ErrorCode.SHARE_STATUS_INVALID, ex.getErrorCode());
+        assertEquals(SHARE_STATUS_INVALID.getCode(), ex.getErrorCode());
     }
 
     @Test
@@ -218,7 +218,7 @@ class ShareAccessManagerTest {
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> shareAccessManager.requireAccessibleShare("abc123", null));
-        assertEquals(ErrorCode.SHARE_STATUS_INVALID, ex.getErrorCode());
+        assertEquals(SHARE_STATUS_INVALID.getCode(), ex.getErrorCode());
     }
 
     @Test

@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import uno.acloud.client.TeamServiceClient;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.TeamErrorCode;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.user.config.ServiceProperties;
 
@@ -31,7 +32,7 @@ public class TeamServiceMemberClient extends TeamServiceClient {
         try {
             JsonNode root = getJson("/api/internal/teams/" + teamId + "/members/" + userId + "/active");
             if (root.path("code").asInt() != ErrorCode.SUCCESS || !root.path("data").asBoolean(false)) {
-                throw new BusinessException(ErrorCode.TEAM_PERMISSION_DENIED, "用户不在该团队中");
+                throw new BusinessException(TeamErrorCode.TEAM_PERMISSION_DENIED.getCode(), "用户不在该团队中");
             }
         } catch (BusinessException e) {
             throw e;

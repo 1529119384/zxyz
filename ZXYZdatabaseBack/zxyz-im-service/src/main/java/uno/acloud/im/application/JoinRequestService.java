@@ -6,6 +6,8 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.ErrorCode;
+import uno.acloud.common.TeamErrorCode;
 import uno.acloud.common.TeamPermissionCodes;
 import uno.acloud.common.TeamRoleCodes;
 import uno.acloud.exception.BusinessException;
@@ -59,16 +61,16 @@ public class JoinRequestService {
         }
         TeamInviteLink link = managementMapper.getInviteLinkByToken(token);
         if (link == null || !Integer.valueOf(0).equals(link.getStatus())) {
-            throw new BusinessException(ErrorCode.TEAM_INVITATION_INVALID, "邀请链接无效");
+            throw new BusinessException(TeamErrorCode.TEAM_INVITATION_INVALID.getCode(), "邀请链接无效");
         }
         if (link.getExpireTime() != null && link.getExpireTime().isBefore(LocalDateTime.now())) {
-            throw new BusinessException(ErrorCode.TEAM_INVITATION_EXPIRED, "邀请链接已过期");
+            throw new BusinessException(TeamErrorCode.TEAM_INVITATION_EXPIRED.getCode(), "邀请链接已过期");
         }
         if (link.getMaxUses() != null && link.getMaxUses() > 0 && link.getUsedCount() >= link.getMaxUses()) {
-            throw new BusinessException(ErrorCode.TEAM_INVITATION_INVALID, "邀请链接使用次数已达上限");
+            throw new BusinessException(TeamErrorCode.TEAM_INVITATION_INVALID.getCode(), "邀请链接使用次数已达上限");
         }
         if (teamMapper.getActiveMember(link.getTeamId(), userId) != null) {
-            throw new BusinessException(ErrorCode.TEAM_MEMBER_EXISTS, "你已在该团队中");
+            throw new BusinessException(TeamErrorCode.TEAM_MEMBER_EXISTS.getCode(), "你已在该团队中");
         }
         TeamJoinRequest existing = managementMapper.getPendingJoinRequest(link.getTeamId(), userId);
         if (existing != null) {
@@ -125,10 +127,10 @@ public class JoinRequestService {
         TeamJoinRequest request = requirePendingJoinRequest(requestId);
         teamPermissionService.requirePermission(request.getTeamId(), operatorUserId, TeamPermissionCodes.TEAM_JOIN_REQUEST_REVIEW);
         if (teamMapper.getActiveMember(request.getTeamId(), request.getUserId()) != null) {
-            throw new BusinessException(ErrorCode.TEAM_MEMBER_EXISTS, "用户已在该团队中");
+            throw new BusinessException(TeamErrorCode.TEAM_MEMBER_EXISTS.getCode(), "用户已在该团队中");
         }
         if (managementMapper.auditJoinRequest(requestId, JOIN_REQUEST_APPROVED, operatorUserId) != 1) {
-            throw new BusinessException(ErrorCode.TEAM_INVITATION_INVALID, "加入申请状态已变化");
+            throw new BusinessException(TeamErrorCode.TEAM_INVITATION_INVALID.getCode(), "加入申请状态已变化");
         }
         TeamMember member = new TeamMember();
         member.setTeamId(request.getTeamId());
@@ -175,7 +177,7 @@ public class JoinRequestService {
         TeamJoinRequest request = requirePendingJoinRequest(requestId);
         teamPermissionService.requirePermission(request.getTeamId(), operatorUserId, TeamPermissionCodes.TEAM_JOIN_REQUEST_REVIEW);
         if (managementMapper.auditJoinRequest(requestId, JOIN_REQUEST_REJECTED, operatorUserId) != 1) {
-            throw new BusinessException(ErrorCode.TEAM_INVITATION_INVALID, "加入申请状态已变化");
+            throw new BusinessException(TeamErrorCode.TEAM_INVITATION_INVALID.getCode(), "加入申请状态已变化");
         }
         notificationService.createNotification(
                 request.getUserId(),
@@ -210,7 +212,7 @@ public class JoinRequestService {
         }
         TeamJoinRequest request = managementMapper.getJoinRequestById(requestId);
         if (request == null || !Integer.valueOf(JOIN_REQUEST_PENDING).equals(request.getStatus())) {
-            throw new BusinessException(ErrorCode.TEAM_INVITATION_INVALID, "加入申请不存在或已处理");
+            throw new BusinessException(TeamErrorCode.TEAM_INVITATION_INVALID.getCode(), "加入申请不存在或已处理");
         }
         return request;
     }

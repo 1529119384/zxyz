@@ -34,16 +34,6 @@ INSERT INTO `sys_config` (`config_key`, `config_value`, `config_type`, `value_ty
 ('app.cache.project-access-ttl-minutes', '10', 'FEATURE', 'NUMBER', '项目访问缓存 TTL（分钟）', '10', 1),
 ('app.cache.storage-usage-ttl-seconds', '30', 'FEATURE', 'NUMBER', '存储用量缓存 TTL（秒）', '30', 1),
 
--- REST 客户端超时
-('app.rest-client.connect-timeout-ms', '3000', 'SYSTEM', 'NUMBER', '服务间调用连接超时（毫秒）', '3000', 1),
-('app.rest-client.read-timeout-ms', '10000', 'SYSTEM', 'NUMBER', '服务间调用读取超时（毫秒）', '10000', 1),
-
--- Resilience4j 熔断/重试
-('app.resilience.retry.max-attempts', '3', 'FEATURE', 'NUMBER', '最大重试次数', '3', 1),
-('app.resilience.retry.wait-duration-ms', '500', 'FEATURE', 'NUMBER', '重试间隔（毫秒）', '500', 1),
-('app.resilience.circuit-breaker.sliding-window', '10', 'FEATURE', 'NUMBER', '熔断滑动窗口大小', '10', 1),
-('app.resilience.circuit-breaker.failure-threshold', '50', 'FEATURE', 'NUMBER', '熔断失败率阈值（百分比）', '50', 1),
-('app.resilience.circuit-breaker.wait-open-ms', '30000', 'FEATURE', 'NUMBER', '熔断半开等待时间（毫秒）', '30000', 1);
 
 -- ============================================================================
 -- 阶段三：IM + 邮件 + 文件 + 审计 + 头像
@@ -58,7 +48,7 @@ INSERT INTO `sys_config` (`config_key`, `config_value`, `config_type`, `value_ty
 
 -- 邮件设置
 ('app.email.max-retry-count', '4', 'SYSTEM', 'NUMBER', '邮件最大重试次数', '4', 1),
-('app.email.verify-code-cooldown-seconds', '60', 'SYSTEM', 'NUMBER', '邮箱验证码冷却时间（秒）', '60', 1),
+('app.email.verify-code.cooldown-seconds', '60', 'SYSTEM', 'NUMBER', '邮箱验证码冷却时间（秒）', '60', 1),
 
 -- 文件复制 + 审计 + 头像
 ('app.file.copy.max-nodes-per-tx', '500', 'FEATURE', 'NUMBER', '单次复制最大节点数', '500', 1),

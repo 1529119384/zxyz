@@ -10,6 +10,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uno.acloud.common.ErrorCode;
+import static uno.acloud.common.TeamErrorCode.*;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.team.dto.permission.AssignTeamMemberRoleRequest;
 import uno.acloud.team.entity.TeamMember;
@@ -68,7 +69,7 @@ class RoleManagementServiceTest {
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> roleManagementService.assignMemberRole(1L, request, 99L));
-        assertEquals(ErrorCode.TEAM_NOT_FOUND, ex.getErrorCode());
+        assertEquals(TEAM_NOT_FOUND.getCode(), ex.getErrorCode());
     }
 
     @Test
@@ -101,7 +102,7 @@ class RoleManagementServiceTest {
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> roleManagementService.deleteRole(1L, 1L, 99L));
-        assertEquals(ErrorCode.TEAM_PERMISSION_DENIED, ex.getErrorCode());
+        assertEquals(TEAM_PERMISSION_DENIED.getCode(), ex.getErrorCode());
     }
 
     @Test
@@ -140,7 +141,7 @@ class RoleManagementServiceTest {
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> roleManagementService.saveRole(1L, 1L, request, 99L));
-        assertEquals(ErrorCode.TEAM_PERMISSION_DENIED, ex.getErrorCode());
+        assertEquals(TEAM_PERMISSION_DENIED.getCode(), ex.getErrorCode());
     }
 
     // ==================== clearMemberRole ====================

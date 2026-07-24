@@ -12,6 +12,7 @@ import org.redisson.api.RedissonClient;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import uno.acloud.common.ErrorCode;
+import static uno.acloud.common.TeamErrorCode.*;
 import uno.acloud.common.UserErrorCode;
 import uno.acloud.common.TeamPermissionCodes;
 import uno.acloud.common.TeamRoleCodes;
@@ -418,7 +419,7 @@ class EnterpriseTeamServiceTest {
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> enterpriseTeamService.removeMember(teamId, ownerUserId, ownerUserId));
-        assertEquals(ErrorCode.TEAM_PERMISSION_DENIED, ex.getErrorCode());
+        assertEquals(TEAM_PERMISSION_DENIED.getCode(), ex.getErrorCode());
         assertTrue(ex.getMessage().contains("不能移除团队大管理员"));
     }
 
@@ -443,7 +444,7 @@ class EnterpriseTeamServiceTest {
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> enterpriseTeamService.removeMember(teamId, targetUserId, operatorUserId));
-        assertEquals(ErrorCode.TEAM_PERMISSION_DENIED, ex.getErrorCode());
+        assertEquals(TEAM_PERMISSION_DENIED.getCode(), ex.getErrorCode());
         assertTrue(ex.getMessage().contains("项目负责人"));
     }
 

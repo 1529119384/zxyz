@@ -2,6 +2,7 @@ package uno.acloud.im.application;
 
 import org.springframework.stereotype.Service;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.TeamErrorCode;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.domain.model.ImConversation;
 
@@ -30,7 +31,7 @@ public class ConversationService {
     public TeamConversationVO getTeamConversation(Long userId, Long teamId) {
         TeamConversationVO conversation = conversationMapper.getTeamConversation(teamId, userId);
         if (conversation == null) {
-            throw new BusinessException(ErrorCode.TEAM_NOT_FOUND, "团队不存在或你不在该团队中");
+            throw new BusinessException(TeamErrorCode.TEAM_NOT_FOUND.getCode(), "团队不存在或你不在该团队中");
         }
         return conversation;
     }
@@ -62,7 +63,7 @@ public class ConversationService {
     public void requireWritableConversation(Long conversationId) {
         ImConversation conversation = conversationMapper.getConversationById(conversationId);
         if (conversation != null && Boolean.TRUE.equals(conversation.getReadOnly())) {
-            throw new BusinessException(ErrorCode.TEAM_PERMISSION_DENIED, "项目群聊已归档，只允许查看历史消息");
+            throw new BusinessException(TeamErrorCode.TEAM_PERMISSION_DENIED.getCode(), "项目群聊已归档，只允许查看历史消息");
         }
     }
 }

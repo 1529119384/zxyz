@@ -6,6 +6,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import uno.acloud.common.ErrorCode;
+import static uno.acloud.common.TeamErrorCode.*;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.domain.model.ImConversation;
 import uno.acloud.im.domain.model.TeamMember;
@@ -58,7 +59,7 @@ class ConversationServiceTest {
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> service.getTeamConversation(100L, 5L));
 
-        assertEquals(ErrorCode.TEAM_NOT_FOUND, ex.getErrorCode());
+        assertEquals(TEAM_NOT_FOUND.getCode(), ex.getErrorCode());
     }
 
     // ---- requireConversationMember tests ----
@@ -205,7 +206,7 @@ class ConversationServiceTest {
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> service.requireWritableConversation(10L));
 
-        assertEquals(ErrorCode.TEAM_PERMISSION_DENIED, ex.getErrorCode());
+        assertEquals(TEAM_PERMISSION_DENIED.getCode(), ex.getErrorCode());
         assertTrue(ex.getMessage().contains("归档"));
     }
 

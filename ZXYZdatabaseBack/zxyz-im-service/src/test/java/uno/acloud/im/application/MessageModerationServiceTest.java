@@ -6,6 +6,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import uno.acloud.common.ErrorCode;
+import static uno.acloud.common.TeamErrorCode.*;
 import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.domain.enums.ConversationType;
@@ -173,7 +174,7 @@ class MessageModerationServiceTest {
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> service.recall(200L, 1L, null));
 
-        assertEquals(ErrorCode.TEAM_PERMISSION_DENIED, ex.getErrorCode());
+        assertEquals(TEAM_PERMISSION_DENIED.getCode(), ex.getErrorCode());
         assertTrue(ex.getMessage().contains("不能撤回他人消息"));
     }
 
@@ -192,7 +193,7 @@ class MessageModerationServiceTest {
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> service.recall(100L, 1L, null));
 
-        assertEquals(ErrorCode.TEAM_PERMISSION_DENIED, ex.getErrorCode());
+        assertEquals(TEAM_PERMISSION_DENIED.getCode(), ex.getErrorCode());
         assertTrue(ex.getMessage().contains("超过可撤回时间"));
     }
 
@@ -207,7 +208,7 @@ class MessageModerationServiceTest {
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> service.recall(100L, 1L, null));
 
-        assertEquals(ErrorCode.TEAM_PERMISSION_DENIED, ex.getErrorCode());
+        assertEquals(TEAM_PERMISSION_DENIED.getCode(), ex.getErrorCode());
         assertTrue(ex.getMessage().contains("超过可撤回时间"));
     }
 
@@ -336,7 +337,7 @@ class MessageModerationServiceTest {
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> service.recall(200L, 1L, null));
 
-        assertEquals(ErrorCode.TEAM_PERMISSION_DENIED, ex.getErrorCode());
+        assertEquals(TEAM_PERMISSION_DENIED.getCode(), ex.getErrorCode());
         assertTrue(ex.getMessage().contains("不能撤回他人消息"));
     }
 }

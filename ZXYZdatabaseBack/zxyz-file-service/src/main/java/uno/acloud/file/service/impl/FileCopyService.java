@@ -26,7 +26,7 @@ public class FileCopyService {
     /**
      * Maximum number of file/folder nodes allowed in a single copy transaction.
      * Beyond this limit the operation is rejected to avoid excessively long transactions.
-     * <p>可通过热配置 {@code app.file.copy.max-nodes-per-transaction} 动态调整。</p>
+     * <p>可通过热配置 {@code app.file.copy.max-nodes-per-tx} 动态调整。</p>
      */
     private static final int FALLBACK_MAX_COPY_NODES_PER_TRANSACTION = 500;
 

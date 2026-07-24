@@ -3,6 +3,8 @@ package uno.acloud.im.application;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.ErrorCode;
+import uno.acloud.common.TeamErrorCode;
 import uno.acloud.common.TeamPermissionCodes;
 import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.exception.BusinessException;
@@ -64,10 +66,10 @@ public class MessageModerationService {
         boolean ownMessage = operatorUserId.equals(message.getSenderUserId());
         boolean managerRecall = canManagerRecall(operatorUserId, conversation);
         if (!ownMessage && !managerRecall) {
-            throw new BusinessException(ErrorCode.TEAM_PERMISSION_DENIED, "不能撤回他人消息");
+            throw new BusinessException(TeamErrorCode.TEAM_PERMISSION_DENIED.getCode(), "不能撤回他人消息");
         }
         if (ownMessage && !managerRecall && isRecallExpired(message.getCreateTime())) {
-            throw new BusinessException(ErrorCode.TEAM_PERMISSION_DENIED, "消息已超过可撤回时间");
+            throw new BusinessException(TeamErrorCode.TEAM_PERMISSION_DENIED.getCode(), "消息已超过可撤回时间");
         }
 
         String reason = request == null ? null : optionalText(request.getReason());

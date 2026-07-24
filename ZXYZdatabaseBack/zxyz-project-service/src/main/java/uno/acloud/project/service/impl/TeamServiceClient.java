@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import uno.acloud.client.AbstractServiceClient;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.TeamErrorCode;
 import uno.acloud.common.TeamPermissionCodes;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.project.config.ServiceProperties;
@@ -56,7 +57,7 @@ public class TeamServiceClient extends AbstractServiceClient implements TeamPerm
         if (code == ErrorCode.SUCCESS) {
             return root.path("data").asBoolean(false);
         }
-        if (code == ErrorCode.TEAM_PERMISSION_DENIED) {
+        if (code == TeamErrorCode.TEAM_PERMISSION_DENIED.getCode()) {
             return false;
         }
         throw new BusinessException(ErrorCode.SYSTEM_ERROR, "团队服务异常: " + root.path("msg").asText("权限校验失败"));
@@ -82,7 +83,7 @@ public class TeamServiceClient extends AbstractServiceClient implements TeamPerm
     public void requireTeamMember(Long teamId, Long userId) {
         JsonNode root = getJson("/api/internal/teams/" + teamId + "/members/" + userId + "/active");
         if (!root.path("data").asBoolean(false)) {
-            throw new BusinessException(ErrorCode.TEAM_PERMISSION_DENIED, "用户不在该团队中");
+            throw new BusinessException(TeamErrorCode.TEAM_PERMISSION_DENIED.getCode(), "用户不在该团队中");
         }
     }
 
@@ -208,7 +209,7 @@ public class TeamServiceClient extends AbstractServiceClient implements TeamPerm
         if (code == ErrorCode.SUCCESS) {
             return root.path("data").asBoolean(false);
         }
-        if (code == ErrorCode.TEAM_PERMISSION_DENIED) {
+        if (code == TeamErrorCode.TEAM_PERMISSION_DENIED.getCode()) {
             return false;
         }
         throw new BusinessException(ErrorCode.SYSTEM_ERROR, "团队服务异常: " + root.path("msg").asText("成员状态校验失败"));

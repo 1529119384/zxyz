@@ -3,6 +3,8 @@ package uno.acloud.project.service.impl;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.TeamErrorCode;
+import uno.acloud.common.ProjectErrorCode;
 import uno.acloud.project.entity.ProjectCreateRequest;
 import uno.acloud.project.entity.ProjectMember;
 import uno.acloud.project.entity.ProjectQuota;
@@ -35,7 +37,7 @@ public class ProjectCommandSupport {
 
     public void requireActiveTeamMember(Long teamId, Long userId) {
         if (!teamServiceClient.isActiveMember(teamId, userId)) {
-            throw new BusinessException(ErrorCode.TEAM_PERMISSION_DENIED, "用户不在该团队中");
+            throw new BusinessException(TeamErrorCode.TEAM_PERMISSION_DENIED.getCode(), "用户不在该团队中");
         }
     }
 
@@ -70,7 +72,7 @@ public class ProjectCommandSupport {
     public ProjectCreateRequest requireProjectCreateRequest(Long applicationId) {
         ProjectCreateRequest application = projectCreateRequestMapper.selectById(applicationId);
         if (application == null) {
-            throw new BusinessException(ErrorCode.PROJECT_CREATE_REQUEST_NOT_FOUND, "项目组申请不存在");
+            throw new BusinessException(ProjectErrorCode.PROJECT_CREATE_REQUEST_NOT_FOUND.getCode(), "项目组申请不存在");
         }
         return application;
     }

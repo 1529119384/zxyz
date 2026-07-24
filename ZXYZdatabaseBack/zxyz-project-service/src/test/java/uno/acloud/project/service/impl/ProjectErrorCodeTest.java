@@ -6,6 +6,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import uno.acloud.common.ErrorCode;
+import static uno.acloud.common.TeamErrorCode.*;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.project.mapper.ProjectCreateRequestMapper;
 import uno.acloud.project.mapper.ProjectMapper;
@@ -15,6 +16,7 @@ import uno.acloud.project.service.TeamFileAccessPort;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.when;
+import static uno.acloud.common.ProjectErrorCode.*;
 
 @ExtendWith(MockitoExtension.class)
 class ProjectErrorCodeTest {
@@ -55,7 +57,7 @@ class ProjectErrorCodeTest {
         BusinessException exception = assertThrows(BusinessException.class,
                 () -> projectAccessGuardService.requireProjectAccess(99L, 1L));
 
-        assertEquals(ErrorCode.PROJECT_NOT_FOUND, exception.getErrorCode());
+        assertEquals(PROJECT_NOT_FOUND.getCode(), exception.getErrorCode());
     }
 
     @Test
@@ -65,7 +67,7 @@ class ProjectErrorCodeTest {
         BusinessException exception = assertThrows(BusinessException.class,
                 () -> projectCommandSupport.requireProjectCreateRequest(88L));
 
-        assertEquals(ErrorCode.PROJECT_CREATE_REQUEST_NOT_FOUND, exception.getErrorCode());
+        assertEquals(PROJECT_CREATE_REQUEST_NOT_FOUND.getCode(), exception.getErrorCode());
     }
 
     @Test
@@ -75,6 +77,6 @@ class ProjectErrorCodeTest {
         BusinessException exception = assertThrows(BusinessException.class,
                 () -> projectCommandSupport.requireActiveTeamMember(10L, 2L));
 
-        assertEquals(ErrorCode.TEAM_PERMISSION_DENIED, exception.getErrorCode());
+        assertEquals(TEAM_PERMISSION_DENIED.getCode(), exception.getErrorCode());
     }
 }

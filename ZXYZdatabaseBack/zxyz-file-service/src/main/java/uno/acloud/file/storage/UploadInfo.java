@@ -33,6 +33,6 @@ public class UploadInfo {
     @Schema(description = "预签名过期时间（epoch 毫秒），非预签名为 null")
     private Long expireAt;
 
-    @Schema(description = "是否直传存储。true=前端直传存储，false=前端传到后端")
+    @Schema(description = "是否直传。true=前端传到后端 multipart 端点，false=前端直传存储（预签名 PUT）")
     private boolean directUpload;
 }

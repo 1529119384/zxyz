@@ -2,7 +2,7 @@ package uno.acloud.im.application;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import uno.acloud.common.ErrorCode;
+import uno.acloud.common.TeamErrorCode;
 import uno.acloud.common.TeamPermissionCodes;
 import uno.acloud.common.TeamRoleCodes;
 import uno.acloud.exception.BusinessException;
@@ -89,13 +89,13 @@ public class TeamService {
         teamPermissionService.requirePermission(teamId, operatorUserId, TeamPermissionCodes.TEAM_UPDATE);
         Team team = teamMapper.getTeamById(teamId);
         if (team == null) {
-            throw new BusinessException(ErrorCode.TEAM_NOT_FOUND, "团队不存在");
+            throw new BusinessException(TeamErrorCode.TEAM_NOT_FOUND.getCode(), "团队不存在");
         }
         team.setName(normalizeTeamName(request == null ? null : request.getName()));
         team.setAvatar(optionalText(request == null ? null : request.getAvatar(), 512, "头像地址长度不能超过 512"));
         team.setDescription(optionalText(request == null ? null : request.getDescription(), 500, "团队描述长度不能超过 500"));
         if (teamMapper.updateTeamProfile(team) != 1) {
-            throw new BusinessException(ErrorCode.TEAM_NOT_FOUND, "团队不存在");
+            throw new BusinessException(TeamErrorCode.TEAM_NOT_FOUND.getCode(), "团队不存在");
         }
         return toTeamVO(team, teamPermissionService.getMemberRoleCode(teamId, operatorUserId).orElse(null),
                 teamPermissionService.listMemberPermissions(teamId, operatorUserId));
@@ -117,7 +117,7 @@ public class TeamService {
     public TeamMember requireActiveMember(Long teamId, Long userId) {
         TeamMember member = teamMapper.getActiveMember(teamId, userId);
         if (member == null) {
-            throw new BusinessException(ErrorCode.TEAM_NOT_FOUND, "团队不存在或你不在该团队中");
+            throw new BusinessException(TeamErrorCode.TEAM_NOT_FOUND.getCode(), "团队不存在或你不在该团队中");
         }
         return member;
     }
