@@ -5,38 +5,25 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.common.RabbitMqConstants;
 import uno.acloud.common.event.UserDeletedEvent;
 import uno.acloud.project.config.RabbitMqConfig;
-import uno.acloud.project.mapper.ProjectMapper;
-
-import java.util.concurrent.TimeUnit;
+import uno.acloud.project.service.ProjectUserCleanupService;
 
 /**
- * 消费用户注销/删除事件，移除用户项目成员关系。
- *
- * <p>project-service 监听 user.deleted 路由键，删除用户在 project_member 表中的记录。</p>
+ * 消费用户注销/删除事件，委托给 ProjectUserCleanupService 执行清理。
  */
 @Slf4j
 @Component
 public class UserDeletedEventConsumer {
 
-    private static final String IDEMPOTENCY_KEY_PREFIX = "mq:idempotent:user:deleted:";
-    private static final long IDEMPOTENCY_TTL_HOURS = 24;
-
     private final ObjectMapper objectMapper;
-    private final ProjectMapper projectMapper;
-    private final StringRedisTemplate redisTemplate;
+    private final ProjectUserCleanupService cleanupService;
 
-    public UserDeletedEventConsumer(ObjectMapper objectMapper,
-                                    ProjectMapper projectMapper,
-                                    StringRedisTemplate redisTemplate) {
+    public UserDeletedEventConsumer(ObjectMapper objectMapper, ProjectUserCleanupService cleanupService) {
         this.objectMapper = objectMapper;
-        this.projectMapper = projectMapper;
-        this.redisTemplate = redisTemplate;
+        this.cleanupService = cleanupService;
     }
 
     @RabbitListener(queues = RabbitMqConfig.QUEUE_USER_EVENTS)
@@ -52,16 +39,20 @@ public class UserDeletedEventConsumer {
             long userId = event.userId();
             String username = event.username();
 
-            // 幂等性检查
-            String idempotencyKey = IDEMPOTENCY_KEY_PREFIX + userId;
-            if (!redisTemplate.opsForValue().setIfAbsent(idempotencyKey, "1", IDEMPOTENCY_TTL_HOURS, TimeUnit.HOURS)) {
-                log.warn("MQ: 重复用户删除事件，跳过处理: key={}", idempotencyKey);
+            if (!cleanupService.tryAcquireIdempotencyKey(userId)) {
+                log.warn("MQ: 重复用户删除事件，跳过处理: userId={}", userId);
                 return;
             }
 
-            log.info("MQ: 开始移除用户项目成员关系: userId={}, username={}", userId, username);
-            removeUserFromProjects(userId);
-            log.info("MQ: 用户项目成员关系移除完成: userId={}, username={}", userId, username);
+            try {
+                log.info("MQ: 开始移除用户项目成员关系: userId={}, username={}", userId, username);
+                cleanupService.removeUserFromProjects(userId);
+                log.info("MQ: 用户项目成员关系移除完成: userId={}, username={}", userId, username);
+            } catch (Exception e) {
+                cleanupService.releaseIdempotencyKey(userId);
+                log.error("处理用户删除事件 RabbitMQ 消息失败（将重试）, userId={}, message={}", userId, message, e);
+                throw new RuntimeException("处理用户删除事件消息失败", e);
+            }
         } catch (JsonProcessingException e) {
             log.error("用户删除事件消息反序列化失败（丢弃消息）, message={}", message, e);
             throw new AmqpRejectAndDontRequeueException("用户删除事件消息反序列化失败", e);
@@ -69,14 +60,5 @@ public class UserDeletedEventConsumer {
             log.error("处理用户删除事件 RabbitMQ 消息失败（将重试）, message={}", message, e);
             throw new RuntimeException("处理用户删除事件消息失败", e);
         }
-    }
-
-    /**
-     * 从所有项目中移除用户成员关系。
-     */
-    @Transactional(rollbackFor = Exception.class)
-    protected void removeUserFromProjects(long userId) {
-        int deleted = projectMapper.deleteByUserId(userId);
-        log.info("移除用户项目成员关系完成: userId={}, removedCount={}", userId, deleted);
     }
 }
