@@ -145,11 +145,8 @@ jobs:
       - name: Determine skip quality
         id: skip-quality
         run: |
-          if [ "${{ github.ref }}" = "refs/heads/dev" ] && [ "${{ github.event_name }}" = "push" ]; then
-            echo "skip_quality=true" >> $GITHUB_OUTPUT
-          else
-            echo "skip_quality=false" >> $GITHUB_OUTPUT
-          fi
+          # 不再针对 dev push 跳过质量检查；仅保留 workflow_dispatch 的手动输入
+          echo "skip_quality=false" >> $GITHUB_OUTPUT
 
   # ============================================================
   # Job 2a: 前端质量检查（与后端并行）
