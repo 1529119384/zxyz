@@ -41,6 +41,9 @@ ZXYZDatabasefronted.zip
 # Vite
 .vite/
 
+# Coverage report
+coverage/
+
 # TypeScript
 *.tsbuildinfo
 

@@ -51,6 +51,7 @@ data/
 derby.log
 nacos.home_IS_UNDEFINED/
 query
+ZXYZdatabaseFront/coverage/
 
 # ===== 项目特定 =====
 **/.claude/
