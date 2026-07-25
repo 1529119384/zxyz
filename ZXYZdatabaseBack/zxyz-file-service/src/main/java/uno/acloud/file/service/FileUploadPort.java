@@ -14,5 +14,6 @@ public interface FileUploadPort {
      * 直传上传（后端直接接收文件流，适用于本地存储等非预签名提供者）
      */
     UploadInfo directUpload(String originalName, java.io.InputStream inputStream,
-                            String contentType, Long parentId, Long userId);
+                            String contentType, Long parentId, Long userId,
+                            Long teamId, Integer spaceType, Long projectId, Long fileSize);
 }

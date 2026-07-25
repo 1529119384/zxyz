@@ -258,56 +258,10 @@ public class FileController {
         }
     }
 
-    /**
-     * 内部接口：获取文件流式下载信息（供分享服务等调用）
-     */
-    @GetMapping("/internal/files/{fileId}/stream-info")
-    public Result<String> getFileStreamInfo(@PathVariable Long fileId) {
-        FileNode fileNode = fileQueryPort.getFileNodeById(fileId);
-        if (fileNode == null || !(fileNode instanceof FileItem fileItem)) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "文件不存在");
-        }
-        StorageProvider provider = registry.resolveForFile(fileItem);
-        if (provider.supportsPresignedDownload()) {
-            return Result.of(provider.generateDownloadInfo(fileItem.getUuidName(), fileItem.getOriginalName()).getDownloadUrl());
-        } else {
-            return Result.of("/api/files/" + fileId + "/stream");
-        }
-    }
-
-    /**
-     * 内部接口：流式下载文件（供分享服务调用，无需用户认证）
-     */
-    @GetMapping("/internal/files/{fileId}/stream")
-    public void streamFileInternal(@PathVariable Long fileId, HttpServletResponse response) {
-        FileNode fileNode = fileQueryPort.getFileNodeById(fileId);
-        if (fileNode == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "文件不存在");
-        }
-        if (!(fileNode instanceof FileItem fileItem)) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持文件夹下载");
-        }
-        StorageProvider provider = registry.resolveForFile(fileItem);
-        if (provider.supportsPresignedDownload()) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "该存储提供者不支持流式下载");
-        }
-        response.setContentType("application/octet-stream");
-        response.setHeader("Content-Disposition", "attachment; filename*=utf-8''"
-                + java.net.URLEncoder.encode(fileItem.getOriginalName(), java.nio.charset.StandardCharsets.UTF_8)
-                .replace("+", "%20"));
-        try (OutputStream os = response.getOutputStream()) {
-            provider.streamDownload(fileItem.getUuidName(), os);
-        } catch (BusinessException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "文件下载失败");
-        }
-    }
-
     @Operation(summary = "直传上传文件（本地存储等非预签名提供者使用）")
     @PostMapping(value = "/uploads/direct", consumes = "multipart/form-data")
     @SaCheckPermission(SystemPermissionCodes.FILE_UPLOAD)
-    @RequiresTeamPermission(value = TeamPermissionCodes.TEAM_FILE_WRITE, teamIdArg = "request.teamId", skipWhenTeamIdMissing = true)
+    @RequiresTeamPermission(value = TeamPermissionCodes.TEAM_FILE_WRITE, teamIdArg = "teamId", skipWhenTeamIdMissing = true)
     public Result<UploadInfo> directUpload(@CurrentUser Long userId,
                                            @RequestPart("file") MultipartFile file,
                                            @RequestParam(required = false) Long teamId,
@@ -320,7 +274,8 @@ public class FileController {
         try (InputStream is = file.getInputStream()) {
             UploadInfo result = fileUploadPort.directUpload(
                     file.getOriginalFilename(), is,
-                    file.getContentType(), parentId, userId);
+                    file.getContentType(), parentId, userId,
+                    teamId, spaceType, projectId, file.getSize());
             return Result.of(result);
         } catch (BusinessException e) {
             throw e;

@@ -80,9 +80,6 @@ public class FileUploadService implements FileUploadPort {
     private final String projectServiceBaseUrl;
     private final String internalServiceToken;
     private final ConfigGetter configGetter;
-    private final Set<String> allowedExtensions;
-    private final Set<String> blockedExtensions;
-    private final long maxFileSizeBytes;
 
     public FileUploadService(StorageProviderRegistry registry,
                              FileUploadPersistenceManager fileUploadPersistenceService,
@@ -103,9 +100,18 @@ public class FileUploadService implements FileUploadPort {
         this.projectServiceBaseUrl = serviceProperties.getProjectService().getBaseUrl();
         this.internalServiceToken = serviceProperties.getInternalServiceToken();
         this.configGetter = configGetter;
-        this.allowedExtensions = configGetter.getJsonSet("app.file.upload.allowed-extensions", FALLBACK_ALLOWED_EXTENSIONS);
-        this.blockedExtensions = configGetter.getJsonSet("app.file.upload.blocked-extensions", FALLBACK_BLOCKED_EXTENSIONS);
-        this.maxFileSizeBytes = configGetter.getLong("app.file.upload.max-size-bytes", FALLBACK_MAX_FILE_SIZE_BYTES);
+    }
+
+    private Set<String> allowedExtensions() {
+        return configGetter.getJsonSet("app.file.upload.allowed-extensions", FALLBACK_ALLOWED_EXTENSIONS);
+    }
+
+    private Set<String> blockedExtensions() {
+        return configGetter.getJsonSet("app.file.upload.blocked-extensions", FALLBACK_BLOCKED_EXTENSIONS);
+    }
+
+    private long maxFileSizeBytes() {
+        return configGetter.getLong("app.file.upload.max-size-bytes", FALLBACK_MAX_FILE_SIZE_BYTES);
     }
 
     public UploadInfo getUploadSign(String originalName) {
@@ -117,18 +123,25 @@ public class FileUploadService implements FileUploadPort {
     }
 
     public UploadInfo directUpload(String originalName, InputStream inputStream,
-                                   String contentType, Long parentId, Long userId) {
+                                   String contentType, Long parentId, Long userId,
+                                   Long teamId, Integer spaceType, Long projectId, Long fileSize) {
         validateFileExtension(originalName);
         validateAllowedExtension(originalName);
         String normalizedName = fileDomainValidator.validateInputName(originalName);
         String uuidName = FILE_OBJECT_PREFIX + FileNameUtil.uuidName(normalizedName);
 
+        if (fileSize != null && fileSize > maxFileSizeBytes()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                    "文件大小超过限制（最大 " + formatFileSize(maxFileSizeBytes()) + "）");
+        }
+
         StorageProvider provider = registry.getDefaultProvider();
         if (!provider.supportsPresignedUpload()) {
             long bytesWritten = provider.receiveUpload(uuidName, inputStream, contentType,
                     buildContentDisposition(normalizedName));
-            if (bytesWritten > this.maxFileSizeBytes) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "文件大小超过限制（最大 500MB）");
+            if (bytesWritten > maxFileSizeBytes()) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST,
+                        "文件大小超过限制（最大 " + formatFileSize(maxFileSizeBytes()) + "）");
             }
         } else {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "当前存储提供者不支持直传上传");
@@ -137,8 +150,14 @@ public class FileUploadService implements FileUploadPort {
         String fileUrl = provider.generateDownloadInfo(uuidName, normalizedName).getDownloadUrl();
         ConfirmUploadRequest targetRequest = new ConfirmUploadRequest();
         targetRequest.setParentId(parentId);
+        targetRequest.setTeamId(teamId);
+        targetRequest.setSpaceType(spaceType);
+        targetRequest.setProjectId(projectId);
+        targetRequest.setFileSize(fileSize);
         SpaceTarget target = resolveUploadTarget(targetRequest, userId);
-        FileItem fileItem = saveFileInfo(uuidName, normalizedName, null, parentId, target, userId, fileUrl);
+        requireUploadAccess(target, userId);
+        checkUploadQuotaViaHttp(userId, teamId, spaceType, projectId, fileSize != null ? fileSize : 0L);
+        FileItem fileItem = saveFileInfo(uuidName, normalizedName, fileSize, parentId, target, userId, fileUrl);
         return new UploadInfo(
                 provider.providerId(),
                 fileUrl,
@@ -147,7 +166,7 @@ public class FileUploadService implements FileUploadPort {
                 contentType != null ? contentType : "application/octet-stream",
                 buildContentDisposition(normalizedName),
                 null,
-                false
+                true
         );
     }
 
@@ -171,7 +190,7 @@ public class FileUploadService implements FileUploadPort {
             return;
         }
         String ext = lower.substring(lastDot);
-        if (blockedExtensions.contains(ext)) {
+        if (blockedExtensions().contains(ext)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的文件类型");
         }
     }
@@ -186,7 +205,7 @@ public class FileUploadService implements FileUploadPort {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的文件类型: 文件缺少扩展名");
         }
         String ext = lower.substring(lastDot + 1);
-        if (!allowedExtensions.contains(ext)) {
+        if (!allowedExtensions().contains(ext)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的文件类型: ." + ext);
         }
     }
@@ -285,9 +304,9 @@ public class FileUploadService implements FileUploadPort {
             validateConfirmUploadItem(request);
             // 存储 HEAD 请求校验实际文件大小，防止客户端篡改 fileSize
             Long ossSize = registry.getDefaultProvider().getObjectSize(request.getObjectKey());
-            if (ossSize != null && ossSize > this.maxFileSizeBytes) {
+            if (ossSize != null && ossSize > maxFileSizeBytes()) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST,
-                        "文件大小超过限制（最大 " + formatFileSize(maxFileSizeBytes) + "）");
+                        "文件大小超过限制（最大 " + formatFileSize(maxFileSizeBytes()) + "）");
             }
             SpaceTarget target = resolveUploadTarget(request, userId);
             requireUploadAccess(target, userId);
@@ -347,9 +366,9 @@ public class FileUploadService implements FileUploadPort {
         if (request.getFileSize() == null || request.getFileSize() < 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "fileSize 非法");
         }
-        if (request.getFileSize() > this.maxFileSizeBytes) {
+        if (request.getFileSize() > maxFileSizeBytes()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST,
-                    "文件大小超过限制（最大 " + formatFileSize(maxFileSizeBytes) + "）");
+                    "文件大小超过限制（最大 " + formatFileSize(maxFileSizeBytes()) + "）");
         }
         if (request.getParentId() == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "parentId 不能为空");

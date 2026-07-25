@@ -37,6 +37,7 @@ Topic Exchange `zxyz.topic`，各服务监听各自 routing key。
 | `/ws`, `/ws/**` | im-service:19090（直连 Netty） |
 | `/api/admin/email/**` | email-service |
 | `/api/admin/database/**` | project-service |
+| `/api/internal/files/**` | file-service（内部服务直连，不经网关） |
 | `/api/**`（兜底） | project-service |
 
 鉴权白名单：`/api/users/login`, `/api/users/register`, `/api/public/shares/**`, `/actuator/**`
@@ -48,7 +49,7 @@ project-service → file-service    （存储用量查询）
 project-service → team-service    （权限校验、成员查询）
 project-service → user-service    （用户信息查询）
 file-service → team-service       （文件访问权限校验）
-share-service → file-service      （分享内容解析）
+share-service → file-service      （分享内容解析，内部直连 /api/internal/files/**，不经网关）
 team-service → file-service       （团队存储统计）
 team-service → project-service    （团队项目列表）
 ```

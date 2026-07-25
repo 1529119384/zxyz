@@ -87,7 +87,7 @@ public class LocalDiskStorageProvider implements StorageProvider {
                               String contentType, String contentDisposition) {
         try {
             Path basePath = Path.of(properties.getBasePath());
-            Path targetPath = basePath.resolve(objectKey);
+            Path targetPath = resolveSafe(basePath, objectKey);
 
             // 创建父目录
             Files.createDirectories(targetPath.getParent());
@@ -100,6 +100,8 @@ public class LocalDiskStorageProvider implements StorageProvider {
 
             log.info("本地存储上传成功，objectKey: {}, bytesWritten: {}", objectKey, bytesWritten);
             return bytesWritten;
+        } catch (BusinessException e) {
+            throw e;
         } catch (IOException e) {
             log.error("本地存储上传失败，objectKey: {}", objectKey, e);
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "文件上传失败");
@@ -110,7 +112,7 @@ public class LocalDiskStorageProvider implements StorageProvider {
     public void streamDownload(String objectKey, OutputStream outputStream) {
         try {
             Path basePath = Path.of(properties.getBasePath());
-            Path sourcePath = basePath.resolve(objectKey);
+            Path sourcePath = resolveSafe(basePath, objectKey);
 
             if (!Files.exists(sourcePath)) {
                 throw new BusinessException(ErrorCode.NOT_FOUND, "文件不存在");
@@ -134,15 +136,19 @@ public class LocalDiskStorageProvider implements StorageProvider {
 
     @Override
     public boolean objectExists(String objectKey) {
-        Path basePath = Path.of(properties.getBasePath());
-        return Files.exists(basePath.resolve(objectKey));
+        try {
+            Path basePath = Path.of(properties.getBasePath());
+            return Files.exists(resolveSafe(basePath, objectKey));
+        } catch (BusinessException e) {
+            return false;
+        }
     }
 
     @Override
     public Long getObjectSize(String objectKey) {
         try {
             Path basePath = Path.of(properties.getBasePath());
-            return Files.size(basePath.resolve(objectKey));
+            return Files.size(resolveSafe(basePath, objectKey));
         } catch (NoSuchFileException e) {
             return null;
         } catch (IOException e) {
@@ -155,7 +161,7 @@ public class LocalDiskStorageProvider implements StorageProvider {
     public byte[] readFirstBytes(String objectKey, int maxBytes) {
         try {
             Path basePath = Path.of(properties.getBasePath());
-            Path filePath = basePath.resolve(objectKey);
+            Path filePath = resolveSafe(basePath, objectKey);
             if (!Files.exists(filePath)) {
                 return null;
             }
@@ -183,8 +189,8 @@ public class LocalDiskStorageProvider implements StorageProvider {
     public void deleteObject(String objectKey) {
         try {
             Path basePath = Path.of(properties.getBasePath());
-            Path filePath = basePath.resolve(objectKey);
-            Path metaPath = basePath.resolve(objectKey + ".meta");
+            Path filePath = resolveSafe(basePath, objectKey);
+            Path metaPath = resolveSafe(basePath, objectKey + ".meta");
 
             Files.deleteIfExists(filePath);
             Files.deleteIfExists(metaPath);
@@ -205,7 +211,7 @@ public class LocalDiskStorageProvider implements StorageProvider {
     public void updateContentDisposition(String objectKey, String originalName) {
         try {
             Path basePath = Path.of(properties.getBasePath());
-            Path metaPath = basePath.resolve(objectKey + ".meta");
+            Path metaPath = resolveSafe(basePath, objectKey + ".meta");
 
             String contentDisposition = buildContentDisposition(originalName);
             Files.writeString(metaPath, contentDisposition);
@@ -215,6 +221,15 @@ public class LocalDiskStorageProvider implements StorageProvider {
             log.error("本地存储更新 Content-Disposition 失败，objectKey: {}", objectKey, e);
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "更新文件元数据失败");
         }
+    }
+
+    private Path resolveSafe(Path basePath, String objectKey) {
+        Path normalizedBase = basePath.normalize().toAbsolutePath();
+        Path resolved = normalizedBase.resolve(objectKey).normalize();
+        if (!resolved.startsWith(normalizedBase)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "非法的文件路径");
+        }
+        return resolved;
     }
 
     private void writeMetaFile(Path targetPath, String contentDisposition) throws IOException {
