@@ -57,7 +57,13 @@ export default defineConfig(({ mode }) => {
       coverage: {
         provider: 'v8',
         reporter: ['text', 'html'],
-        exclude: ['node_modules/', 'src/main.js']
+        exclude: ['node_modules/', 'src/main.js'],
+        thresholds: {
+          statements: 69.73,
+          branches: 56.68,
+          functions: 66.9,
+          lines: 69.98,
+        },
       }
     }
   }

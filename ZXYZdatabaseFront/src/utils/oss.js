@@ -2,7 +2,58 @@
 const DEFAULT_UPLOAD_TIMEOUT = 5 * 60 * 1000
 
 export function uploadToOss(uploadUrl, file, options = {}) {
-  // ... existing code
+  const { contentType, contentDisposition, onUploadProgress } = options
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+
+    xhr.open('PUT', uploadUrl, true)
+    xhr.timeout = DEFAULT_UPLOAD_TIMEOUT
+
+    if (onUploadProgress) {
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          onUploadProgress({
+            loaded: event.loaded,
+            total: event.total,
+            percent: Math.round((event.loaded / event.total) * 100),
+          })
+        }
+      }
+    }
+
+    if (contentType) {
+      xhr.setRequestHeader('Content-Type', contentType)
+    }
+    if (contentDisposition) {
+      xhr.setRequestHeader('Content-Disposition', contentDisposition)
+    }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve()
+        return
+      }
+
+      const error = new Error(`OSS upload failed: status ${xhr.status}`)
+      error.response = { status: xhr.status, data: xhr.responseText }
+      reject(error)
+    }
+
+    xhr.onerror = () => {
+      const error = new Error('OSS upload failed: network error')
+      error.response = { status: xhr.status || 0, data: xhr.responseText }
+      reject(error)
+    }
+
+    xhr.ontimeout = () => {
+      const error = new Error('OSS upload failed: timeout')
+      error.response = { status: 0, data: null }
+      reject(error)
+    }
+
+    xhr.send(file)
+  })
 }
 
 /**

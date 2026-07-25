@@ -24,7 +24,7 @@ export function useFileDownload(options) {
     const directDownload = response?.data?.directDownload
     const fileName = response?.data?.fileName || row.fileName || row.originalName
 
-    if (!downloadUrl) {
+    if (downloadUrl == null && directDownload !== false) {
       throw new Error('未获取到下载链接')
     }
 
@@ -33,27 +33,26 @@ export function useFileDownload(options) {
 
   async function downloadFile(row) {
     const { downloadUrl, directDownload, fileName } = await getDownloadUrl(row)
-    if (!downloadUrl) {
+    if (directDownload !== false && !downloadUrl) {
       return
     }
 
     if (directDownload !== false) {
-      // 直下：直接使用预签名 URL（OSS 等）
       await downloadBlobByUrl(downloadUrl, fileName)
     } else {
-      // 流式下载：调用后端流式下载接口（本地存储等）
       const streamUrl = `/api/files/${row.id}/stream`
       await downloadBlobByUrl(streamUrl, fileName)
     }
   }
 
   async function copyDownloadLink(row) {
-    const { downloadUrl } = await getDownloadUrl(row)
-    if (!downloadUrl) {
+    const { downloadUrl, directDownload } = await getDownloadUrl(row)
+    if (directDownload !== false && !downloadUrl) {
       return
     }
 
-    await copyText(downloadUrl)
+    const link = directDownload === false ? `/api/files/${row.id}/stream` : downloadUrl
+    await copyText(link)
     ElMessage.success('下载链接已复制')
   }
 
