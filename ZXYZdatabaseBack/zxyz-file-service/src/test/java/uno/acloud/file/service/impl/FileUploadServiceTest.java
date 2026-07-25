@@ -395,4 +395,149 @@ class FileUploadServiceTest {
         assertEquals(0, result.getSuccessCount());
         assertEquals(1, result.getFailCount());
     }
+
+    // ==================== directUpload: valid upload should succeed ====================
+
+    @Test
+    void directUpload_validFile_shouldSucceed() throws Exception {
+        Long userId = 1L;
+        Long parentId = 100L;
+        Long teamId = 10L;
+
+        when(fileDomainValidator.validateInputName("test.txt")).thenReturn("test.txt");
+        when(defaultProvider.supportsPresignedUpload()).thenReturn(false);
+        when(defaultProvider.receiveUpload(anyString(), any(), anyString(), anyString())).thenReturn(1024L);
+        when(defaultProvider.generateDownloadInfo(anyString(), anyString()))
+                .thenReturn(new DownloadInfo("local", "/download/files/uuid-test.txt", "test.txt", true));
+        when(defaultProvider.providerId()).thenReturn("local");
+
+        Folder parentFolder = Folder.create();
+        parentFolder.setId(parentId);
+        parentFolder.setTeamId(teamId);
+        parentFolder.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+        when(fileDomainValidator.requireFolder(parentId)).thenReturn(parentFolder);
+
+        FileItem savedFile = FileItem.create();
+        savedFile.setId(2000L);
+        savedFile.setOriginalName("test.txt");
+        when(fileUploadPersistenceService.saveFileItem(any(FileItem.class))).thenReturn(savedFile);
+
+        java.io.ByteArrayInputStream inputStream = new java.io.ByteArrayInputStream("hello".getBytes());
+
+        UploadInfo result = fileUploadService.directUpload(
+                "test.txt", inputStream, "text/plain", parentId, userId, teamId, 1, null, 1024L);
+
+        assertNotNull(result);
+        assertEquals("local", result.getProvider());
+        verify(fileUploadPersistenceService).saveFileItem(any(FileItem.class));
+    }
+
+    // ==================== directUpload: fileSize exceeds limit should throw ====================
+
+    @Test
+    void directUpload_exceedingMaxSize_shouldThrow() {
+        Long userId = 1L;
+        Long parentId = 100L;
+
+        when(fileDomainValidator.validateInputName("huge.txt")).thenReturn("huge.txt");
+
+        java.io.ByteArrayInputStream inputStream = new java.io.ByteArrayInputStream(new byte[0]);
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> fileUploadService.directUpload(
+                        "huge.txt", inputStream, "text/plain", parentId, userId, null, null, null,
+                        600 * 1024 * 1024L));
+        assertEquals(ErrorCode.BAD_REQUEST, ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("文件大小超过限制"));
+    }
+
+    // ==================== directUpload: insufficient quota should throw ====================
+
+    @Test
+    void directUpload_insufficientQuota_shouldThrow() {
+        Long userId = 1L;
+        Long parentId = 100L;
+        Long teamId = 10L;
+
+        ServiceProperties quotaProps = new ServiceProperties();
+        quotaProps.getProjectService().setBaseUrl("http://project-service:18080");
+        quotaProps.setInternalServiceToken("test-token");
+
+        ConfigGetter quotaConfigGetter = mock(ConfigGetter.class);
+        when(quotaConfigGetter.getJsonSet(eq("app.file.upload.allowed-extensions"), any()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+        when(quotaConfigGetter.getLong(eq("app.file.upload.max-size-bytes"), anyLong()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+
+        doThrow(HttpClientErrorException.create(
+                HttpStatus.FORBIDDEN, "Forbidden",
+                HttpHeaders.EMPTY, new byte[0], StandardCharsets.UTF_8))
+                .when(restClient).post();
+
+        FileUploadService quotaService = new FileUploadService(
+                registry, fileUploadPersistenceService, fileDomainValidator,
+                filePathResolver, fileAccessGuardService, restClient,
+                objectMapper, quotaConfigGetter, quotaProps);
+
+        when(fileDomainValidator.validateInputName("quota-test.txt")).thenReturn("quota-test.txt");
+        when(defaultProvider.supportsPresignedUpload()).thenReturn(false);
+        when(defaultProvider.receiveUpload(anyString(), any(), anyString(), anyString())).thenReturn(1024L);
+        when(defaultProvider.generateDownloadInfo(anyString(), anyString()))
+                .thenReturn(new DownloadInfo("local", "/download/files/uuid-quota.txt", "quota-test.txt", true));
+        when(defaultProvider.providerId()).thenReturn("local");
+
+        Folder parentFolder = Folder.create();
+        parentFolder.setId(parentId);
+        parentFolder.setTeamId(teamId);
+        parentFolder.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+        when(fileDomainValidator.requireFolder(parentId)).thenReturn(parentFolder);
+
+        java.io.ByteArrayInputStream inputStream = new java.io.ByteArrayInputStream("hello".getBytes());
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> quotaService.directUpload(
+                        "quota-test.txt", inputStream, "text/plain", parentId, userId, teamId, 1, null, 1024L));
+        assertEquals(ErrorCode.BAD_REQUEST, ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("存储空间不足"));
+    }
+
+    // ==================== directUpload: fileSize passed to saveFileInfo ====================
+
+    @Test
+    void directUpload_fileSizePassedToSaveFileInfo() throws Exception {
+        Long userId = 1L;
+        Long parentId = 100L;
+        Long teamId = 10L;
+        long expectedSize = 2048L;
+
+        when(fileDomainValidator.validateInputName("sized.txt")).thenReturn("sized.txt");
+        when(defaultProvider.supportsPresignedUpload()).thenReturn(false);
+        when(defaultProvider.receiveUpload(anyString(), any(), anyString(), anyString())).thenReturn(expectedSize);
+        when(defaultProvider.generateDownloadInfo(anyString(), anyString()))
+                .thenReturn(new DownloadInfo("local", "/download/files/uuid-sized.txt", "sized.txt", true));
+        when(defaultProvider.providerId()).thenReturn("local");
+
+        Folder parentFolder = Folder.create();
+        parentFolder.setId(parentId);
+        parentFolder.setTeamId(teamId);
+        parentFolder.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+        when(fileDomainValidator.requireFolder(parentId)).thenReturn(parentFolder);
+
+        FileItem savedFile = FileItem.create();
+        savedFile.setId(3000L);
+        savedFile.setOriginalName("sized.txt");
+        when(fileUploadPersistenceService.saveFileItem(any(FileItem.class))).thenAnswer(invocation -> {
+            FileItem item = invocation.getArgument(0);
+            assertEquals(expectedSize, item.getFileSize());
+            return savedFile;
+        });
+
+        java.io.ByteArrayInputStream inputStream = new java.io.ByteArrayInputStream("hello".getBytes());
+
+        UploadInfo result = fileUploadService.directUpload(
+                "sized.txt", inputStream, "text/plain", parentId, userId, teamId, 1, null, expectedSize);
+
+        assertNotNull(result);
+        verify(fileUploadPersistenceService).saveFileItem(any(FileItem.class));
+    }
 }

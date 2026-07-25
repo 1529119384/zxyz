@@ -38,7 +38,6 @@ public class AvatarUploadSignService {
     private final GetSignUrl getSignUrl;
     private final OSSProperties ossProperties;
     private final ConfigGetter configGetter;
-    private final long maxAvatarSize;
 
     public AvatarUploadSignService(GetSignUrl getSignUrl,
                                    OSSProperties ossProperties,
@@ -46,7 +45,6 @@ public class AvatarUploadSignService {
         this.getSignUrl = getSignUrl;
         this.ossProperties = ossProperties;
         this.configGetter = configGetter;
-        this.maxAvatarSize = configGetter.getLong("app.avatar.max-size-bytes", FALLBACK_MAX_AVATAR_SIZE);
     }
 
     public OssSignInfo generateAvatarUploadSign(AvatarUploadSignRequest request) {
@@ -77,6 +75,7 @@ public class AvatarUploadSignService {
     }
 
     private void validateAvatarSize(Long fileSize) {
+        long maxAvatarSize = configGetter.getLong("app.avatar.max-size-bytes", FALLBACK_MAX_AVATAR_SIZE);
         if (fileSize == null || fileSize <= 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "头像文件大小非法");
         }

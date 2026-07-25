@@ -12,7 +12,6 @@ import uno.acloud.share.vo.ShareDownloadResponseVO;
 import uno.acloud.share.vo.ShareFilesResponseItemVO;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
@@ -101,19 +100,12 @@ public class ShareContentProvider {
             throw new BusinessException(ShareErrorCode.SHARE_STATUS_INVALID.getCode(), "分享目录已失效");
         }
 
-        // 批量收集所有路径段对应的 parentId，单次 HTTP 调用消除 N+1
-        List<Long> parentIdsToQuery = new java.util.ArrayList<>();
-        for (int i = 1; i < segments.size(); i++) {
-            parentIdsToQuery.add(currentFolder.getId());
-        }
-        if (parentIdsToQuery.isEmpty()) {
-            return currentFolder;
-        }
-        Map<Long, List<FileInfoDTO>> batchResult = fileServiceClient.getShareChildrenByParentIds(parentIdsToQuery);
-
+        // 注意：此处为顺序依赖——每次迭代的 parentId 取决于上一次查询结果，无法预收集 ID 做批量查询。
+        // getShareChildrenByParentIds 批量接口适用于已知全部 parentId 的场景（如 FileQueryService 中的并行查询）。
+        // 如需消除此处的 N+1，需在 file-service 新增按完整路径段查询的接口（如 POST /api/internal/files/resolve-share-path）。
         for (int i = 1; i < segments.size(); i++) {
             String segment = segments.get(i);
-            List<FileInfoDTO> children = batchResult.get(currentFolder.getId());
+            List<FileInfoDTO> children = fileServiceClient.getShareChildren(currentFolder.getId());
             if (children == null || children.isEmpty()) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "path 非法");
             }

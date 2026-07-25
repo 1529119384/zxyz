@@ -98,18 +98,18 @@ class FileDomainValidatorTest {
     }
 
     @Test
-    void validateInputName_shouldRejectNameLongerThan100Chars() {
-        String longName = "a".repeat(101);
+    void validateInputName_shouldRejectNameLongerThan255Chars() {
+        String longName = "a".repeat(256);
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> validator.validateInputName(longName));
         assertEquals(ErrorCode.BAD_REQUEST, ex.getErrorCode());
-        assertTrue(ex.getMessage().contains("长度不能超过 100"));
+        assertTrue(ex.getMessage().contains("长度不能超过 255"));
     }
 
     @Test
-    void validateInputName_shouldAcceptNameExactly100Chars() {
-        String name100 = "a".repeat(100);
-        assertEquals(name100, validator.validateInputName(name100));
+    void validateInputName_shouldAcceptNameExactly255Chars() {
+        String name255 = "a".repeat(255);
+        assertEquals(name255, validator.validateInputName(name255));
     }
 
     @Test

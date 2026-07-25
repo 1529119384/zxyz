@@ -44,8 +44,10 @@ public class FileDomainValidator {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "fileIds 不能为空");
         }
         List<FileNode> nodes = fileMapper.getFileNodesByIds(fileIds);
-        if (nodes.size() != fileIds.size()) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "部分文件不存在");
+        Set<Long> found = nodes.stream().map(FileNode::getId).collect(Collectors.toSet());
+        List<Long> missing = fileIds.stream().filter(id -> !found.contains(id)).toList();
+        if (!missing.isEmpty()) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "文件不存在: " + missing);
         }
         return nodes;
     }
@@ -88,10 +90,12 @@ public class FileDomainValidator {
     public List<FileNode> requireMovableNodes(List<Long> fileIds) {
         List<Long> normalized = normalizeFileIds(fileIds);
         List<FileNode> nodes = requireNodes(normalized);
-        for (FileNode node : nodes) {
-            if (!node.isActive()) {
-                throw new BusinessException(ErrorCode.FILE_STATE_INVALID, "当前文件状态不可操作");
-            }
+        List<Long> inactiveIds = nodes.stream()
+                .filter(node -> !node.isActive())
+                .map(FileNode::getId)
+                .toList();
+        if (!inactiveIds.isEmpty()) {
+            throw new BusinessException(ErrorCode.FILE_STATE_INVALID, "文件状态不可操作: " + inactiveIds);
         }
         return nodes;
     }

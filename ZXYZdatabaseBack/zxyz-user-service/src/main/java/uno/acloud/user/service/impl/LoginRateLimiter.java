@@ -21,19 +21,17 @@ public class LoginRateLimiter {
 
     private final StringRedisTemplate stringRedisTemplate;
     private final ConfigGetter configGetter;
-    private final int ipLimitPerMinute;
-    private final int usernameLimitPerMinute;
 
     public LoginRateLimiter(StringRedisTemplate stringRedisTemplate, ConfigGetter configGetter) {
         this.stringRedisTemplate = stringRedisTemplate;
         this.configGetter = configGetter;
-        this.ipLimitPerMinute = configGetter.getInt("app.rate-limit.login.ip-per-minute", FALLBACK_IP_LIMIT_PER_MINUTE);
-        this.usernameLimitPerMinute = configGetter.getInt("app.rate-limit.login.username-per-minute", FALLBACK_USERNAME_LIMIT_PER_MINUTE);
     }
 
     public void checkAndIncrement(String ip, String username) {
-        requireLimit("zxyz:user:login:ip:" + (ip == null || ip.isBlank() ? "unknown" : ip), ipLimitPerMinute);
-        requireLimit("zxyz:user:login:username:" + username, usernameLimitPerMinute);
+        int ipLimit = configGetter.getInt("app.rate-limit.login.ip-per-minute", FALLBACK_IP_LIMIT_PER_MINUTE);
+        int usernameLimit = configGetter.getInt("app.rate-limit.login.username-per-minute", FALLBACK_USERNAME_LIMIT_PER_MINUTE);
+        requireLimit("zxyz:user:login:ip:" + (ip == null || ip.isBlank() ? "unknown" : ip), ipLimit);
+        requireLimit("zxyz:user:login:username:" + username, usernameLimit);
     }
 
     private void requireLimit(String key, int limit) {

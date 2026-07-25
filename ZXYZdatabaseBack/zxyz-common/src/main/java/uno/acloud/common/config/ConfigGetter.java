@@ -157,6 +157,9 @@ public class ConfigGetter extends AbstractServiceClient {
                     return NULL_SENTINEL;
                 }
                 throw e;
+            } catch (Exception e) {
+                log.warn("读取配置失败（异常，视为键不存在）: key={}", k, e);
+                return NULL_SENTINEL;
             }
         });
         return NULL_SENTINEL.equals(value) ? null : value;

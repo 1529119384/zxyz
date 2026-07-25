@@ -8,15 +8,19 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
+import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.exception.BusinessException;
 
+import java.time.Duration;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -27,8 +31,16 @@ class ShareAccessRateLimiterTest {
     @Mock
     private StringRedisTemplate stringRedisTemplate;
 
+    @Mock
+    private ConfigGetter configGetter;
+
     @InjectMocks
     private ShareAccessRateLimiter rateLimiter;
+
+    private void stubConfigGetter() {
+        when(configGetter.getInt(eq("app.rate-limit.share.attempts-per-window"), anyInt())).thenReturn(10);
+        when(configGetter.getInt(eq("app.rate-limit.share.window-minutes"), anyInt())).thenReturn(5);
+    }
 
     @SuppressWarnings("unchecked")
     private void stubRedisExecute(Long returnValue) {
@@ -41,6 +53,7 @@ class ShareAccessRateLimiterTest {
 
     @Test
     void checkAndIncrement_allowsUnderLimit() {
+        stubConfigGetter();
         stubRedisExecute(5L);
 
         rateLimiter.checkAndIncrement("share1", "192.168.1.1");
@@ -54,6 +67,7 @@ class ShareAccessRateLimiterTest {
 
     @Test
     void checkAndIncrement_throwsWhenLimitExceeded() {
+        stubConfigGetter();
         stubRedisExecute(11L);
 
         BusinessException ex = assertThrows(BusinessException.class,
@@ -63,6 +77,7 @@ class ShareAccessRateLimiterTest {
 
     @Test
     void checkAndIncrement_usesUnknownWhenIpBlank() {
+        stubConfigGetter();
         stubRedisExecute(1L);
 
         rateLimiter.checkAndIncrement("share1", "");
@@ -79,6 +94,7 @@ class ShareAccessRateLimiterTest {
 
     @Test
     void checkAndIncrement_usesUnknownWhenIpNull() {
+        stubConfigGetter();
         stubRedisExecute(1L);
 
         rateLimiter.checkAndIncrement("share1", null);
@@ -95,6 +111,7 @@ class ShareAccessRateLimiterTest {
 
     @Test
     void checkAndIncrement_handlesNullRedisResult() {
+        stubConfigGetter();
         stubRedisExecute(null);
 
         rateLimiter.checkAndIncrement("share1", "10.0.0.1");

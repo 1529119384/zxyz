@@ -7,6 +7,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import static uno.acloud.common.ShareErrorCode.*;
+import uno.acloud.common.ErrorCode;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.share.common.ShareStatus;
 import uno.acloud.share.config.ShareProperties;
@@ -27,6 +28,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static uno.acloud.common.ErrorCode.BAD_REQUEST;
+import static uno.acloud.common.ErrorCode.NOT_FOUND;
 
 @ExtendWith(MockitoExtension.class)
 class ShareAccessManagerTest {

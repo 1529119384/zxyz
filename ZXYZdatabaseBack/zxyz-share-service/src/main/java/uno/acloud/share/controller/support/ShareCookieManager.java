@@ -24,6 +24,7 @@ import javax.crypto.spec.SecretKeySpec;
 @Component
 public class ShareCookieManager {
     private static final String COOKIE_PREFIX = "share_access_";
+    private static final String TOKEN_VERSION_PREFIX = "v2:";
 
     @Nullable
     public String resolveAccessToken(String shareKey, @Nullable HttpServletRequest request) {
@@ -63,7 +64,7 @@ public class ShareCookieManager {
     }
 
     public String buildAccessToken(Share share, String cookieSecret) {
-        String raw = share.getShareKey() + "|" + StringUtils.defaultString(share.getPassword()) + "|" + share.getUserId()
+        String raw = TOKEN_VERSION_PREFIX + share.getShareKey() + "|" + StringUtils.defaultString(share.getPassword()) + "|" + share.getUserId()
                 + "|" + share.getCreateTime();
         try {
             Mac mac = Mac.getInstance("HmacSHA256");

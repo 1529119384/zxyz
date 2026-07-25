@@ -178,7 +178,7 @@ public class FileCopyService {
         if (insertedRows == null || insertedRows != 1 || clone.getId() == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "复制文件失败");
         }
-        fileObjectReferenceService.retainReference(clone.getUuidName());
+        fileObjectReferenceService.retainReference(clone.getUuidName(), source.getStorageProvider());
         return clone;
     }
 

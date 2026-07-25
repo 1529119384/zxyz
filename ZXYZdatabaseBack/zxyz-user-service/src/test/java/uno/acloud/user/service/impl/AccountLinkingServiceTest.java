@@ -79,6 +79,8 @@ class AccountLinkingServiceTest {
         User target = userWith(targetUserId, "targetUser", "encoded-password");
         when(userQueryHelper.requireExistingUser(targetUserId)).thenReturn(target);
         when(userQueryHelper.passwordMatched("target-password", target)).thenReturn(true);
+        when(userEntityMapper.toLinkedAccountVO(target))
+                .thenReturn(new LinkedAccountVO(targetUserId, "targetUser", null, null, null, null, null));
 
         LinkedAccountVO result = accountLinkingService.trustLinkedAccount(userId, targetUserId, request);
 
@@ -103,6 +105,8 @@ class AccountLinkingServiceTest {
         User target = userWith(targetUserId, "targetUser", "encoded-password");
         when(userQueryHelper.requireExistingUser(targetUserId)).thenReturn(target);
         when(userQueryHelper.passwordMatched("target-password", target)).thenReturn(true);
+        when(userEntityMapper.toLinkedAccountVO(target))
+                .thenReturn(new LinkedAccountVO(targetUserId, "targetUser", null, null, null, null, null));
 
         // Trust already exists — upsert just updates create_time
         LinkedAccountVO result = accountLinkingService.trustLinkedAccount(userId, targetUserId, request);

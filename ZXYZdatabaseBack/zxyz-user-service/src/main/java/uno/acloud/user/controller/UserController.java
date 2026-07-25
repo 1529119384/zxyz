@@ -232,8 +232,8 @@ public class UserController {
     @SaCheckRole(SystemRoleCodes.SYSTEM_ADMIN)
     @Operation(summary = "注销用户（系统管理员）")
     @DeleteMapping("/{userId}")
-    public Result<Void> deleteUser(@PathVariable Long userId) {
-        userAdminService.deleteUser(userId);
+    public Result<Void> deleteUser(@CurrentUser Long operatorId, @PathVariable Long userId) {
+        userAdminService.deleteUser(operatorId, userId);
         return Result.success();
     }
 }

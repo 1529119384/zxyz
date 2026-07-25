@@ -45,6 +45,9 @@ public interface ShareMapper extends BaseMapper<Share> {
     @Select("SELECT id, share_id, file_id, file_type, create_time FROM share_item WHERE share_id = #{shareId} ORDER BY create_time ASC, id ASC")
     List<ShareItem> listItemsByShareId(Long shareId);
 
+    @Delete("DELETE FROM share_item WHERE share_id = #{shareId}")
+    int deleteShareItemsByShareId(@Param("shareId") Long shareId);
+
     @Delete({
             "<script>",
             "DELETE FROM share_item WHERE file_id IN",

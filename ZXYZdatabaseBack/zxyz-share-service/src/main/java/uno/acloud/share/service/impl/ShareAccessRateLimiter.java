@@ -21,17 +21,15 @@ public class ShareAccessRateLimiter {
 
     private final StringRedisTemplate stringRedisTemplate;
     private final ConfigGetter configGetter;
-    private final int maxAttempts;
-    private final Duration window;
 
     public ShareAccessRateLimiter(StringRedisTemplate stringRedisTemplate, ConfigGetter configGetter) {
         this.stringRedisTemplate = stringRedisTemplate;
         this.configGetter = configGetter;
-        this.maxAttempts = configGetter.getInt("app.rate-limit.share.attempts-per-window", FALLBACK_MAX_ATTEMPTS);
-        this.window = Duration.ofMinutes(configGetter.getInt("app.rate-limit.share.window-minutes", (int) FALLBACK_WINDOW.toMinutes()));
     }
 
     public void checkAndIncrement(String shareKey, String ip) {
+        int maxAttempts = configGetter.getInt("app.rate-limit.share.attempts-per-window", FALLBACK_MAX_ATTEMPTS);
+        Duration window = Duration.ofMinutes(configGetter.getInt("app.rate-limit.share.window-minutes", (int) FALLBACK_WINDOW.toMinutes()));
         String safeIp = (ip == null || ip.isBlank()) ? "unknown" : ip;
         String key = KEY_PREFIX + shareKey + ":" + safeIp;
         Long current = incrementWithTtl(key, window);

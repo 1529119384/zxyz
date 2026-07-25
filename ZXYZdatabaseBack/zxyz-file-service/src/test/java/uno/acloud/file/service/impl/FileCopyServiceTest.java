@@ -86,6 +86,7 @@ class FileCopyServiceTest {
         sourceFile.setSpaceType(2);
         sourceFile.setUuidName("uuid-test.txt");
         sourceFile.setFileSize(1024L);
+        sourceFile.setStorageProvider("oss");
 
         Folder targetFolder = Folder.create();
         targetFolder.setId(targetParentId);
@@ -126,7 +127,7 @@ class FileCopyServiceTest {
 
         assertNotNull(result);
         verify(fileMapper).insertFileItem(any(FileItem.class));
-        verify(fileObjectReferenceService).retainReference("uuid-test.txt");
+        verify(fileObjectReferenceService).retainReference(eq("uuid-test.txt"), anyString());
     }
 
     // ==================== copyFiles — exceeding MAX_COPY_NODES_PER_TRANSACTION ====================
@@ -202,6 +203,7 @@ class FileCopyServiceTest {
         sourceFile.setSpaceType(2);
         sourceFile.setUuidName("uuid-doc.txt");
         sourceFile.setFileSize(512L);
+        sourceFile.setStorageProvider("oss");
 
         Folder targetFolder = Folder.create();
         targetFolder.setId(targetParentId);
@@ -240,7 +242,7 @@ class FileCopyServiceTest {
         // Verify the cloned file has the renamed original name
         verify(fileMapper).insertFileItem(argThat(item ->
                 "doc(1).txt".equals(item.getOriginalName())));
-        verify(fileObjectReferenceService).retainReference("uuid-doc.txt");
+        verify(fileObjectReferenceService).retainReference(eq("uuid-doc.txt"), anyString());
     }
 
     // ==================== copyFiles — empty file list should reject ====================

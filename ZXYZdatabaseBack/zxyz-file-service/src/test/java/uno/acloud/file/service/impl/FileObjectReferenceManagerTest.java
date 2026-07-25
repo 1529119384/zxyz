@@ -41,7 +41,7 @@ class FileObjectReferenceManagerTest {
                 .thenReturn(0);
 
         BusinessException ex = assertThrows(BusinessException.class,
-                () -> manager.retainReference("oss-key-1"));
+                () -> manager.retainReference("oss-key-1", "oss"));
         assertEquals(ErrorCode.FILE_STATE_INVALID, ex.getErrorCode());
         assertTrue(ex.getMessage().contains("引用计数增加失败"));
     }
@@ -51,8 +51,15 @@ class FileObjectReferenceManagerTest {
         when(fileObjectRefMapper.incrementReference("oss-key-1", 1, FileObjectDeleteStatus.ACTIVE, "oss"))
                 .thenReturn(1);
 
-        assertDoesNotThrow(() -> manager.retainReference("oss-key-1"));
+        assertDoesNotThrow(() -> manager.retainReference("oss-key-1", "oss"));
         verify(fileObjectRefMapper).incrementReference("oss-key-1", 1, FileObjectDeleteStatus.ACTIVE, "oss");
+    }
+
+    @Test
+    void retainReference_throwsWhenProviderNull() {
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> manager.retainReference("oss-key-1", null));
+        assertEquals(ErrorCode.BAD_REQUEST, ex.getErrorCode());
     }
 
     @Test

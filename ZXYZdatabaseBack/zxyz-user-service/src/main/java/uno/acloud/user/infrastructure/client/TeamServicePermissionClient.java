@@ -56,6 +56,19 @@ public class TeamServicePermissionClient extends TeamServiceClient {
         }
     }
 
+    public List<Long> listSystemAdminUserIds() {
+        try {
+            JsonNode root = getJson("/api/internal/permissions/user/system-admin-ids");
+            if (root.path("code").asInt() != ErrorCode.SUCCESS) {
+                return null;
+            }
+            return objectMapper().convertValue(root.path("data"), new TypeReference<List<Long>>() {});
+        } catch (Exception e) {
+            log.warn("获取系统管理员列表失败", e);
+            return null;
+        }
+    }
+
     public void ensureDefaultRole(Long userId, String username) {
         postJson("/api/internal/permissions/ensure-default-role",
                 Map.of("userId", userId, "username", username != null ? username : ""));

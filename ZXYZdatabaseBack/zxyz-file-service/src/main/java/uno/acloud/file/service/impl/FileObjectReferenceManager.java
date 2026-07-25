@@ -30,8 +30,10 @@ public class FileObjectReferenceManager {
         if (normalizedKey == null) {
             return;
         }
-        String providerId = StringUtils.trimToNull(storageProvider) != null ? storageProvider : "oss";
-        int updatedRows = fileObjectRefMapper.incrementReference(normalizedKey, 1, FileObjectDeleteStatus.ACTIVE, providerId);
+        if (storageProvider == null || storageProvider.isBlank()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "storageProvider 不能为空");
+        }
+        int updatedRows = fileObjectRefMapper.incrementReference(normalizedKey, 1, FileObjectDeleteStatus.ACTIVE, storageProvider.trim());
         if (updatedRows <= 0) {
             throw new BusinessException(ErrorCode.FILE_STATE_INVALID, "文件对象引用计数增加失败");
         }
