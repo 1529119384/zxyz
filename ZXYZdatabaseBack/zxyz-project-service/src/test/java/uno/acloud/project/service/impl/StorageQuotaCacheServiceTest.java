@@ -41,7 +41,7 @@ class StorageQuotaCacheServiceTest {
     void setUp() {
         objectMapper = new ObjectMapper();
         org.mockito.Mockito.when(configGetter.getInt("app.cache.team-permission-ttl-minutes", 5)).thenReturn(5);
-        org.mockito.Mockito.when(configGetter.getInt("app.cache.storage-usage-ttl-seconds", 30)).thenReturn(30);
+        org.mockito.Mockito.when(configGetter.getInt("app.cache.storage-usage-ttl-seconds", 10)).thenReturn(10);
         service = new StorageQuotaCacheService(redisTemplate, objectMapper,
                 teamServiceClient, fileServiceClient, configGetter);
     }

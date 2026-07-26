@@ -8,6 +8,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.team.dto.permission.AssignTeamRolePermissionsRequest;
+import uno.acloud.team.infrastructure.mapper.TeamEntityMapper;
 import uno.acloud.team.mapper.TeamPermissionMapper;
 
 import java.util.List;
@@ -24,6 +25,9 @@ class TeamRolePermissionServiceTest {
 
     @Mock
     private TeamPermissionCacheService teamPermissionCacheService;
+
+    @Mock
+    private TeamEntityMapper teamEntityMapper;
 
     @Mock
     private RoleManagementService roleManagementService;
@@ -50,10 +54,10 @@ class TeamRolePermissionServiceTest {
     void hasPermission_queriesDbWhenCacheNull() {
         when(teamPermissionCacheService.checkPermission(eq(1L), eq(10L), eq("team:file:read"), any()))
                 .thenReturn(true);
-        when(teamPermissionMapper.countMemberPermission(1L, 10L, "team:file:read")).thenReturn(1);
 
         boolean result = teamRolePermissionService.hasPermission(1L, 10L, "team:file:read");
         assertTrue(result);
+        verify(teamPermissionMapper, never()).countMemberPermission(anyLong(), anyLong(), anyString());
     }
 
     @Test
@@ -85,6 +89,7 @@ class TeamRolePermissionServiceTest {
     @Test
     void listAudit_returnsEmptyWhenNoRecords() {
         when(teamPermissionMapper.listAudit(1L, 50)).thenReturn(List.of());
+        when(teamEntityMapper.toTeamPermissionAuditVOList(List.of())).thenReturn(List.of());
 
         var result = teamRolePermissionService.listAudit(1L, null);
         assertNotNull(result);

@@ -69,11 +69,10 @@ class PermissionServiceTest {
     void hasTeamPermission_queriesDbWhenCacheNull() {
         when(teamPermissionCacheService.checkPermission(eq(1L), eq(10L), eq("team:file:read"), any()))
                 .thenReturn(true);
-        when(permissionRoleMapper.getTeamPermissionCodes(10L, 1L))
-                .thenReturn(List.of("team:file:read", "team:file:write"));
 
         boolean result = permissionService.hasTeamPermission(10L, 1L, "team:file:read");
         assertTrue(result);
+        verify(permissionRoleMapper, never()).getTeamPermissionCodes(anyLong(), anyLong());
     }
 
     // ==================== getSystemRolesByUserId (delegates) ====================
