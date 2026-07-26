@@ -2,7 +2,7 @@
 
 ## 数据库
 
-MySQL 8.4，8 个独立数据库：`zxyz_project`, `zxyz_user`, `zxyz_file`, `zxyz_share`, `zxyz_team`, `zxyz_im`, `zxyz_email`, `nacos`
+MySQL 8.4，10 个独立数据库：`zxyz_project`, `zxyz_user`, `zxyz_file`, `zxyz_share`, `zxyz_team`, `zxyz_im`, `zxyz_email`, `zxyz_config`, `nacos`, `zxyz_audit`
 
 Schema 文件：根目录 `sql/`（Docker 挂载源）和 `ZXYZdatabaseBack/sql/`（本地开发参考）。
 初始化脚本 `sql/00-init-zxyz.sh` 在 Docker 首次启动时自动执行。

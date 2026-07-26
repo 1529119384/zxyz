@@ -5,6 +5,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.admin.client.EmailProviderClient;
 import uno.acloud.admin.client.StorageProviderClient;
 import uno.acloud.admin.domain.SysConfig;
@@ -14,6 +15,7 @@ import uno.acloud.common.AbstractIntegrationTest;
 import uno.acloud.common.util.JasyptEncryptor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -24,6 +26,7 @@ import static org.mockito.Mockito.when;
  * 外部依赖（邮件/存储客户端、RabbitMQ、Redis、Jasypt）均通过 {@link MockitoBean} mock。
  * </p>
  */
+@Transactional
 class ConfigServiceIntegrationTest extends AbstractIntegrationTest {
 
     static {
@@ -102,7 +105,7 @@ class ConfigServiceIntegrationTest extends AbstractIntegrationTest {
         sysConfigMapper.insert(config);
 
         // 2. Mock Jasypt：非 ENC 格式原样返回（模拟真实 decrypt 行为）
-        when(jasyptEncryptor.decrypt(org.mockito.ArgumentMatchers.anyString()))
+        when(jasyptEncryptor.decrypt(anyString()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         // 3. 调用 update — @Transactional 方法，afterCommit 回调在事务提交后触发
