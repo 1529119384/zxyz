@@ -105,6 +105,12 @@ WHEN 修改 Gateway 路由, DO 同步更新 `docs/infrastructure.md` 中的路�
 
 **API response contract**: All backend APIs return `Result<T>` with `code: 1` = success (`ErrorCode.SUCCESS = 1`). Frontend `createApiClient.js` checks `payload?.code === 1`. See `docs/api-contract.md` for full contract.
 
+**Narrow internal endpoints (Projection pattern)**: Internal service-to-service calls must use narrow endpoints that return projection objects, NOT fat endpoints that return full domain DTOs. Fat endpoints (`FileInfoDTO`, `TeamVO`, etc.) leak internal domain structure across service boundaries. When a service consumer only needs a subset of fields, the provider must expose a dedicated narrow endpoint. Naming convention: `*-projection` suffix (e.g., `/{fileId}/share-projection`, `/batch-share-projection`, `/{parentId}/share-children-projection`). The client side maps the narrow response to a lightweight projection model (e.g., `ShareFileProjection`) via manual `mapToProjection(JsonNode)` — do NOT introduce MapStruct mappers for cross-service projections. See `ShareFileServiceClient` + `InternalFileController` share projection endpoints for the canonical pattern. Existing fat endpoints that are superseded by narrow ones should be deleted to prevent regression.
+
+**Internal narrow endpoints reference**:
+- **file-service** `InternalFileController`: `GET /{fileId}/share-projection`, `POST /batch-share-projection`, `GET /{parentId}/share-children-projection`, `POST /batch-share-children-projection`, `GET /{fileId}/share-download-url` (returns `String`, not VO)
+- **team-service** `InternalTeamController`: `GET /ids/by-user/{userId}` (returns `List<Long>`, not `List<TeamVO>`)
+
 **Entity security**: `User` and `Share` entities use `@JsonProperty(access = WRITE_ONLY)` on `password` field + `@ToString(exclude = {"password"})` to prevent accidental serialization of BCrypt hashes. Any sensitive field (passwords, tokens, cipher text) on entities/DTOs must have `@JsonProperty(access = WRITE_ONLY)` or `@JsonIgnore`. Config classes that should never serialize use `@JsonIgnore`.
 
 **Internal service token**: `INTERNAL_SERVICE_TOKEN` must NEVER have a default value in YAML (e.g., do NOT use `${INTERNAL_SERVICE_TOKEN:dev-internal-token}`). A predictable default means all gateway-forwarded internal calls use an attacker-known token if the env var is unset. Apply this to all YAML files including `application-dev.yml`.
@@ -195,6 +201,57 @@ Code review: `ISSUE/CODEX-CODE-REVIEW-RESULTS.md`（42 项问题，P0-P3 分级�
 **服务器 `.env`** 在 `/www/zxyz/.env`，独立于仓库维护，包含 OSS 密钥等敏感配置。CI/CD 不同步此文件。
 
 **JVM 启动优化**: docker-compose.yml 中 10 个后端服务配置了 `JAVA_OPTS="-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1"`，牺牲少量峰值性能换启动速度。Dockerfile 中 Maven 使用 `-T 1C` 并发编译。
+
+## 服务间接口设计规范
+
+### 1. 窄端点优先
+内部端点优先为调用方设计窄接口。
+- 新增 ServiceClient 方法时，先确认对方是否有或应新增窄端点
+- 避免调用胖接口后丢弃大部分字段（超过 30% 字段被丢弃即应改窄端点）
+
+### 2. 调用方投影
+ServiceClient 公开方法返回调用方自己的 POJO 或基本类型：
+- ❌ 禁止：`public FileInfoDTO getFileInfoById(Long id)`（返回 zxyz-common 公共 DTO）
+- ✅ 允许：`public ShareFileProjection getShareFileProjection(Long id)`（本服务投影）
+- ✅ 允许：`public List<Long> listUserTeamIds(Long userId)`（标量集合）
+- 投影 POJO 放在 `{service}/infrastructure/client/model/`（非 DDD）或 `domain/model/`（DDD）
+- 投影字段必须经过"字段消费方对照"全调用点核实，公用字段保留、零使用字段剔除
+
+### 3. 手动字段映射
+JsonNode → Projection 使用手动字段提取，不使用 treeToValue：
+- ❌ 禁止：`objectMapper().treeToValue(data, FileInfoDTO.class)`
+- ✅ 允许：`data.path("id").asLong()` + `data.path("name").asText(null)`
+
+### 4. 继承不传递 DTO
+- ServiceClient 优先 `extends AbstractServiceClient`，只在确有共享场景才继承中间基类
+- 子类内**禁止**新增返回上游公共 DTO 的方法
+- 中间基类的 public 方法不应返回上游 DTO（`FileStorageClient` 的 3 个 public 方法都返回标量/Map，是良好中间基类范本）
+
+### 5. 窄端点命名
+- `/{资源}/{消费者}-projection`：为特定消费者设计的投影
+- `/{资源}/ids/...`：返回 ID 列表
+- `/{资源}/.../{单一量}`：返回标量值
+
+### 6. ACL 双类不可去重
+- 提供方 `XxxProjectionVO` 与调用方 `XxxProjection` 是两个独立类型，字段集故意相同
+- 通过 JSON wire 解耦，版本独立演进，不合并、不去重、不放入 zxyz-common
+
+### 7. 投影扩张约束
+新增消费者投影前，字段差异 ≥ 3 才新建；否则复用最接近的现有 Projection VO。
+超过 5 个并列 `*-projection` 方法时，引入 `InternalXxxQueryService` 内部 service 类按场景分发。
+
+### 8. 判断职责污染要做全调用点核查
+方法名表面"瘦"不代表职责不污染（`UserServiceClient.createTeamUser` 5 字段全用）；手动 grep 全部调用方，确认字段消费情况后再下判断。
+
+### 9. 已落地窄端点清单
+| 端点 | 提供方 | 返回类型 | 调用方 |
+|---|---|---|---|
+| `GET /api/internal/teams/ids/by-user/{userId}` | team-service | `List<Long>` | project-service |
+| `GET /api/internal/files/{fileId}/share-projection` | file-service | `ShareFileProjectionVO` | share-service |
+| `POST /api/internal/files/batch-share-projection` | file-service | `List<ShareFileProjectionVO>` | share-service |
+| `GET /api/internal/files/{parentId}/share-children-projection` | file-service | `List<ShareFileProjectionVO>` | share-service |
+| `POST /api/internal/files/batch-share-children-projection` | file-service | `Map<Long, List<ShareFileProjectionVO>>` | share-service |
+| `GET /api/internal/files/{fileId}/share-download-url` | file-service | `String` | share-service |
 
 ## Work Principles
 
