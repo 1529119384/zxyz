@@ -156,7 +156,8 @@ public class ConfigGetter extends AbstractServiceClient {
                 if (e.getErrorCode() == ErrorCode.NOT_FOUND) {
                     return NULL_SENTINEL;
                 }
-                throw e;
+                log.warn("读取配置失败（连接 admin-service 不可达，视为键不存在）: key={}, code={}", k, e.getErrorCode());
+                return NULL_SENTINEL;
             } catch (Exception e) {
                 log.warn("读取配置失败（异常，视为键不存在）: key={}", k, e);
                 return NULL_SENTINEL;

@@ -69,7 +69,7 @@ team-service → project-service    （团队项目列表）
 ## Docker 部署
 
 详见 `DEPLOYMENT.md`。
-- `docker-compose.yml` 编排：MySQL, Redis, RabbitMQ, Nacos, Gateway, 8 业务服务, frontend-nginx, Loki, Promtail
+- `docker-compose.yml` 编排：MySQL, Redis, RabbitMQ, Nacos, Nacos-log-cleanup, Gateway, 9 业务服务, frontend-nginx, Loki, Promtail
 - 统一 Dockerfile（`ZXYZdatabaseBack/Dockerfile`），`MODULE` 参数选择模块
 - 环境变量：根目录 `.env`（基于 `.env.example`），密码类变量必须修改
 - 启动顺序：MySQL → Redis → RabbitMQ → Nacos → 业务服务 → Gateway → frontend-nginx

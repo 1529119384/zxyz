@@ -172,11 +172,8 @@ public class TeamServiceClient extends AbstractServiceClient implements TeamPerm
      */
     public List<Long> listUserTeamIds(Long userId) {
         try {
-            JsonNode root = getJson("/api/internal/teams/by-user/" + userId);
-            List<Map<String, Object>> teams = objectMapper().convertValue(root.path("data"), new TypeReference<>() {});
-            return teams.stream()
-                    .map(t -> ((Number) t.get("id")).longValue())
-                    .toList();
+            JsonNode root = getJson("/api/internal/teams/ids/by-user/" + userId);
+            return objectMapper().convertValue(root.path("data"), new TypeReference<List<Long>>() {});
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {

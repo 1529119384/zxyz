@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-指绣云章 (ZXYZ) — 云端文件管理平台（团队协作 + IM）。详细文档见 `docs/architecture.md`、`docs/commands.md`、`docs/infrastructure.md`。
+指绣云章 (ZXYZ) — 云端文件管理平台（团队协作 + IM）。详细文档见 `docs/architecture.md`、`docs/infrastructure.md`。
 
 ## Git
 
@@ -24,7 +24,7 @@ WHEN 修改根目录文件（`docker-compose.yml`、`deploy/`、`sql/`、`.githu
 
 ```bash
 mvn clean -DskipTests compile                   # baseline compile check
-mvn test                                         # all tests (~65 test classes)
+mvn test                                         # all tests (~83 test classes)
 mvn test -pl zxyz-team-service                   # single module tests
 mvn test -pl zxyz-file-service -Dtest=FileUploadServiceTest  # single test class
 mvn clean package -DskipTests                    # package for Docker build
@@ -34,13 +34,17 @@ mvn -pl zxyz-project-service spring-boot:run     # run single service
 ### Frontend (run in `ZXYZdatabaseFront/`)
 
 ```bash
-npm run dev       # dev server, port 5173
-npm run build     # production build to dist/
-npm run lint      # ESLint check
-npm run lint:fix  # ESLint auto-fix
-npm run format    # Prettier format
-npm run test      # Vitest single run
-npm run test:watch # Vitest watch mode
+npm run dev          # dev server, port 5173
+npm run build        # production build to dist/
+npm run preview      # preview build, port 4173
+npm run lint         # ESLint check
+npm run lint:fix     # ESLint auto-fix
+npm run format       # Prettier format
+npm run test         # Vitest single run
+npm run test:watch   # Vitest watch mode
+npm run test:coverage # Vitest + @vitest/coverage-v8 coverage
+
+各服务可单独启动(端口见上表 Backend Modules)：`mvn -pl zxyz-{service}-service spring-boot:run`（audit 服务通常不单独 run）。
 ```
 
 ## Architecture
@@ -62,7 +66,7 @@ npm run test:watch # Vitest watch mode
 | `zxyz-share-service` | 18084 | zxyz_share | Traditional layering |
 | `zxyz-file-service` | 18085 | zxyz_file | Traditional layering |
 | `zxyz-team-service` | 18086 | zxyz_team | Traditional layering |
-| `zxyz-audit-service` | 18087 | — | RabbitMQ consumer for operation logs |
+| `zxyz-audit-service` | 18087 | zxyz_audit | RabbitMQ consumer for operation logs + 持久化到 zxyz_audit 库 |
 | `zxyz-admin-service` | 18088 | zxyz_config | Config management: ConfigService + Jasypt + Caffeine cache + Redis Pub/Sub |
 
 详细架构说明：[后端](docs/claude-backend.md) · [前端](docs/claude-frontend.md) · [基础设施](docs/claude-infra.md)
@@ -77,6 +81,7 @@ WHEN email-service 或 im-service 需要新功能, DO 使用 DDD 风格。
 WHEN 其他服务需要新功能, DO 使用传统分层。
 WHEN 服务间调用, DO 通过 `*ServiceClient` + `X-Internal-Service-Token` 鉴权。
 WHEN 需要异步通信, DO 使用 RabbitMQ Topic Exchange `zxyz.topic`。
+WHEN 新增 Maven 模块, DO 同时加入根 `pom.xml` 的 `<modules>` 列表（参考 `zxyz-web-tools/` 反例：未注册构建、包名 `uno.acloud.monitor.platform.web.tools.*` 违反 `uno.acloud.{service}` 约定，应清理）。
 WHEN 修改 Gateway 路由, DO 同步更新 `docs/infrastructure.md` 中的路由表。
 
 **Config binding pitfall**: All services use flat `app.internal-service-token` in YAML with `@Value` or `@ConfigurationProperties(prefix="app")`. Do NOT nest it under `app.internal.service-token` — Spring Boot cannot bind nested YAML to flat fields. If you see empty token values at runtime, check the YAML structure.
@@ -107,9 +112,22 @@ WHEN 修改 Gateway 路由, DO 同步更新 `docs/infrastructure.md` 中的路�
 
 **Narrow internal endpoints (Projection pattern)**: Internal service-to-service calls must use narrow endpoints that return projection objects, NOT fat endpoints that return full domain DTOs. Fat endpoints (`FileInfoDTO`, `TeamVO`, etc.) leak internal domain structure across service boundaries. When a service consumer only needs a subset of fields, the provider must expose a dedicated narrow endpoint. Naming convention: `*-projection` suffix (e.g., `/{fileId}/share-projection`, `/batch-share-projection`, `/{parentId}/share-children-projection`). The client side maps the narrow response to a lightweight projection model (e.g., `ShareFileProjection`) via manual `mapToProjection(JsonNode)` — do NOT introduce MapStruct mappers for cross-service projections. See `ShareFileServiceClient` + `InternalFileController` share projection endpoints for the canonical pattern. Existing fat endpoints that are superseded by narrow ones should be deleted to prevent regression.
 
-**Internal narrow endpoints reference**:
-- **file-service** `InternalFileController`: `GET /{fileId}/share-projection`, `POST /batch-share-projection`, `GET /{parentId}/share-children-projection`, `POST /batch-share-children-projection`, `GET /{fileId}/share-download-url` (returns `String`, not VO)
-- **team-service** `InternalTeamController`: `GET /ids/by-user/{userId}` (returns `List<Long>`, not `List<TeamVO>`)
+**Internal narrow endpoints reference**（内部端点前缀 `/api/internal/**`，被 gateway 的 SaToken filter 拒绝公网访问，仅 Docker 内网服务间直连）：
+
+- **file-service** `InternalFileController`（share 投影）：`GET /{fileId}/share-projection`, `POST /batch-share-projection`, `GET /{parentId}/share-children-projection`, `POST /batch-share-children-projection`, `GET /{fileId}/share-download-url` (returns `String`)
+- **file-service** `InternalStorageController`（存储用量）：`/sum-active`、`/sum-personal`、`/personal-usage-list`、`/team-usage-list`（GET/POST 双形态）
+- **file-service** `InternalImFileCardController`：`POST /snapshot`、`POST /resolve`
+- **team-service** `InternalTeamController`（团队投影）：`GET /ids/by-user/{userId}` (List<Long>)、`/{teamId}`、`/{teamId}/members`、`/{teamId}/quota`、`/{teamId}/member-count`、`/{teamId}/owner-id` 等 10 个
+- **team-service** `InternalPermissionController`（权限）：`POST /check`、`POST /has`、系统角色/权限管理、`POST /team-roles`、`POST /team/grant-role` 等 18 个
+- **user-service** `InternalUserController`：`/{userId}/info`、`POST /batch`、`POST /create-team-user`、`/all-ids`、`/verified-emails`、`/{id}/quota`、`/search` 等 11 个
+- **share-service** `InternalShareController`：`POST /cleanup-by-files`
+- **project-service** `InternalProjectController`：`/{userId}/active-projects-led-count`、`POST /{projectId}/access-check`、`/team/{teamId}/quota-sum`
+- **project-service** `InternalStorageController`：`POST /check-quota`
+- **im-service** 用 **`/api/im/internal/**`** 前缀（故意避开 `/api/internal/**`，以绕开 SaToken filter 的 internal 拒绝规则，仍受登录态校验保护）：`InternalTeamSyncController`、`InternalUserProfileSyncController`、`InternalSystemNotificationController`
+
+Gateway 还有两条 admin→业务的"桥接路由"：`/api/admin/email/**` → email-service `/api/email/internal/**`、`/api/admin/database/**` → project-service `/api/database/internal/**`，配合 `RewritePath` + `AddRequestHeader=X-Internal-Service-Token` 注入内部 token。
+
+**ServiceClient 包位置约定**：im/user/team/share 用 `xxx.infrastructure.client.*`（admin 用 `admin.client.*`）；但 project-service 与 file-service 把客户端放在 `xxx.service.impl.*` 子包（与本地 service 类并列），新建客户端时按各自服务现有约定放置。
 
 **Entity security**: `User` and `Share` entities use `@JsonProperty(access = WRITE_ONLY)` on `password` field + `@ToString(exclude = {"password"})` to prevent accidental serialization of BCrypt hashes. Any sensitive field (passwords, tokens, cipher text) on entities/DTOs must have `@JsonProperty(access = WRITE_ONLY)` or `@JsonIgnore`. Config classes that should never serialize use `@JsonIgnore`.
 
@@ -131,7 +149,7 @@ WHEN 修改 Gateway 路由, DO 同步更新 `docs/infrastructure.md` 中的路�
 
 **Redis cache eviction**: Do NOT use `@CacheEvict(allEntries = true)` — it clears ALL entries when only one team's data changed. Use `StringRedisTemplate.scan(ScanOptions)` with pattern matching to evict only the affected keys (e.g., `team-permission::{teamId}:*`). See `TeamPermissionCacheService` for reference.
 
-**Env validation**: Run `./scripts/validate-env.sh .env` before first deployment to catch `CHANGE_ME_*` placeholders and missing required variables. The deploy script runs this automatically.
+**Env validation**: Run `./scripts/validate-env.sh .env` before first deployment to catch `CHANGE_ME_*` placeholders and missing required variables. The deploy script runs this automatically. 该脚本会从 `.env.example` 自动补全 `.env` 中缺失的 KEY（会修改 .env），`--sync-only` 参数仅补全不校验。
 
 ## Frontend Conventions
 
@@ -154,22 +172,22 @@ WHEN 添加 setting 子路由, DO 确保 `route.name` 在 Setting 组件 watcher
 - **Redis**: localhost:6379, Sa-Token sessions (shared) + Redisson distributed locks
 - **Nacos**: localhost:8848, service registry + Config（`spring.config.import:nacos:` 协议，10 个服务已接入）。配置模板在 `nacos-config/` 目录
 - **RabbitMQ**: localhost:5672, Topic Exchange `zxyz.topic`
-- **Auth**: Sa-Token 1.43.0 (UUID token, Redis session store, HttpOnly cookie)
+- **Auth**: Sa-Token 1.45.0 (UUID token, Redis session store, HttpOnly cookie)
 - **API Docs**: Knife4j 4.5.0 + springdoc 2.8.9 (available at each service's doc endpoint)
-- **Docker**: `docker-compose.yml` orchestrates 18 services (含 nacos-log-cleanup sidecar); unified `Dockerfile` with `MODULE` build arg
-- **GHCR**: 镜像推送到 `ghcr.io`（`IMAGE_PREFIX` 变量），workflow 需要 `permissions: packages: write`
+- **Docker**: `docker-compose.yml` orchestrates 18 services = 5 基础设施（mysql / nacos / nacos-log-cleanup sidecar / redis / rabbitmq）+ 10 后端 + 1 frontend-nginx + 2 日志栈（grafana/loki:3.0.0、grafana/promtail:3.0.0）。统一 `Dockerfile` + `Dockerfile.base`（builder 阶段缓存镜像）with `MODULE` build arg
+- **GHCR**: 镜像推送到 `ghcr.io`（`IMAGE_PREFIX` 变量），workflow 需要 `permissions: packages: write`，每镜像同时打 `${tag}` 与 `${git_sha}` 两个 tag（后者用于精确回滚）
 - **Nginx CSP**: `deploy/nginx/default.conf` 用 `envsubst` 模板化，`OSS_PUBLIC_BASE_URL` 在启动时注入，不要硬编码 OSS 域名
 - **内部鉴权**: 所有服务（含 gateway）必须在 docker-compose environment 中传入 `INTERNAL_SERVICE_TOKEN`（无默认值，生产环境必须配置），gateway 的 `AddRequestHeader` filter 依赖此变量注入 `X-Internal-Service-Token` header
 - **RabbitMQ 连接**: 所有服务（含 gateway、admin-service）必须在 docker-compose environment 中传入 `RABBITMQ_HOST: rabbitmq`，否则健康检查因 `RabbitHealthIndicator` 连接 localhost 失败
 
 Gateway routing table and inter-service call map: `docs/infrastructure.md`
-Build/run commands: `docs/commands.md`
 Tech stack details: `docs/architecture.md`
+Testing conventions: `docs/testing.md`
 Deployment guide: `DEPLOYMENT.md`
 Design proposals: `ISSUE/` 目录（#09 CI/CD、#10 配置管理、#11 多存储、#12 性能优化、#13 硬编码配置热迁移）
 Code review: `ISSUE/CODEX-CODE-REVIEW-RESULTS.md`（42 项问题，P0-P3 分级，阶段一~四已完成安全热修复、事务重构、性能优化、低优先级修复）
 
-**前端测试**: 22 个测试文件，244 个用例（`npm run test`）。覆盖 composables、utils、api、store、router guards。测试文件命名 `*.spec.js`，放在对应目录的 `__tests__/` 下。新增测试使用 `vi.mock()` mock 外部依赖，测试命名用中文。
+**前端测试**: 26 个测试文件，278 个用例（`npm run test`）。覆盖 composables、utils、api、store、router guards。测试文件命名 `*.spec.js`，放在对应目录的 `__tests__/` 下。新增测试使用 `vi.mock()` mock 外部依赖，测试命名用中文。测试约定详见 `docs/testing.md`。
 
 **前端测试 import 顺序**: vitest/vue 导入在最前，空行后是 `vi.mock()` 调用（紧挨，无空行），再空行后是 `@/` 和第三方包导入。`element-plus` 的 `import` 必须放在 `vi.mock()` 之后（与 `@/` 导入同组），否则 `import-x/order` 报错。
 
@@ -183,13 +201,13 @@ Code review: `ISSUE/CODEX-CODE-REVIEW-RESULTS.md`（42 项问题，P0-P3 分级�
 - **docker-compose.yml 变更**: 不触发镜像重建（运行时配置，非构建依赖）
 - **构建**: Docker Buildx + GHA 缓存，镜像推送到 GHCR（`ghcr.io/<owner>/zxyz-*`）
 - **部署**: SSH 到服务器，只拉取+重启变更的服务，分层健康检查（普通服务 30s，gateway 60s）
-- **手动触发**: workflow_dispatch 支持 `skip_quality` 参数跳过 lint/test/compile，直接构建部署
-- **镜像标签**: dev 分支 → `dev`，main 分支 → `latest`，tag → 版本号
+- **手动触发**: workflow_dispatch 支持 3 个输入：`tag`（必填，镜像标签如 `latest`/`dev`/版本号）、`skip_quality`（跳过 lint/test/compile）、`fast_deploy`（跳过部署阶段健康检查等待）
+- **镜像标签**: dev 分支 → `dev`，main 分支 → `latest`，tag → 版本号。每镜像同时打 `${tag}` 与 `${git_sha}` 两个 tag（后者用于精确回滚）
 - **前端构建**: 从根仓库 `ZXYZdatabaseFront/` 目录构建，新组件必须同时提交到前端子仓库和根仓库
 
 本地修改 `.env` 中的 `APP_IMAGE_TAG` 和 `IMAGE_PREFIX` 即可控制部署目标。
 
-**快速部署（开发用）**: CI/CD 构建完成后，SSH 到服务器运行 `scripts/deploy-fast.sh <服务名>` 拉取+重启，跳过完整健康检查等待。`--no-health` 跳过健康检查，`--all` 重启所有服务。`--validate` 仅验证 .env 配置。`--clean-nacos` 清理 Nacos 日志后部署。
+**快速部署（开发用）**: CI/CD 构建完成后，SSH 到服务器运行 `scripts/deploy-fast.sh <服务名>` 拉取+重启，跳过完整健康检查等待。参数：`--no-health` 跳过健康检查，`--all` 重启所有 11 个 app 服务（10 后端 + frontend-nginx，不含基础设施/loki/promtail），`--validate` 仅验证 .env，`--clean-nacos` 清理 Nacos 日志后部署，`--no-pull` 跳过镜像拉取，`--build` 本地 Maven 构建 + docker compose build。`scripts/` 还含 `backup.sh`（MySQL+Redis 备份）、`dev-up.sh`（本地 dev 启动基础设施）、`health-check.sh`（轮询 16 容器健康）、`setup-acr.sh`（GHCR/阿里云 ACR 切换）。
 
 **部署注意事项**:
 - 修改 `.env` 后必须用 `docker compose up -d` 重建容器，`docker compose restart` 不会重新加载环境变量

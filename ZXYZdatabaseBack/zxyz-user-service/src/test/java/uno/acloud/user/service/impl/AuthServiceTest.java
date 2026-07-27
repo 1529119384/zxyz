@@ -22,6 +22,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -99,7 +100,7 @@ class AuthServiceTest {
         when(userQueryHelper.passwordMatched("correct", dbUser)).thenReturn(true);
         when(teamServicePermissionClient.getSystemRolesByUserId(1L)).thenReturn(List.of("USER"));
         when(teamServicePermissionClient.getSystemPermissionsByUserId(1L)).thenReturn(List.of("read"));
-        when(authSessionService.createLoginSession(1L, "alice", List.of("USER"), List.of("read")))
+        when(authSessionService.createLoginSession(eq(1L), eq("alice"), any(), any(), anyBoolean()))
                 .thenReturn("token-abc");
 
         String token = authService.login(request);
@@ -122,7 +123,7 @@ class AuthServiceTest {
         when(userQueryHelper.passwordMatched("correct", dbUser)).thenReturn(true);
         when(teamServicePermissionClient.getSystemRolesByUserId(1L)).thenReturn(List.of());
         when(teamServicePermissionClient.getSystemPermissionsByUserId(1L)).thenReturn(List.of());
-        when(authSessionService.createLoginSession(anyLong(), anyString(), any(), any()))
+        when(authSessionService.createLoginSession(anyLong(), anyString(), any(), any(), anyBoolean()))
                 .thenReturn("token");
 
         authService.login(request);

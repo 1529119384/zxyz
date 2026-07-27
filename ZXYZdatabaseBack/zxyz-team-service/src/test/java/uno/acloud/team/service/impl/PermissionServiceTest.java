@@ -66,7 +66,7 @@ class PermissionServiceTest {
     }
 
     @Test
-    void hasTeamPermission_queriesDbWhenCacheNull() {
+    void hasPermission_cacheHit_skipsDbLookup() {
         when(teamPermissionCacheService.checkPermission(eq(1L), eq(10L), eq("team:file:read"), any()))
                 .thenReturn(true);
 

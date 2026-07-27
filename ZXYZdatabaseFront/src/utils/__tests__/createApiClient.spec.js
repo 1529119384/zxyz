@@ -4,14 +4,18 @@ vi.mock('@/utils/auth', () => ({
   clearToken: vi.fn(),
 }))
 
+vi.mock('@/utils/sanitizeRedirect', () => ({
+  sanitizeRedirectPath: vi.fn((path) => path),
+}))
+
+vi.mock('element-plus', () => ({
+  ElMessageBox: { alert: vi.fn().mockResolvedValue('confirm') },
+}))
+
 vi.mock('@/store/currentUser', () => ({
   useCurrentUserStore: vi.fn(() => ({
     clearProfile: vi.fn(),
   })),
-}))
-
-vi.mock('@/utils/sanitizeRedirect', () => ({
-  sanitizeRedirectPath: vi.fn((path) => path),
 }))
 
 import { createApiClient } from '@/utils/createApiClient'
@@ -19,6 +23,7 @@ import { createApiClient } from '@/utils/createApiClient'
 describe('createApiClient', () => {
   let server
   let client
+  let port
 
   beforeEach(async () => {
     vi.clearAllMocks()
@@ -64,7 +69,7 @@ describe('createApiClient', () => {
     })
 
     await new Promise((resolve) => server.listen(0, resolve))
-    const port = server.address().port
+    port = server.address().port
 
     client = createApiClient({
       baseURL: `http://localhost:${port}`,
@@ -92,6 +97,24 @@ describe('createApiClient', () => {
 
   it('should handle auth failure via HTTP 401', async () => {
     await expect(client.get('/auth-failure-http')).rejects.toThrow()
+  })
+
+  it('should show ElMessageBox then redirect on auth failure in redirect mode', async () => {
+    const { ElMessageBox } = await import('element-plus')
+    const redirectClient = createApiClient({
+      baseURL: `http://localhost:${port}`,
+      timeout: 5000,
+      onTokenExpired: 'redirect',
+    })
+    const replaceMock = vi.fn()
+    vi.stubGlobal('location', { pathname: '/index', replace: replaceMock })
+    await expect(redirectClient.get('/auth-failure-code')).rejects.toThrow()
+    expect(ElMessageBox.alert).toHaveBeenCalledWith(
+      '登录状态已过期，请重新登录',
+      '会话过期',
+      expect.objectContaining({ confirmButtonText: '重新登录', type: 'warning' }),
+    )
+    vi.unstubAllGlobals()
   })
 
   it('should handle 500 server error', async () => {

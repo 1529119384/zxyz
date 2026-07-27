@@ -5,18 +5,15 @@ import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.client.ClientHttpRequest;
-import org.springframework.http.client.ClientHttpRequestFactory;
-import org.springframework.mock.http.client.MockClientHttpRequest;
-import org.springframework.mock.http.client.MockClientHttpResponse;
 import org.springframework.web.client.RestClient;
 import uno.acloud.common.InternalServiceHeaders;
 
-import java.io.IOException;
+import com.sun.net.httpserver.HttpServer;
+
+import java.net.InetSocketAddress;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -24,26 +21,41 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class ImRestClientFactoryTest {
 
     @Test
-    void appImBaseUrlShouldDriveTeamSyncRequest() {
-        AppImProperties properties = bind(Map.of(
-                "app.im.base-url", "http://im.example.test:18081/"
-        ));
-        CapturingRequestFactory requestFactory = new CapturingRequestFactory();
-        RestClient restClient = new ImRestClientFactory().imRestClient(
-                RestClient.builder().requestFactory(requestFactory),
-                properties
-        );
+    void appImBaseUrlShouldDriveTeamSyncRequest() throws Exception {
+        // Start a real HTTP server on a random port to capture the request
+        HttpServer httpServer = HttpServer.create(new InetSocketAddress(0), 0);
+        AtomicReference<String> capturedMethod = new AtomicReference<>();
+        AtomicReference<String> capturedPath = new AtomicReference<>();
+        AtomicReference<String> capturedToken = new AtomicReference<>();
+        httpServer.createContext("/api/im/internal/team-sync/members/remove", exchange -> {
+            capturedMethod.set(exchange.getRequestMethod());
+            capturedPath.set(exchange.getRequestURI().getPath());
+            capturedToken.set(exchange.getRequestHeaders().getFirst(InternalServiceHeaders.TOKEN_HEADER));
+            exchange.sendResponseHeaders(200, -1);
+            exchange.close();
+        });
+        httpServer.start();
+        int port = httpServer.getAddress().getPort();
 
-        restClient.post()
-                .uri("/api/im/internal/team-sync/members/remove")
-                .header(InternalServiceHeaders.TOKEN_HEADER, "internal-token")
-                .retrieve()
-                .toBodilessEntity();
+        try {
+            AppImProperties properties = bind(Map.of(
+                    "app.im.base-url", "http://localhost:" + port + "/"
+            ));
+            RestClient restClient = new ImRestClientFactory().imRestClient(
+                    RestClient.builder(), properties);
 
-        assertEquals(URI.create("http://im.example.test:18081/api/im/internal/team-sync/members/remove"),
-                requestFactory.lastUri);
-        assertEquals(HttpMethod.POST, requestFactory.lastMethod);
-        assertEquals("internal-token", requestFactory.lastRequest.getHeaders().getFirst(InternalServiceHeaders.TOKEN_HEADER));
+            restClient.post()
+                    .uri("/api/im/internal/team-sync/members/remove")
+                    .header(InternalServiceHeaders.TOKEN_HEADER, "internal-token")
+                    .retrieve()
+                    .toBodilessEntity();
+
+            assertEquals("POST", capturedMethod.get());
+            assertEquals("/api/im/internal/team-sync/members/remove", capturedPath.get());
+            assertEquals("internal-token", capturedToken.get());
+        } finally {
+            httpServer.stop(0);
+        }
     }
 
     @Test
@@ -69,25 +81,5 @@ class ImRestClientFactoryTest {
         new Binder(new MapConfigurationPropertySource(values))
                 .bind("app.im", Bindable.ofInstance(properties));
         return properties;
-    }
-
-    private static class CapturingRequestFactory implements ClientHttpRequestFactory {
-
-        private URI lastUri;
-        private HttpMethod lastMethod;
-        private MockClientHttpRequest lastRequest;
-
-        @Override
-        public ClientHttpRequest createRequest(URI uri, HttpMethod httpMethod) {
-            lastUri = uri;
-            lastMethod = httpMethod;
-            lastRequest = new MockClientHttpRequest(httpMethod, uri) {
-                @Override
-                protected MockClientHttpResponse executeInternal() throws IOException {
-                    return new MockClientHttpResponse("{}".getBytes(StandardCharsets.UTF_8), HttpStatus.OK);
-                }
-            };
-            return lastRequest;
-        }
     }
 }

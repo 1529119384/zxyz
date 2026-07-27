@@ -2,7 +2,7 @@ package uno.acloud.share.service.impl;
 
 import org.springframework.stereotype.Component;
 import uno.acloud.share.common.ShareStatusMeta;
-import uno.acloud.dto.FileInfoDTO;
+import uno.acloud.share.infrastructure.client.model.ShareFileProjection;
 import uno.acloud.share.infrastructure.entity.Share;
 import uno.acloud.share.vo.ShareFilesResponseItemVO;
 import uno.acloud.share.vo.ShareMyListItemVO;
@@ -16,7 +16,7 @@ public class ShareViewMapper {
 
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    public ShareFilesResponseItemVO toShareFilesResponseItemVO(FileInfoDTO fileInfo, boolean active) {
+    public ShareFilesResponseItemVO toShareFilesResponseItemVO(ShareFileProjection fileInfo, boolean active) {
         boolean invalid = !active;
         return new ShareFilesResponseItemVO(
                 fileInfo.getId(),

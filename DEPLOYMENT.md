@@ -306,6 +306,10 @@ docker compose down -v
 | `RABBITMQ_MGMT_PORT` | `15672` | RabbitMQ 管理界面端口 |
 | `FRONTEND_BASE_URL` | `http://YOUR_SERVER_IP` | 前端访问地址，用于生成分享链接 |
 | `CORS_ALLOWED_ORIGINS` | `*` | 允许的跨域来源，生产环境建议改为实际域名 |
+| `AUTH_COOKIE_SECURE` | `false` | Sa-Token Cookie secure 标志（生产环境改为 true） |
+| `AUTH_COOKIE_DOMAIN` | （空） | Sa-Token Cookie 域名（跨子域共享 session 时设置） |
+| `AUTH_TOKEN_TIMEOUT` | `43200` | 普通登录 Token 超时时间（秒），默认 12 小时 |
+| `AUTH_LONG_LIVED_TIMEOUT` | `604800` | "记住我" Token 超时时间（秒），默认 7 天 |
 | `DATABASE_MAINTENANCE_ENABLED` | `false` | 是否启用数据库导入功能（生产环境保持 false） |
 | `TIME_ASPECT_ENABLED` | `false` | 是否启用性能切面日志（生产环境保持 false） |
 

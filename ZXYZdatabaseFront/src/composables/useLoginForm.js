@@ -15,6 +15,7 @@ export function useLoginForm() {
   const loginForm = reactive({
     username: '',
     password: '',
+    rememberMe: false,
   })
 
   const loginRules = {
@@ -54,6 +55,7 @@ export function useLoginForm() {
       const payload = {
         username: loginForm.username.trim(),
         password: loginForm.password,
+        rememberMe: loginForm.rememberMe,
       }
 
       // 先在表单层完成校验，再进入 store 的登录 action，避免无效请求打到后端。

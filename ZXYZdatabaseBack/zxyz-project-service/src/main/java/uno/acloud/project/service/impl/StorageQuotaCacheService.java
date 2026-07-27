@@ -61,7 +61,7 @@ public class StorageQuotaCacheService {
         this.teamStorageLimitTtl = Duration.ofSeconds(configGetter.getInt("app.cache.storage-usage-ttl-seconds", 10));
         this.teamMemberListTtl = Duration.ofMinutes(configGetter.getInt("app.cache.team-permission-ttl-minutes", 5));
         this.systemAdminIdsTtl = Duration.ofMinutes(configGetter.getInt("app.cache.team-permission-ttl-minutes", 5));
-        this.usageTtl = Duration.ofSeconds(configGetter.getInt("app.cache.storage-usage-ttl-seconds", 30));
+        this.usageTtl = Duration.ofSeconds(configGetter.getInt("app.cache.storage-usage-ttl-seconds", 10));
         this.userTeamIdsTtl = Duration.ofMinutes(configGetter.getInt("app.cache.team-permission-ttl-minutes", 5));
         this.systemRolesTtl = Duration.ofMinutes(configGetter.getInt("app.cache.team-permission-ttl-minutes", 5));
     }
@@ -69,7 +69,7 @@ public class StorageQuotaCacheService {
     // ==================== Team storage limit ====================
 
     /**
-     * 获取团队存储上限，优先读缓存（TTL 10 分钟）。
+     * 获取团队存储上限，优先读缓存（TTL 10 秒）。
      */
     public Long getTeamStorageLimit(Long teamId) {
         String key = TEAM_STORAGE_LIMIT_KEY + teamId;

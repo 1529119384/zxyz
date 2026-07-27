@@ -59,10 +59,10 @@ export default defineConfig(({ mode }) => {
         reporter: ['text', 'html'],
         exclude: ['node_modules/', 'src/main.js'],
         thresholds: {
-          statements: 69.73,
-          branches: 56.68,
-          functions: 66.9,
-          lines: 69.98,
+          statements: 70,
+          branches: 57,
+          functions: 67,
+          lines: 70,
         },
       }
     }

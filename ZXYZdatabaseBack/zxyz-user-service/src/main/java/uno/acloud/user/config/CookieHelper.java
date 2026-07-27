@@ -22,13 +22,13 @@ public class CookieHelper {
      * 设置认证 cookies。
      * @param response HTTP 响应
      * @param token    登录 token
+     * @param maxAge   Cookie 最大存活时间（秒）
      */
-    public void setAuthCookies(HttpServletResponse response, String token) {
-        // 1. HttpOnly cookie: satoken（主认证 cookie，JS 不可读）
+    public void setAuthCookies(HttpServletResponse response, String token, int maxAge) {
         Cookie authCookie = new Cookie(AUTH_COOKIE_NAME, token);
         authCookie.setHttpOnly(true);
         authCookie.setPath("/");
-        authCookie.setMaxAge(serviceProperties.getAuth().getMaxAge());
+        authCookie.setMaxAge(maxAge);
         authCookie.setSecure(serviceProperties.getAuth().isSecure());
         authCookie.setAttribute("SameSite", "Lax");
         String cookieDomain = serviceProperties.getAuth().getDomain();

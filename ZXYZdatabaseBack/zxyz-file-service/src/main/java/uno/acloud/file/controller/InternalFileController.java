@@ -13,8 +13,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.Result;
-import uno.acloud.exception.BusinessException;
 import uno.acloud.dto.FileInfoDTO;
+import uno.acloud.exception.BusinessException;
+import uno.acloud.file.controller.model.ShareFileProjectionVO;
 import uno.acloud.file.dto.InternalBatchFileIdsRequest;
 import uno.acloud.file.dto.InternalBatchParentIdsRequest;
 import uno.acloud.file.infrastructure.entity.FileItem;
@@ -22,11 +23,12 @@ import uno.acloud.file.infrastructure.entity.FileNode;
 import uno.acloud.file.service.FileQueryPort;
 import uno.acloud.file.storage.StorageProvider;
 import uno.acloud.file.storage.StorageProviderRegistry;
-import uno.acloud.vo.FileDownloadUrlVO;
 
 import java.io.OutputStream;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @Hidden
 @RestController
@@ -40,36 +42,6 @@ public class InternalFileController {
     public InternalFileController(FileQueryPort fileQueryPort, StorageProviderRegistry registry) {
         this.fileQueryPort = fileQueryPort;
         this.registry = registry;
-    }
-
-    @Operation(summary = "批量获取文件信息")
-    @PostMapping("/batch-info")
-    public Result<List<FileInfoDTO>> getFileInfoByIds(@Valid @RequestBody InternalBatchFileIdsRequest request) {
-        return Result.of(fileQueryPort.getFileInfoByIds(request.getFileIds()));
-    }
-
-    @Operation(summary = "获取单个文件信息")
-    @GetMapping("/{fileId}/info")
-    public Result<FileInfoDTO> getFileInfoById(@PathVariable Long fileId) {
-        return Result.of(fileQueryPort.getFileInfoById(fileId));
-    }
-
-    @Operation(summary = "获取分享子文件列表")
-    @GetMapping("/{parentId}/share-children")
-    public Result<List<FileInfoDTO>> getShareChildren(@PathVariable Long parentId) {
-        return Result.of(fileQueryPort.getShareChildrenByParentIdWithDeleted(parentId));
-    }
-
-    @Operation(summary = "批量获取分享子文件列表")
-    @PostMapping("/batch-share-children")
-    public Result<Map<Long, List<FileInfoDTO>>> getBatchShareChildren(@Valid @RequestBody InternalBatchParentIdsRequest request) {
-        return Result.of(fileQueryPort.getShareChildrenByParentIdsWithDeleted(request.getParentIds()));
-    }
-
-    @Operation(summary = "获取分享文件下载链接")
-    @GetMapping("/{fileId}/share-download-url")
-    public Result<FileDownloadUrlVO> getShareDownloadUrl(@PathVariable Long fileId) {
-        return Result.of(fileQueryPort.getSharedFileDownloadUrl(fileId));
     }
 
     @Operation(summary = "获取文件流式下载信息（内部调用）")
@@ -112,5 +84,85 @@ public class InternalFileController {
         } catch (Exception e) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "文件下载失败");
         }
+    }
+
+    // ==================== Share 窄投影端点 ====================
+
+    @Operation(summary = "获取文件 share 投影")
+    @GetMapping("/{fileId}/share-projection")
+    public Result<ShareFileProjectionVO> getShareProjection(@PathVariable Long fileId) {
+        List<FileInfoDTO> infos = fileQueryPort.getFileInfoByIds(List.of(fileId));
+        if (infos.isEmpty() || infos.get(0) == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "文件不存在");
+        }
+        return Result.of(toShareProjectionVO(infos.get(0)));
+    }
+
+    @Operation(summary = "批量获取文件 share 投影")
+    @PostMapping("/batch-share-projection")
+    public Result<List<ShareFileProjectionVO>> getBatchShareProjection(@Valid @RequestBody InternalBatchFileIdsRequest request) {
+        List<FileInfoDTO> fileInfos = fileQueryPort.getFileInfoByIds(request.getFileIds());
+        return Result.of(fileInfos.stream()
+                .filter(Objects::nonNull)
+                .map(this::toShareProjectionVO)
+                .toList());
+    }
+
+    @Operation(summary = "获取分享子文件列表（窄投影）")
+    @GetMapping("/{parentId}/share-children-projection")
+    public Result<List<ShareFileProjectionVO>> getShareChildrenProjection(@PathVariable Long parentId) {
+        List<FileInfoDTO> fileInfos = fileQueryPort.getShareChildrenByParentIdWithDeleted(parentId);
+        return Result.of(fileInfos.stream()
+                .filter(Objects::nonNull)
+                .map(this::toShareProjectionVO)
+                .toList());
+    }
+
+    @Operation(summary = "批量获取分享子文件列表（窄投影）")
+    @PostMapping("/batch-share-children-projection")
+    public Result<Map<Long, List<ShareFileProjectionVO>>> getBatchShareChildrenProjection(@Valid @RequestBody InternalBatchParentIdsRequest request) {
+        Map<Long, List<FileInfoDTO>> result = fileQueryPort.getShareChildrenByParentIdsWithDeleted(request.getParentIds());
+        Map<Long, List<ShareFileProjectionVO>> projected = new HashMap<>();
+        result.forEach((parentId, infos) -> {
+            List<ShareFileProjectionVO> list = infos.stream()
+                    .filter(Objects::nonNull)
+                    .map(this::toShareProjectionVO)
+                    .toList();
+            projected.put(parentId, list);
+        });
+        return Result.of(projected);
+    }
+
+    @Operation(summary = "获取分享文件下载链接（窄端点，直接返回下载链接字符串）")
+    @GetMapping("/{fileId}/share-download-url")
+    public Result<String> getShareDownloadUrl(@PathVariable Long fileId) {
+        FileNode fileNode = fileQueryPort.getFileNodeById(fileId);
+        if (fileNode == null || !(fileNode instanceof FileItem fileItem)) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "文件不存在");
+        }
+        StorageProvider provider = registry.resolveForFile(fileItem);
+        if (provider.supportsPresignedDownload()) {
+            return Result.of(provider.generateDownloadInfo(fileItem.getUuidName(), fileItem.getOriginalName()).getDownloadUrl());
+        } else {
+            return Result.of("/api/files/" + fileId + "/stream");
+        }
+    }
+
+
+    /**
+     * 将 FileInfoDTO 转换为 ShareFileProjectionVO。
+     */
+    private ShareFileProjectionVO toShareProjectionVO(FileInfoDTO dto) {
+        ShareFileProjectionVO vo = new ShareFileProjectionVO();
+        vo.setId(dto.getId());
+        vo.setFileType(dto.getFileType());
+        vo.setUuidName(dto.getUuidName());
+        vo.setOriginalName(dto.getOriginalName());
+        vo.setCategory(dto.getCategory());
+        vo.setFileSize(dto.getFileSize());
+        vo.setStorePath(dto.getStorePath());
+        vo.setDeleted(dto.getDeleted());
+        vo.setModifyTime(dto.getModifyTime());
+        return vo;
     }
 }

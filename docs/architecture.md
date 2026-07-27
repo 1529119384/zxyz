@@ -7,12 +7,12 @@
 - JDK 17, Spring Boot 3.5.7, Spring Cloud 2025.0.0, Spring Cloud Alibaba 2025.0.0.0, Maven 3.9+
 - Lombok 1.18.42 + MapStruct 1.6.3（注解处理器在 compiler plugin 中配置）
 - MyBatis-Plus 3.5.9（注解 Mapper，无 XML），MySQL 8.4
-- Sa-Token 1.44.0（token-style: uuid），Redis 存储会话
+- Sa-Token 1.45.0（token-style: uuid），Redis 存储会话
 - 阿里云 OSS v2, Redisson 3.35.0, Flyway 10.22.0
 - Netty WebSocket（IM 服务）, Resilience4j 2.2.0（重试 3×500ms，熔断 50%）
 - Knife4j 4.5.0 + springdoc 2.8.9（`KNIFE4J_ENABLE=true` 开启增强 UI）
 
-## 模块结构（10 模块）
+## 模块结构（11 模块）
 
 | 模块 | 端口 | 数据库 | 职责 |
 |---|---|---|---|
@@ -25,7 +25,8 @@
 | `zxyz-share-service` | 18084 | zxyz_share | 分享链接创建/访问/下载 |
 | `zxyz-file-service` | 18085 | zxyz_file | 文件上传/下载/删除、文件夹、回收站 |
 | `zxyz-team-service` | 18086 | zxyz_team | 团队 CRUD、成员管理、RBAC 权限 |
-| `zxyz-audit-service` | 18087 | — | 操作日志消费与审计（RabbitMQ） |
+| `zxyz-audit-service` | 18087 | zxyz_audit | 操作日志消费与审计（RabbitMQ 消费 + 持久化到 zxyz_audit 库） |
+| `zxyz-admin-service` | 18088 | zxyz_config | 配置管理：ConfigService + Jasypt + Caffeine 缓存 + Redis Pub/Sub |
 
 ## 包结构约定
 
@@ -39,7 +40,7 @@ MapStruct 用于 DTO↔Entity 转换（`*Converter`/`*Assembler` 类）。
 
 ## 关键架构说明
 
-- 8 个独立服务 + API Gateway，各服务独立数据库，HTTP（同步）+ RabbitMQ（异步）通信，Nacos 注册中心
+- 9 个独立服务 + API Gateway，各服务独立数据库，HTTP（同步）+ RabbitMQ（异步）通信，Nacos 注册中心
 - Gateway: Spring Cloud Gateway WebFlux，Sa-Token 全局鉴权，白名单放行公开接口
 - 服务间通信：`X-Internal-Service-Token` 鉴权，`*ServiceClient` 封装 HTTP 调用
 - 事件驱动：RabbitMQ Topic Exchange `zxyz.topic`

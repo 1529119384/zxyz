@@ -13,12 +13,15 @@
 app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:4173}
-  # Cookie 配置（secure 默认 false，兼容本地 HTTP 开发；生产环境通过环境变量设为 true）
-  # 绑定路径：ServiceProperties.auth.*（AuthCookie 类：maxAge/secure/domain）
+  # Cookie + Token 超时配置（secure 默认 false，兼容本地 HTTP 开发；生产环境通过环境变量设为 true）
+  # 绑定路径：ServiceProperties.auth.*（secure/domain 由本文件控制；timeout 由本文件 + 环境变量控制）
+  # 注意：token-timeout-seconds / long-lived-timeout-seconds 在 Nacos 热更新清单内，
+  #       运维可在 Nacos 控制台直接修改，无需重建容器（下次登录用户的新会话拿到新 timeout）。
   auth:
-    max-age: ${AUTH_COOKIE_MAX_AGE:2592000}
     secure: ${AUTH_COOKIE_SECURE:false}
     domain: ${AUTH_COOKIE_DOMAIN:}
+    token-timeout-seconds: ${AUTH_TOKEN_TIMEOUT:43200}
+    long-lived-timeout-seconds: ${AUTH_LONG_LIVED_TIMEOUT:604800}
   # 验证码冷却（绑定路径：ServiceProperties.email.verifyCode.cooldownSeconds）
   email:
     verify-code:

@@ -7,10 +7,10 @@ import uno.acloud.common.util.TransactionHelper;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.ShareErrorCode;
 import uno.acloud.share.common.ShareStatus;
-import uno.acloud.dto.FileInfoDTO;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.share.config.ShareProperties;
 import uno.acloud.share.dto.ShareCreateRequest;
+import uno.acloud.share.infrastructure.client.model.ShareFileProjection;
 import uno.acloud.vo.InternalUserInfoVO;
 import uno.acloud.share.infrastructure.entity.Share;
 import uno.acloud.share.infrastructure.entity.ShareItem;
@@ -64,7 +64,7 @@ public class ShareManager {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "分享参数不能为空");
         }
         List<Long> normalizedFileIds = shareInputNormalizer.normalizeFileIds(request.getFileIds());
-        Map<Long, FileInfoDTO> fileInfoMap = shareValidator.requireActiveFiles(normalizedFileIds);
+        Map<Long, ShareFileProjection> fileInfoMap = shareValidator.requireActiveFiles(normalizedFileIds);
         InternalUserInfoVO user = shareValidator.requireUser(userId);
         return transactionHelper.execute(status -> {
             boolean needPassword = resolveNeedPassword(request);
@@ -87,7 +87,7 @@ public class ShareManager {
 
             List<ShareItem> shareItems = new ArrayList<>();
             for (Long fileId : normalizedFileIds) {
-                FileInfoDTO fileInfo = fileInfoMap.get(fileId);
+                ShareFileProjection fileInfo = fileInfoMap.get(fileId);
                 shareItems.add(new ShareItem(null, share.getId(), fileId, fileInfo.getFileType(), now));
             }
             if (!shareItems.isEmpty()) {

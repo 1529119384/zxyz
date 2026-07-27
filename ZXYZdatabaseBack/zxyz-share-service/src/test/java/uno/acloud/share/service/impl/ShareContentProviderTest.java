@@ -7,10 +7,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.ShareErrorCode;
-import uno.acloud.dto.FileInfoDTO;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.share.common.ShareStatus;
 import uno.acloud.share.infrastructure.client.ShareFileServiceClient;
+import uno.acloud.share.infrastructure.client.model.ShareFileProjection;
 import uno.acloud.share.infrastructure.entity.Share;
 import uno.acloud.share.vo.ShareFilesResponseItemVO;
 
@@ -54,23 +54,21 @@ class ShareContentProviderTest {
         return share;
     }
 
-    private FileInfoDTO createFolder(Long id, String name, Long parentId) {
-        FileInfoDTO folder = new FileInfoDTO();
+    private ShareFileProjection createFolder(Long id, String name) {
+        ShareFileProjection folder = new ShareFileProjection();
         folder.setId(id);
         folder.setOriginalName(name);
         folder.setFileType(0);
         folder.setDeleted(0);
-        folder.setParentId(parentId);
         return folder;
     }
 
-    private FileInfoDTO createFile(Long id, String name, Long parentId) {
-        FileInfoDTO file = new FileInfoDTO();
+    private ShareFileProjection createFile(Long id, String name) {
+        ShareFileProjection file = new ShareFileProjection();
         file.setId(id);
         file.setOriginalName(name);
         file.setFileType(1);
         file.setDeleted(0);
-        file.setParentId(parentId);
         return file;
     }
 
@@ -81,8 +79,8 @@ class ShareContentProviderTest {
         Share share = createShare(1L);
         when(shareAccessService.requireAccessibleShare("key1", null)).thenReturn(share);
 
-        FileInfoDTO rootFolder1 = createFolder(10L, "folder1", null);
-        FileInfoDTO rootFolder2 = createFolder(11L, "folder2", null);
+        ShareFileProjection rootFolder1 = createFolder(10L, "folder1");
+        ShareFileProjection rootFolder2 = createFolder(11L, "folder2");
         when(shareFileResolver.getSharedRootFileInfos(eq(1L), any()))
                 .thenReturn(List.of(rootFolder1, rootFolder2));
 
@@ -91,16 +89,16 @@ class ShareContentProviderTest {
         when(shareInputNormalizer.splitPath("folder1/folder2/folder3"))
                 .thenReturn(List.of("folder1", "folder2", "folder3"));
 
-        FileInfoDTO nestedFolder2 = createFolder(20L, "folder2", 10L);
+        ShareFileProjection nestedFolder2 = createFolder(20L, "folder2");
         when(fileServiceClient.getShareChildren(10L)).thenReturn(List.of(nestedFolder2));
 
-        FileInfoDTO nestedFolder3 = createFolder(30L, "folder3", 20L);
+        ShareFileProjection nestedFolder3 = createFolder(30L, "folder3");
         when(fileServiceClient.getShareChildren(20L)).thenReturn(List.of(nestedFolder3));
 
-        FileInfoDTO finalFile = createFile(40L, "doc.txt", 30L);
+        ShareFileProjection finalFile = createFile(40L, "doc.txt");
         when(fileServiceClient.getShareChildren(30L)).thenReturn(List.of(finalFile));
 
-        when(shareValidator.isActive(any(FileInfoDTO.class))).thenReturn(true);
+        when(shareValidator.isActive(any())).thenReturn(true);
 
         ShareFilesResponseItemVO vo = new ShareFilesResponseItemVO(40L, "doc.txt", 0, false, 0, 0, false, null, 1024L, null);
         when(shareViewMapper.toShareFilesResponseItemVO(any(), eq(true))).thenReturn(vo);
@@ -120,7 +118,7 @@ class ShareContentProviderTest {
         Share share = createShare(1L);
         when(shareAccessService.requireAccessibleShare("key1", null)).thenReturn(share);
 
-        FileInfoDTO rootFolder1 = createFolder(10L, "folder1", null);
+        ShareFileProjection rootFolder1 = createFolder(10L, "folder1");
         when(shareFileResolver.getSharedRootFileInfos(eq(1L), any()))
                 .thenReturn(List.of(rootFolder1));
 
@@ -129,7 +127,7 @@ class ShareContentProviderTest {
         when(shareInputNormalizer.splitPath("folder1/missing"))
                 .thenReturn(List.of("folder1", "missing"));
 
-        FileInfoDTO otherChild = createFile(99L, "other.txt", 10L);
+        ShareFileProjection otherChild = createFile(99L, "other.txt");
         when(fileServiceClient.getShareChildren(10L)).thenReturn(List.of(otherChild));
         when(shareValidator.isActive(any())).thenReturn(true);
 
@@ -142,7 +140,7 @@ class ShareContentProviderTest {
         Share share = createShare(1L);
         when(shareAccessService.requireAccessibleShare("key1", null)).thenReturn(share);
 
-        FileInfoDTO rootFolder1 = createFolder(10L, "folder1", null);
+        ShareFileProjection rootFolder1 = createFolder(10L, "folder1");
         when(shareFileResolver.getSharedRootFileInfos(eq(1L), any()))
                 .thenReturn(List.of(rootFolder1));
 
@@ -151,7 +149,7 @@ class ShareContentProviderTest {
         when(shareInputNormalizer.splitPath("folder1/folder2"))
                 .thenReturn(List.of("folder1", "folder2"));
 
-        FileInfoDTO inactiveFolder = createFolder(20L, "folder2", 10L);
+        ShareFileProjection inactiveFolder = createFolder(20L, "folder2");
         when(fileServiceClient.getShareChildren(10L)).thenReturn(List.of(inactiveFolder));
         when(shareValidator.isActive(rootFolder1)).thenReturn(true);
         when(shareValidator.isActive(inactiveFolder)).thenReturn(false);
@@ -166,7 +164,7 @@ class ShareContentProviderTest {
         Share share = createShare(1L);
         when(shareAccessService.requireAccessibleShare("key1", null)).thenReturn(share);
 
-        FileInfoDTO rootFile = createFile(100L, "doc.txt", null);
+        ShareFileProjection rootFile = createFile(100L, "doc.txt");
         when(shareFileResolver.getSharedRootFileInfos(eq(1L), any()))
                 .thenReturn(List.of(rootFile));
 

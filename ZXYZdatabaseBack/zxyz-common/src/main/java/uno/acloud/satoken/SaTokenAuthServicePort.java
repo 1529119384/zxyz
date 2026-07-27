@@ -1,5 +1,6 @@
 package uno.acloud.satoken;
 
+import cn.dev33.satoken.stp.SaLoginModel;
 import cn.dev33.satoken.stp.StpUtil;
 
 /**
@@ -51,6 +52,11 @@ public class SaTokenAuthServicePort implements AuthServicePort {
     @Override
     public void login(long userId) {
         StpUtil.login(userId);
+    }
+
+    @Override
+    public void login(long userId, long timeout) {
+        StpUtil.login(userId, new SaLoginModel().setTimeout(timeout));
     }
 
     @Override

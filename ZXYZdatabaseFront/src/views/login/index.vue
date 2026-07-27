@@ -35,6 +35,9 @@
               <template #prefix class="form_tip">密 码：</template>
             </el-input>
           </el-form-item>
+          <el-form-item>
+            <el-checkbox v-model="loginForm.rememberMe">7 天免登录</el-checkbox>
+          </el-form-item>
         </el-form>
         <el-text class="tip">有问题找管理员哦</el-text>
       </el-main>

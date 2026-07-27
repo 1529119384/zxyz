@@ -227,8 +227,11 @@
                 </executions>
                 <configuration>
                     <excludes>
-                        <exclude>uno/acloud/*/config/*</exclude>
                         <exclude>uno/acloud/*/*Application.class</exclude>
+                        <exclude>uno/acloud/*/config/*AutoConfiguration*</exclude>
+                        <exclude>uno/acloud/*/config/RestClientConfig.class</exclude>
+                        <exclude>uno/acloud/*/config/*Properties.class</exclude>
+                        <exclude>uno/acloud/*/config/*DataSourceConfig.class</exclude>
                     </excludes>
                 </configuration>
             </plugin>

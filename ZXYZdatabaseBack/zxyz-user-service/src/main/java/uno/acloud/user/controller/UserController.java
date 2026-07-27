@@ -25,6 +25,7 @@ import uno.acloud.exception.BusinessException;
 import uno.acloud.common.oss.AvatarUploadSignRequest;
 import uno.acloud.common.oss.OssSignInfo;
 import uno.acloud.user.config.CookieHelper;
+import uno.acloud.user.config.ServiceProperties;
 import uno.acloud.user.dto.ContactVerifyRequest;
 import uno.acloud.user.service.impl.AccountLinkingService;
 import uno.acloud.user.service.impl.AuthService;
@@ -67,6 +68,7 @@ public class UserController {
     private final RegisterRateLimiter registerRateLimiter;
     private final AuthServicePort authServicePort;
     private final UserAdminService userAdminService;
+    private final ServiceProperties serviceProperties;
 
     public UserController(AuthService authService,
                           UserProfileService userProfileService,
@@ -76,7 +78,8 @@ public class UserController {
                           LoginRateLimiter loginRateLimiter,
                           RegisterRateLimiter registerRateLimiter,
                           AuthServicePort authServicePort,
-                          UserAdminService userAdminService) {
+                          UserAdminService userAdminService,
+                          ServiceProperties serviceProperties) {
         this.authService = authService;
         this.userProfileService = userProfileService;
         this.contactVerificationService = contactVerificationService;
@@ -86,6 +89,7 @@ public class UserController {
         this.registerRateLimiter = registerRateLimiter;
         this.authServicePort = authServicePort;
         this.userAdminService = userAdminService;
+        this.serviceProperties = serviceProperties;
     }
 
     @Log
@@ -99,7 +103,10 @@ public class UserController {
         log.info("用户 {} 请求登录", request.getUsername());
         String token = authService.login(request);
         log.info("用户 {} 登录成功", request.getUsername());
-        cookieHelper.setAuthCookies(response, token);
+        int cookieMaxAge = request.isRememberMe()
+                ? serviceProperties.getAuth().getLongLivedTimeoutSeconds()
+                : serviceProperties.getAuth().getTokenTimeoutSeconds();
+        cookieHelper.setAuthCookies(response, token, cookieMaxAge);
         return Result.of(new LoginVO(token, "Bearer", true));
     }
 
@@ -217,7 +224,8 @@ public class UserController {
                                                              @org.springframework.web.bind.annotation.PathVariable Long targetUserId,
                                                              HttpServletResponse response) {
         AccountSwitchVO switchResult = accountLinkingService.switchLinkedAccount(userId, targetUserId);
-        cookieHelper.setAuthCookies(response, switchResult.getToken());
+        cookieHelper.setAuthCookies(response, switchResult.getToken(),
+                serviceProperties.getAuth().getTokenTimeoutSeconds());
         return Result.of(switchResult);
     }
 

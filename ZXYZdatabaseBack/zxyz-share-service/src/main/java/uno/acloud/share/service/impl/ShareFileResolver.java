@@ -2,8 +2,9 @@ package uno.acloud.share.service.impl;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
-import uno.acloud.dto.FileInfoDTO;
 import uno.acloud.share.infrastructure.client.ShareFileServiceClient;
+import uno.acloud.share.infrastructure.client.model.ShareFileProjection;
+import uno.acloud.share.infrastructure.entity.Share;
 import uno.acloud.share.infrastructure.entity.ShareItem;
 import uno.acloud.share.infrastructure.mapper.ShareMapper;
 
@@ -25,12 +26,12 @@ public class ShareFileResolver {
         this.fileServiceClient = fileServiceClient;
     }
 
-    public List<FileInfoDTO> getSharedRootFileInfos(Long shareId) {
+    public List<ShareFileProjection> getSharedRootFileInfos(Long shareId) {
         return getSharedRootFileInfos(shareId, null);
     }
 
-    public List<FileInfoDTO> getSharedRootFileInfos(Long shareId, ShareFileResolveContext context) {
-        List<FileInfoDTO> cachedFileInfos = context == null ? null : context.getSharedRootFileInfos(shareId);
+    public List<ShareFileProjection> getSharedRootFileInfos(Long shareId, ShareFileResolveContext context) {
+        List<ShareFileProjection> cachedFileInfos = context == null ? null : context.getSharedRootFileInfos(shareId);
         if (cachedFileInfos != null) {
             return cachedFileInfos;
         }
@@ -41,11 +42,11 @@ public class ShareFileResolver {
         if (fileIds.isEmpty()) {
             return cacheSharedRootFileInfos(context, shareId, List.of());
         }
-        Map<Long, FileInfoDTO> fileInfoMap = fileServiceClient.getFileInfoByIds(fileIds).stream()
-                .collect(Collectors.toMap(FileInfoDTO::getId, fileInfo -> fileInfo, (left, right) -> left, LinkedHashMap::new));
-        List<FileInfoDTO> result = new ArrayList<>();
+        Map<Long, ShareFileProjection> fileInfoMap = fileServiceClient.getShareFileProjections(fileIds).stream()
+                .collect(Collectors.toMap(ShareFileProjection::getId, fileInfo -> fileInfo, (left, right) -> left, LinkedHashMap::new));
+        List<ShareFileProjection> result = new ArrayList<>();
         for (Long fileId : fileIds) {
-            FileInfoDTO fileInfo = fileInfoMap.get(fileId);
+            ShareFileProjection fileInfo = fileInfoMap.get(fileId);
             if (fileInfo != null && fileInfo.isActive()) {
                 result.add(fileInfo);
             }
@@ -53,12 +54,12 @@ public class ShareFileResolver {
         return cacheSharedRootFileInfos(context, shareId, List.copyOf(result));
     }
 
-    public boolean isFileInShareScope(Long shareId, FileInfoDTO candidate) {
+    public boolean isFileInShareScope(Long shareId, ShareFileProjection candidate) {
         return isFileInShareScope(shareId, candidate, null);
     }
 
-    public boolean isFileInShareScope(Long shareId, FileInfoDTO candidate, ShareFileResolveContext context) {
-        for (FileInfoDTO sharedRoot : getSharedRootFileInfos(shareId, context)) {
+    public boolean isFileInShareScope(Long shareId, ShareFileProjection candidate, ShareFileResolveContext context) {
+        for (ShareFileProjection sharedRoot : getSharedRootFileInfos(shareId, context)) {
             if (Objects.equals(sharedRoot.getId(), candidate.getId())) {
                 return true;
             }
@@ -72,7 +73,7 @@ public class ShareFileResolver {
         return false;
     }
 
-    private List<FileInfoDTO> cacheSharedRootFileInfos(ShareFileResolveContext context, Long shareId, List<FileInfoDTO> fileInfos) {
+    private List<ShareFileProjection> cacheSharedRootFileInfos(ShareFileResolveContext context, Long shareId, List<ShareFileProjection> fileInfos) {
         if (context != null) {
             context.putSharedRootFileInfos(shareId, fileInfos);
         }

@@ -11,6 +11,7 @@ import uno.acloud.common.ErrorCode;
 import uno.acloud.common.UserErrorCode;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.user.config.CookieHelper;
+import uno.acloud.user.config.ServiceProperties;
 import uno.acloud.user.dto.LoginRequest;
 import uno.acloud.user.dto.RegisterRequest;
 import uno.acloud.user.service.impl.AccountLinkingService;
@@ -55,6 +56,8 @@ class UserControllerTest {
     @Mock
     private UserAdminService userAdminService;
 
+    private final ServiceProperties serviceProperties = new ServiceProperties();
+
     private UserController userController;
 
     @BeforeEach
@@ -62,7 +65,7 @@ class UserControllerTest {
         userController = new UserController(
                 authService, userProfileService, contactVerificationService,
                 accountLinkingService, cookieHelper, loginRateLimiter, registerRateLimiter,
-                authServicePort, userAdminService);
+                authServicePort, userAdminService, serviceProperties);
     }
 
     // ==================== login — valid credentials ====================
@@ -93,7 +96,29 @@ class UserControllerTest {
         // Verify auth service was called
         verify(authService).login(request);
         // Verify cookies were set
-        verify(cookieHelper).setAuthCookies(response, "test-token-abc");
+        verify(cookieHelper).setAuthCookies(eq(response), eq("test-token-abc"),
+                eq(serviceProperties.getAuth().getTokenTimeoutSeconds()));
+    }
+
+    @Test
+    void login_withRememberMe_setsLongLivedCookie() {
+        LoginRequest request = new LoginRequest();
+        request.setUsername("testuser");
+        request.setPassword("testpass123");
+        request.setRememberMe(true);
+
+        MockHttpServletRequest httpRequest = new MockHttpServletRequest();
+        httpRequest.setRemoteAddr("127.0.0.1");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        when(authService.login(request)).thenReturn("token-remember-me");
+
+        Result<LoginVO> result = userController.login(request, httpRequest, response);
+
+        assertNotNull(result);
+        assertEquals(ErrorCode.SUCCESS, result.getCode());
+        verify(cookieHelper).setAuthCookies(eq(response), eq("token-remember-me"),
+                eq(serviceProperties.getAuth().getLongLivedTimeoutSeconds()));
     }
 
     // ==================== login — invalid credentials ====================
@@ -115,7 +140,7 @@ class UserControllerTest {
         assertEquals(UserErrorCode.LOGIN_FAILED.getCode(), ex.getErrorCode());
 
         // Cookies should NOT be set
-        verify(cookieHelper, never()).setAuthCookies(any(), anyString());
+        verify(cookieHelper, never()).setAuthCookies(any(), anyString(), anyInt());
     }
 
     // ==================== login — rate limited ====================

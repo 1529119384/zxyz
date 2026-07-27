@@ -4,15 +4,16 @@
 
 ## Docker 服务编排
 
-`docker-compose.yml` 编排 14 个服务，统一网络 `zxyz-net`：
+`docker-compose.yml` 编排 18 个服务，统一网络 `zxyz-net`：
 
-**基础设施层（4）**：
+**基础设施层（5）**：
 - `zxyz-mysql` — MySQL 8.4.0, utf8mb4, 1G 内存限制, 数据持久化到 `${DATA_DIR}/mysql`
 - `zxyz-nacos` — Nacos v3.2.1 standalone 模式, 使用 MySQL 后端, 1024M 限制
+- `nacos-log-cleanup` — sidecar, 定期清理 Nacos 日志（保留 7 天，单文件限 100MB）
 - `zxyz-redis` — Redis 7.4 Alpine, AOF 持久化, 256M 限制
 - `zxyz-rabbitmq` — RabbitMQ 3.13 + management 插件, 512M 限制
 
-**业务服务层（9）**：使用统一 `ZXYZdatabaseBack/Dockerfile`，通过 `MODULE` build arg 选择 Maven 子模块。各服务独立 MySQL 数据库、隔离的 Redis database 编号。端口范围 18080-18087 + gateway 18000。
+**业务服务层（10）**：使用统一 `ZXYZdatabaseBack/Dockerfile`，通过 `MODULE` build arg 选择 Maven 子模块。各服务独立 MySQL 数据库、隔离的 Redis database 编号。端口范围 18080-18088 + gateway 18000。生产 compose 后端服务仅在容器内监听端口（`SERVER_PORT`），无 host 端口映射；对外仅 `frontend-nginx:80`。
 
 **前端层（1）**：`frontend-nginx` — 唯一对外暴露端口（`${HTTP_PORT:-80}:80`）。
 
@@ -36,7 +37,7 @@
 
 ## 数据库初始化
 
-`sql/00-init-zxyz.sh` 挂载到 MySQL 的 `/docker-entrypoint-initdb.d/`（首次启动时自动执行），创建 9 个数据库（8 业务 + nacos），均使用 utf8mb4/unicode_ci。
+`sql/00-init-zxyz.sh` 挂载到 MySQL 的 `/docker-entrypoint-initdb.d/`（首次启动时自动执行），创建 10 个数据库（9 个 `zxyz_*` 业务库含 `zxyz_audit` 和 `zxyz_config`，+ `nacos`），均使用 utf8mb4/unicode_ci。
 
 表结构由各服务的 Flyway 迁移脚本在运行时管理（`src/main/resources/db/migration/`）。
 
@@ -49,7 +50,7 @@
 1. **detect-changes** — `dorny/paths-filter` 检测 11 个服务的变更。镜像标签：`dev` 分支 → `dev`，`main` → `latest`，tag → 版本号
 2. **quality-check** — 前端（Node 22, lint + test）和后端（JDK 17, compile）并行执行
 3. **build-and-push** — 矩阵构建变更的服务镜像。backend-common 变更触发所有后端重建。Docker Buildx + GHA 缓存，推送到 GHCR（`ghcr.io/<owner>/zxyz-*`）
-4. **deploy** — SSH 到服务器，选择性拉取+重启变更的服务，分层健康检查（普通服务 50s，gateway 250s）
+4. **deploy** — SSH 到服务器，选择性拉取+重启变更的服务，分层健康检查（普通服务 6×5s=30s，gateway 12×5s=60s）
 
 **关键规则**：
 - `docker-compose.yml` 变更不触发镜像重建（运行时配置，非构建依赖）

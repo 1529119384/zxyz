@@ -2,30 +2,30 @@ package uno.acloud.share.infrastructure.client;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientResponseException;
-import uno.acloud.client.FileStorageClient;
-import uno.acloud.client.ServiceResponseParser;
+import uno.acloud.client.AbstractServiceClient;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.InternalServiceHeaders;
-import uno.acloud.dto.FileInfoDTO;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.share.config.ShareServiceProperties;
 import uno.acloud.share.config.TeamServiceProperties;
-import uno.acloud.vo.FileDownloadUrlVO;
+import uno.acloud.share.infrastructure.client.model.ShareFileProjection;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
  * 调用 file-service 的 HTTP 客户端（分享服务专用）。
- * <p>继承公共基类 {@link FileStorageClient}，使用 share 专属配置前缀。</p>
+ * <p>继承公共基类 {@link AbstractServiceClient}，使用 share 专属配置前缀。
+ * 返回窄投影 {@link ShareFileProjection} 而非上游 FileInfoDTO，消除 DTO 污染。</p>
  */
 @Component
-public class ShareFileServiceClient extends FileStorageClient {
+public class ShareFileServiceClient extends AbstractServiceClient {
 
     public ShareFileServiceClient(RestClient restClient,
                                   ShareServiceProperties shareServiceProperties,
@@ -33,162 +33,145 @@ public class ShareFileServiceClient extends FileStorageClient {
                                   ObjectMapper objectMapper) {
         super(restClient,
               shareServiceProperties.getFileService().normalizedBaseUrl(),
-              teamServiceProperties.getInternalServiceToken(), objectMapper);
+              teamServiceProperties.getInternalServiceToken(),
+              objectMapper);
     }
 
-    public List<FileInfoDTO> getFileInfoByIds(List<Long> fileIds) {
-        if (fileIds == null || fileIds.isEmpty()) {
-            return List.of();
-        }
-        try {
-            String responseBody = restClient().post()
-                    .uri(baseUrl() + "/api/internal/files/batch-info")
-                    .header(InternalServiceHeaders.TOKEN_HEADER, internalServiceToken())
-                    .body(objectMapper().createObjectNode().putPOJO("fileIds", fileIds))
-                    .retrieve()
-                    .body(String.class);
-            return parseFileInfoList(responseBody);
-        } catch (BusinessException e) {
-            throw e;
-        } catch (RestClientResponseException e) {
-            throw ServiceResponseParser.parseErrorResponse(objectMapper(), e, "批量获取文件信息失败");
-        } catch (Exception e) {
-            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "批量获取文件信息失败");
-        }
-    }
-
-    @Nullable
-    public FileInfoDTO getFileInfoById(Long fileId) {
-        try {
-            String responseBody = restClient().get()
-                    .uri(baseUrl() + "/api/internal/files/{fileId}/info", fileId)
-                    .header(InternalServiceHeaders.TOKEN_HEADER, internalServiceToken())
-                    .retrieve()
-                    .body(String.class);
-            JsonNode data = ServiceResponseParser.parseSuccessData(objectMapper(), responseBody, "获取文件信息失败");
-            if (data.isNull() || data.isMissingNode()) {
-                return null;
-            }
-            return objectMapper().treeToValue(data, FileInfoDTO.class);
-        } catch (BusinessException e) {
-            throw e;
-        } catch (RestClientResponseException e) {
-            throw ServiceResponseParser.parseErrorResponse(objectMapper(), e, "获取文件信息失败");
-        } catch (Exception e) {
-            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "获取文件信息失败");
-        }
-    }
-
-    public List<FileInfoDTO> getShareChildren(Long parentId) {
-        try {
-            String responseBody = restClient().get()
-                    .uri(baseUrl() + "/api/internal/files/{parentId}/share-children", parentId)
-                    .header(InternalServiceHeaders.TOKEN_HEADER, internalServiceToken())
-                    .retrieve()
-                    .body(String.class);
-            return parseFileInfoList(responseBody);
-        } catch (BusinessException e) {
-            throw e;
-        } catch (RestClientResponseException e) {
-            throw ServiceResponseParser.parseErrorResponse(objectMapper(), e, "获取分享子文件失败");
-        } catch (Exception e) {
-            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "获取分享子文件失败");
-        }
-    }
-
-    public Map<Long, List<FileInfoDTO>> getShareChildrenByParentIds(List<Long> parentIds) {
-        if (parentIds == null || parentIds.isEmpty()) {
-            return Map.of();
-        }
-        try {
-            String responseBody = restClient().post()
-                    .uri(baseUrl() + "/api/internal/files/batch-share-children")
-                    .header(InternalServiceHeaders.TOKEN_HEADER, internalServiceToken())
-                    .body(objectMapper().createObjectNode().putPOJO("parentIds", parentIds))
-                    .retrieve()
-                    .body(String.class);
-            return parseBatchShareChildrenResponse(responseBody);
-        } catch (BusinessException e) {
-            throw e;
-        } catch (RestClientResponseException e) {
-            throw ServiceResponseParser.parseErrorResponse(objectMapper(), e, "批量获取分享子文件失败");
-        } catch (Exception e) {
-            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "批量获取分享子文件失败");
-        }
-    }
-
-    private Map<Long, List<FileInfoDTO>> parseBatchShareChildrenResponse(String responseBody) throws Exception {
-        JsonNode data = ServiceResponseParser.parseSuccessData(objectMapper(), responseBody, "批量获取分享子文件失败");
-        if (!data.isObject()) {
-            return Map.of();
-        }
-        Map<Long, List<FileInfoDTO>> result = new java.util.HashMap<>();
-        data.fields().forEachRemaining(entry -> {
-            long key = Long.parseLong(entry.getKey());
-            List<FileInfoDTO> list = new ArrayList<>();
-            JsonNode arrayNode = entry.getValue();
-            if (arrayNode.isArray()) {
-                for (JsonNode item : arrayNode) {
-                    try {
-                        list.add(objectMapper().treeToValue(item, FileInfoDTO.class));
-                    } catch (Exception e) {
-                        throw new RuntimeException("解析分享子文件项失败", e);
-                    }
-                }
-            }
-            result.put(key, list);
-        });
-        return result;
-    }
-
-    public String getShareDownloadUrl(Long fileId) {
-        try {
-            String responseBody = restClient().get()
-                    .uri(baseUrl() + "/api/internal/files/{fileId}/share-download-url", fileId)
-                    .header(InternalServiceHeaders.TOKEN_HEADER, internalServiceToken())
-                    .retrieve()
-                    .body(String.class);
-            JsonNode data = ServiceResponseParser.parseSuccessData(objectMapper(), responseBody, "获取分享下载链接失败");
-            return objectMapper().treeToValue(data, FileDownloadUrlVO.class).getDownloadUrl();
-        } catch (BusinessException e) {
-            throw e;
-        } catch (RestClientResponseException e) {
-            throw ServiceResponseParser.parseErrorResponse(objectMapper(), e, "获取分享下载链接失败");
-        } catch (Exception e) {
-            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "获取分享下载链接失败");
-        }
+    @Override
+    protected String serviceName() {
+        return "文件服务";
     }
 
     /**
-     * 获取文件流式下载信息（用于分享服务流式下载场景）
+     * 批量获取文件投影（用于分享范围校验等场景）。
      */
-    public String getFileStreamInfo(Long fileId) {
-        try {
-            String responseBody = restClient().get()
-                    .uri(baseUrl() + "/api/internal/files/{fileId}/stream-info", fileId)
-                    .header(InternalServiceHeaders.TOKEN_HEADER, internalServiceToken())
-                    .retrieve()
-                    .body(String.class);
-            JsonNode data = ServiceResponseParser.parseSuccessData(objectMapper(), responseBody, "获取文件流信息失败");
-            return data.asText();
-        } catch (BusinessException e) {
-            throw e;
-        } catch (RestClientResponseException e) {
-            throw ServiceResponseParser.parseErrorResponse(objectMapper(), e, "获取文件流信息失败");
-        } catch (Exception e) {
-            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "获取文件流信息失败");
+    public List<ShareFileProjection> getShareFileProjections(List<Long> fileIds) {
+        if (fileIds == null || fileIds.isEmpty()) {
+            return List.of();
         }
-    }
-
-    private List<FileInfoDTO> parseFileInfoList(String responseBody) throws Exception {
-        JsonNode data = ServiceResponseParser.parseSuccessData(objectMapper(), responseBody, "获取文件信息失败");
-        List<FileInfoDTO> result = new ArrayList<>();
+        JsonNode root = postJson("/api/internal/files/batch-share-projection",
+                objectMapper().createObjectNode().putPOJO("fileIds", fileIds));
+        enforceSuccessCode(root, "批量获取文件投影失败");
+        JsonNode data = root.path("data");
+        List<ShareFileProjection> result = new ArrayList<>();
         if (data.isArray()) {
             for (JsonNode item : data) {
-                result.add(objectMapper().treeToValue(item, FileInfoDTO.class));
+                result.add(mapToProjection(item));
             }
         }
         return result;
     }
 
+    /**
+     * 按 ID 获取单个文件投影。
+     */
+    public ShareFileProjection getShareProjection(Long fileId) {
+        JsonNode root = getJson("/api/internal/files/{fileId}/share-projection", fileId);
+        enforceSuccessCode(root, "获取文件投影失败");
+        JsonNode data = root.path("data");
+        if (data.isNull() || data.isMissingNode()) {
+            return null;
+        }
+        return mapToProjection(data);
+    }
+
+    /**
+     * 获取分享根文件下的直接子文件/文件夹。
+     */
+    public List<ShareFileProjection> getShareChildren(Long parentId) {
+        JsonNode root = getJson("/api/internal/files/{parentId}/share-children-projection", parentId);
+        enforceSuccessCode(root, "获取子文件列表失败");
+        JsonNode data = root.path("data");
+        List<ShareFileProjection> result = new ArrayList<>();
+        if (data.isArray()) {
+            for (JsonNode item : data) {
+                result.add(mapToProjection(item));
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 批量按 parentId 获取子文件/文件夹（key→list 结构）。
+     */
+    public Map<Long, List<ShareFileProjection>> getShareChildrenByParentIds(List<Long> parentIds) {
+        if (parentIds == null || parentIds.isEmpty()) {
+            return Map.of();
+        }
+        JsonNode root = postJson("/api/internal/files/batch-share-children-projection",
+                objectMapper().createObjectNode().putPOJO("parentIds", parentIds));
+        enforceSuccessCode(root, "批量获取子文件列表失败");
+        JsonNode data = root.path("data");
+        Map<Long, List<ShareFileProjection>> result = new LinkedHashMap<>();
+        if (data.isObject()) {
+            data.fields().forEachRemaining(entry -> {
+                long key = Long.parseLong(entry.getKey());
+                List<ShareFileProjection> list = new ArrayList<>();
+                JsonNode arrayNode = entry.getValue();
+                if (arrayNode.isArray()) {
+                    for (JsonNode item : arrayNode) {
+                        list.add(mapToProjection(item));
+                    }
+                }
+                result.put(key, list);
+            });
+        }
+        return result;
+    }
+
+    /**
+     * 获取分享下载 URL。
+     */
+    public String getShareDownloadUrl(Long fileId) {
+        JsonNode root = getJson("/api/internal/files/{fileId}/share-download-url", fileId);
+        enforceSuccessCode(root, "获取下载链接失败");
+        return root.path("data").asText(null);
+    }
+
+    /**
+     * 获取文件流式下载信息（用于分享服务流式下载场景）。
+     */
+    public String getFileStreamInfo(Long fileId) {
+        JsonNode root = getJson("/api/internal/files/{fileId}/stream-info", fileId);
+        enforceSuccessCode(root, "获取流式下载信息失败");
+        return root.path("data").asText();
+    }
+
+    // ==================== Mapping ====================
+
+    /**
+     * 校验上游返回的 code 字段，非 SUCCESS 时抛出 BusinessException。
+     * <p>防止上游业务错误（code!=1）被静默吞掉，导致返回空 list/null 误导调用方。</p>
+     */
+    private void enforceSuccessCode(JsonNode root, String fallbackMessage) {
+        if (root == null || root.path("code").asInt(ErrorCode.SUCCESS) != ErrorCode.SUCCESS) {
+            String msg = root == null ? fallbackMessage : root.path("msg").asText(fallbackMessage);
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, msg);
+        }
+    }
+
+    private ShareFileProjection mapToProjection(JsonNode data) {
+        ShareFileProjection p = new ShareFileProjection();
+        p.setId(data.path("id").asLong());
+        p.setFileType(data.has("fileType") ? data.path("fileType").asInt() : null);
+        p.setUuidName(data.path("uuidName").asText(null));
+        p.setOriginalName(data.path("originalName").asText(null));
+        p.setCategory(data.path("category").asInt());
+        p.setFileSize(data.path("fileSize").asLong());
+        p.setStorePath(data.path("storePath").asText(null));
+        p.setDeleted(data.has("deleted") ? data.path("deleted").asInt() : null);
+        p.setModifyTime(parseLocalDateTime(data.path("modifyTime")));
+        return p;
+    }
+
+    private LocalDateTime parseLocalDateTime(JsonNode node) {
+        if (node.isNull() || node.isMissingNode()) {
+            return null;
+        }
+        String text = node.asText(null);
+        if (text == null) {
+            return null;
+        }
+        return LocalDateTime.parse(text);
+    }
 }

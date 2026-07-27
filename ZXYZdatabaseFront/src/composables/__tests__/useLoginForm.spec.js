@@ -38,6 +38,7 @@ describe('useLoginForm', () => {
 
     expect(loginForm.username).toBe('')
     expect(loginForm.password).toBe('')
+    expect(loginForm.rememberMe).toBe(false)
     expect(loggingIn.value).toBe(false)
   })
 
@@ -62,6 +63,7 @@ describe('useLoginForm', () => {
     expect(mockStore.login).toHaveBeenCalledWith({
       username: 'testuser',
       password: 'pass123',
+      rememberMe: false,
     })
   })
 

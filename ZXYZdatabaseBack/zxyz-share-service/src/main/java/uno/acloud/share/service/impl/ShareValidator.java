@@ -3,10 +3,10 @@ package uno.acloud.share.service.impl;
 import org.springframework.stereotype.Component;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.UserErrorCode;
-import uno.acloud.dto.FileInfoDTO;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.share.infrastructure.client.ShareFileServiceClient;
 import uno.acloud.share.infrastructure.client.ShareUserQueryClient;
+import uno.acloud.share.infrastructure.client.model.ShareFileProjection;
 import uno.acloud.vo.InternalUserInfoVO;
 
 import java.util.List;
@@ -39,11 +39,11 @@ public class ShareValidator {
         return user;
     }
 
-    public Map<Long, FileInfoDTO> requireActiveFiles(List<Long> fileIds) {
-        Map<Long, FileInfoDTO> fileInfoMap = shareFileServiceClient.getFileInfoByIds(fileIds).stream()
-                .collect(Collectors.toMap(FileInfoDTO::getId, fileInfo -> fileInfo));
+    public Map<Long, ShareFileProjection> requireActiveFiles(List<Long> fileIds) {
+        Map<Long, ShareFileProjection> fileInfoMap = shareFileServiceClient.getShareFileProjections(fileIds).stream()
+                .collect(Collectors.toMap(ShareFileProjection::getId, fileInfo -> fileInfo));
         for (Long fileId : fileIds) {
-            FileInfoDTO fileInfo = fileInfoMap.get(fileId);
+            ShareFileProjection fileInfo = fileInfoMap.get(fileId);
             if (fileInfo == null || !isActive(fileInfo)) {
                 throw new BusinessException(ErrorCode.NOT_FOUND, "所选文件中包含已删除或不存在的数据");
             }
@@ -51,7 +51,7 @@ public class ShareValidator {
         return fileInfoMap;
     }
 
-    public boolean isActive(FileInfoDTO fileInfo) {
+    public boolean isActive(ShareFileProjection fileInfo) {
         return fileInfo != null && fileInfo.isActive();
     }
 }

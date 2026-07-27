@@ -6,8 +6,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.junit.jupiter.MockitoSettings;
-import org.mockito.quality.Strictness;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.domain.enums.ConversationType;
@@ -28,7 +26,6 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
 class ProjectConversationServiceTest {
 
     @Mock
@@ -43,6 +40,10 @@ class ProjectConversationServiceTest {
     @BeforeEach
     void setUp() {
         service = new ProjectConversationService(conversationMapper, teamNotificationConversationService, imEntityMapper);
+    }
+
+    @Test
+    void createOrGetShouldPersistProjectNameWhenCreatingConversation() {
         when(imEntityMapper.toConversationVO(any())).thenAnswer(invocation -> {
             ImConversation c = invocation.getArgument(0);
             return new ProjectConversationVO(
@@ -50,10 +51,6 @@ class ProjectConversationServiceTest {
                     c.getName(), c.getType(), c.getReadOnly()
             );
         });
-    }
-
-    @Test
-    void createOrGetShouldPersistProjectNameWhenCreatingConversation() {
         CreateProjectConversationRequest request = projectRequest("  研发项目  ");
         when(conversationMapper.getConversationByBizKey("PROJECT:31")).thenReturn(null);
         doAnswer(invocation -> {
@@ -80,6 +77,13 @@ class ProjectConversationServiceTest {
 
     @Test
     void createOrGetShouldSyncProjectNameWhenConversationAlreadyExists() {
+        when(imEntityMapper.toConversationVO(any())).thenAnswer(invocation -> {
+            ImConversation c = invocation.getArgument(0);
+            return new ProjectConversationVO(
+                    c.getId(), c.getProjectId(), c.getTeamId(),
+                    c.getName(), c.getType(), c.getReadOnly()
+            );
+        });
         ImConversation existing = new ImConversation();
         existing.setId(88L);
         existing.setType(ConversationType.PROJECT);

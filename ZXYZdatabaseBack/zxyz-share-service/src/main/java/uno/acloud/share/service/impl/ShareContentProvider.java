@@ -4,9 +4,9 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.ShareErrorCode;
-import uno.acloud.dto.FileInfoDTO;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.share.infrastructure.client.ShareFileServiceClient;
+import uno.acloud.share.infrastructure.client.model.ShareFileProjection;
 import uno.acloud.share.infrastructure.entity.Share;
 import uno.acloud.share.vo.ShareDownloadResponseVO;
 import uno.acloud.share.vo.ShareFilesResponseItemVO;
@@ -61,7 +61,7 @@ public class ShareContentProvider {
         requireDownloadableSharedFile(share.getId(), fileId, new ShareFileResolveContext());
 
         // 获取文件信息
-        FileInfoDTO fileInfo = fileServiceClient.getFileInfoById(fileId);
+        ShareFileProjection fileInfo = fileServiceClient.getShareProjection(fileId);
         if (fileInfo == null || !fileInfo.isActive()) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "文件不存在");
         }
@@ -72,12 +72,12 @@ public class ShareContentProvider {
     }
 
     private List<ShareFilesResponseItemVO> listShareFiles(Share share, String normalizedPath, ShareFileResolveContext resolveContext) {
-        List<FileInfoDTO> sharedRoots = shareFileResolver.getSharedRootFileInfos(share.getId(), resolveContext);
-        List<FileInfoDTO> targetFiles;
+        List<ShareFileProjection> sharedRoots = shareFileResolver.getSharedRootFileInfos(share.getId(), resolveContext);
+        List<ShareFileProjection> targetFiles;
         if (StringUtils.isBlank(normalizedPath)) {
             targetFiles = sharedRoots;
         } else {
-            FileInfoDTO currentFolder = resolveSharedFolderByPath(sharedRoots, normalizedPath);
+            ShareFileProjection currentFolder = resolveSharedFolderByPath(sharedRoots, normalizedPath);
             targetFiles = fileServiceClient.getShareChildren(currentFolder.getId());
         }
         return targetFiles.stream()
@@ -86,13 +86,13 @@ public class ShareContentProvider {
                 .collect(Collectors.toList());
     }
 
-    private FileInfoDTO resolveSharedFolderByPath(List<FileInfoDTO> sharedRoots, String normalizedPath) {
+    private ShareFileProjection resolveSharedFolderByPath(List<ShareFileProjection> sharedRoots, String normalizedPath) {
         List<String> segments = shareInputNormalizer.splitPath(normalizedPath);
         if (segments.isEmpty()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "path 非法");
         }
-        FileInfoDTO currentFolder = sharedRoots.stream()
-                .filter(FileInfoDTO::isFolder)
+        ShareFileProjection currentFolder = sharedRoots.stream()
+                .filter(ShareFileProjection::isFolder)
                 .filter(fileInfo -> Objects.equals(fileInfo.getOriginalName(), segments.get(0)))
                 .findFirst()
                 .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "path 非法"));
@@ -105,12 +105,12 @@ public class ShareContentProvider {
         // 如需消除此处的 N+1，需在 file-service 新增按完整路径段查询的接口（如 POST /api/internal/files/resolve-share-path）。
         for (int i = 1; i < segments.size(); i++) {
             String segment = segments.get(i);
-            List<FileInfoDTO> children = fileServiceClient.getShareChildren(currentFolder.getId());
+            List<ShareFileProjection> children = fileServiceClient.getShareChildren(currentFolder.getId());
             if (children == null || children.isEmpty()) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "path 非法");
             }
-            FileInfoDTO nextFolder = children.stream()
-                    .filter(FileInfoDTO::isFolder)
+            ShareFileProjection nextFolder = children.stream()
+                    .filter(ShareFileProjection::isFolder)
                     .filter(fileInfo -> Objects.equals(fileInfo.getOriginalName(), segment))
                     .findFirst()
                     .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "path 非法"));
@@ -122,8 +122,8 @@ public class ShareContentProvider {
         return currentFolder;
     }
 
-    private FileInfoDTO requireDownloadableSharedFile(Long shareId, Long fileId, ShareFileResolveContext resolveContext) {
-        FileInfoDTO fileInfo = fileServiceClient.getFileInfoById(fileId);
+    private ShareFileProjection requireDownloadableSharedFile(Long shareId, Long fileId, ShareFileResolveContext resolveContext) {
+        ShareFileProjection fileInfo = fileServiceClient.getShareProjection(fileId);
         if (fileInfo == null || !fileInfo.isFile()) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "文件不存在");
         }

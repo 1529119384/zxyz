@@ -56,7 +56,7 @@ sa-token:
   token-name: satoken
   is-write-cookie: false
   token-storage-mode: redis
-  timeout: 7200
+  timeout: 43200
   active-timeout: 1800
   is-concurrent: true
   is-share: false
@@ -96,10 +96,12 @@ app:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:4173}
   # 服务间调用鉴权 token，生产环境必须通过环境变量注入
   internal-service-token: ${INTERNAL_SERVICE_TOKEN}
+  # auth timeout 默认值：zxyz-dynamic.yml（Nacos 热更新）会覆盖此处
   auth:
-    max-age: ${AUTH_COOKIE_MAX_AGE:2592000}
     secure: ${AUTH_COOKIE_SECURE:true}
     domain: ${AUTH_COOKIE_DOMAIN:}
+    token-timeout-seconds: ${AUTH_TOKEN_TIMEOUT:43200}
+    long-lived-timeout-seconds: ${AUTH_LONG_LIVED_TIMEOUT:604800}
   email:
     verify-code:
       cooldown-seconds: ${EMAIL_VERIFY_COOLDOWN:60}

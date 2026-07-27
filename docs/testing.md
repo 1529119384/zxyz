@@ -1206,14 +1206,14 @@ npm run test:coverage
 
 **后端 JaCoCo**：在根 `pom.xml` 配置后，每次 `mvn test` 自动生成报告。
 
-**前端 V8 coverage**：需先安装依赖（当前 `package.json` 未声明 `@vitest/coverage-v8`，`npm run test:coverage` 报 `MISSING DEPENDENCY`）：
+**前端 V8 coverage**：`package.json` 已声明 `@vitest/coverage-v8`，`npm run test:coverage` 直接可用。`vite.config.js` 已配置阈值（`statements:69 / branches:56 / functions:66 / lines:69`），低于阈值会失败。
 
 ```bash
 cd ZXYZdatabaseFront
-npm install -D @vitest/coverage-v8
+npm run test:coverage
 ```
 
-安装后 `npm run test:coverage` 可正常生成报告。阈值设置需先实测基线（vitest 4.x 默认 `coverage.all:false`，报告池为测试 import 链触达的文件，而非 `src/**` 全部）。
+vitest 4.x 默认 `coverage.all:false`，报告池为测试 import 链触达的文件，而非 `src/**` 全部；调高阈值前先实测基线。
 
 ### 修改 CI 配置
 
@@ -1223,405 +1223,59 @@ dev 分支启用测试：修改 `.github/workflows/ci-cd.yml`，移除 "Determin
 
 ## admin-service 测试示例
 
-> admin-service 是全项目唯一一处 pom 已声明 test-jar + Testcontainers 依赖但 `src/test/` 完全为空的模块。下面给出可直接套用的示例。
+> admin-service 现已落地 5 个测试文件作为样板：3 个单元测试（ConfigService / ConfigAdminController / ProviderAdminController）+ 2 个集成测试（ConfigServiceIntegrationTest / ConfigMapperIntegrationTest）。本段摘录每个测试类的核心陷阱与断言点，完整实现见对应文件。
 
 ### 单元测试：ConfigService
 
-> `ConfigService` 构造器需要 4 个参数：`SysConfigMapper`、`SysConfigAuditMapper`、`StringRedisTemplate`、`JasyptEncryptor`（`uno.acloud.common.util.JasyptEncryptor`）。**不可只 mock 一个**。
-> `get(key)` 对 `selectByKey` 返回的非 null config，**无条件**调 `jasyptEncryptor.decrypt(configValue)`，相关单测必须 stub `decrypt`。
-> `update` 是 `@Transactional` 方法，在方法体内调用 `TransactionSynchronizationManager.registerSynchronization(...)`。纯 Mockito 单测中**必须用 `MockedStatic` 包裹** `TransactionSynchronizationManager`，否则会抛 `IllegalStateException`。
+`ConfigServiceTest`（`zxyz-admin-service/src/test/java/uno/acloud/admin/service/ConfigServiceTest.java`，纯 Mockito `@ExtendWith(MockitoExtension.class)`，手动 `new` 注入被测对象）：
 
-```java
-package uno.acloud.admin.service;
-
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.MockedStatic;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
-import uno.acloud.admin.domain.SysConfig;
-import uno.acloud.admin.mapper.SysConfigAuditMapper;
-import uno.acloud.admin.mapper.SysConfigMapper;
-import uno.acloud.common.util.JasyptEncryptor;
-
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
-
-@ExtendWith(MockitoExtension.class)
-class ConfigServiceTest {
-
-    @Mock
-    private SysConfigMapper configMapper;
-
-    @Mock
-    private SysConfigAuditMapper auditMapper;
-
-    @Mock
-    private StringRedisTemplate stringRedisTemplate;
-
-    @Mock
-    private JasyptEncryptor jasyptEncryptor;
-
-    private ConfigService service;
-
-    @BeforeEach
-    void setUp() {
-        service = new ConfigService(configMapper, auditMapper, stringRedisTemplate, jasyptEncryptor);
-    }
-
-    @Test
-    void get_existingKey_returnsDecryptedValue() {
-        SysConfig config = new SysConfig();
-        config.setConfigValue("ENC(encrypted)");
-        when(configMapper.selectByKey("app.name")).thenReturn(config);
-        when(jasyptEncryptor.decrypt("ENC(encrypted)")).thenReturn("my-app");
-
-        String result = service.get("app.name");
-
-        assertEquals("my-app", result);
-        verify(configMapper).selectByKey("app.name");
-    }
-
-    @Test
-    void get_missingKey_returnsNull() {
-        when(configMapper.selectByKey("nonexistent")).thenReturn(null);
-
-        String result = service.get("nonexistent");
-
-        assertNull(result);
-    }
-
-    @Test
-    void get_nullValue_returnsNull() {
-        SysConfig config = new SysConfig();
-        config.setConfigValue(null);
-        when(configMapper.selectByKey("app.name")).thenReturn(config);
-        // 当 configValue 为 null 时，ConfigService.get 会调用 decrypt(null)。
-        // 需要让 decrypt(null) 返回非 §NULL§ 的结果以触达 NULL_SENTINEL 分支判断。
-        // 但更稳妥的写法是 observe 实际行为：decrypt(null) 默认返回 null，价值经过 §NULL§ 比较
-        // -> 结果是 null。本测试验证此行为。
-
-        String result = service.get("app.name");
-
-        assertNull(result);
-    }
-
-    @Test
-    void getType_integerValue_returnsInteger() {
-        SysConfig config = new SysConfig();
-        config.setConfigValue("42");
-        when(configMapper.selectByKey("app.limit")).thenReturn(config);
-        when(jasyptEncryptor.decrypt("42")).thenReturn("42");  // 必须显式 stub
-
-        Integer result = service.get("app.limit", Integer.class);
-
-        assertEquals(42, result);
-    }
-
-    @Test
-    void getType_unsupportedType_throwsException() {
-        SysConfig config = new SysConfig();
-        config.setConfigValue("value");
-        when(configMapper.selectByKey("app.test")).thenReturn(config);
-        when(jasyptEncryptor.decrypt("value")).thenReturn("value");  // 必须 stub，否则 get 返回 null，根本走不到 switch
-
-        assertThrows(IllegalArgumentException.class,
-                () -> service.get("app.test", Double.class));
-    }
-
-    @Test
-    void update_writesAuditAndNotifiesAfterCommit() {
-        // update 是 @Transactional 方法，单测中必须 MockedStatic 包裹 TransactionSynchronizationManager
-        ArgumentCaptor<TransactionSynchronization> syncCaptor =
-                ArgumentCaptor.forClass(TransactionSynchronization.class);
-
-        try (MockedStatic<TransactionSynchronizationManager> mocked =
-                mockStatic(TransactionSynchronizationManager.class)) {
-
-            // update 内部先 get(key) 取 oldValue；selectByKey 返回 null -> oldValue = null
-            when(configMapper.selectByKey("app.name")).thenReturn(null);
-
-            service.update("app.name", "new-value", 1L);
-
-            verify(configMapper).updateValue("app.name", "new-value");
-            verify(auditMapper).insert(eq("app.name"), isNull(), eq("new-value"), eq(1L));
-            mocked.verify(() ->
-                    TransactionSynchronizationManager.registerSynchronization(syncCaptor.capture()));
-
-            // 模拟事务提交：触发 afterCommit -> 应发送 Redis 通知
-            syncCaptor.getValue().afterCommit();
-            verify(stringRedisTemplate).convertAndSend("zxyz:config:changed", "app.name");
-        }
-    }
-}
-```
-
-> 注：上述 `update_writesAuditAndNotifiesAfterCommit` 验证了事务提交后的 Redis 通知逻辑，但**未直接验证本地 Caffeine 缓存失效**——因 `cache` 是 `ConfigService` 内部 private final 字段，外部不可访问。若需验证缓存行为，可改用集成测试（真实 mysql + Redis，连续 update 后再 get 看缓存是否失效），或通过观察行为（再次 get 时是否再次走 `selectByKey`）间接验证。
+- 构造器 4 参必须**全部 mock**：`SysConfigMapper`、`SysConfigAuditMapper`、`StringRedisTemplate`、`JasyptEncryptor`（`ConfigServiceTest.java:24-34`），`setUp` 用 `new ConfigService(configMapper, auditMapper, stringRedisTemplate, jasyptEncryptor)` 注入（`ConfigServiceTest.java:40`）——**不可只 mock 一个**，否则 NPE/构造失败。
+- `get(key)` 对 `selectByKey` 返回的**非 null config 无条件调用** `jasyptEncryptor.decrypt(configValue)`：现存路径必须 stub `decrypt`（`ConfigServiceTest.java:52`）；`get_missingKey`（`selectByKey→null`）中用 `verify(jasyptEncryptor, never()).decrypt(any())` 断言短路（`ConfigServiceTest.java:79`）；`get_nullValue` 显式 `when(jasyptEncryptor.decrypt(null)).thenReturn(null)`（`ConfigServiceTest.java:89`），否则返回结果不可预期。
+- 缓存断言走行为间接验证：`get_existingKey` 第二次调用同 key 时 `selectByKey` 仍 `times(1)`（`ConfigServiceTest.java:63-65`）。因 `cache` 是 `ConfigService` 内部 private final 字段、外部不可访问，缓存**失效**需靠集成测试或"再次 get 是否再次走 `selectByKey`"观察，单测只能证缓存**命中**。
+- `get(key, Class<T>)` 类型分发：`Integer` 走 `Integer.parseInt`（`ConfigServiceTest.java:103-116`）；不支持类型抛 `IllegalArgumentException`（`ConfigServiceTest.java:128-129`）——后者**必须先 stub `decrypt` 让 `get` 返回非 null**，否则根本到不了 switch 分支。
+- `update` 是 `@Transactional` 方法，体内调 `TransactionSynchronizationManager.registerSynchronization(...)`：纯 Mockito 单测中**必须用 `MockedStatic` 包裹** `TransactionSynchronizationManager`（`ConfigServiceTest.java:138`），否则抛 `IllegalStateException: Transaction synchronization is not active`。
+- `update` 断言链：`configMapper.updateValue(...)` + `auditMapper.insert(eq, isNull(oldValue), eq, eq(operatorId))`（`ConfigServiceTest.java:146-147`）→ `ArgumentCaptor<TransactionSynchronization>` 捕获注册的回调（`ConfigServiceTest.java:150-151`）→ 手动 `afterCommit()` 触发断言 `stringRedisTemplate.convertAndSend("zxyz:config:changed", key)`（`ConfigServiceTest.java:152-153`）。注意会话级缓存失效由 `afterCommit` 回调内部触发，单测中手动调用即可观察。
 
 ### 单元测试：ConfigAdminController
 
-> `ConfigAdminController` 构造器需要 3 个参数：`ConfigService`、`SysConfigMapper`、`SysConfigAuditMapper`。`listAll()` 与 `listAuditLogs()` 不经过 Service，直接调用 Mapper。
-> 类级 `@SaCheckRole(SystemRoleCodes.SYSTEM_ADMIN)` 在 MockitoExtension 单测中**注解不生效**，本测试**仅验证业务委派**，**不验证授权**（覆盖授权需走 `@WebMvcTest` + Sa-Token mock，见 Phase B）。
+`ConfigAdminControllerTest`（`zxyz-admin-service/src/test/java/uno/acloud/admin/controller/ConfigAdminControllerTest.java`，纯 Mockito，手动 `new` Controller）：
 
-```java
-package uno.acloud.admin.controller;
-
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import uno.acloud.admin.mapper.SysConfigAuditMapper;
-import uno.acloud.admin.mapper.SysConfigMapper;
-import uno.acloud.admin.service.ConfigService;
-import uno.acloud.common.ErrorCode;
-import uno.acloud.common.Result;
-
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
-
-@ExtendWith(MockitoExtension.class)
-class ConfigAdminControllerTest {
-
-    @Mock
-    private ConfigService configService;
-
-    @Mock
-    private SysConfigMapper configMapper;
-
-    @Mock
-    private SysConfigAuditMapper auditMapper;
-
-    private ConfigAdminController controller;
-
-    @BeforeEach
-    void setUp() {
-        controller = new ConfigAdminController(configService, configMapper, auditMapper);
-    }
-
-    @Test
-    void getByKey_existingKey_returnsValue() {
-        when(configService.get("app.name")).thenReturn("my-app");
-
-        Result<String> result = controller.getByKey("app.name");
-
-        assertEquals(ErrorCode.SUCCESS, result.getCode());
-        assertEquals("my-app", result.getData());
-    }
-
-    @Test
-    void getByKey_missingKey_returnsNotFound() {
-        when(configService.get("nonexistent")).thenReturn(null);
-
-        Result<String> result = controller.getByKey("nonexistent");
-
-        assertEquals(ErrorCode.NOT_FOUND, result.getCode());
-    }
-
-    @Test
-    void update_validRequest_callsService() {
-        ConfigAdminController.UpdateConfigRequest request = new ConfigAdminController.UpdateConfigRequest();
-        request.setValue("new-value");
-
-        Result<Void> result = controller.update("app.name", request, 1L);
-
-        assertEquals(ErrorCode.SUCCESS, result.getCode());
-        verify(configService).update("app.name", "new-value", 1L);
-    }
-
-    @Test
-    void update_blankValue_shouldBeRejectedByValidation() {
-        // UpdateConfigRequest.value 有 @NotBlank + @Size(max=4096)，但纯单元测试中 Jakarta Validation
-        // 不会自动执行。如需测试校验，使用集成测试（@SpringBootTest）或 @WebMvcTest + @Validated。
-        // 此处仅记录契约：空值校验在 web 层验证，单测中调用 controller.update 时需手工保证非空。
-    }
-}
-```
+- 构造器 3 参：`ConfigService`、`SysConfigMapper`、`SysConfigAuditMapper`（`ConfigAdminControllerTest.java:24-31`），`setUp` `new ConfigAdminController(configService, configMapper, auditMapper)`（`:37`）。该 Controller 共 **4 个端点**：`listAll` / `getByKey` / `update` / `listAuditLogs`（类级 `@SaCheckRole(SYSTEM_ADMIN)`，单测中注解**不生效**）。
+- `listAll()` 与 `listAuditLogs()` **不经过 Service**，直接调 Mapper——实测 `listAll_delegatesToMapper_returnsSuccess` 用 `configMapper.selectList(any())` 返回 `Collections.emptyList()`（`ConfigAdminControllerTest.java:44`）并断言 `result.getCode()==ErrorCode.SUCCESS`（`:49`）。易踩坑：别误以为所有端点都委派 Service，给 Service 误配 stub 反而 UnnecessaryStubbing。
+- `getByKey`：Service 返回非 null → `SUCCESS` + 透传 data（`ConfigAdminControllerTest.java:55-63`）；Service 返回 null → Controller 返回 `ErrorCode.NOT_FOUND`（`:65-73`）。
+- `update`：通过嵌套静态类 `ConfigAdminController.UpdateConfigRequest` 构造请求、`request.setValue("new-value")`（`ConfigAdminControllerTest.java:79-80`），断言 `configService.update("app.name", "new-value", 1L)`（`:82-85`）。
+- 类级 `@SaCheckRole` 在 MockitoExtension 单测中**不生效**，测试只验证业务委派、**不验证授权**（授权需走 `@WebMvcTest` + Sa-Token mock）；`UpdateConfigRequest.value` 上的 `@NotBlank + @Size(max=4096)` 在纯单测中也不会自动执行——契约校验需走 `@WebMvcTest`/集成测试。
 
 ### 单元测试：ProviderAdminController
 
-> `ProviderAdminController` 构造器接收 `StorageProviderClient` 与 `EmailProviderClient` 两个 client。该 Controller 共 **6** 个端点：`listStorageProviders`、`updateStorageProvider`、`storageProviderHealth`、`listEmailProviders`、`updateEmailProvider`、`emailProviderHealth`。
-> Client 的 `listAll()` 与 `healthCheck()` 方法返回 `com.fasterxml.jackson.databind.JsonNode`（不是 `List<?>`）。`updateConfig` 第二参数类型是 `Object`（不是 `Map<String, Object>`）——Mockito matcher 不能用 `any(Map.class)`，要用 `any()` 或 `any(Object.class)`。
+`ProviderAdminControllerTest`（`zxyz-admin-service/src/test/java/uno/acloud/admin/controller/ProviderAdminControllerTest.java`，纯 Mockito）：
 
-```java
-package uno.acloud.admin.controller;
+- 构造器 2 参：`StorageProviderClient`、`EmailProviderClient`（`ProviderAdminControllerTest.java:24-28`），`setUp` `new ProviderAdminController(storageProviderClient, emailProviderClient)`（`:34`）。该 Controller 共 **6 个端点**：`listStorageProviders` / `updateStorageProvider` / `storageProviderHealth` / `listEmailProviders` / `updateEmailProvider` / `emailProviderHealth`，两组对称的 list / update / health。
+- `listAll()` 与 `healthCheck()` 返回 `com.fasterxml.jackson.databind.JsonNode`（**不是 `List<?>`**）：实测用 `new ObjectMapper().readTree("[{\"id\":\"local\"}]")` 构造返回值（`ProviderAdminControllerTest.java:41, 78` / `:64, 99`），若写成 `thenReturn(List.of())` 会**编译失败**（类型不匹配）。`assertSame(node, result.getData())` 确保原 `JsonNode` 引用被透传（`:47, 69, 83, 105`）。
+- `updateConfig(String, Object)` 第二参数类型是 `Object`（**不是 `Map`**）：verify 时用 `any()` 而非 `any(Map.class)`，否则编译失败（`ProviderAdminControllerTest.java:58, 94`）；`eq("local")` / `eq("smtp")` 锁定 provider id。
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import uno.acloud.admin.client.EmailProviderClient;
-import uno.acloud.admin.client.StorageProviderClient;
-import uno.acloud.common.ErrorCode;
-import uno.acloud.common.Result;
+### 集成测试：ConfigServiceIntegrationTest
 
-import java.util.Map;
+`ConfigServiceIntegrationTest`（`zxyz-admin-service/src/test/java/uno/acloud/admin/service/ConfigServiceIntegrationTest.java`，`@Transactional` + 继承 `AbstractIntegrationTest`，Testcontainers MySQL 8.4 + Redis 7）：
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
-
-@ExtendWith(MockitoExtension.class)
-class ProviderAdminControllerTest {
-
-    @Mock
-    private StorageProviderClient storageProviderClient;
-
-    @Mock
-    private EmailProviderClient emailProviderClient;
-
-    private ProviderAdminController controller;
-
-    @BeforeEach
-    void setUp() throws Exception {
-        controller = new ProviderAdminController(storageProviderClient, emailProviderClient);
-    }
-
-    @Test
-    void listStorageProviders_delegatesToClient() throws Exception {
-        JsonNode node = new ObjectMapper().readTree("[{\"id\":\"local\"}]");
-        when(storageProviderClient.listAll()).thenReturn(node);
-
-        Result<JsonNode> result = controller.listStorageProviders();
-
-        assertEquals(ErrorCode.SUCCESS, result.getCode());
-        assertSame(node, result.getData());
-        verify(storageProviderClient).listAll();
-    }
-
-    @Test
-    void updateStorageProvider_delegatesToClient() {
-        Map<String, Object> request = Map.of("enabled", true);
-
-        Result<Void> result = controller.updateStorageProvider("local", request);
-
-        assertEquals(ErrorCode.SUCCESS, result.getCode());
-        // updateConfig 第二参数类型是 Object，用 any() 而非 any(Map.class)
-        verify(storageProviderClient).updateConfig(eq("local"), any());
-    }
-
-    @Test
-    void storageProviderHealth_delegatesToClient() throws Exception {
-        JsonNode node = new ObjectMapper().readTree("{\"status\":\"UP\"}");
-        when(storageProviderClient.healthCheck("local")).thenReturn(node);
-
-        Result<JsonNode> result = controller.storageProviderHealth("local");
-
-        assertEquals(ErrorCode.SUCCESS, result.getCode());
-        assertSame(node, result.getData());
-        verify(storageProviderClient).healthCheck("local");
-    }
-
-    @Test
-    void listEmailProviders_delegatesToClient() throws Exception {
-        JsonNode node = new ObjectMapper().readTree("[{\"id\":\"smtp\"}]");
-        when(emailProviderClient.listAll()).thenReturn(node);
-
-        Result<JsonNode> result = controller.listEmailProviders();
-
-        assertEquals(ErrorCode.SUCCESS, result.getCode());
-        assertSame(node, result.getData());
-        verify(emailProviderClient).listAll();
-    }
-
-    @Test
-    void updateEmailProvider_delegatesToClient() {
-        Map<String, Object> request = Map.of("enabled", false);
-
-        Result<Void> result = controller.updateEmailProvider("smtp", request);
-
-        assertEquals(ErrorCode.SUCCESS, result.getCode());
-        verify(emailProviderClient).updateConfig(eq("smtp"), any());
-    }
-
-    @Test
-    void emailProviderHealth_delegatesToClient() throws Exception {
-        JsonNode node = new ObjectMapper().readTree("{\"status\":\"UP\"}");
-        when(emailProviderClient.healthCheck("smtp")).thenReturn(node);
-
-        Result<JsonNode> result = controller.emailProviderHealth("smtp");
-
-        assertEquals(ErrorCode.SUCCESS, result.getCode());
-        assertSame(node, result.getData());
-        verify(emailProviderClient).healthCheck("smtp");
-    }
-}
-```
+- 类级 `@Transactional`（`ConfigServiceIntegrationTest.java:29`）+ `extends AbstractIntegrationTest`（`:30`）。`AbstractIntegrationTest`（`zxyz-common/src/test/java/uno/acloud/common/AbstractIntegrationTest.java`）上 `@SpringBootTest` + `@ActiveProfiles("test")` 会**加载 admin-service 完整 Spring 上下文**。
+- `static { DB_NAME = "zxyz_config"; }`（`ConfigServiceIntegrationTest.java:33`）指定 Testcontainers MySQL 指向 `zxyz_config` 库。
+- **必须 `@MockitoBean` 所有外部依赖 bean**，否则 `@SpringBootTest` 上下文起不来：`EmailProviderClient`、`StorageProviderClient`、`RabbitTemplate`、`StringRedisTemplate`、`JasyptEncryptor`（`ConfigServiceIntegrationTest.java:38-51`）。mock `JasyptEncryptor` 可避免真实 Jasypt 在启动时需要 `jasypt.encryptor.password`；mock `StringRedisTemplate` 避免真实 Redis 注入到 `ConfigService`。
+- `get_roundTrip_withJasyptDecrypt`：用 mapper 直接 `insert` 一条 `ENC(abc)` 配置（`:77`），stub `decrypt("ENC(abc)")→"decrypted"`（`:80`），调 `configService.get(...)` 断言 `"decrypted"` 并 `verify(jasyptEncryptor).decrypt("ENC(abc)")`（`:86-89`）。
+- `update_triggersRedisNotificationAfterCommit`：用 `thenAnswer(invocation -> invocation.getArgument(0))` 让 mock decrypt 原样返回（`:108-109`），调 `configService.update(...)` 后**在方法返回前直接**断言 `stringRedisTemplate.convertAndSend("zxyz:config:changed", key)`（`:115`）。注意：本类带类级 `@Transactional`，方法结束时事务提交触发 `afterCommit`，mock 的 `convertAndSend` 在测试方法体内已被调用——与 `ConfigServiceTest` 纯单测相反（纯单测需手动 `afterCommit()`，见上文）。
 
 ### 集成测试：ConfigMapperIntegrationTest
 
-> `AbstractIntegrationTest` 上有 `@SpringBootTest` + `@ActiveProfiles("test")`，所以**会加载 admin-service 完整 Spring 上下文**。必须用 `@MockitoBean` mock 所有外部依赖 client（`EmailProviderClient`、`StorageProviderClient`）、`RabbitTemplate`，否则上下文因下游连接失败而起不来。可能还需 mock `JasyptEncryptor` 或在 yml 配 `jasypt.encryptor.password`，否则 Spring 启动时 `JasyptEncryptor` 构造或解密路径会失败。
-> `SysConfig.configType` 字段是 `String`（不是 `int`/`Integer`），用 `setConfigType("SYSTEM")`。
+`ConfigMapperIntegrationTest`（`zxyz-admin-service/src/test/java/uno/acloud/admin/mapper/ConfigMapperIntegrationTest.java`，`@Transactional` + 继承 `AbstractIntegrationTest`）：
 
-```java
-package uno.acloud.admin.mapper;
+- 同样 `static { DB_NAME = "zxyz_config"; }`（`ConfigMapperIntegrationTest.java:21`）、`@MockitoBean` 5 个外部 bean（`EmailProviderClient`/`StorageProviderClient`/`RabbitTemplate`/`JasyptEncryptor`/`StringRedisTemplate`，`:23-36`）——与 `ConfigServiceIntegrationTest` 完全一致的 mock 套件，是 `@SpringBootTest` 上下文能起得来的前提。
+- `SysConfig.configType` 字段是 **`String`**（不是 `int`/`Integer`），写入用 `setConfigType("SYSTEM")`（`ConfigMapperIntegrationTest.java:46, 60`），用 `setConfigType(1)` 会编译失败。
+- `insertAndSelectByKey_roundTrip`：`configMapper.insert(config)` 后 `selectByKey` 断言 `getConfigValue()` 往返一致（`:42-53`）；`updateValue_modifiesExistingKey`：先 insert `original`，再 `updateValue(..., "modified")`，`selectByKey` 断言新值（`:55-69`）。Mapper 层纯 CRUD 烟雾测试，不涉及 Caffeine/Redis/Jasypt（均被 mock）。
+- 测试资源 `application-test.yml` 已存在于 `zxyz-admin-service/src/test/resources/application-test.yml`（22 行：`spring.config.import: classpath:application-common.yml` + 关闭 Nacos discovery + `app:` 块含 `internal-service-token`/`email-service.base-url`/`file-service.base-url`）。Jasypt password 与 `config.datasource.*` 由 `application-common.yml` 与 `AbstractIntegrationTest` 的 Testcontainers 注入，无需在 test yml 重复。
 
-import org.junit.jupiter.api.Test;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import uno.acloud.admin.client.EmailProviderClient;
-import uno.acloud.admin.client.StorageProviderClient;
-import uno.acloud.admin.domain.SysConfig;
-import uno.acloud.common.AbstractIntegrationTest;
-import uno.acloud.common.util.JasyptEncryptor;
-
-import static org.junit.jupiter.api.Assertions.*;
-
-class ConfigMapperIntegrationTest extends AbstractIntegrationTest {
-
-    static { DB_NAME = "zxyz_config"; }
-
-    // 必须把所有外部依赖 bean mock 掉，否则 @SpringBootTest 加载完整上下文会失败
-    @MockitoBean private EmailProviderClient emailProviderClient;
-    @MockitoBean private StorageProviderClient storageProviderClient;
-    @MockitoBean private RabbitTemplate rabbitTemplate;
-    @MockitoBean private JasyptEncryptor jasyptEncryptor;  // 避免真实 Jasypt 在测试中需 password
-    @MockitoBean private StringRedisTemplate stringRedisTemplate;  // 避免真实 Redis 在 ConfigService 中被注入
-
-    @Autowired
-    private SysConfigMapper configMapper;
-
-    @Test
-    void insertAndSelectByKey_roundTrip() {
-        SysConfig config = new SysConfig();
-        config.setConfigKey("test.key");
-        config.setConfigValue("test-value");
-        config.setConfigType("SYSTEM");  // String 类型，不是 int
-        configMapper.insert(config);
-
-        SysConfig found = configMapper.selectByKey("test.key");
-        assertNotNull(found);
-        assertEquals("test-value", found.getConfigValue());
-    }
-
-    @Test
-    void updateValue_modifiesExistingKey() {
-        SysConfig config = new SysConfig();
-        config.setConfigKey("update.key");
-        config.setConfigValue("original");
-        config.setConfigType("SYSTEM");
-        configMapper.insert(config);
-
-        configMapper.updateValue("update.key", "modified");
-
-        SysConfig updated = configMapper.selectByKey("update.key");
-        assertEquals("modified", updated.getConfigValue());
-    }
-}
-```
-
-> 同时需在 `zxyz-admin-service/src/test/resources/` 新建 `application-test.yml`，内容见上文「集成测试模式 → application-test.yml」一节。
+> 旁注（admin-service 配置对齐，非测试代码本身但常导致集成测试上下文起不来）：
+> - `AdminServiceProperties` 用 `@ConfigurationProperties(prefix = "app")`（`src/main/java/uno/acloud/admin/config/AdminServiceProperties.java:9`），YAML key 必须是 `app`（如 `app.internal-service-token`、`app.email-service.base-url`），**不是 `app.admin-service.*`**——prefix 不匹配会静默绑定为空，client 取不到 base-url 抛 `IllegalStateException("服务地址未配置")`（`AdminServiceProperties.java:39`）。
+> - admin-service DataSource 必须用 `config.datasource.*`（如 `src/main/resources/application-dev.yml:5-6` 的 `config:`→`datasource:`），**不是 `spring.datasource.*`**——后者不会注入到 admin-service 的 `@Primary` DataSource，且 HikariCP 要求 `jdbc-url` 而非 `url`。
 
 ---
 
@@ -1648,22 +1302,23 @@ class ConfigMapperIntegrationTest extends AbstractIntegrationTest {
 
 ### 测试文件清单（实测，按模块）
 
-#### 后端（共 75 个文件）
+#### 后端（共 83 个文件）
 
 | 模块 | 文件数 | 拆分 |
 |---|---|---|
 | `zxyz-common` | 5 | 1 抽象基类 `AbstractIntegrationTest` + 4 单元测试 |
 | `zxyz-user-service` | 9 | 2 Mapper 集成 + 6 Service（含 `LoginRateLimiterTest`）+ 1 Controller |
-| `zxyz-team-service` | 12 | 2 Mapper 集成 + 9 Service + 1 EventPublisher |
-| `zxyz-project-service` | 10 | 2 Mapper 集成 + 4 Service + 1 Assembler + 1 ErrorCode + 1 RestClient + 1 AOP |
+| `zxyz-team-service` | 13 | 2 Mapper 集成 + 9 Service + 2 MQ（`TeamEventPublisher` + `UserDeletedEventConsumer`） |
+| `zxyz-project-service` | 11 | 2 Mapper 集成 + 4 Service + 1 Assembler + 1 ErrorCode + 1 RestClient + 1 AOP + 1 MQ |
 | `zxyz-file-service` | 15 | 2 Mapper 集成 + 10 Service + 2 Controller + 1 MQ |
-| `zxyz-share-service` | 4 | 4 Service |
+| `zxyz-share-service` | 6 | 4 Service + 1 MQ + 1 Infrastructure Client（`ShareFileServiceClient`） |
 | `zxyz-email-service` | 7 | 7 application 层（DDD） |
-| `zxyz-im-service` | 11 | 1 上下文冒烟 + 7 application + 1 config + 1 controller + 1 infrastructure |
+| `zxyz-im-service` | 10 | 7 application + 1 config + 1 controller + 1 infrastructure |
 | `zxyz-audit-service` | 1 | 1 MQ 消费者 |
 | `zxyz-gateway` | 1 | 1 Filter 配置 |
+| `zxyz-admin-service` | 5 | 3 单元（ConfigService / ConfigAdminController / ProviderAdminController）+ 2 集成（ConfigServiceIntegrationTest / ConfigMapperIntegrationTest） |
 
-总和：5 + 9 + 12 + 10 + 15 + 4 + 7 + 11 + 1 + 1 = **75**
+总和：5 + 9 + 13 + 11 + 15 + 6 + 7 + 10 + 1 + 1 + 5 = **83**
 
 #### 前端（共 26 个文件）
 
@@ -1677,8 +1332,6 @@ class ConfigMapperIntegrationTest extends AbstractIntegrationTest {
 | `src/router/__tests__/` | 1 |
 
 总和：4 + 16 + 1 + 1 + 3 + 1 = **26**
-
-> 注：CLAUDE.md 中"22 文件 / 244 用例"为历史数据，已过期；当前文件数 26、用例数约 278（按 `it()` 计数）。
 
 ### 涉及的核心 FQN 速查
 

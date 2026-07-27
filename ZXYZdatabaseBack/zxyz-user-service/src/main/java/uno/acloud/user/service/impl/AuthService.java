@@ -50,7 +50,8 @@ public class AuthService {
                 userId,
                 username,
                 teamServicePermissionClient.getSystemRolesByUserId(userId),
-                teamServicePermissionClient.getSystemPermissionsByUserId(userId)
+                teamServicePermissionClient.getSystemPermissionsByUserId(userId),
+                request.isRememberMe()
         );
     }
 

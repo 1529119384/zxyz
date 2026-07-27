@@ -6,9 +6,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletResponse;
 import uno.acloud.common.ErrorCode;
-import uno.acloud.dto.FileInfoDTO;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.file.infrastructure.entity.FileItem;
+import uno.acloud.file.infrastructure.entity.Folder;
 import uno.acloud.file.service.FileQueryPort;
 import uno.acloud.file.storage.StorageProvider;
 import uno.acloud.file.storage.StorageProviderRegistry;
@@ -82,5 +82,21 @@ class InternalFileControllerTest {
 
         assertThrows(BusinessException.class,
                 () -> controller.streamFile(999L, new MockHttpServletResponse()));
+    }
+
+    @Test
+    void streamFile_folder_throwsBadRequest() {
+        Folder folder = new Folder();
+        folder.setId(1L);
+        folder.setOriginalName("myfolder");
+        when(fileQueryPort.getFileNodeById(1L)).thenReturn(folder);
+
+        InternalFileController controller = new InternalFileController(fileQueryPort, registry);
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> controller.streamFile(1L, new MockHttpServletResponse()));
+        assertEquals(ErrorCode.BAD_REQUEST, ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("不支持文件夹下载"));
+        verifyNoInteractions(registry);
     }
 }

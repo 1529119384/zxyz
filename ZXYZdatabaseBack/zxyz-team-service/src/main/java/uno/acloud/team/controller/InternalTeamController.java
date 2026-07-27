@@ -47,11 +47,14 @@ public class InternalTeamController {
         return Result.of(teamEntityMapper.toTeamVO(team));
     }
 
-    @Operation(summary = "查询用户所属团队列表")
-    @GetMapping("/by-user/{userId}")
-    public Result<List<TeamVO>> listTeamsByUserId(@PathVariable Long userId) {
+    /**
+     * 查询用户所属团队 ID 列表（窄端点，仅返回 ID）。
+     */
+    @Operation(summary = "查询用户所属团队ID列表")
+    @GetMapping("/ids/by-user/{userId}")
+    public Result<List<Long>> listTeamIdsByUserId(@PathVariable Long userId) {
         List<Team> teams = teamMapper.listMyTeams(userId);
-        return Result.of(teamEntityMapper.toTeamVOList(teams));
+        return Result.of(teams.stream().map(Team::getId).toList());
     }
 
     @Operation(summary = "查询团队成员用户ID列表")

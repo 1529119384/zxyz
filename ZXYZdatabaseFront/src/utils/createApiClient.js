@@ -4,6 +4,7 @@ import { clearToken } from '@/utils/auth'
 import { useCurrentUserStore } from '@/store/currentUser'
 import { createBusinessError, markGlobalErrorHandled } from '@/utils/errorModel'
 import { sanitizeRedirectPath } from '@/utils/sanitizeRedirect'
+import { ElMessageBox } from 'element-plus'
 
 function normalizeErrorText(value) {
   return typeof value === 'string' ? value.trim().toLowerCase() : ''
@@ -62,7 +63,7 @@ function buildLoginUrl() {
   return `${loginPath}?${searchParams.toString()}`
 }
 
-function handleAuthFailure(onTokenExpired) {
+async function handleAuthFailure(onTokenExpired) {
   // 无论 onTokenExpired 策略如何，认证失败时都清除本地用户状态
   try {
     useCurrentUserStore().clearProfile()
@@ -70,6 +71,15 @@ function handleAuthFailure(onTokenExpired) {
     // Pinia 未初始化时忽略
   }
   if (onTokenExpired === 'redirect') {
+    // 礼貌提示后再跳转，避免用户内容丢失
+    try {
+      await ElMessageBox.alert('登录状态已过期，请重新登录', '会话过期', {
+        confirmButtonText: '重新登录',
+        type: 'warning',
+      })
+    } catch (_) {
+      // 用户关闭弹窗或 element-plus 未就绪，继续跳转
+    }
     redirectToLogin()
   }
 }
@@ -129,7 +139,7 @@ export function createApiClient(options = {}) {
   // 响应拦截器
   client.interceptors.response.use(
     // HTTP 2xx 响应
-    (response) => {
+    async (response) => {
       if (enableRawBlob && response.config?.rawBlob) {
         return response
       }
@@ -143,7 +153,7 @@ export function createApiClient(options = {}) {
       }
 
       if (isAuthFailurePayload(payload)) {
-        handleAuthFailure(onTokenExpired)
+        await handleAuthFailure(onTokenExpired)
         return Promise.reject(
           markGlobalErrorHandled(
             createBusinessError(payload?.msg || payload?.message || 'NO_LOGIN', response, {
@@ -164,12 +174,12 @@ export function createApiClient(options = {}) {
       )
     },
     // HTTP 非 2xx 响应 / 网络错误
-    (error) => {
+    async (error) => {
       const status = error.response?.status
       const payload = error.response?.data
 
       if (isAuthFailurePayload(payload, status)) {
-        handleAuthFailure(onTokenExpired)
+        await handleAuthFailure(onTokenExpired)
         return Promise.reject(markGlobalErrorHandled(error))
       }
 

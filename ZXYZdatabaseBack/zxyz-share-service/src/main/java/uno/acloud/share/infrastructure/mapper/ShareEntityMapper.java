@@ -14,7 +14,7 @@ import java.util.List;
  * <p>本接口由 MapStruct 注解处理器在编译期自动生成实现类（ShareEntityMapperImpl）。
  * Spring 通过 @Mapper(componentModel = "spring") 自动注册为 Bean。</p>
  *
- * <p>注意：ShareViewMapper 中的 toShareFilesResponseItemVO 接受 FileInfoDTO + boolean
+ * <p>注意：ShareViewMapper 中的 toShareFilesResponseItemVO 接受 ShareFileProjection + boolean
  * 双参数，涉及跨领域数据合并和 computed 字段（invalid、invalidText），
  * 不适合用 MapStruct 映射，仍保留在 ShareViewMapper 中手动实现。</p>
  */

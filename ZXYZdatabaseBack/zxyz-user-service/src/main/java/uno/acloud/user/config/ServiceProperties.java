@@ -61,17 +61,10 @@ public class ServiceProperties {
     }
 
     public static class AuthCookie {
-        private int maxAge = 2592000;
         private boolean secure = true;
         private String domain = "";
-
-        public int getMaxAge() {
-            return maxAge;
-        }
-
-        public void setMaxAge(int maxAge) {
-            this.maxAge = maxAge;
-        }
+        private int tokenTimeoutSeconds = 43200;
+        private int longLivedTimeoutSeconds = 604800;
 
         public boolean isSecure() {
             return secure;
@@ -87,6 +80,22 @@ public class ServiceProperties {
 
         public void setDomain(String domain) {
             this.domain = domain;
+        }
+
+        public int getTokenTimeoutSeconds() {
+            return tokenTimeoutSeconds;
+        }
+
+        public void setTokenTimeoutSeconds(int tokenTimeoutSeconds) {
+            this.tokenTimeoutSeconds = tokenTimeoutSeconds;
+        }
+
+        public int getLongLivedTimeoutSeconds() {
+            return longLivedTimeoutSeconds;
+        }
+
+        public void setLongLivedTimeoutSeconds(int longLivedTimeoutSeconds) {
+            this.longLivedTimeoutSeconds = longLivedTimeoutSeconds;
         }
     }
 

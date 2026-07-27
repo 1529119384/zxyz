@@ -25,4 +25,7 @@ public class LoginRequest implements Serializable {
     @Size(max = 128, message = "密码长度不合法")
     @Schema(description = "密码", example = "123456")
     private String password;
+
+    @Schema(description = "是否记住我（7天免登录）", example = "false")
+    private boolean rememberMe = false;
 }

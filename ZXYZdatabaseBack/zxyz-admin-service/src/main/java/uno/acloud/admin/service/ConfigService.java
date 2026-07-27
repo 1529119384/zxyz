@@ -110,8 +110,13 @@ public class ConfigService {
                 new TransactionSynchronization() {
                     @Override
                     public void afterCommit() {
-                        stringRedisTemplate.convertAndSend(REDIS_CHANNEL, key);
-                        log.debug("配置变更通知已发送: key={}", key);
+                        try {
+                            stringRedisTemplate.convertAndSend(REDIS_CHANNEL, key);
+                            log.debug("配置变更通知已发送: key={}", key);
+                        } catch (Exception e) {
+                            // 远程调用失败不得抛入事务同步链；本地缓存仍会按 TTL(1m) 自然过期兜底
+                            log.warn("配置变更通知发送失败，等待本地缓存 TTL 过期后自愈: key={}", key, e);
+                        }
                     }
                 }
         );
