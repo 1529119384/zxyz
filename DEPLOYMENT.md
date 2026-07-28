@@ -128,6 +128,11 @@ cp .env.example .env
 - `RABBITMQ_USER` / `RABBITMQ_PASSWORD` — RabbitMQ 凭据
 - `INTERNAL_SERVICE_TOKEN` — 服务间调用鉴权 Token（建议 32 位随机字符串）
 - `SHARE_COOKIE_SECRET` — 分享链接 Cookie 签名密钥
+- `JASYPT_PASSWORD` — Jasypt 加密密钥（解密 Nacos 配置中的敏感值）
+- `NACOS_PASSWORD` — Nacos 登录密码
+- `NACOS_AUTH_TOKEN` — Nacos JWT 签名密钥
+- `NACOS_AUTH_IDENTITY_VALUE` — Nacos 身份验证 Value
+- `CONFIG_DB_PASSWORD` — 配置中心数据库密码
 - `FRONTEND_BASE_URL` — 前端访问地址（如 `http://你的服务器IP`）
 - `OSS_*` — 阿里云 OSS 配置
 - `EMAIL_*` — SMTP 邮件配置（暂不使用时可设 `EMAIL_ENABLED=false`）
@@ -271,6 +276,7 @@ docker compose down -v
 |---|---|---|---|
 | `INTERNAL_SERVICE_TOKEN` | `CHANGE_ME_INTERNAL_SERVICE_TOKEN` | 后端服务间 HTTP 调用的鉴权 Token，所有服务必须一致。建议 32 位随机字符串 | **是** |
 | `SHARE_COOKIE_SECRET` | `CHANGE_ME_SHARE_COOKIE_SECRET` | 分享链接 Cookie 签名密钥，必须与 `INTERNAL_SERVICE_TOKEN` 不同 | **是** |
+| `JASYPT_PASSWORD` | `CHANGE_ME_JASYPT_PASSWORD` | Jasypt 加密密钥，用于解密 Nacos 配置中 `ENC(...)` 格式的敏感值。所有服务共享，建议 32 位随机字符串（`openssl rand -base64 32`） | **是** |
 
 ### 4.3 阿里云 OSS（文件功能必须）
 
@@ -317,13 +323,14 @@ docker compose down -v
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `NACOS_PORT` | `8848` | Nacos 控制台端口 |
-| `NACOS_PASSWORD` | `nacos` | Nacos 登录密码 |
-| `NACOS_AUTH_TOKEN` | 预置值 | Nacos JWT 签名密钥（Base64 编码，解码后 >= 32 字节） |
+| `NACOS_PORT` | `8848` | Nacos API 端口（绑定 127.0.0.1） |
+| `NACOS_CONSOLE_PORT` | `8080` | Nacos 控制台端口（3.x React UI，绑定 127.0.0.1） |
+| `NACOS_USERNAME` | `nacos` | Nacos 登录用户名（各服务注册/配置拉取使用） |
+| `NACOS_PASSWORD` | `CHANGE_ME_NACOS_PASSWORD` | Nacos 登录密码（生产环境必须修改） |
+| `NACOS_AUTH_TOKEN` | `CHANGE_ME_NACOS_AUTH_TOKEN` | Nacos JWT 签名密钥（Base64 编码，解码后 >= 32 字节） |
 | `NACOS_AUTH_IDENTITY_KEY` | `serverIdentity` | Nacos 身份验证 Key |
-| `NACOS_AUTH_IDENTITY_VALUE` | `security` | Nacos 身份验证 Value |
+| `NACOS_AUTH_IDENTITY_VALUE` | `CHANGE_ME_NACOS_IDENTITY` | Nacos 身份验证 Value（生产环境必须修改） |
 | `NACOS_NAMESPACE` | （空） | Nacos 命名空间 ID，多环境隔离时可设置为对应环境的命名空间 UUID |
-| `NACOS_GROUP` | `DEFAULT_GROUP` | Nacos 服务分组，多环境隔离时可改为 `dev`、`staging` 等 |
 
 ### 4.7 Knife4j API 文档
 
@@ -334,6 +341,17 @@ docker compose down -v
 | `KNIFE4J_BASIC_PASSWORD` | （空） | Knife4j Basic 认证密码，启用时必须设置 |
 
 > **注意**：`knife4j.enable` 本身必须保持 `false`（已在代码中硬编码），设为 `true` 会导致启动异常。以上变量仅控制 Basic 认证保护，不影响文档本身是否可用。
+
+### 4.8 配置中心数据库与管理服务
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `CONFIG_DB_HOST` | `mysql` | 配置中心数据库主机（Docker 网络内服务名） |
+| `CONFIG_DB_USERNAME` | `root` | 配置中心数据库用户名 |
+| `CONFIG_DB_PASSWORD` | `CHANGE_ME_MYSQL_PASSWORD` | 配置中心数据库密码（通常与 `MYSQL_ROOT_PASSWORD` 一致） |
+| `ADMIN_SERVICE_BASE_URL` | `http://admin-service:18088` | Admin 管理服务内部地址 |
+| `ADMIN_SERVICE_PORT` | `18088` | Admin 管理服务端口 |
+| `IMAGE_PREFIX` | （空） | 镜像前缀。本地构建留空；生产环境设为 registry 前缀（如 `registry.cn-shenzhen.aliyuncs.com/zxyz/`），必须以 `/` 结尾 |
 
 ---
 
@@ -629,6 +647,32 @@ docker compose exec mysql mysql -uroot -p
 docker compose exec mysql mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" < /docker-entrypoint-sql/schema_xxx.sql
 ```
 
+### 9.8 admin-service V2 迁移校验不匹配（Flyway Checksum Mismatch）
+
+**症状**：admin-service 启动失败，日志显示 `Validate failed: Migration checksum mismatch` 针对 `V2__hot_config_keys.sql`。
+
+**原因**：V2 迁移文件在发布后被修改（commit `9883823` 新增了 `app.email.verify-code-cooldown-seconds` 配置键），导致已运行原始 V2 的数据库出现校验不匹配。Flyway 检测到 V2 校验不匹配后会拒绝执行所有后续迁移（包括 V3 修复脚本），导致新配置键无法写入数据库。
+
+**解决**：
+
+```bash
+# 方法一：使用 deploy-fast.sh 自动修复（推荐）
+cd /www/zxyz
+./scripts/deploy-fast.sh --repair-flyway admin-service
+
+# 方法二：手动执行 flyway repair
+docker run --rm \
+  --network zxyz-net \
+  -e "FLYWAY_URL=jdbc:mysql://mysql:3306/zxyz_config?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true" \
+  -e "FLYWAY_USER=root" \
+  -e "FLYWAY_PASSWORD=$(grep MYSQL_ROOT_PASSWORD .env | cut -d'=' -f2-)" \
+  flyway/flyway:10.12 repair
+```
+
+修复后重启 admin-service，V3 迁移将正常执行，缺失的配置键会被自动创建。
+
+> **注意**：此修复是一次性操作，每个部署环境只需执行一次。新数据库不受影响（V1→V2→V3 按序执行，数据正确）。
+
 ---
 
 ## 10. 生产环境部署建议
@@ -745,6 +789,14 @@ docker compose up -d --build
 docker compose up -d --build project-service
 ```
 
+> **注意**：如果更新涉及 admin-service 且 V2 迁移文件被修改，需先执行 `--repair-flyway` 修复 Flyway 校验不匹配：
+>
+> ```bash
+> ./scripts/deploy-fast.sh --repair-flyway admin-service
+> ```
+>
+> 详见 [9.8 admin-service V2 迁移校验不匹配](#98-admin-service-v2-迁移校验不匹配flyway-checksum-mismatch)。
+
 ### 11.2 查看服务日志
 
 ```bash
@@ -792,23 +844,86 @@ APP_IMAGE_TAG=20260524
 这样可以保留旧版本镜像，便于回滚：
 
 ```bash
-# 回滚到旧版本
+# 一键回滚到上一版本（推荐，依赖 .env.previous）
+./scripts/rollback.sh
+
+# 手动指定 tag 回滚（无 .env.previous 时的备选方案）
 APP_IMAGE_TAG=20260523 docker compose up -d
 ```
 
-### 11.6 Nacos 配置管理
+### 11.6 一键回滚（scripts/rollback.sh）
 
-Nacos 控制台地址：`http://127.0.0.1:${NACOS_PORT:-8848}/nacos`（仅本机可访问，远程需 SSH 隧道）
+项目提供自动化回滚脚本 `scripts/rollback.sh`，依赖 CI/CD 部署时自动生成的 `.env.previous` 文件记录上一版本镜像 tag。
+
+**用法**：
+
+```bash
+# 回滚所有服务到上一个版本
+./scripts/rollback.sh
+
+# 跳过镜像拉取（本地已有旧镜像时加速）
+./scripts/rollback.sh --no-pull
+
+# 仅回滚指定服务
+./scripts/rollback.sh gateway project-service
+
+# 验证 .env.previous 是否存在（不执行回滚）
+./scripts/rollback.sh --validate
+```
+
+**前置条件**：
+- 服务器上存在 `$DEPLOY_DIR/.env.previous`（由 CI/CD 部署流程自动生成）
+- `DEPLOY_DIR` 默认为 `/www/zxyz`，可通过环境变量覆盖
+- 若 `.env.previous` 不存在，脚本会报错退出并提示
+
+**回滚流程**：
+1. 读取 `.env.previous` 中的 `APP_IMAGE_TAG`
+2. 更新当前 `.env` 的镜像 tag 为上一版本
+3. 拉取对应版本镜像（`--no-pull` 可跳过）
+4. 重启相关容器并等待 running 状态（最长 60 秒）
+
+**默认回滚的服务**（未指定服务名时）：
+`project-service` `im-service` `email-service` `user-service` `share-service` `file-service` `team-service` `audit-service` `admin-service` `gateway` `frontend-nginx`
+
+### 11.7 Nacos 配置管理
+
+Nacos 控制台地址：`http://127.0.0.1:${NACOS_CONSOLE_PORT:-8080}/next/`（Nacos 3.x React UI，仅本机可访问，远程需 SSH 隧道）
 
 默认凭据：用户名 `nacos`，密码为 `.env` 中的 `NACOS_PASSWORD`。
 
 各服务的运行时配置可通过 Nacos 控制台动态调整（需应用支持 Nacos 配置热更新）。
 
+**配置导入**：
+
+项目所有 Nacos 配置模板存放在 `nacos-config/` 目录，首次部署或配置变更后使用导入脚本批量推送：
+
+```bash
+cd nacos-config
+
+# 导入所有配置到默认命名空间（public）
+./import.sh "" localhost:8848 nacos <NACOS_PASSWORD>
+
+# 导入到指定命名空间
+./import.sh <namespace-id> localhost:8848 nacos <NACOS_PASSWORD>
+```
+
+配置文件清单（group=`ZXYZ`）：
+
+| dataId | 用途 |
+|---|---|
+| `zxyz-static.yml` | 共享静态配置（连接池、Redis、Sa-Token、服务间地址、Resilience4j） |
+| `zxyz-dynamic.yml` | 共享动态配置（CORS、认证 Cookie/Token 超时、验证码冷却） |
+| `zxyz-gateway.yml` | Gateway 路由规则 |
+| `zxyz-user-service.yml` | 用户服务专属配置 |
+| 其他 `zxyz-*.yml` | 各服务专属配置 |
+
+> **注意**：配置中的敏感值支持 `ENC(...)` 格式（Jasypt 加密），启动时通过 `JASYPT_PASSWORD` 环境变量自动解密。详见 `docs/jasypt-key-management.md`。
+
 远程访问示例：
 
 ```bash
-ssh -L 8848:localhost:8848 user@your-server
-# 本地浏览器访问 http://localhost:8848/nacos
+ssh -L 8080:localhost:8080 user@your-server
+# 本地浏览器访问 http://localhost:8080/next/
 ```
 
 ---

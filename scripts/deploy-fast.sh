@@ -32,6 +32,7 @@ NO_HEALTH=false
 VALIDATE_ONLY=false
 CLEAN_NACOS=false
 BUILD_FIRST=false
+REPAIR_FLYWAY=false
 SERVICES=()
 
 while [[ $# -gt 0 ]]; do
@@ -42,6 +43,7 @@ while [[ $# -gt 0 ]]; do
     --validate)     VALIDATE_ONLY=true; shift ;;
     --clean-nacos)  CLEAN_NACOS=true; shift ;;
     --build)        BUILD_FIRST=true; shift ;;
+    --repair-flyway) REPAIR_FLYWAY=true; shift ;;
     -*)             echo "Unknown option: $1"; exit 1 ;;
     *)              SERVICES+=("$1"); shift ;;
   esac
@@ -76,7 +78,7 @@ if [ -f "$SCRIPT_DIR/validate-env.sh" ] && [ -f "$DEPLOY_DIR/.env" ]; then
 fi
 
 if [ ${#SERVICES[@]} -eq 0 ]; then
-  echo "Usage: deploy-fast.sh [--no-pull] [--no-health] [--build] [--all] [--validate] [--clean-nacos] <service> [service...]"
+  echo "Usage: deploy-fast.sh [--no-pull] [--no-health] [--build] [--all] [--validate] [--clean-nacos] [--repair-flyway] <service> [service...]"
   echo ""
   echo "Available services:"
   for s in "${ALL_APP_SERVICES[@]}"; do
@@ -93,6 +95,7 @@ echo "Pull:     $([ "$NO_PULL" = true ] && echo "SKIP" || echo "YES")"
 echo "Build:    $([ "$BUILD_FIRST" = true ] && echo "YES" || echo "SKIP")"
 echo "Health:   $([ "$NO_HEALTH" = true ] && echo "SKIP" || echo "WAIT")"
 echo "Nacos:    $([ "$CLEAN_NACOS" = true ] && echo "CLEAN" || echo "SKIP")"
+echo "Flyway:   $([ "$REPAIR_FLYWAY" = true ] && echo "REPAIR" || echo "SKIP")"
 echo ""
 
 # --- 构建镜像 ---
@@ -125,6 +128,35 @@ if [ "$NO_PULL" = false ] && [ "$BUILD_FIRST" = false ]; then
   done
   wait
   echo "Pull complete"
+fi
+
+# --- Flyway repair（修复 V2 checksum mismatch） ---
+if [ "$REPAIR_FLYWAY" = true ]; then
+  echo "===== Flyway Repair ====="
+  echo "修复 admin-service V2 迁移校验不匹配问题..."
+  # 读取 .env 中的 MySQL 密码
+  MYSQL_PASSWORD=""
+  if [ -f "$DEPLOY_DIR/.env" ]; then
+    MYSQL_PASSWORD=$(grep -E '^MYSQL_ROOT_PASSWORD=' "$DEPLOY_DIR/.env" | head -1 | cut -d'=' -f2-)
+  fi
+
+  if [ -z "$MYSQL_PASSWORD" ]; then
+    echo "ERROR: 无法读取 MYSQL_ROOT_PASSWORD（请确认 $DEPLOY_DIR/.env 存在且包含该变量）"
+    exit 1
+  fi
+
+  echo "执行 flyway repair（更新 zxyz_config 库的 schema history 校验）..."
+  docker run --rm \
+    --network zxyz-net \
+    -e "FLYWAY_URL=jdbc:mysql://mysql:3306/zxyz_config?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true" \
+    -e "FLYWAY_USER=root" \
+    -e "FLYWAY_PASSWORD=$MYSQL_PASSWORD" \
+    flyway/flyway:10.12 repair || {
+      echo "ERROR: flyway repair 执行失败"
+      exit 1
+    }
+  echo "Flyway repair 完成"
+  echo ""
 fi
 
 # --- 重启容器 ---

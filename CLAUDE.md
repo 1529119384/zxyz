@@ -6,17 +6,61 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Git
 
-三个 git 仓库：
+### 仓库架构：根仓库为唯一提交与 CI 真相源
 
-| 目录 | 分支 | 说明 |
-|---|---|---|
-| `zxyz/`（根目录） | dev | CI/CD 配置、docker-compose、nginx、SQL、ISSUE |
-| `ZXYZdatabaseBack/` | dev | 后端 Java 代码 |
-| `ZXYZdatabaseFront/` | main | 前端 Vue 代码 |
+本项目采用 **monorepo + 嵌套独立仓库** 模式（非 git submodule）：
 
-WHEN 执行 git 操作, DO cd 到对应目录再执行。
-WHEN 修改前后端代码, DO 分别提交到各自子仓库。
-WHEN 修改根目录文件（`docker-compose.yml`、`deploy/`、`sql/`、`.github/`）, DO 在根目录提交。
+| 仓库 | 远程 | 分支 | 角色 |
+|---|---|---|---|
+| `zxyz/`（根） | `github.com/1529119384/zxyz.git` | dev | **唯一 CI/CD 真相源**：直接跟踪所有文件（含子目录源码），`.github/workflows/ci-cd.yml` 仅由根仓库 push 触发 |
+| `ZXYZdatabaseBack/` | `github.com/1529119384/ZXYZdatabaseBack.git` | dev | 后端子仓库：独立开发历史，不触发 CI |
+| `ZXYZdatabaseFront/` | `github.com/1529119384/ZXYZdatabaseFront.git` | main | 前端子仓库：独立开发历史，不触发 CI |
+
+根仓库通过 `git ls-files` 直接管理 `ZXYZdatabaseBack/**` 和 `ZXYZdatabaseFront/**` 下的源码文件。子目录内的 `.git/` 被根 `.gitignore` 排除（`ZXYZdatabaseBack/.git/`、`ZXYZdatabaseFront/.git/`），两个仓库树互不嵌套引用。
+
+### CI 触发面（与 `.github/workflows/ci-cd.yml` paths-filter 一致）
+
+根仓库 `on.push` / `on.pull_request` 的 paths 白名单：
+
+```
+ZXYZdatabaseBack/**
+ZXYZdatabaseFront/**
+deploy/**
+docker-compose.yml
+.env.example
+.github/workflows/**
+```
+
+不在此白名单内的文件变更（如 `CLAUDE.md`、`docs/**`、`nacos-config/**`、`scripts/**`、`sql/**`）**不触发** workflow。`dorny/paths-filter` 进一步按服务目录判断哪些镜像需要重建。
+
+### 提交规范与同步顺序
+
+WHEN 修改后端代码, DO 按以下顺序双提交：
+1. `cd ZXYZdatabaseBack && git add -A && git commit` — 子仓库保留开发历史
+2. `cd <根目录> && git add ZXYZdatabaseBack/ && git commit` — **根仓库为 CI 真相源，遗漏此步则不触发构建**
+
+WHEN 修改前端代码, DO 按以下顺序双提交：
+1. `cd ZXYZdatabaseFront && git add -A && git commit` — 子仓库保留开发历史
+2. `cd <根目录> && git add ZXYZdatabaseFront/ && git commit` — 根仓库触发 CI
+
+WHEN 修改根目录文件（`docker-compose.yml`、`deploy/`、`.env.example`、`.github/`）, DO 仅在根目录提交（无需同步子仓库）。
+
+WHEN 执行 git 操作, DO cd 到对应目录再执行，避免跨仓库误操作。
+
+### 同步遗漏检查
+
+提交后执行以下检查确认根仓库与子仓库一致：
+
+```bash
+# 在根目录执行：检查根仓库是否有未同步的子仓库变更
+git status ZXYZdatabaseBack/ ZXYZdatabaseFront/
+
+# 对比子仓库 HEAD 与根仓库跟踪内容（无输出 = 一致）
+cd ZXYZdatabaseBack && git diff HEAD --stat && cd ..
+cd ZXYZdatabaseFront && git diff HEAD --stat && cd ..
+```
+
+若 `git status` 显示子目录有 `modified`/`new file` 未暂存，说明子仓库已提交但根仓库遗漏同步，需补提交到根仓库。
 
 ## Build & Test Commands
 
@@ -168,7 +212,7 @@ WHEN 添加 setting 子路由, DO 确保 `route.name` 在 Setting 组件 watcher
 
 ## Infrastructure & CI/CD
 
-- **MySQL 8.4**: 10 independent databases (including zxyz_config), Flyway migrations per service. DB init: `sql/00-init-zxyz.sh`
+- **MySQL 8.4**: 10 independent databases (including zxyz_config), Flyway migrations per service. DB schema is exclusively managed by Flyway migrations (do NOT maintain standalone `sql/schema_*.sql` files). DB init: `sql/00-init-zxyz.sh`
 - **Redis**: localhost:6379, Sa-Token sessions (shared) + Redisson distributed locks
 - **Nacos**: localhost:8848, service registry + Config（`spring.config.import:nacos:` 协议，10 个服务已接入）。配置模板在 `nacos-config/` 目录
 - **RabbitMQ**: localhost:5672, Topic Exchange `zxyz.topic`
@@ -208,6 +252,15 @@ Code review: `ISSUE/CODEX-CODE-REVIEW-RESULTS.md`（42 项问题，P0-P3 分级�
 本地修改 `.env` 中的 `APP_IMAGE_TAG` 和 `IMAGE_PREFIX` 即可控制部署目标。
 
 **快速部署（开发用）**: CI/CD 构建完成后，SSH 到服务器运行 `scripts/deploy-fast.sh <服务名>` 拉取+重启，跳过完整健康检查等待。参数：`--no-health` 跳过健康检查，`--all` 重启所有 11 个 app 服务（10 后端 + frontend-nginx，不含基础设施/loki/promtail），`--validate` 仅验证 .env，`--clean-nacos` 清理 Nacos 日志后部署，`--no-pull` 跳过镜像拉取，`--build` 本地 Maven 构建 + docker compose build。`scripts/` 还含 `backup.sh`（MySQL+Redis 备份）、`dev-up.sh`（本地 dev 启动基础设施）、`health-check.sh`（轮询 16 容器健康）、`setup-acr.sh`（GHCR/阿里云 ACR 切换）。
+
+**Windows 本地开发**: PowerShell 等效脚本 `scripts/dev-up.ps1`，功能与 `dev-up.sh` 一致：
+```powershell
+.\scripts\dev-up.ps1              # 启动基础设施（MySQL / Nacos / Redis / RabbitMQ）
+.\scripts\dev-up.ps1 down         # 停止基础设施
+.\scripts\dev-up.ps1 reset        # 重置数据卷（清空所有数据）
+.\scripts\dev-up.ps1 logs         # 查看所有服务日志
+.\scripts\dev-up.ps1 logs mysql   # 查看指定服务日志
+```
 
 **部署注意事项**:
 - 修改 `.env` 后必须用 `docker compose up -d` 重建容器，`docker compose restart` 不会重新加载环境变量

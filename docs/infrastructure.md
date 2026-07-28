@@ -13,8 +13,14 @@ Schema 文件：根目录 `sql/`（Docker 挂载源）和 `ZXYZdatabaseBack/sql/
 
 ## Nacos
 
-默认 localhost:8848，Spring Cloud 服务注册中心。
-环境变量：`NACOS_SERVER_ADDR`, `NACOS_USERNAME`, `NACOS_PASSWORD`
+默认 localhost:8848（API）/ localhost:8080（3.x React 控制台），Spring Cloud 服务注册与配置中心。
+
+环境变量：`NACOS_SERVER_ADDR`, `NACOS_USERNAME`, `NACOS_PASSWORD`, `NACOS_NAMESPACE`
+认证变量：`NACOS_AUTH_TOKEN`（JWT 签名密钥）, `NACOS_AUTH_IDENTITY_KEY`, `NACOS_AUTH_IDENTITY_VALUE`
+
+配置模板存放于 `nacos-config/` 目录，通过 `nacos-config/import.sh` 批量导入（group=`ZXYZ`）。
+共享配置：`zxyz-static.yml`（连接池、Sa-Token、服务间地址）、`zxyz-dynamic.yml`（CORS、认证超时、热更新项）。
+敏感值使用 `ENC(...)` 格式（Jasypt AES/GCM 加密），启动时通过 `JASYPT_PASSWORD` 环境变量解密。
 
 ## RabbitMQ
 
@@ -69,8 +75,12 @@ team-service → project-service    （团队项目列表）
 ## Docker 部署
 
 详见 `DEPLOYMENT.md`。
-- `docker-compose.yml` 编排：MySQL, Redis, RabbitMQ, Nacos, Nacos-log-cleanup, Gateway, 9 业务服务, frontend-nginx, Loki, Promtail
+- `docker-compose.yml` 编排：MySQL, Redis, RabbitMQ, Nacos, Nacos-log-cleanup, Gateway, 9 业务服务（含 admin-service）, frontend-nginx, Loki, Promtail
 - 统一 Dockerfile（`ZXYZdatabaseBack/Dockerfile`），`MODULE` 参数选择模块
 - 环境变量：根目录 `.env`（基于 `.env.example`），密码类变量必须修改
+- 认证相关：`INTERNAL_SERVICE_TOKEN`（服务间鉴权）、`SHARE_COOKIE_SECRET`（Cookie 签名）、`JASYPT_PASSWORD`（配置加密密钥）、`AUTH_COOKIE_SECURE`/`AUTH_COOKIE_DOMAIN`/`AUTH_TOKEN_TIMEOUT`/`AUTH_LONG_LIVED_TIMEOUT`（Sa-Token 会话）
 - 启动顺序：MySQL → Redis → RabbitMQ → Nacos → 业务服务 → Gateway → frontend-nginx
 - 备份脚本：`scripts/backup.sh`
+- 回滚脚本：`scripts/rollback.sh`（依赖 CI/CD 生成的 `.env.previous` 记录上一版本 tag）
+- 快速部署：`scripts/deploy-fast.sh`（拉取+重启指定服务）
+- 环境验证：`scripts/validate-env.sh`（检查 .env 必需变量）
