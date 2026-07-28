@@ -29,3 +29,5 @@ server:
 app:
   performance:
     time-aspect-enabled: true
+  team-service:
+    base-url: ${TEAM_SERVICE_BASE_URL:http://zxyz-team-service}

@@ -127,4 +127,48 @@ class VerifyCodeServiceTest {
 
         verify(verifyCodeMapper).markUsedByCode("user@example.com", "EMAIL_BIND", "123456");
     }
+
+    @Test
+    void sendCodeShouldRejectWhenRateLimited() {
+        EmailProperties properties = new EmailProperties();
+        BusinessException rateLimitEx = new BusinessException(
+                ErrorCode.BAD_REQUEST,
+                "请求过于频繁，请稍后再试"
+        );
+        doThrow(rateLimitEx).when(emailRateLimiter).requireVerifyCodeAllowed("user@example.com", "127.0.0.1");
+        VerifyCodeService service = new VerifyCodeService(
+                verifyCodeMapper,
+                emailDispatchService,
+                emailRateLimiter,
+                properties,
+                emailSendingAvailabilityService
+        );
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.sendCode("user@example.com", "email_bind", "127.0.0.1"));
+
+        assertEquals(ErrorCode.BAD_REQUEST, exception.getErrorCode());
+        assertEquals("请求过于频繁，请稍后再试", exception.getMessage());
+        verifyNoInteractions(emailDispatchService, verifyCodeMapper);
+        verify(emailSendingAvailabilityService).requireSendingAvailable();
+    }
+
+    @Test
+    void checkCodeShouldRejectWhenCodeIsEmpty() {
+        EmailProperties properties = new EmailProperties();
+        VerifyCodeService service = new VerifyCodeService(
+                verifyCodeMapper,
+                emailDispatchService,
+                emailRateLimiter,
+                properties,
+                emailSendingAvailabilityService
+        );
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.checkCode("user@example.com", "EMAIL_BIND", ""));
+
+        assertEquals(ErrorCode.BAD_REQUEST, exception.getErrorCode());
+        assertEquals("验证码不能为空", exception.getMessage());
+        verifyNoInteractions(verifyCodeMapper);
+    }
 }

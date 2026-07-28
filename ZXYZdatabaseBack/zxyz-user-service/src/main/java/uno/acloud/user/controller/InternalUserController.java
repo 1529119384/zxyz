@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.Hidden;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -11,12 +12,16 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import uno.acloud.common.ErrorCode;
 import uno.acloud.common.Result;
+import uno.acloud.common.SystemRoleCodes;
+import uno.acloud.exception.BusinessException;
 import uno.acloud.user.dto.DefaultTeamRequest;
 import uno.acloud.user.dto.InternalBatchUserRequest;
 import uno.acloud.user.dto.InternalCreateTeamUserRequest;
 import uno.acloud.user.entity.User;
 import uno.acloud.user.entity.UserQuota;
+import uno.acloud.user.infrastructure.client.TeamServiceMemberClient;
 import uno.acloud.user.mapper.UserEntityMapper;
 import uno.acloud.user.mapper.UserMapper;
 import uno.acloud.user.mapper.UserQuotaMapper;
@@ -45,13 +50,15 @@ public class InternalUserController {
     private final UserQuotaMapper userQuotaMapper;
     private final UserEntityMapper userEntityMapper;
     private final AuthServicePort authServicePort;
+    private final TeamServiceMemberClient teamServiceMemberClient;
 
-    public InternalUserController(UserProfileService userProfileService, UserMapper userMapper, UserQuotaMapper userQuotaMapper, UserEntityMapper userEntityMapper, AuthServicePort authServicePort) {
+    public InternalUserController(UserProfileService userProfileService, UserMapper userMapper, UserQuotaMapper userQuotaMapper, UserEntityMapper userEntityMapper, AuthServicePort authServicePort, TeamServiceMemberClient teamServiceMemberClient) {
         this.userProfileService = userProfileService;
         this.userMapper = userMapper;
         this.userQuotaMapper = userQuotaMapper;
         this.userEntityMapper = userEntityMapper;
         this.authServicePort = authServicePort;
+        this.teamServiceMemberClient = teamServiceMemberClient;
     }
 
     @Operation(summary = "获取用户基本信息")
@@ -140,6 +147,18 @@ public class InternalUserController {
     public Result<Void> clearPermissionCache(@PathVariable Long id) {
         authServicePort.deleteSessionAttribute(id, SaTokenAuthSessionService.EXTRA_ROLE);
         authServicePort.deleteSessionAttribute(id, SaTokenAuthSessionService.EXTRA_PERMISSION);
+        return Result.success();
+    }
+
+    @Operation(summary = "删除用户（事务回滚补偿用）")
+    @DeleteMapping("/{id}")
+    public Result<Void> deleteUser(@PathVariable Long id) {
+        List<Long> teamIds = teamServiceMemberClient.listUserTeamIds(id);
+        if (teamIds != null && !teamIds.isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                    "用户仍关联 " + teamIds.size() + " 个团队，无法删除，请先从各团队移除用户");
+        }
+        userMapper.deleteById(id);
         return Result.success();
     }
 

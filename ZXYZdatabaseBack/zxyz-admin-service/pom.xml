@@ -116,6 +116,15 @@
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-loadbalancer</artifactId>
         </dependency>
+        <!-- Sa-Token（RemoteStpInterfaceAutoConfig 需要） -->
+        <dependency>
+            <groupId>cn.dev33</groupId>
+            <artifactId>sa-token-spring-boot3-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.dev33</groupId>
+            <artifactId>sa-token-redis-template</artifactId>
+        </dependency>
         <!-- Knife4j + SpringDoc API 文档 -->
         <dependency>
             <groupId>com.github.xiaoymin</groupId>

@@ -91,6 +91,17 @@ public class UserServiceClient extends UserQueryClient {
     }
 
     /**
+     * 删除用户（事务回滚补偿用）。
+     */
+    public void deleteUser(Long userId) {
+        try {
+            deleteJson("/api/internal/users/{id}", userId);
+        } catch (Exception e) {
+            log.warn("删除用户失败: userId={}", userId, e);
+        }
+    }
+
+    /**
      * 获取已验证邮箱列表。
      */
     public List<String> getVerifiedEmails() {

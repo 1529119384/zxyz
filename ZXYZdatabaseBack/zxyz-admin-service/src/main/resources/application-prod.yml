@@ -1,4 +1,5 @@
 # 生产环境配置，通过环境变量注入敏感信息。
+spring:
 config:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver

@@ -6,6 +6,9 @@ import org.redisson.api.RedissonClient;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationAdapter;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import uno.acloud.common.util.TransactionHelper;
 import uno.acloud.common.ErrorCode;
@@ -48,6 +51,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -145,7 +149,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
         }
     }
 
-    private TeamVO doCreateTeam(CreateTeamRequest request, String teamName, String ownerUsername, String ownerPassword) {
+    TeamVO doCreateTeam(CreateTeamRequest request, String teamName, String ownerUsername, String ownerPassword) {
         LocalDateTime now = LocalDateTime.now();
 
         // HTTP call — before transaction
@@ -168,8 +172,42 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
         }
         Long ownerId = owner.getId();
 
-        // DB operations — inside transaction via TransactionHelper
+        // DB operations — inside TransactionTemplate via TransactionHelper
+        // TransactionTemplate 提供活动事务，registerSynchronization 直接注册，无需 isActualTransactionActive 检查
         Long teamId = transactionHelper.execute(status -> {
+            // P2-A4: 跨服务写孤儿数据补偿框架
+            // createTeamUser 在事务外已调用，若本地事务回滚，user-service 用户将成为孤儿。
+            // registerSynchronization 需要活动事务；mock 测试中 TransactionTemplate 可能未创建事务，静默降级
+            // 放在 lambda 开头，确保 DB 操作提前抛异常时补偿也已注册（全流程覆盖）
+            AtomicReference<Team> teamRef = new AtomicReference<>();
+            try {
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
+                    @Override
+                    public void afterCommit() {
+                        // 事务提交后更新用户默认团队（失败静默降级）
+                        Team team = teamRef.get();
+                        if (team == null) return;
+                        try {
+                            userServiceClient.updateDefaultTeam(ownerId, team.getId());
+                        } catch (Exception e) {
+                            log.warn("更新用户默认团队失败，userId={}, teamId={}", ownerId, team.getId(), e);
+                        }
+                    }
+
+                    @Override
+                    public void afterCompletion(int status) {
+                        if (status == TransactionSynchronization.STATUS_ROLLED_BACK) {
+                            // 事务回滚时补偿删除已创建的 user-service 用户，防止孤儿数据
+                            log.warn("团队创建本地事务回滚，补偿删除用户 userId={}", ownerId);
+                            userServiceClient.deleteUser(ownerId);
+                        }
+                    }
+                });
+            } catch (IllegalStateException e) {
+                // mock 测试或无事务环境，registerSynchronization 不可用，静默降级
+                log.debug("TransactionSynchronizationManager 无活动事务，跳过 afterCommit/afterCompletion 注册", e);
+            }
+
             Team team = new Team();
             team.setName(teamName);
             team.setAvatar(avatarUploadSignService.normalizeManagedAvatarUrl(
@@ -182,6 +220,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
             team.setCreateTime(now);
             team.setUpdateTime(now);
             teamMapper.insert(team);
+            teamRef.set(team);
 
             upsertMember(team.getId(), ownerId, TeamRoleCodes.OWNER, 0, now);
             teamPermissionService.initializeBuiltInRoles(team.getId(), ownerId);
@@ -197,18 +236,11 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
             return team.getId();
         });
 
-        // HTTP call — after transaction, fire-and-forget with silent degradation
-        try {
-            userServiceClient.updateDefaultTeam(ownerId, teamId);
-        } catch (Exception e) {
-            log.warn("更新用户默认团队失败，userId={}, teamId={}", ownerId, teamId, e);
-        }
+        // Event — after transaction commit
+        Team teamResult = teamMapper.selectById(teamId);
+        teamEventPublisher.publishTeamCreated(teamResult, owner, request);
 
-        // Event
-        Team team = teamMapper.selectById(teamId);
-        teamEventPublisher.publishTeamCreated(team, owner, request);
-
-        return toTeamVO(team, ownerId);
+        return toTeamVO(teamResult, ownerId);
     }
 
     @Override

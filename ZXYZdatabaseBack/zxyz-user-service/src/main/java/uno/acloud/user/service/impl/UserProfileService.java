@@ -6,7 +6,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationAdapter;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import uno.acloud.satoken.AuthServicePort;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.UserErrorCode;
 import uno.acloud.common.InputNormalizer;
@@ -40,6 +42,7 @@ public class UserProfileService {
     private final TeamServiceMemberClient teamServiceMemberClient;
     private final UserQueryHelper userQueryHelper;
     private final UserEntityMapper userEntityMapper;
+    private final AuthServicePort authServicePort;
 
     public UserProfileService(UserMapper userMapper,
                               PasswordEncoder passwordEncoder,
@@ -47,7 +50,8 @@ public class UserProfileService {
                               UserEventPublisher userEventPublisher,
                               TeamServiceMemberClient teamServiceMemberClient,
                               UserQueryHelper userQueryHelper,
-                              UserEntityMapper userEntityMapper) {
+                              UserEntityMapper userEntityMapper,
+                              AuthServicePort authServicePort) {
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.avatarUploadSignService = avatarUploadSignService;
@@ -55,6 +59,7 @@ public class UserProfileService {
         this.teamServiceMemberClient = teamServiceMemberClient;
         this.userQueryHelper = userQueryHelper;
         this.userEntityMapper = userEntityMapper;
+        this.authServicePort = authServicePort;
     }
 
     public Optional<CurrentUserVO> getCurrentUser(Long userId) {
@@ -99,6 +104,7 @@ public class UserProfileService {
         return avatarUploadSignService.generateAvatarUploadSign(request);
     }
 
+    @Transactional(rollbackFor = Exception.class)
     public CurrentUserVO changePassword(Long userId, PasswordChangeRequest request) {
         User dbUser = userQueryHelper.requireExistingUser(userId);
         String oldPassword = optionalText(request.getOldPassword());
@@ -107,6 +113,22 @@ public class UserProfileService {
             throw new BusinessException(UserErrorCode.LOGIN_FAILED, "当前密码错误");
         }
         userQueryHelper.requireUpdated(userMapper.updatePassword(userId, passwordEncoder.encode(newPassword)));
+
+        // 改密后踢出所有旧会话
+        final Long uid = userId;
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
+            @Override
+            public void afterCommit() {
+                try {
+                    authServicePort.logout(uid);
+                } catch (Exception e) {
+                    log.warn("改密后踢出会话失败 userId={}", uid, e);
+                }
+            }
+        });
+        }
+
         return userQueryHelper.requireCurrentUser(userId);
     }
 

@@ -10,6 +10,7 @@ import io.github.resilience4j.retry.RetryConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.http.MediaType;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import uno.acloud.common.ErrorCode;
@@ -18,6 +19,7 @@ import uno.acloud.exception.BusinessException;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 
@@ -34,6 +36,9 @@ import java.util.function.Supplier;
  */
 @Slf4j
 public abstract class AbstractServiceClient {
+
+    private static final ConcurrentHashMap<String, Retry> RETRY_CACHE = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, CircuitBreaker> CB_CACHE = new ConcurrentHashMap<>();
 
     private final RestClient restClient;
     private final String baseUrl;
@@ -65,22 +70,24 @@ public abstract class AbstractServiceClient {
      */
     private <T> T executeWithResilience(Supplier<T> action) {
         String name = "serviceClient-" + serviceName();
-        Retry retry = Retry.of(name, RetryConfig.custom()
+        Retry retry = RETRY_CACHE.computeIfAbsent(name, key -> Retry.of(key, RetryConfig.custom()
                 .maxAttempts(3)
                 .waitDuration(Duration.ofMillis(500))
-                .retryExceptions(IOException.class, TimeoutException.class)
+                .retryExceptions(IOException.class, TimeoutException.class, ResourceAccessException.class)
                 .ignoreExceptions(BusinessException.class)
-                .build());
-        CircuitBreaker cb = CircuitBreaker.of(name, CircuitBreakerConfig.custom()
+                .build()));
+        CircuitBreaker cb = CB_CACHE.computeIfAbsent(name, key -> CircuitBreaker.of(key, CircuitBreakerConfig.custom()
                 .slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)
                 .slidingWindowSize(10)
                 .failureRateThreshold(50)
                 .waitDurationInOpenState(Duration.ofSeconds(30))
-                .build());
+                .build()));
         return retry.executeSupplier(() -> cb.executeSupplier(() -> {
             try {
                 return action.get();
             } catch (BusinessException e) {
+                throw e;
+            } catch (ResourceAccessException e) {
                 throw e;
             } catch (RestClientResponseException e) {
                 throw parseErrorResponse(e, serviceName() + "调用失败: " + e.getStatusCode());

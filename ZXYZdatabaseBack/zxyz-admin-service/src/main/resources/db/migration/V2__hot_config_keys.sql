@@ -1,5 +1,27 @@
 -- V2__hot_config_keys.sql — 热配置系统新增 ~25 个配置键
 -- 对应 ISSUE #13 阶段一~三（阶段一：文件上传 + 限流 + 团队；阶段二：缓存 + REST + Resilience4j；阶段三：IM + 邮件 + 文件 + 审计 + 头像）
+--
+-- ⚠️  CHECKSUM MISMATCH NOTICE（校验和不匹配警告）
+--
+-- 本文件在 commit 9883823 中被修改（新增了 app.email.verify-code-cooldown-seconds 行），
+-- 导致已运行原始 V2 的数据库出现 Flyway checksum mismatch。
+-- Flyway 检测到 V2 校验不匹配后会拒绝执行所有后续迁移（包括 V3）。
+--
+-- 生产环境修复步骤（一次性操作，每次部署环境只需执行一次）：
+--
+--   1. 确认新代码已部署（V2 文件内容为正确的目标状态）
+--   2. 执行 Flyway repair 更新 schema history 中的校验：
+--
+--      flyway repair \
+--        -url=jdbc:mysql://<DB_HOST>:3306/zxyz_config \
+--        -user=root -password=<MYSQL_ROOT_PASSWORD>
+--
+--      或通过 deploy-fast.sh 的 --repair-flyway 参数自动执行。
+--
+--   3. 修复后重启 admin-service，V3 将正常执行。
+--
+-- 新数据库不受影响：V1 → V2 → V3 按序执行，数据正确。
+-- ============================================================================
 
 -- ============================================================================
 -- 阶段一：文件上传 + 限流 + 团队默认值
@@ -32,7 +54,7 @@ INSERT INTO `sys_config` (`config_key`, `config_value`, `config_type`, `value_ty
 ('app.cache.default-ttl-minutes', '30', 'FEATURE', 'NUMBER', '全局缓存默认 TTL（分钟）', '30', 1),
 ('app.cache.team-permission-ttl-minutes', '5', 'FEATURE', 'NUMBER', '团队权限缓存 TTL（分钟）', '5', 1),
 ('app.cache.project-access-ttl-minutes', '10', 'FEATURE', 'NUMBER', '项目访问缓存 TTL（分钟）', '10', 1),
-('app.cache.storage-usage-ttl-seconds', '30', 'FEATURE', 'NUMBER', '存储用量缓存 TTL（秒）', '30', 1),
+('app.cache.storage-usage-ttl-seconds', '30', 'FEATURE', 'NUMBER', '存储用量缓存 TTL（秒）', '30', 1);
 
 
 -- ============================================================================
