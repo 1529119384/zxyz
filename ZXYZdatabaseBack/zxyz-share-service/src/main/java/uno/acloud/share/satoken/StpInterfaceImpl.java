@@ -6,8 +6,6 @@ import org.springframework.web.client.RestClient;
 import uno.acloud.share.config.TeamServiceProperties;
 import uno.acloud.satoken.RemoteStpInterfaceImpl;
 
-import java.util.List;
-
 @Component
 public class StpInterfaceImpl extends RemoteStpInterfaceImpl {
 
@@ -16,10 +14,5 @@ public class StpInterfaceImpl extends RemoteStpInterfaceImpl {
                             ObjectMapper objectMapper) {
         super(restClient, teamServiceProperties.normalizedBaseUrl(),
               objectMapper, teamServiceProperties.getInternalServiceToken());
-    }
-
-    @Override
-    public List<String> getRoleList(Object loginId, String loginType) {
-        return List.of();
     }
 }

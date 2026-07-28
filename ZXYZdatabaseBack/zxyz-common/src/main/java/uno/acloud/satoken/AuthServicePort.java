@@ -92,6 +92,15 @@ public interface AuthServicePort {
     void login(long userId, long timeout);
 
     /**
+     * 创建登录会话（带自定义超时和活跃超时时间）。
+     *
+     * @param userId        用户 ID
+     * @param timeout       超时时间（秒）
+     * @param activeTimeout 活跃超时时间（秒，-1=禁用，-2=跟随全局配置）
+     */
+    void login(long userId, long timeout, long activeTimeout);
+
+    /**
      * 注销当前登录会话。
      */
     void logout();

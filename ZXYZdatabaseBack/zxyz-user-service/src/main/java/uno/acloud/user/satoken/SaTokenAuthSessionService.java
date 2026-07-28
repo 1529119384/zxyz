@@ -32,7 +32,8 @@ public class SaTokenAuthSessionService implements AuthSessionPort {
         long timeoutSeconds = rememberMe
                 ? serviceProperties.getAuth().getLongLivedTimeoutSeconds()
                 : serviceProperties.getAuth().getTokenTimeoutSeconds();
-        authServicePort.login(userId, timeoutSeconds);
+        authServicePort.login(userId, timeoutSeconds,
+                rememberMe ? -1 : -2);
         authServicePort.setSessionAttribute(userId, EXTRA_USER_ID, userId);
         authServicePort.setSessionAttribute(userId, EXTRA_USERNAME, username);
         authServicePort.setSessionAttribute(userId, EXTRA_ROLE, roles);

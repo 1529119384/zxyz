@@ -56,7 +56,21 @@ public class SaTokenAuthServicePort implements AuthServicePort {
 
     @Override
     public void login(long userId, long timeout) {
-        StpUtil.login(userId, new SaLoginModel().setTimeout(timeout));
+        SaLoginModel model = new SaLoginModel();
+        model.setTimeout(timeout);
+        StpUtil.login(userId, model);
+    }
+
+    @Override
+    public void login(long userId, long timeout, long activeTimeout) {
+        SaLoginModel model = new SaLoginModel();
+        model.setTimeout(timeout);
+        // activeTimeout == -2 是"跟随全局"哨兵值，不传给 SaLoginModel
+        // （配合 dynamic-active-timeout: true，不设置才会真正跟随全局配置）
+        if (activeTimeout != -2) {
+            model.setActiveTimeout(activeTimeout);
+        }
+        StpUtil.login(userId, model);
     }
 
     @Override
