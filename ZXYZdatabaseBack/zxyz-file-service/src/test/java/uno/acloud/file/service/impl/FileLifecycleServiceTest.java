@@ -118,8 +118,12 @@ class FileLifecycleServiceTest {
 
         when(fileDomainValidator.normalizeFileIds(fileIds)).thenReturn(fileIds);
         when(fileDomainValidator.requireNodes(fileIds)).thenReturn(List.of(node));
+        when(fileConverter.toFileInfoDTO(node)).thenReturn(
+                new uno.acloud.dto.FileInfoDTO(1L, 1, "uuid-abc", "test.txt", null, null,
+                        "/test.txt", null, null, FileDeleteStatus.NORMAL, null, null));
         when(fileMapper.collectDescendantIds(fileIds)).thenReturn(allIds);
         when(fileMapper.logicalDeleteByIds(allIds, 100L)).thenReturn(1);
+        when(fileMapper.getFileNodesByIds(fileIds)).thenReturn(List.of());
 
         service.logicalDelete(fileIds, 100L);
 

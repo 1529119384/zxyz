@@ -38,6 +38,7 @@ public class FileCopyService {
     private final FileOperationHelper helper;
     private final TransactionTemplate transactionTemplate;
     private final ConfigGetter configGetter;
+    private final ProjectStorageCheckClient projectStorageCheckClient;
     private final int maxCopyNodesPerTransaction;
 
     public FileCopyService(FileMapper fileMapper,
@@ -47,7 +48,8 @@ public class FileCopyService {
                            FileObjectReferenceManager fileObjectReferenceService,
                            FileOperationHelper helper,
                            TransactionTemplate transactionTemplate,
-                           ConfigGetter configGetter) {
+                           ConfigGetter configGetter,
+                           ProjectStorageCheckClient projectStorageCheckClient) {
         this.fileMapper = fileMapper;
         this.fileDomainValidator = fileDomainValidator;
         this.filePathResolver = filePathResolver;
@@ -56,6 +58,7 @@ public class FileCopyService {
         this.helper = helper;
         this.transactionTemplate = transactionTemplate;
         this.configGetter = configGetter;
+        this.projectStorageCheckClient = projectStorageCheckClient;
         this.maxCopyNodesPerTransaction = configGetter.getInt("app.file.copy.max-nodes-per-tx", FALLBACK_MAX_COPY_NODES_PER_TRANSACTION);
     }
 
@@ -83,14 +86,33 @@ public class FileCopyService {
                 .filter(n -> n instanceof Folder)
                 .map(FileNode::getId)
                 .collect(Collectors.toList());
+        List<FileNode> allDescendants = List.of();
         Map<Long, List<FileNode>> childrenMap = Map.of();
         if (!folderParentIds.isEmpty()) {
-            List<FileNode> allDescendants = fileMapper.collectDescendantNodes(folderParentIds);
+            allDescendants = fileMapper.collectDescendantNodes(folderParentIds);
             childrenMap = helper.buildChildrenMap(allDescendants);
         }
 
+        // 计算待复制文件总大小并校验配额（allDescendants 已包含所有嵌套子级）
+        long totalBytesToCopy = 0;
+        for (FileNode descendant : allDescendants) {
+            if (descendant instanceof FileItem fileItem && fileItem.getFileSize() != null) {
+                totalBytesToCopy += fileItem.getFileSize();
+            }
+        }
+        // 顶层文件项（不在 allDescendants 中，因 collectDescendantNodes 以 folderParentIds 为根）
+        for (FileNode node : topLevelNodes) {
+            if (node instanceof FileItem fileItem && fileItem.getFileSize() != null) {
+                totalBytesToCopy += fileItem.getFileSize();
+            }
+        }
+        if (totalBytesToCopy > 0) {
+            projectStorageCheckClient.checkQuota(userId, target.teamId(), target.spaceType(), target.projectId(), totalBytesToCopy);
+        }
+
         // Guard: reject excessively large copy operations to avoid long-running transactions
-        int totalNodes = topLevelNodes.size() + childrenMap.values().stream().mapToInt(List::size).sum();
+        // allDescendants 不含顶层节点；顶层文件项需额外计入
+        long totalNodes = topLevelNodes.size() + allDescendants.size();
         if (totalNodes > this.maxCopyNodesPerTransaction) {
             throw new BusinessException(ErrorCode.BAD_REQUEST,
                     "单次复制文件数量过多（" + totalNodes + "），请分批操作（上限 " + this.maxCopyNodesPerTransaction + "）");

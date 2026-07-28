@@ -32,4 +32,5 @@ public class FileObjectRef implements Serializable {
     private String lastDeleteError;
     private LocalDateTime createTime;
     private LocalDateTime modifyTime;
+    private LocalDateTime deleteTime;
 }

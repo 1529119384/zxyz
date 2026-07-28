@@ -50,4 +50,18 @@ public final class FilePathUtil {
         }
         return storePath;
     }
+
+    /**
+     * 移除 tombstone 前缀，恢复原始文件名。
+     * 格式：.deleted.{id}.{originalName} → {originalName}
+     */
+    public static String stripTombstonePrefix(String name) {
+        if (name != null && name.startsWith(".deleted.")) {
+            int secondDot = name.indexOf('.', 9);
+            if (secondDot > 0) {
+                return name.substring(secondDot + 1);
+            }
+        }
+        return name;
+    }
 }

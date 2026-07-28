@@ -55,6 +55,9 @@ public class FileLifecycleService implements FileLifecyclePort {
     public int logicalDelete(List<Long> fileIds, Long userId) {
         List<Long> normalizedFileIds = fileDomainValidator.normalizeFileIds(fileIds);
         List<FileNode> fileNodes = fileDomainValidator.requireNodes(normalizedFileIds);
+        List<FileInfoDTO> snapshots = fileNodes.stream()
+                .map(fileConverter::toFileInfoDTO)
+                .toList();
         fileAccessGuardService.requireDeleteAccess(fileNodes, userId);
         for (FileNode fileNode : fileNodes) {
             if (Integer.valueOf(FileDeleteStatus.DELETED).equals(fileNode.getDeleted())) {
@@ -67,7 +70,8 @@ public class FileLifecycleService implements FileLifecyclePort {
             if (rows != allIds.size()) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "删除文件失败");
             }
-            publishByIdsAfterCommit("DELETED", normalizedFileIds);
+            renameToTombstone(normalizedFileIds);
+            publishFromSnapshotsAfterCommit("DELETED", snapshots);
             log.info("逻辑删除文件 roots={}, allIds={}", normalizedFileIds, allIds);
             return rows;
         });
@@ -121,6 +125,9 @@ public class FileLifecycleService implements FileLifecyclePort {
         List<Long> allIds = collectDescendantIds(normalizedFileIds);
         return transactionHelper.execute(status -> {
             List<FileNode> allNodes = fileMapper.getFileNodesByIds(allIds);
+            for (FileNode node : allNodes) {
+                node.setOriginalName(FilePathUtil.stripTombstonePrefix(node.getOriginalName()));
+            }
             Map<Long, String> renameMap = buildRestoreRenameMap(allNodes);
             applyRestoreRename(renameMap, allNodes);
             int updatedRows = fileMapper.restoreByIds(allIds);
@@ -159,8 +166,8 @@ public class FileLifecycleService implements FileLifecyclePort {
                     ownerUserId
             );
             reservedNames.add(resolvedName);
+            renameMap.put(fileNode.getId(), resolvedName);
             if (!fileNode.getOriginalName().equals(resolvedName)) {
-                renameMap.put(fileNode.getId(), resolvedName);
                 log.info("恢复文件 {} 时检测到重名，自动重命名为 {}", fileNode.getOriginalName(), resolvedName);
             }
         }
@@ -212,6 +219,30 @@ public class FileLifecycleService implements FileLifecyclePort {
             return FilePathUtil.normalizeStorePathSegment("/" + resolvedName);
         }
         return FilePathUtil.normalizeStorePathSegment(storePath.substring(0, separatorIndex) + "/" + resolvedName);
+    }
+
+    private static final String TOMBSTONE_PREFIX = ".deleted.";
+    private static final int MAX_NAME_FOR_TOMBSTONE = 221;
+
+    private void renameToTombstone(List<Long> fileIds) {
+        List<FileNode> nodes = fileMapper.getFileNodesByIds(fileIds);
+        if (nodes.isEmpty()) {
+            return;
+        }
+
+        Map<Long, String> renameMap = new HashMap<>();
+        for (FileNode node : nodes) {
+            String originalName = node.getOriginalName();
+            if (originalName != null && originalName.length() > MAX_NAME_FOR_TOMBSTONE) {
+                originalName = originalName.substring(0, MAX_NAME_FOR_TOMBSTONE);
+            }
+            String tombstoneName = ".deleted." + node.getId() + "." + originalName;
+            renameMap.put(node.getId(), tombstoneName);
+        }
+        int updatedRows = fileMapper.batchRenameByIds(renameMap);
+        if (updatedRows != fileIds.size()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "文件墓碑化失败");
+        }
     }
 
     private void publishByIdsAfterCommit(String eventType, List<Long> fileIds) {

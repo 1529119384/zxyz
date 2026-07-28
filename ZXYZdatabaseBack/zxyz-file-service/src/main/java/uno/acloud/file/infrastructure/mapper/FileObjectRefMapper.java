@@ -20,7 +20,7 @@ public interface FileObjectRefMapper extends BaseMapper<FileObjectRef> {
             "VALUES (#{objectKey}, #{increment}, #{activeStatus}, 0, NULL, NULL, NOW(3), NOW(3), #{storageProvider})",
             "ON DUPLICATE KEY UPDATE",
             "ref_count = ref_count + #{increment},",
-            "delete_status = #{activeStatus},",
+            "delete_status = CASE WHEN delete_status IN ('ACTIVE', 'PENDING_DELETE') THEN #{activeStatus} ELSE delete_status END,",
             "delete_retry_count = 0,",
             "next_retry_time = NULL,",
             "last_delete_error = NULL,",
@@ -44,7 +44,7 @@ public interface FileObjectRefMapper extends BaseMapper<FileObjectRef> {
 
     @Select({
             "SELECT object_key, ref_count, delete_status, delete_retry_count, storage_provider,",
-            "       next_retry_time, last_delete_error, create_time, modify_time",
+            "       next_retry_time, last_delete_error, create_time, modify_time, delete_time",
             "FROM file_object_ref",
             "WHERE object_key = #{objectKey}"
     })
@@ -66,7 +66,7 @@ public interface FileObjectRefMapper extends BaseMapper<FileObjectRef> {
                             @Param("pendingStatus") String pendingStatus);
 
     @Select({
-            "SELECT object_key, ref_count, delete_status, delete_retry_count, storage_provider, next_retry_time, last_delete_error, create_time, modify_time",
+            "SELECT object_key, ref_count, delete_status, delete_retry_count, storage_provider, next_retry_time, last_delete_error, create_time, modify_time, delete_time",
             "FROM file_object_ref",
             "WHERE ref_count = 0",
             "  AND delete_status = #{pendingStatus}",
@@ -91,6 +91,7 @@ public interface FileObjectRefMapper extends BaseMapper<FileObjectRef> {
     @Update({
             "UPDATE file_object_ref",
             "SET delete_status = #{deletedStatus},",
+            "    delete_time = NOW(3),",
             "    next_retry_time = NULL,",
             "    last_delete_error = NULL,",
             "    modify_time = NOW(3)",
@@ -119,6 +120,6 @@ public interface FileObjectRefMapper extends BaseMapper<FileObjectRef> {
                          @Param("lastDeleteError") String lastDeleteError,
                          @Param("nextRetryTime") LocalDateTime nextRetryTime);
 
-    @Delete("DELETE FROM file_object_ref WHERE delete_status = 'DELETED' AND modify_time < DATE_SUB(NOW(), INTERVAL 30 DAY)")
+    @Delete("DELETE FROM file_object_ref WHERE delete_status = 'DELETED' AND delete_time < DATE_SUB(NOW(), INTERVAL 30 DAY)")
     int deleteExpiredDeleted();
 }

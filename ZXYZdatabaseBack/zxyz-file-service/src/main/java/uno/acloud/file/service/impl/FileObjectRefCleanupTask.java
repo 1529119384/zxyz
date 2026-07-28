@@ -15,6 +15,12 @@ public class FileObjectRefCleanupTask {
         this.fileObjectRefMapper = fileObjectRefMapper;
     }
 
+    /**
+     * 每日清理任务：
+     * <p>
+     * 清理超过 30 天的 DELETED 状态 ref 记录（兜底用）。
+     * </p>
+     */
     @Scheduled(fixedRate = 86400000)
     public void cleanupExpiredDeletedRefs() {
         try {

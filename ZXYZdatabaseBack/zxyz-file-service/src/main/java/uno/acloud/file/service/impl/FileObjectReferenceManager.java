@@ -37,6 +37,13 @@ public class FileObjectReferenceManager {
         if (updatedRows <= 0) {
             throw new BusinessException(ErrorCode.FILE_STATE_INVALID, "文件对象引用计数增加失败");
         }
+        // 验证状态守卫：若文件已在删除流程中，不能复活
+        FileObjectRef ref = fileObjectRefMapper.selectByKey(normalizedKey);
+        if (ref != null && !FileObjectDeleteStatus.ACTIVE.equals(ref.getDeleteStatus())
+                && !FileObjectDeleteStatus.PENDING_DELETE.equals(ref.getDeleteStatus())) {
+            throw new BusinessException(ErrorCode.FILE_STATE_INVALID,
+                    "文件对象正在删除中，无法增加引用 objectKey=" + normalizedKey + ", status=" + ref.getDeleteStatus());
+        }
     }
 
     @Transactional(rollbackFor = Exception.class)

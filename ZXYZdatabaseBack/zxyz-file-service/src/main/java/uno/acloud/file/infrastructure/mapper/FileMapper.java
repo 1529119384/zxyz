@@ -76,7 +76,7 @@ public interface FileMapper {
 
     @Select({
             "<script>",
-            "SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider FROM file_node WHERE deleted = 0 AND id IN",
+            "SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider FROM file_node WHERE id IN",
             "<foreach collection='fileIds' item='fileId' open='(' separator=',' close=')'>",
             "#{fileId}",
             "</foreach>",
@@ -84,6 +84,17 @@ public interface FileMapper {
     })
     @ResultMap("fileNodeResultMap")
     List<FileNode> getFileNodesByIds(@Param("fileIds") List<Long> fileIds);
+
+    @Select({
+            "<script>",
+            "SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider FROM file_node WHERE deleted = 0 AND id IN",
+            "<foreach collection='fileIds' item='fileId' open='(' separator=',' close=')'>",
+            "#{fileId}",
+            "</foreach>",
+            "</script>"
+    })
+    @ResultMap("fileNodeResultMap")
+    List<FileNode> getActiveFileNodesByIds(@Param("fileIds") List<Long> fileIds);
 
     @Select({
             "<script>",

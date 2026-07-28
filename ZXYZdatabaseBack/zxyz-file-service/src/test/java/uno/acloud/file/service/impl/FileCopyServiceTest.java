@@ -15,6 +15,7 @@ import uno.acloud.file.infrastructure.entity.FileItem;
 import uno.acloud.file.infrastructure.entity.FileNode;
 import uno.acloud.file.infrastructure.entity.Folder;
 import uno.acloud.file.infrastructure.mapper.FileMapper;
+import uno.acloud.file.service.impl.ProjectStorageCheckClient;
 import uno.acloud.file.vo.BatchOperationDetailVO;
 
 import java.util.ArrayList;
@@ -52,6 +53,9 @@ class FileCopyServiceTest {
     @Mock
     private ConfigGetter configGetter;
 
+    @Mock
+    private ProjectStorageCheckClient projectStorageCheckClient;
+
     private FileCopyService fileCopyService;
 
     @BeforeEach
@@ -59,7 +63,8 @@ class FileCopyServiceTest {
         when(configGetter.getInt(eq("app.file.copy.max-nodes-per-tx"), anyInt())).thenReturn(500);
         fileCopyService = new FileCopyService(
                 fileMapper, fileDomainValidator, filePathResolver,
-                fileAccessGuardService, fileObjectReferenceService, helper, transactionTemplate, configGetter);
+                fileAccessGuardService, fileObjectReferenceService, helper, transactionTemplate, configGetter,
+                projectStorageCheckClient);
         // Mock TransactionTemplate to execute lambdas directly
         lenient().doAnswer(invocation -> {
             java.util.function.Consumer<?> callback = invocation.getArgument(0);

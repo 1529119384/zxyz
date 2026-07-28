@@ -304,7 +304,10 @@ public class FileUploadService implements FileUploadPort {
             validateConfirmUploadItem(request);
             // 存储 HEAD 请求校验实际文件大小，防止客户端篡改 fileSize
             Long ossSize = registry.getDefaultProvider().getObjectSize(request.getObjectKey());
-            if (ossSize != null && ossSize > maxFileSizeBytes()) {
+            if (ossSize == null) {
+                throw new BusinessException(ErrorCode.SYSTEM_ERROR, "存储服务不可用，请稍后重试");
+            }
+            if (ossSize > maxFileSizeBytes()) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST,
                         "文件大小超过限制（最大 " + formatFileSize(maxFileSizeBytes()) + "）");
             }
@@ -322,7 +325,7 @@ public class FileUploadService implements FileUploadPort {
             reservedNames.add(finalName);
 
             String fileUrl = registry.getDefaultProvider().generateDownloadInfo(request.getObjectKey(), request.getOriginalName()).getDownloadUrl();
-            FileItem fileItem = saveFileInfo(request.getObjectKey(), finalName, request.getFileSize(), request.getParentId(), target, userId, fileUrl);
+            FileItem fileItem = saveFileInfo(request.getObjectKey(), finalName, ossSize, request.getParentId(), target, userId, fileUrl);
             log.info("确认上传成功 objectKey={}, originalName={}, finalName={}, fileUrl={}",
                     request.getObjectKey(), request.getOriginalName(), finalName, fileUrl);
             return new UploadConfirmItemResultVO(

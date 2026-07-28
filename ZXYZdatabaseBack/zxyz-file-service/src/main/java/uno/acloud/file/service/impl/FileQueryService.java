@@ -154,6 +154,8 @@ public class FileQueryService implements FileQueryPort {
         List<FileNode> recycleNodes = projectId == null
                 ? fileMapper.getFileNodesInRecycleBin(target.teamId(), userId)
                 : fileMapper.getFileNodesInRecycleBin(target.teamId(), target.spaceType(), target.projectId(), userId);
+        recycleNodes.forEach(node ->
+                node.setOriginalName(FilePathUtil.stripTombstonePrefix(node.getOriginalName())));
         return recycleNodes
                 .stream()
                 .map(fileConverter::toFileListItemVO)
@@ -165,7 +167,7 @@ public class FileQueryService implements FileQueryPort {
         if (fileIds == null || fileIds.isEmpty()) {
             return List.of();
         }
-        return fileMapper.getFileNodesByIds(fileIds).stream()
+        return fileMapper.getActiveFileNodesByIds(fileIds).stream()
                 .map(fileConverter::toFileInfoDTO)
                 .collect(Collectors.toList());
     }
@@ -175,7 +177,7 @@ public class FileQueryService implements FileQueryPort {
         if (fileIds == null || fileIds.isEmpty()) {
             return List.of();
         }
-        List<FileNode> nodes = fileMapper.getFileNodesByIds(fileIds);
+        List<FileNode> nodes = fileMapper.getActiveFileNodesByIds(fileIds);
         fileAccessGuardService.requireReadAccess(nodes, userId);
         return nodes.stream()
                 .map(fileConverter::toFileInfoDTO)
