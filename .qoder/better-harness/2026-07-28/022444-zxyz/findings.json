@@ -1,0 +1,177 @@
+{
+  "summary": {
+    "projectName": "指绣云章 (ZXYZ)",
+    "locale": "zh-CN",
+    "modelId": "agent-work-loop-v4",
+    "reportContractVersion": 25,
+    "overview": "项目拥有丰富的架构文档和 CI/CD 基础设施，但 Qoder 会话因 disabled-source-root 导致 30 天窗口内无可观察的编码交付物；CLAUDE.md 中的 30+ 条编码约定对 Qoder 不可见，存在 Memory 标题碰撞需治理。",
+    "aiAgentPractice": {
+      "inspectedSurfaces": [
+        "Workflows",
+        "Memories"
+      ],
+      "coverageRows": [
+        {
+          "surface": "Workflows",
+          "scopes": [
+            "Project"
+          ],
+          "count": 1,
+          "paths": [
+            ".github/workflows/ci-cd.yml"
+          ]
+        },
+        {
+          "surface": "Memories",
+          "scopes": [
+            "Project"
+          ],
+          "count": 31
+        },
+        {
+          "surface": "Skills",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Rules",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "MCP",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Hooks",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Custom Agents",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Plugins",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Commands",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        }
+      ]
+    },
+    "assignmentSummaries": [],
+    "dimensions": [
+      {
+        "id": "task-understanding",
+        "label": "任务理解",
+        "score": 52,
+        "summary": "CLAUDE.md 和架构文档存在但 Qoder Rules 清单不可见，无会话证据证明上下文被应用。",
+        "findingRefs": [
+          "claude-md-not-in-qoder-rules"
+        ]
+      },
+      {
+        "id": "controlled-execution",
+        "label": "可控执行",
+        "score": 48,
+        "summary": "Docker/Maven 启动命令已文档化，但 disabled-source-root 阻断了所有操作可观察性。",
+        "findingRefs": [
+          "disabled-source-root-blocks-observation"
+        ]
+      },
+      {
+        "id": "change-validation",
+        "label": "改动验证",
+        "score": 48,
+        "summary": "111 个测试文件存在且 CI 有 lint/test 门禁，但 30 天窗口内零验证执行被观察到。",
+        "findingRefs": [
+          "disabled-source-root-blocks-observation"
+        ]
+      },
+      {
+        "id": "reliable-delivery",
+        "label": "可靠交付",
+        "score": 52,
+        "summary": "CI/CD 工作流包含健康检查和自动回滚，但无会话交付证据。",
+        "findingRefs": []
+      },
+      {
+        "id": "learning-capture",
+        "label": "经验沉淀",
+        "score": 35,
+        "summary": "31 条 Memory 存在但检索/应用链完全未观测；无 Skills 配置；无可比较的后续结果窗口。",
+        "findingRefs": [
+          "memory-title-collision-skip-quality"
+        ]
+      }
+    ]
+  },
+  "findings": [
+    {
+      "id": "memory-title-collision-skip-quality",
+      "title": "Memory 标题 'skip_quality旁路审计与审批约束机制' 存在精确重复",
+      "severity": "Low",
+      "reason": "完整性审查确认 2 条 Memory 经规范化后标题完全一致，均为 'skip_quality旁路审计与审批约束机制'。这仅证明标题元数据发生命名碰撞，不能推断正文重复或冲突。skip_quality 概念同时出现在 CI/CD workflow_dispatch 输入参数中，两条 Memory 可能记录同一机制的不同视角。需人工审查正文后决定合并或保留。",
+      "expectedOutput": [
+        "两条同名 Memory 的正文已审查，重复/差异已确认，治理决策已执行（合并/保留/删除）。",
+        "asset-integrity 复审确认标题碰撞已消除。"
+      ],
+      "expectedArtifact": "Memory 治理",
+      "aiFixPrompt": "使用 SearchMemory 工具检索标题包含 'skip_quality' 的 Memory，确认两条记录的正文内容。如果正文实质重复，保留较完整的一条并删除另一条；如果从不同角度记录同一概念，考虑合并为一条或通过标题区分。修复后运行 asset-integrity 确认碰撞消除。",
+      "dimensionRefs": [
+        "learning-capture"
+      ]
+    },
+    {
+      "id": "disabled-source-root-blocks-observation",
+      "title": "Qoder 会话源根禁用导致 30 天窗口内无可观察的编码交付物",
+      "severity": "Medium",
+      "reason": "2026-06-28 至 2026-07-28 的 30 天窗口内，24 个 Task Episodes 全部零变更、零验证、零结果信号。诊断标记 'disabled-source-root' 表明 Qoder 工具的文件系统源根被禁用，这解释了为何在包含 11 个微服务模块和前端应用的项目中无任何文件操作被记录。无法区分'确实无编码工作'和'编码工作发生但未被观察到'。22 个会话中有 1 个达到活跃长会话阈值（67 分钟），但无任何交付物。",
+      "expectedOutput": [
+        "Qoder 工作区源根已启用，文件编辑工具（Write/SearchReplace）可正常操作项目文件。",
+        "后续会话中可观察到正常的文件变更事件。"
+      ],
+      "expectedArtifact": "配置修复",
+      "aiFixPrompt": "检查 Qoder 工作区配置中的源根设置，确认当前项目工作区已正确启用文件系统访问。在项目根目录的 Qoder 设置中验证 workspace trust 和文件编辑权限。如果源根配置正确但仍被禁用，检查是否有安全策略或沙箱限制阻止了文件操作。",
+      "dimensionRefs": [
+        "controlled-execution",
+        "change-validation"
+      ]
+    },
+    {
+      "id": "claude-md-not-in-qoder-rules",
+      "title": "CLAUDE.md 包含 30+ 条编码约定但 Qoder Rules 清单中不可见",
+      "severity": "Low",
+      "reason": "项目根目录 CLAUDE.md（334 行）包含大量提供者无关的编码约定：Maven/npm/Docker 构建命令、11 模块架构说明、MyBatis 仅注解映射器规范、Sa-Token 鉴权约定、窄端点投影模式、Git 子仓库同步模型、When…Do 编码规则等。但 Qoder 资产清单报告 0 Rules，意味着 Qoder 会话可能在不加载这些项目特定约定的情况下运行。当前无会话变更证据可证明缺失规则导致了实际问题，但这构成了配置层面的信息不对称——项目有明确的编码规范但代理无法获取。",
+      "expectedOutput": [
+        "Qoder Rules 清单中包含项目编码约定，或已记录有意不注册的理由。",
+        "后续 Qoder 会话可加载项目特定的架构和编码规范。"
+      ],
+      "expectedArtifact": "Rules 配置",
+      "aiFixPrompt": "评估是否需要在 Qoder 中注册 CLAUDE.md 作为项目 Rule。如果 CLAUDE.md 中的约定适用于所有编码代理（内容大部分为提供者无关的 Maven/npm/Spring/Vue 约定），考虑创建 Qoder 可识别的 Rules 配置指向该文件或其提取内容。如果 CLAUDE.md 部分内容为 Claude 专有语法（如 Agent 引用），提取通用部分单独注册。",
+      "dimensionRefs": [
+        "task-understanding"
+      ]
+    }
+  ]
+}

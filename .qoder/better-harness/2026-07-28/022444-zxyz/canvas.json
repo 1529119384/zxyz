@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "summary": {},
+  "dimensions": [
+    {
+      "id": "task-understanding"
+    },
+    {
+      "id": "controlled-execution"
+    },
+    {
+      "id": "change-validation"
+    },
+    {
+      "id": "reliable-delivery"
+    },
+    {
+      "id": "learning-capture"
+    }
+  ],
+  "findings": [
+    {
+      "id": "memory-title-collision-skip-quality",
+      "subdimensionRefs": [
+        "loop-engineering"
+      ]
+    },
+    {
+      "id": "disabled-source-root-blocks-observation",
+      "subdimensionRefs": [
+        "supported-operation"
+      ]
+    },
+    {
+      "id": "claude-md-not-in-qoder-rules",
+      "subdimensionRefs": [
+        "relevant-context"
+      ]
+    }
+  ]
+}

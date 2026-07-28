@@ -1,0 +1,38 @@
+schema_version: 1
+module_path: zxyz_frontend/file_management
+title: 文件管理前端模块
+scope:
+    - ZXYZdatabaseFront/src/composables/useSpaceFileList.js
+    - ZXYZdatabaseFront/src/composables/useFileNavigation.js
+    - ZXYZdatabaseFront/src/composables/useFileUpload.js
+    - ZXYZdatabaseFront/src/composables/useFileDownload.js
+    - ZXYZdatabaseFront/src/composables/useFileSearch.js
+    - ZXYZdatabaseFront/src/composables/useDeleteDialog.js
+    - ZXYZdatabaseFront/src/composables/useRenameAction.js
+    - ZXYZdatabaseFront/src/composables/useMoveCopyAction.js
+    - ZXYZdatabaseFront/src/composables/useBatchFeedback.js
+    - ZXYZdatabaseFront/src/composables/useSelectionManager.js
+    - ZXYZdatabaseFront/src/composables/useArchiveDownload.js
+    - ZXYZdatabaseFront/src/composables/useRecycleBinActions.js
+    - ZXYZdatabaseFront/src/composables/useRecycleBinList.js
+    - ZXYZdatabaseFront/src/api/files.js
+    - ZXYZdatabaseFront/src/models/file.js
+    - ZXYZdatabaseFront/src/models/fileActions.js
+    - ZXYZdatabaseFront/src/models/filePresentation.js
+    - ZXYZdatabaseFront/src/components/FileExplorer.vue
+    - ZXYZdatabaseFront/src/components/FileUploader.vue
+    - ZXYZdatabaseFront/src/components/FolderUploader.vue
+    - ZXYZdatabaseFront/src/components/CreateFolder.vue
+    - ZXYZdatabaseFront/src/components/DeleteConfirmDialog.vue
+    - ZXYZdatabaseFront/src/components/RenameFileDialog.vue
+    - ZXYZdatabaseFront/src/components/MoveCopyDialog.vue
+    - ZXYZdatabaseFront/src/components/ArchiveNameDialog.vue
+    - ZXYZdatabaseFront/src/components/RecycleBinExplorer.vue
+    - ZXYZdatabaseFront/src/services/upload.js
+    - ZXYZdatabaseFront/src/services/filePathResolver.js
+source_files: []
+depends_on: []
+related_to:
+    - path: zxyz_backend
+    - path: zxyz_frontend/shared_infrastructure
+    - path: zxyz_frontend/sharing

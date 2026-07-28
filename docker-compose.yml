@@ -922,6 +922,7 @@ services:
           cpus: '0.25'
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./deploy/promtail-config.yml:/etc/promtail/config.yml:ro
     networks:
       - zxyz-net

@@ -1,0 +1,32 @@
+version: 1
+
+scope:
+  include: []
+  exclude:
+    - "node_modules/**"
+    - "dist/**"
+    - "target/**"
+    - "ISSUE/**"
+    - ".workbuddy/**"
+    - ".opencode/**"
+    - ".trae/**"
+    - ".claude/**"
+    - "coverage/**"
+    - "nacos.home_IS_UNDEFINED/**"
+    - "start/**"
+    - "logs/**"
+
+repowiki:
+  template: "architecture"
+  notes:
+    - text: "本项目是微服务架构（11 个 Maven 模块 + Vue 前端），服务间同步通信使用 *ServiceClient + X-Internal-Service-Token 鉴权，异步通信使用 RabbitMQ Topic Exchange zxyz.topic。内部端点前缀 /api/internal/**，被 Gateway SaToken filter 拒绝公网访问。"
+    - text: "架构风格混用：im-service 和 email-service 采用 DDD 分层（interfaces → application → domain → infrastructure），其余服务采用传统分层（controller → service/impl → mapper → entity）。分析时需区分两种风格。"
+    - text: "部署使用 Docker Compose 编排 18 个容器（5 基础设施 + 10 后端 + 1 frontend-nginx + 2 日志栈），CI/CD 基于 GitHub Actions + dorny/paths-filter 选择性构建，镜像推送 GHCR。Nacos 管理配置与服务注册，Jasypt 加密敏感配置。"
+    - text: "前端使用 Vue 3.5 Composition API + <script setup>，Element Plus auto-import，Pinia 状态管理，composables 封装业务逻辑。认证依赖 HttpOnly Cookie（Sa-Token UUID token + Redis session），API 响应统一 Result<T> 结构（code:1 = 成功）。"
+    - text: "服务间调用遵循窄端点 + 投影模式：内部接口返回调用方专用 Projection VO，禁止返回胖 DTO；JsonNode 手动字段映射，不使用 treeToValue；提供方与调用方投影类独立演进，不放入 zxyz-common。"
+
+knowledgecard:
+  notes:
+    - text: "知识卡按服务模块拆分，每个后端微服务（gateway、user、team、file、share、project、im、email、audit、admin）和前端各为独立知识卡，zxyz-common 作为共享模块单独一卡。"
+    - text: "im-service 和 email-service 的知识卡需体现 DDD 分层（interfaces/application/domain/infrastructure），其余服务体现传统分层（controller/service/mapper/entity）。"
+    - text: "前端知识卡按功能域组织：文件管理、团队协作、IM 通讯、分享、用户认证、管理后台，每个域涵盖 views + composables + api + store 的完整链路。"

@@ -1,0 +1,18 @@
+schema_version: 1
+module_path: zxyz_frontend/shared_infrastructure
+title: 文件资源管理器共享 Composables 与头像上传服务
+scope:
+    - ZXYZdatabaseFront/src/composables/useCorePathNavigation.js
+    - ZXYZdatabaseFront/src/composables/useDragSelection.js
+    - ZXYZdatabaseFront/src/composables/useFileExplorerHotkeys.js
+    - ZXYZdatabaseFront/src/composables/useFolderPickerNavigation.js
+    - ZXYZdatabaseFront/src/composables/useSortState.js
+    - ZXYZdatabaseFront/src/composables/useStorageUsage.js
+    - ZXYZdatabaseFront/src/composables/useSystemPermissionActions.js
+    - ZXYZdatabaseFront/src/services/avatarUpload.js
+source_files: []
+depends_on: []
+related_to:
+    - path: zxyz_frontend/file_management
+    - path: zxyz_frontend/sharing
+    - path: zxyz_frontend/user_auth

@@ -1,0 +1,22 @@
+schema_version: 1
+module_path: zxyz_frontend/team_collaboration
+title: 团队协作与权限管理
+scope:
+    - ZXYZdatabaseFront/src/composables/useCurrentSpaceContext.js
+    - ZXYZdatabaseFront/src/composables/useTeamPermissionActions.js
+    - ZXYZdatabaseFront/src/store/team.js
+    - ZXYZdatabaseFront/src/api/team.js
+    - ZXYZdatabaseFront/src/api/adminTeam.js
+    - ZXYZdatabaseFront/src/api/permission.js
+    - ZXYZdatabaseFront/src/models/space.js
+    - ZXYZdatabaseFront/src/models/permission.js
+    - ZXYZdatabaseFront/src/constants/teamPermissions.js
+    - ZXYZdatabaseFront/src/components/TeamSelectDialog.vue
+    - ZXYZdatabaseFront/src/components/TeamSettingDrawer.vue
+    - ZXYZdatabaseFront/src/components/TeamSwitcher.vue
+    - ZXYZdatabaseFront/src/components/RoleManagementPanel.vue
+source_files: []
+depends_on: []
+related_to:
+    - path: zxyz_backend
+    - path: zxyz_frontend/im_chat

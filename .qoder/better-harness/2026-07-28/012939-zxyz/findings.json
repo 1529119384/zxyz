@@ -1,0 +1,202 @@
+{
+  "summary": {
+    "projectName": "zxyz",
+    "locale": "zh-CN",
+    "modelId": "agent-work-loop-v4",
+    "reportContractVersion": 25,
+    "overview": "项目有实质的代理指导文档（CLAUDE.md + docs 体系）与分层环境/CI 脚本，但三仓库嵌套结构与根 CI 触发面错位、部署安全关键修复全部滞留在未提交工作区，当前已提交状态是交付链上最薄弱的一环。",
+    "aiAgentPractice": {
+      "inspectedSurfaces": [
+        "Workflows"
+      ],
+      "coverageRows": [
+        {
+          "surface": "Workflows",
+          "scopes": [
+            "Project"
+          ],
+          "count": 1,
+          "paths": [
+            ".github/workflows/ci-cd.yml"
+          ]
+        },
+        {
+          "surface": "Memories",
+          "scopes": [
+            "Project"
+          ],
+          "count": 2
+        },
+        {
+          "surface": "Skills",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Rules",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Custom Agents",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        }
+      ]
+    },
+    "assignmentSummaries": [],
+    "dimensions": [
+      {
+        "id": "task-understanding",
+        "label": "任务理解",
+        "score": 45,
+        "summary": "CLAUDE.md 提供了可用的构建/架构入口，但其三仓库分别提交指引与根仓库全量跟踪、根 CI 触发面的实际结构冲突，且当前变更集存在已跟踪↔未跟踪互相依赖的边界失守。",
+        "findingRefs": [
+          "repo-structure-guidance-drift",
+          "half-committed-changeset",
+          "setup-doc-drift"
+        ]
+      },
+      {
+        "id": "controlled-execution",
+        "label": "可控执行",
+        "score": 62,
+        "summary": "启动与环境路线声明齐备（中间件启动脚本、dev-up、validate-env 自动补全、health-check），但本窗口内无任何执行记录，均停留在声明层证据。",
+        "findingRefs": []
+      },
+      {
+        "id": "change-validation",
+        "label": "改动验证",
+        "score": 58,
+        "summary": "前后端验证信号已接通：117 个跟踪测试文件、CI 后端 mvn test、前端 Vitest 覆盖率阈值 + lint + commitlint；但本窗口无执行结果证据，后端门禁仅测试一层且近期才修复长期红测。",
+        "findingRefs": []
+      },
+      {
+        "id": "reliable-delivery",
+        "label": "可靠交付",
+        "score": 38,
+        "summary": "已提交版部署路线存在确定性缺陷（SSH key 表达式、错误被吞），健康验收门形同虚设，回滚链三环节（记录、脚本、文档）没有一环在版本库中闭合。",
+        "findingRefs": [
+          "recovery-not-in-repo",
+          "deploy-health-gate-ineffective",
+          "legacy-frontend-pipeline"
+        ]
+      },
+      {
+        "id": "learning-capture",
+        "label": "经验沉淀",
+        "score": 35,
+        "summary": "完成了有界评审：30 天窗口内 0 个可用 Task Episode，会话源根存在缺失/禁用警告，Memory 元数据覆盖与盘点口径不一致，检索→应用→改善链条完全未被观察。",
+        "findingRefs": [
+          "learning-evidence-gap"
+        ]
+      }
+    ]
+  },
+  "findings": [
+    {
+      "id": "repo-structure-guidance-drift",
+      "title": "CLAUDE.md 的三仓库提交指引与根 CI 触发面错位，手工同步已出现遗漏",
+      "severity": "High",
+      "reason": "事实：根仓库全量跟踪 1174 个文件（非 submodule），ZXYZdatabaseBack 与 ZXYZdatabaseFront 各有独立 .git；CLAUDE.md 指示分别提交到各自子仓库，而根 CI 的 paths-filter 只观察根仓库副本；30 天窗口内出现多个前/后端代码同步提交与同名重复同步提交，子仓库 HEAD 与根工作区已不一致。推断：只提交子仓库则构建部署不触发，只提交根仓库则子仓库历史漂移。不确定性：是否存在未入库的同步脚本未验证。",
+      "expectedOutput": [
+        "任何提交者按文档操作时，改动必然落在能触发根 CI 的提交面上，且子仓库不再需要靠手工同步提交维系。"
+      ],
+      "expectedArtifact": "指导文档（CLAUDE.md Git 章节）",
+      "aiFixPrompt": "/better-harness fix this issue\n\n更新 CLAUDE.md 的 Git 章节：声明以根仓库为唯一提交与 CI 真相源（或明确记录 submodule 化决策），写清子仓库同步规范、同步顺序与遗漏检查步骤，使指引与 .github/workflows/ci-cd.yml 的 paths-filter 触发面一致。\n\n## Validation\n\n- 对照 git ls-files 与两个子仓库 HEAD，确认文档声明与实际仓库结构一致\n- 确认 ci-cd.yml paths-filter 覆盖文档声明的提交面",
+      "dimensionRefs": [
+        "task-understanding"
+      ]
+    },
+    {
+      "id": "half-committed-changeset",
+      "title": "已跟踪修改依赖未跟踪新文件，任何部分提交都会破坏构建或数据库迁移",
+      "severity": "High",
+      "reason": "事实：已修改的 FileCopyService.java 及其测试直接引用未跟踪的 ProjectStorageCheckClient.java（引用关系已验证）；FileObjectRef 实体改动对应的 V4 迁移及另外 5 个 Flyway 迁移、admin/email 两个 SaTokenConfigure.java、scripts/rollback.sh 均处于未跟踪状态，而全部 11 个服务 flyway.enabled=true。推断：按现状仅提交已跟踪部分将导致编译失败（缺类）或部署后 schema 与实体不一致。边界：未实际执行构建验证。",
+      "expectedOutput": [
+        "任意一次提交都是可编译、迁移完整的自洽单元，不再存在提交后缺类或缺 Flyway 迁移的确定性破坏路径。"
+      ],
+      "expectedArtifact": "完整成组的提交变更集",
+      "aiFixPrompt": "/better-harness fix this issue\n\n将当前工作区变更集按依赖配对成组入库：ProjectStorageCheckClient.java 与 FileCopyService 改动同组，V4__add_delete_time_to_file_object_ref.sql 与 FileObjectRef 实体改动同组，其余 Flyway 迁移、两个 SaTokenConfigure.java、scripts/rollback.sh 一并 git add，确保没有已跟踪修改引用未跟踪文件。\n\n## Validation\n\n- git status 中不再存在被已跟踪修改引用的未跟踪源文件或迁移\n- 后端执行 mvn -B compile 或等效编译检查通过",
+      "dimensionRefs": [
+        "task-understanding"
+      ]
+    },
+    {
+      "id": "recovery-not-in-repo",
+      "title": "已提交版部署路线不可用：SSH key 表达式缺陷、错误被吞且回滚链未入库",
+      "severity": "High",
+      "reason": "事实：HEAD 版 ci-cd.yml 的 SSH_KEY 表达式为 ref=='main' || startsWith(tags) && PROD_SSH_KEY || DEV_SSH_KEY || DEPLOY_SSH_KEY，因 && 优先级高于 ||，main 分支下整个表达式求值为布尔 true，key 被赋值为字符串 true（静态推断，未在 CI 复现）；已提交版部署脚本 set +e 吞掉所有错误；.env.previous 记录（工作区未提交 diff）、消费它的 scripts/rollback.sh（未跟踪）与 DEPLOYMENT.md 引用（缺失）三环节没有一环在版本库中闭合。工作区 diff 已包含 SSH key 与错误处理修复但未入库。",
+      "expectedOutput": [
+        "按版本库 HEAD 状态执行的部署能取到正确的 SSH key、失败即中止，并且存在一条已入库、有文档入口的回滚路线。"
+      ],
+      "expectedArtifact": "入库的 CI 工作流与回滚脚本",
+      "aiFixPrompt": "/better-harness fix this issue\n\n将工作区中已验证的部署安全修复入库：提交修复后的 .github/workflows/ci-cd.yml（SSH key 表达式加括号消除优先级歧义、移除 set +e 或改为显式错误处理、保留 .env.previous 记录步骤），同时 git add scripts/rollback.sh，并在 DEPLOYMENT.md 回滚章节引用该脚本入口。\n\n## Validation\n\n- git show HEAD:.github/workflows/ci-cd.yml 中 SSH key 表达式带括号且逻辑正确\n- scripts/rollback.sh 已被跟踪，DEPLOYMENT.md 存在对应回滚入口说明",
+      "dimensionRefs": [
+        "reliable-delivery"
+      ]
+    },
+    {
+      "id": "deploy-health-gate-ineffective",
+      "title": "部署健康检查无法阻止失败部署被宣告成功",
+      "severity": "Medium",
+      "reason": "事实：ci-cd.yml gateway 健康等待使用 grep -q（无 -E），BRE 语法下 (unhealthy|starting) 的括号与竖线为字面字符几乎不可能匹配，首次迭代即判定 Gateway ready（对照同文件普通服务检查使用 grep -qE，属明显不一致）；且普通服务与 gateway 检查超时后均仅打印 WARN 并 continuing，不中止流程，部署最终总会打印 Deploy complete。边界：未取得 CI 运行日志验证实际部署行为。备注：workflow_dispatch 的 skip_quality 为需人工选择的应急输入，未见滥用证据，不计入本条。",
+      "expectedOutput": [
+        "gateway 未就绪时部署不会在首次检查即被判定就绪，健康检查失败会以可辨识的失败信号结束而非静默宣告完成。"
+      ],
+      "expectedArtifact": "修复后的 CI 部署健康门",
+      "aiFixPrompt": "/better-harness fix this issue\n\n修复 .github/workflows/ci-cd.yml 部署健康门：gateway 检查的 grep -q 改为 grep -qE 与普通服务一致；为健康检查超时增加明确的失败信号（非 fast_deploy 场景下超时应使部署步骤以非零退出码结束，或至少输出可机读的失败标记），保留现有诊断日志输出。\n\n## Validation\n\n- gateway 与普通服务的健康检查使用一致的 grep -qE 语法\n- 人为构造健康检查超时场景（或代码走查确认）时部署步骤不再宣告 Deploy complete 而不带失败信号",
+      "dimensionRefs": [
+        "reliable-delivery"
+      ]
+    },
+    {
+      "id": "legacy-frontend-pipeline",
+      "title": "前端子仓库遗留无门禁的 rsync 直推部署通道，与容器化部署并存",
+      "severity": "Medium",
+      "reason": "事实：ZXYZdatabaseFront/.github/workflows/build.yml 仅执行构建、无 lint/test，deploy.yml 构建后以 rsync -avz --delete 直推服务器目录，两文件自 2026-04-19 未更新；根 ci-cd.yml 已演进为 lint+test+镜像+compose 部署。推断：若前端子仓库远端仍启用 Actions，则存在一条绕过全部质量门禁、且与容器部署互相覆盖静态资源的旁路发布通道。边界：子仓库远端是否存在、Actions 是否启用未验证。",
+      "expectedOutput": [
+        "前端只剩一条经过 lint/test 门禁的容器化发布通道，不存在可绕过门禁并覆盖生产静态资源的遗留路径。"
+      ],
+      "expectedArtifact": "清理后的前端子仓库工作流目录",
+      "aiFixPrompt": "/better-harness fix this issue\n\n处置 ZXYZdatabaseFront/.github/workflows/ 下的遗留双轨 CI：确认前端部署唯一真相源为根仓库 ci-cd.yml 后，删除或显式停用 build.yml 与 deploy.yml（如需保留归档，移入明确标注废弃的目录并去除 on 触发器）。涉及远端仓库 Actions 设置的操作需用户单独授权后进行。\n\n## Validation\n\n- 本地仓库中不再存在带活动触发器的 rsync 直推部署工作流\n- 前端发布路径在文档中只指向根 ci-cd.yml 的容器化路线",
+      "dimensionRefs": [
+        "reliable-delivery"
+      ]
+    },
+    {
+      "id": "setup-doc-drift",
+      "title": "部署与回滚文档落后于认证/配置重构，按文档操作会缺关键信息",
+      "severity": "Medium",
+      "reason": "事实：本轮变更触及 .env.example、ci-cd.yml、docker-compose.yml、admin/email 新增 SaTokenConfigure、认证配置迁入 Nacos 热更新，但 DEPLOYMENT.md 回滚章节仍是旧的手工镜像 tag 方式且未提及 rollback.sh，docs/infrastructure.md 未随动更新（漂移检测的 config-setup-docs 发现已人工核验成立）。推断：新成员或运维按现有文档搭建环境或执行回滚，会缺认证相关环境变量与新回滚入口两块信息。边界：文档与配置的键级差异未逐键比对。",
+      "expectedOutput": [
+        "运维或新成员按 DEPLOYMENT.md 与 docs/infrastructure.md 操作时，不再缺失认证环境变量说明与现行回滚入口。"
+      ],
+      "expectedArtifact": "同步后的部署/基础设施文档",
+      "aiFixPrompt": "/better-harness fix this issue\n\n同步 setup 类文档到当前配置真相：更新 DEPLOYMENT.md 的部署与回滚章节（认证相关环境变量、Nacos 配置项入口、scripts/rollback.sh 回滚流程），并核对 docs/infrastructure.md 中受本轮认证/配置重构影响的段落。\n\n## Validation\n\n- DEPLOYMENT.md 回滚章节与实际回滚入口（rollback.sh / .env.previous 机制）一致\n- 按文档从零配置环境所需的认证环境变量在 .env.example 与文档中均可找到",
+      "dimensionRefs": [
+        "task-understanding"
+      ]
+    },
+    {
+      "id": "learning-evidence-gap",
+      "title": "本窗口的会话与记忆观察面不足，无法判定重复工作或学习机会",
+      "severity": "Low",
+      "reason": "事实：30 天窗口内 Qoder 侧 0 个可用 Task Episode（合格会话均被判为低信号或自我分析），会话源采集存在源根缺失/禁用警告；资产盘点计 2 条项目 Memory，但完整性扫描的标题元数据覆盖为 0，两者口径不一致。推断：学习捕获的检索、应用、改善链条在本窗口完全不可观察，重复工作与知识沉淀机会既不能确认也不能排除。边界：这不代表窗口内无开发活动，也不构成对 Memory 价值的任何判定。",
+      "expectedOutput": [
+        "下一次 Harness 评审能基于真实 Task Episode 判定重复工作与学习捕获状态，而不是停留在证据边界声明。"
+      ],
+      "expectedArtifact": "可用的评审观察面（会话源根与 Memory 元数据覆盖）",
+      "aiFixPrompt": "/better-harness fix this issue\n\n修复评审观察面：检查并恢复 Qoder 会话源根的启用状态（缺失/禁用的可选源根），确认项目 Memory 标题元数据能被资产完整性扫描覆盖；不读取 Memory 正文、不改动 Memory 内容。完成后在下一个可比窗口重跑 /better-harness 评审以获得可用的 Task Episode 证据。\n\n## Validation\n\n- 重跑资产基线后 integrity 信封的 Memory 标题覆盖计数与盘点计数一致\n- 下一窗口的会话 facts 信封中出现至少一个可用 Task Episode 或明确的干净无候选结论",
+      "dimensionRefs": [
+        "learning-capture"
+      ]
+    }
+  ]
+}

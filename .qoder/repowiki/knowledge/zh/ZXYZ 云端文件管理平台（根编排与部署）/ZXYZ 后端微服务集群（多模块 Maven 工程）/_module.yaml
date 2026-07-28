@@ -1,0 +1,15 @@
+schema_version: 1
+module_path: zxyz_backend
+title: ZXYZ 后端微服务集群（多模块 Maven 工程）
+scope:
+    - ZXYZdatabaseBack/
+source_files: []
+depends_on: []
+related_to:
+    - path: infrastructure
+    - path: zxyz_frontend/admin_backend
+    - path: zxyz_frontend/file_management
+    - path: zxyz_frontend/im_chat
+    - path: zxyz_frontend/sharing
+    - path: zxyz_frontend/team_collaboration
+    - path: zxyz_frontend/user_auth

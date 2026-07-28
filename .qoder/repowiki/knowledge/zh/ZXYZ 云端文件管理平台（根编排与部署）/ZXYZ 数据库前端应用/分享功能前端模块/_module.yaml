@@ -1,0 +1,23 @@
+schema_version: 1
+module_path: zxyz_frontend/sharing
+title: 分享功能前端模块
+scope:
+    - ZXYZdatabaseFront/src/composables/useShareVisit.js
+    - ZXYZdatabaseFront/src/composables/useMyShareList.js
+    - ZXYZdatabaseFront/src/composables/useShareCreateAction.js
+    - ZXYZdatabaseFront/src/composables/useShareFileList.js
+    - ZXYZdatabaseFront/src/composables/useShareFileDownload.js
+    - ZXYZdatabaseFront/src/composables/useShareArchiveDownload.js
+    - ZXYZdatabaseFront/src/composables/useShareFileNavigation.js
+    - ZXYZdatabaseFront/src/api/share.js
+    - ZXYZdatabaseFront/src/models/share.js
+    - ZXYZdatabaseFront/src/components/CreateShareDialog.vue
+    - ZXYZdatabaseFront/src/components/ShareFileExplorer.vue
+    - ZXYZdatabaseFront/src/components/ShareSuccessDialog.vue
+    - ZXYZdatabaseFront/src/components/FileCardPickerDialog.vue
+source_files: []
+depends_on: []
+related_to:
+    - path: zxyz_backend
+    - path: zxyz_frontend/file_management
+    - path: zxyz_frontend/shared_infrastructure

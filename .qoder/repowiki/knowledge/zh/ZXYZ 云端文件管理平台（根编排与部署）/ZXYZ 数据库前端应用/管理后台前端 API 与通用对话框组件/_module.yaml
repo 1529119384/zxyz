@@ -1,0 +1,16 @@
+schema_version: 1
+module_path: zxyz_frontend/admin_backend
+title: 管理后台前端 API 与通用对话框组件
+scope:
+    - ZXYZdatabaseFront/src/api/configAdmin.js
+    - ZXYZdatabaseFront/src/api/databaseAdmin.js
+    - ZXYZdatabaseFront/src/api/emailAdmin.js
+    - ZXYZdatabaseFront/src/api/storage.js
+    - ZXYZdatabaseFront/src/components/uploader/shared.js
+    - ZXYZdatabaseFront/src/components/InputDialog.vue
+    - ZXYZdatabaseFront/src/components/ProjectSettingsDialog.vue
+    - ZXYZdatabaseFront/src/components/ConversationPickerDialog.vue
+source_files: []
+depends_on: []
+related_to:
+    - path: zxyz_backend

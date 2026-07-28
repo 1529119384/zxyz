@@ -1,0 +1,20 @@
+schema_version: 1
+module_path: zxyz_frontend/im_chat
+title: IM 即时通讯前端模块
+scope:
+    - ZXYZdatabaseFront/src/composables/useImWorkspace.js
+    - ZXYZdatabaseFront/src/composables/useSendToConversation.js
+    - ZXYZdatabaseFront/src/store/chat.js
+    - ZXYZdatabaseFront/src/store/plugins/chatBridge.js
+    - ZXYZdatabaseFront/src/api/im.js
+    - ZXYZdatabaseFront/src/api/teamIm.js
+    - ZXYZdatabaseFront/src/models/imPresentation.js
+    - ZXYZdatabaseFront/src/constants/conversationTypes.js
+    - ZXYZdatabaseFront/src/constants/messageStatus.js
+    - ZXYZdatabaseFront/src/utils/imRequest.js
+    - ZXYZdatabaseFront/src/utils/imWebSocket.js
+source_files: []
+depends_on: []
+related_to:
+    - path: zxyz_backend
+    - path: zxyz_frontend/team_collaboration

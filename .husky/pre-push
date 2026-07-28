@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# ============================================================
+# pre-push hook: 推送根仓库前校验子仓库同步状态
+# 安装: cp .husky/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+# 跳过: git push --no-verify
+# ============================================================
+set -euo pipefail
+
+ROOT_DIR="$(git rev-parse --show-toplevel)"
+SCRIPT="$ROOT_DIR/scripts/check-subrepo-sync.sh"
+
+if [ -f "$SCRIPT" ]; then
+  bash "$SCRIPT"
+else
+  echo "WARN: scripts/check-subrepo-sync.sh 不存在，跳过同步检查"
+fi

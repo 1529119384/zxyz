@@ -1,0 +1,159 @@
+{
+  "summary": {
+    "projectName": "zxyz",
+    "locale": "zh-CN",
+    "modelId": "agent-work-loop-v4",
+    "reportContractVersion": 25,
+    "overview": "项目拥有高质量的代理上下文文档和后端 CI 门禁，但前端变更完全绕过自动化验证，部署路径缺少审批门禁，且运维脚本未适配 Windows 开发环境。",
+    "aiAgentPractice": {
+      "inspectedSurfaces": [
+        "Workflows",
+        "Memories"
+      ],
+      "coverageRows": [
+        {
+          "surface": "Workflows",
+          "scopes": [
+            "Project"
+          ],
+          "count": 1,
+          "paths": [
+            ".github/workflows/ci-cd.yml"
+          ]
+        },
+        {
+          "surface": "Memories",
+          "scopes": [
+            "Project"
+          ],
+          "count": 11
+        },
+        {
+          "surface": "Custom Agents",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        }
+      ]
+    },
+    "assignmentSummaries": [],
+    "dimensions": [
+      {
+        "id": "task-understanding",
+        "label": "任务理解",
+        "score": 72,
+        "summary": "CLAUDE.md 提供了密度极高的架构、约定和 pitfall 文档，代理可快速定位边界与风险；但缺少 Qoder 原生规则入口，会话中未观测到实际路由。",
+        "findingRefs": []
+      },
+      {
+        "id": "controlled-execution",
+        "label": "可控执行",
+        "score": 62,
+        "summary": "Docker Compose 和 CLAUDE.md 提供了完整的启动路径，但运维脚本仅为 bash 格式，Windows 环境无法直接使用项目拥有的启动路由。",
+        "findingRefs": [
+          "windows-dev-script-gap"
+        ]
+      },
+      {
+        "id": "change-validation",
+        "label": "改动验证",
+        "score": 58,
+        "summary": "后端 mvn test 在 CI 中作为硬门禁执行，但 134 个前端源文件的变更无任何自动化验证覆盖。",
+        "findingRefs": [
+          "ci-frontend-quality-gap"
+        ]
+      },
+      {
+        "id": "reliable-delivery",
+        "label": "可靠交付",
+        "score": 52,
+        "summary": "双标签和回滚脚本表明回滚意图，但 push 直接触发部署无审批门禁，skip_quality 旁路可跳过唯一质量检查。",
+        "findingRefs": [
+          "skip-quality-bypass",
+          "push-deploy-no-approval",
+          "monorepo-sync-no-gate"
+        ]
+      },
+      {
+        "id": "learning-capture",
+        "label": "经验沉淀",
+        "score": 35,
+        "summary": "11 条项目记忆存在但无会话证据表明被检索或应用；学习捕获管道因源根禁用而无法评估，无可比后续结果。",
+        "findingRefs": []
+      }
+    ]
+  },
+  "findings": [
+    {
+      "id": "ci-frontend-quality-gap",
+      "title": "前端变更可未经任何自动化验证即进入部署路径",
+      "severity": "Medium",
+      "reason": "ci-cd.yml 的 quality-check 和 build-and-push 阶段仅覆盖 10 个后端服务。134 个前端源文件和 27 个测试文件的变更在 CI 中无 lint、test 或 build 检查。前端 Husky 钩子仅本地生效且可被 --no-verify 绕过。后果：前端回归缺陷可在无任何机械化门禁的情况下到达生产环境。",
+      "expectedOutput": [
+        "前端变更在部署前经过至少一项自动化质量检查（lint 或 test），失败时阻止构建。"
+      ],
+      "expectedArtifact": "CI workflow job",
+      "aiFixPrompt": "/better-harness fix this issue\n\n在 .github/workflows/ci-cd.yml 中为 ZXYZdatabaseFront/ 添加前端质量检查 job。\n\n## 先做什么\n\n1. 在 quality-check 阶段后添加 quality-check-frontend job\n2. 使用 paths-filter 检测 ZXYZdatabaseFront/** 变更\n3. 执行 npm ci、npm run lint（如已配置）、npm run test（如已配置）\n4. 将结果设为 build-and-push 的前置依赖\n\n## 验证\n\n- 确认 workflow YAML 语法正确（act 或 GitHub Actions lint）\n- 确认前端变更触发质量检查\n- 确认后端变更不触发前端检查",
+      "dimensionRefs": [
+        "change-validation"
+      ]
+    },
+    {
+      "id": "skip-quality-bypass",
+      "title": "唯一后端质量门禁可被无审计旁路跳过",
+      "severity": "Medium",
+      "reason": "ci-cd.yml 的 workflow_dispatch 输入包含 skip_quality 布尔参数，设为 true 时跳过 mvn -B test 执行。无日志记录谁在何时以何理由跳过了检查，无 CODEOWNERS 或环境审批约束。后果：84 个测试文件提供的回归保护可被静默绕过，缺陷可在无任何人审查的情况下通过。",
+      "expectedOutput": [
+        "skip_quality 旁路在触发时留下可审计记录，且主分支部署不可绕过质量门禁。"
+      ],
+      "expectedArtifact": "CI workflow 修改",
+      "aiFixPrompt": "/better-harness fix this issue\n\n为 skip_quality 旁路添加审计和审批约束。\n\n## 先做什么\n\n1. 在 ci-cd.yml 中，当 skip_quality=true 时输出 warning 日志并记录触发者 (github.actor)\n2. 考虑添加 environment 审批（production/deploy environment 的 required reviewers）\n3. 或移除 skip_quality 参数，改为仅对特定分支（如 feature/*）允许跳过\n\n## 验证\n\n- 确认旁路触发时有可追溯的日志输出\n- 确认 main/dev 分支的部署不可跳过质量检查",
+      "dimensionRefs": [
+        "reliable-delivery"
+      ]
+    },
+    {
+      "id": "push-deploy-no-approval",
+      "title": "Push 到 dev/main 直接触发部署且无审批或自动回滚",
+      "severity": "Medium",
+      "reason": "ci-cd.yml 的 on.push 触发器在 dev 和 main 分支上直接执行 deploy job，无 PR 审批、environment protection rule 或人工确认步骤。健康检查失败时仅 exit 1 终止流水线，不自动回退到上一版本镜像。rollback.sh 存在但未集成到 CI 中。后果：有缺陷的提交可在无人审查的情况下到达生产/开发环境，且失败后需人工介入恢复。",
+      "expectedOutput": [
+        "生产部署有人工审批门禁，健康检查失败时有自动或半自动回滚路径。"
+      ],
+      "expectedArtifact": "CI workflow + Environment 配置",
+      "aiFixPrompt": "/better-harness fix this issue\n\n为生产部署添加审批门禁和失败恢复路径。\n\n## 先做什么\n\n1. 为 main 分支部署配置 GitHub Environment protection rule（至少 1 名审批者）\n2. 在 deploy job 健康检查失败时，调用 rollback.sh 或 docker pull 上一版本镜像并重启\n3. 在 workflow 中记录 .env.previous 的版本号用于自动回退\n\n## 验证\n\n- 确认 main 分支部署需要审批\n- 确认健康检查失败时触发自动回滚逻辑\n- 确认回滚后服务恢复正常（健康检查通过）",
+      "dimensionRefs": [
+        "reliable-delivery"
+      ]
+    },
+    {
+      "id": "windows-dev-script-gap",
+      "title": "项目拥有的开发环境启动路由在 Windows 上不可执行",
+      "severity": "Low",
+      "reason": "dev-up.sh、validate-env.sh、deploy-fast.sh 等运维脚本均为 bash 格式，用户开发环境为 Windows PowerShell。无对应 .ps1 或 .bat 适配。docker-compose 命令本身跨平台可用，但项目拥有的封装路由（含前置检查、日志聚合、reset 操作）无法在 Windows 上直接使用。后果：Windows 开发者需手动拼接命令或安装额外工具，增加环境就绪摩擦。",
+      "expectedOutput": [
+        "Windows 开发者可通过项目拥有的 PowerShell 脚本一键启动/停止开发环境。"
+      ],
+      "expectedArtifact": "PowerShell 脚本",
+      "aiFixPrompt": "/better-harness fix this issue\n\n为 Windows 开发环境提供等效的启动路由。\n\n## 先做什么\n\n1. 在 scripts/ 下创建 dev-up.ps1，实现与 dev-up.sh 等效的 up/down/reset/logs 操作\n2. 包含 .env 存在性检查和 Docker 运行状态检查\n3. 在 CLAUDE.md 中补充 Windows 启动命令说明\n\n## 验证\n\n- 在 PowerShell 中执行 .\\scripts\\dev-up.ps1 up 成功启动基础设施\n- 确认 .\\scripts\\dev-up.ps1 down 正常停止",
+      "dimensionRefs": [
+        "controlled-execution"
+      ]
+    },
+    {
+      "id": "monorepo-sync-no-gate",
+      "title": "Monorepo 双提交同步无机械化校验门禁",
+      "severity": "Low",
+      "reason": "项目采用子仓库→根仓库的双提交模式，CLAUDE.md 明确记录了同步遗漏检查命令（git diff 比对），但无 pre-push hook、CI 一致性检查或其他机械化强制。同步义务完全依赖人工或代理记忆执行文档中的检查命令。后果：子仓库与根仓库可静默漂移，导致部署配置、CI 触发路径或文档与实际代码不一致。",
+      "expectedOutput": [
+        "双提交同步遗漏在推送或 CI 阶段被机械化检测并阻止。"
+      ],
+      "expectedArtifact": "CI check 或 Git hook",
+      "aiFixPrompt": "/better-harness fix this issue\n\n为 monorepo 双提交同步添加机械化校验。\n\n## 先做什么\n\n1. 在 .github/workflows/ci-cd.yml 的 detect 阶段添加子仓库同步一致性检查\n2. 或在 .husky/pre-push 中添加 git diff 检查脚本\n3. 检查失败时输出具体的不同步文件列表和修复命令\n\n## 验证\n\n- 确认 CI 或 hook 在子仓库不同步时阻止操作并输出诊断信息\n- 确认同步状态下检查通过",
+      "dimensionRefs": [
+        "reliable-delivery"
+      ]
+    }
+  ]
+}

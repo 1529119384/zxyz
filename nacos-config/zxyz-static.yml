@@ -44,6 +44,7 @@ sa-token:
   token-style: uuid
   is-log: true
   is-read-cookie: true
+  dynamic-active-timeout: true
   redis:
     prefix: ${SA_TOKEN_REDIS_PREFIX:satoken:}
 

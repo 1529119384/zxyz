@@ -1,0 +1,17 @@
+schema_version: 1
+module_path: ""
+title: ZXYZ 云端文件管理平台（根编排与部署）
+scope:
+    - DEPLOYMENT.md
+    - .gitignore
+    - docker-compose.yml
+    - docker-compose.dev.yml
+    - buildkitd.toml
+    - .github/
+    - .dockerignore
+    - .env.example
+    - CLAUDE.md
+    - 任务.md
+source_files: []
+depends_on: []
+related_to: []

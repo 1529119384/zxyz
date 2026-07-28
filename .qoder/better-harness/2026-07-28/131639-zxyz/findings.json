@@ -1,0 +1,198 @@
+{
+  "summary": {
+    "projectName": "zxyz",
+    "locale": "zh-CN",
+    "modelId": "agent-work-loop-v4",
+    "reportContractVersion": 25,
+    "overview": "该项目有密度很高的任务入口(CLAUDE.md)与实质性的交付回滚设计,但质量门存在 skip_quality 逃逸面,子仓库同步守卫尚未入库生效,且 Qoder 侧规则相对 CLAUDE.md 已发生单向漂移;本窗口会话证据无变更/验证事件,学习闭环不可评估。",
+    "aiAgentPractice": {
+      "inspectedSurfaces": [
+        "Rules",
+        "Workflows"
+      ],
+      "coverageRows": [
+        {
+          "surface": "Rules",
+          "scopes": [
+            "Project"
+          ],
+          "count": 7,
+          "paths": [
+            ".qoder/rules/backend-conventions.md",
+            ".qoder/rules/build-commands.md",
+            ".qoder/rules/frontend-conventions.md",
+            ".qoder/rules/git-conventions.md",
+            ".qoder/rules/infrastructure.md",
+            ".qoder/rules/service-interface-design.md",
+            ".qoder/rules/work-principles.md"
+          ]
+        },
+        {
+          "surface": "Workflows",
+          "scopes": [
+            "Project"
+          ],
+          "count": 1,
+          "paths": [
+            ".github/workflows/ci-cd.yml"
+          ]
+        },
+        {
+          "surface": "Custom Agents",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        }
+      ]
+    },
+    "assignmentSummaries": [],
+    "dimensions": [
+      {
+        "id": "task-understanding",
+        "label": "任务理解",
+        "score": 58,
+        "summary": "CLAUDE.md 提供了双仓提交顺序、CI 触发白名单与逐条陷阱的清晰任务边界;但 Qoder 规则是其删节旧快照,.trae 副本含损坏文本,前端交付路由与'唯一真相源'声明冲突,多套指导互相漂移会误导当前任务。",
+        "findingRefs": [
+          "qoder-rules-drift",
+          "trae-rules-corruption",
+          "frontend-delivery-route-mismatch"
+        ]
+      },
+      {
+        "id": "controlled-execution",
+        "label": "可控执行",
+        "score": 63,
+        "summary": "dev-up 脚本(含 reset)、validate-env、start-middleware 等项目所有的启动路由在声明层齐备;本窗口无任何被观察到的执行证据,实际可运行性未验证,分数受 Present 证据上限约束。",
+        "findingRefs": []
+      },
+      {
+        "id": "change-validation",
+        "label": "改动验证",
+        "score": 54,
+        "summary": "前端 lint/test/coverage 分层良好,后端 117 个测试文件由 CI 全量 mvn test 接入;但变更检测粒度到服务却未路由到受影响模块测试,后端无 lint 门,既有 Flyway 迁移被就地修改且无门禁拦截。",
+        "findingRefs": [
+          "flyway-migration-mutation-ungated",
+          "backend-ci-full-test-routing"
+        ]
+      },
+      {
+        "id": "reliable-delivery",
+        "label": "可靠交付",
+        "score": 48,
+        "summary": "交付侧有 .env.previous 版本记录、健康检查失败自动回滚、镜像双标签与一键回滚脚本(声明层);但 skip_quality 在非保护分支存在逃逸面,子仓库同步守卫仍是未入库的本地文件,回滚脚本只等 running 而非 healthy。",
+        "findingRefs": [
+          "skip-quality-image-escape",
+          "subrepo-sync-guard-untracked"
+        ]
+      },
+      {
+        "id": "learning-capture",
+        "label": "经验沉淀",
+        "score": 42,
+        "summary": "本窗口 29 个合格会话未产出任何变更/检查/结果信号,Memory 表面清单计数 2 而标题级观察数 0,学习闭环的检索、应用与后效均不可评估;未覆盖的观察边界使该维度封顶在 59 以下。",
+        "findingRefs": []
+      }
+    ]
+  },
+  "findings": [
+    {
+      "id": "skip-quality-image-escape",
+      "title": "非保护分支可跳过质量门并推送共享标签镜像",
+      "severity": "Medium",
+      "reason": "事实:ci-cd.yml 中仅保护分支(main/dev)拒绝 skip_quality;build-and-push 的条件是 result != 'failure',质量 job 被 skipped 时视同通过;tag 为 workflow_dispatch 自由输入且默认 latest。推断:任何有写权限者在非保护分支手动触发并 skip_quality=true,即可将未经质量检查的镜像推入 GHCR 并覆写共享标签空间。责任方:.github/workflows/ci-cd.yml 的 build-and-push job 条件与 tag 输入。不确定性:仓库分支保护设置、GHCR 权限、该路径是否实际发生过均未验证(UNVERIFIED)。",
+      "expectedOutput": [
+        "未经质量检查的镜像无法进入生产部署所拉取的共享标签空间,skip_quality 的每次使用留有可审计痕迹。"
+      ],
+      "expectedArtifact": "CI 工作流",
+      "aiFixPrompt": "/better-harness fix this issue\n\n收紧 .github/workflows/ci-cd.yml:将 build-and-push 的 job 条件从 result != 'failure' 改为显式要求质量 job 成功,或在 skip_quality=true 时强制要求非 latest 的显式 tag 并追加审计标注,保持保护分支现有拒绝逻辑不变。\n\n## Validation\n\n- 阅读修改后的 job 条件,确认 skipped 不再被视同通过\n- 在非保护分支以 skip_quality=true 手动触发一次(需 CI 授权),确认 build-and-push 被跳过或 tag 被强制约束",
+      "dimensionRefs": [
+        "reliable-delivery"
+      ]
+    },
+    {
+      "id": "subrepo-sync-guard-untracked",
+      "title": "子仓库同步守卫未入库,本地推送不强制校验",
+      "severity": "Medium",
+      "reason": "事实:.husky/pre-push 与 scripts/check-subrepo-sync.sh 均为 untracked 未提交文件,pre-push 首行注释自述需手动 cp 安装(根仓库无 husky 自动装配);根仓库被声明为唯一 CI/CD 真相源。推断:若代理只提交子仓库、漏同步根仓库,变更静默不触发构建部署,漂移只能在 push 后由 CI sync 检查以失败构建形式暴露。责任方:.husky/pre-push 与 scripts/check-subrepo-sync.sh。不确定性:CI 端 sync 校验步骤的实际执行效果未验证。",
+      "expectedOutput": [
+        "同步守卫进入版本库并有可复现的安装路由,子仓库漏同步在本地 push 前即被拦截,而非等到 CI 失败。"
+      ],
+      "expectedArtifact": "Git Hook",
+      "aiFixPrompt": "/better-harness fix this issue\n\n将 .husky/pre-push 与 scripts/check-subrepo-sync.sh 提交入库,并为根仓库补充一条项目所有的 hook 安装路由(文档化的安装脚本或包管理器 prepare 钩子),替代手动 cp 约定。\n\n## Validation\n\n- 手动运行 bash scripts/check-subrepo-sync.sh,确认脚本可执行且判定正确\n- 在全新克隆中按安装路由装配 hook 后执行一次 git push --dry-run,确认 pre-push 校验被触发",
+      "dimensionRefs": [
+        "reliable-delivery"
+      ]
+    },
+    {
+      "id": "flyway-migration-mutation-ungated",
+      "title": "既有 Flyway 迁移被就地修改且无门禁拦截",
+      "severity": "Medium",
+      "reason": "事实:未提交 diff 显示 V2__hot_config_keys.sql +23/-1(同文件 30 天内 3 次提交),同批新增 5 个迁移;ci-cd.yml 无迁移不可变性检查;CLAUDE.md 声明 schema 由 Flyway 独占管理但未约定既有迁移不可改。推断:若 V2 已在任何环境执行过,修改其内容将导致 Flyway checksum 校验失败、admin-service 启动失败。责任方:ZXYZdatabaseBack/zxyz-admin-service/src/main/resources/db/migration/V2__hot_config_keys.sql 及 ci-cd.yml 中该门禁的缺位。不确定性:V2 是否已在部署环境应用、本次修改是否属于上线前修正均未验证。",
+      "expectedOutput": [
+        "对已应用迁移的就地修改在 CI 阶段被机械拦截,Flyway checksum 启动失败的风险在合并前暴露。"
+      ],
+      "expectedArtifact": "CI 门禁",
+      "aiFixPrompt": "/better-harness fix this issue\n\n先确认 V2__hot_config_keys.sql 在各环境的应用状态:若已应用,将本次修改改为新增迁移;若未应用,记录上线前修正的决定。随后在 ci-cd.yml 增加一步机械门禁,对比基线分支拒绝对既有 V*__*.sql 文件的内容修改,并在 CLAUDE.md 补充既有迁移不可变约定。\n\n## Validation\n\n- 构造一个修改既有迁移的测试分支,确认新门禁使 CI 失败\n- 构造一个仅新增迁移的分支,确认门禁放行",
+      "dimensionRefs": [
+        "change-validation"
+      ]
+    },
+    {
+      "id": "backend-ci-full-test-routing",
+      "title": "后端 CI 变更检测未路由到受影响模块测试",
+      "severity": "Medium",
+      "reason": "事实:dorny/paths-filter 已产出 11 个服务级变更输出,但 quality-check-backend 只执行一条整仓 mvn -B test(633 源文件/84 测试类);CLAUDE.md 已记载 mvn test -pl <module> 单模块命令;后端无任何 lint/静态分析门。推断:当前批次 30 个核心文件横跨 5 个模块,全量测试反馈慢且失败定位粗,代理难以获得改动影响面的快速信号。责任方:.github/workflows/ci-cd.yml 的 quality-check-backend job。不确定性:全量测试的实际耗时与稳定性未验证。",
+      "expectedOutput": [
+        "后端测试反馈与变更影响面对齐,失败定位到模块级,反馈时间随变更范围收缩。"
+      ],
+      "expectedArtifact": "CI 工作流",
+      "aiFixPrompt": "/better-harness fix this issue\n\n让 quality-check-backend 消费 paths-filter 的服务级输出,按受影响模块执行 mvn -B test -pl <module> -am(保留一条定期或合并前的全量路径作为兜底),并评估为后端补充最小静态检查门。\n\n## Validation\n\n- 提交仅触及单个后端模块的变更,确认 CI 只运行该模块及其依赖的测试\n- 确认全量兜底路径仍在保护分支或定期任务中保留",
+      "dimensionRefs": [
+        "change-validation"
+      ]
+    },
+    {
+      "id": "qoder-rules-drift",
+      "title": "Qoder 规则滞后于 CLAUDE.md,关键陷阱未同步",
+      "severity": "Medium",
+      "reason": "事实:直接文本对比显示 .qoder/rules/backend-conventions.md 与 build-commands.md 是 CLAUDE.md 对应章节的删节旧快照,缺少后来沉淀的关键陷阱(未注册模块反例、重复常量需同步、条件装配失败细节等);两套真相源各自演进。推断:Qoder 会话依据滞后规则做决策时会漏掉这些已知陷阱。责任方:.qoder/rules/backend-conventions.md(漂移最集中的单文件)。不确定性:其余 4 个 Qoder 规则未打开,漂移面可能更大或更小;规则在真实会话中的加载与应用无使用证据。",
+      "expectedOutput": [
+        "Qoder 会话与 Claude 会话拿到同一套关键陷阱与命令约定,规则漂移有明确的同步方向与单一权威源。"
+      ],
+      "expectedArtifact": "规则文件",
+      "aiFixPrompt": "/better-harness fix this issue\n\n以 CLAUDE.md 为权威源,将 .qoder/rules/backend-conventions.md 与 build-commands.md 中缺失的关键陷阱与命令同步过来;同时核对其余 4 个 Qoder 规则文件的漂移面,并在 CLAUDE.md 或规则文件头部约定单向同步方向,避免两套真相源继续各自演进。\n\n## Validation\n\n- 逐节 diff 对比 CLAUDE.md 与更新后的 Qoder 规则,确认关键陷阱条目不再缺失\n- 确认同步方向约定已写入,后续更新有单一入口",
+      "dimensionRefs": [
+        "task-understanding"
+      ]
+    },
+    {
+      "id": "trae-rules-corruption",
+      "title": ".trae 规则副本含损坏文本且与 Qoder 原则重复",
+      "severity": "Low",
+      "reason": "事实:.trae/rules/zxyz.md 与 .qoder/rules/work-principles.md 在提问原则/KISS/最小改动/SRP/回归风险上语义重复但各自维护;Trae 版含损坏文本('评估选术债务'应为'技术债务'),显示该副本已无人校对。推断:多副本并存增加约定漂移与维护成本。责任方:.trae/rules/zxyz.md。不确定性:哪一份是权威版、Trae 提供方是否仍在使用,本次证据无法判断。",
+      "expectedOutput": [
+        "重复的工作原则只保留一个权威版本或声明清晰的派生关系,损坏文本不再向任何提供方会话投放。"
+      ],
+      "expectedArtifact": "规则文件",
+      "aiFixPrompt": "/better-harness fix this issue\n\n先与维护者确认 Trae 提供方是否仍在使用:若仍在用,修复 .trae/rules/zxyz.md 中的损坏文本并声明其与 work-principles.md 的权威关系;若已弃用,在获得单独授权后归档或移除该副本。\n\n## Validation\n\n- 确认损坏文本已修复或副本已按授权处置\n- 确认两文件间的权威关系已被显式记录",
+      "dimensionRefs": [
+        "task-understanding"
+      ]
+    },
+    {
+      "id": "frontend-delivery-route-mismatch",
+      "title": "前端交付路由与'唯一真相源'声明不一致",
+      "severity": "Low",
+      "reason": "事实:根 ci-cd.yml 的构建矩阵与部署清单仅覆盖 10 个后端服务,frontend-nginx 不在根仓库交付链内;CLAUDE.md 声明根仓库为唯一 CI/CD 真相源;未提交变更正在删除前端子仓库的 build.yml,子仓库仍留有 deploy.yml。推断:代理按该声明路由前端交付任务时会走错责任方。责任方:.github/workflows/ci-cd.yml 构建矩阵与 CLAUDE.md 的真相源声明。不确定性:前端子仓库 deploy.yml 未读,前端镜像实际构建方式未验证,当前可能处于迁移中间态。",
+      "expectedOutput": [
+        "代理处理前端交付任务时能被声明直接路由到正确的责任方,不再依赖对中间态的猜测。"
+      ],
+      "expectedArtifact": "CI 工作流",
+      "aiFixPrompt": "/better-harness fix this issue\n\n先读取 ZXYZdatabaseFront/.github/workflows/deploy.yml 确认前端当前的实际交付路由,然后二选一:把前端构建部署纳入根 ci-cd.yml 矩阵,或在 CLAUDE.md 中将真相源声明修正为'根仓库负责后端交付,前端交付路由见子仓库 deploy.yml',并完成子仓库 workflow 删改的中间态收尾。\n\n## Validation\n\n- 确认 CLAUDE.md 声明与实际交付路由一致,不存在会误导路由的表述\n- 确认前端交付只有一条被声明的有效路由,废弃 workflow 已清理",
+      "dimensionRefs": [
+        "task-understanding"
+      ]
+    }
+  ]
+}

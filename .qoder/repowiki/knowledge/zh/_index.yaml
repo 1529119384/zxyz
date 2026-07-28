@@ -1,0 +1,250 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: zh-CN
+branch: dev
+nodes_managed: true
+exported_at: "2026-07-27T14:16:00Z"
+modules:
+    "":
+        dir_name: ZXYZ 云端文件管理平台（根编排与部署）
+        title: ZXYZ 云端文件管理平台（根编排与部署）
+        scope:
+            - DEPLOYMENT.md
+            - .gitignore
+            - docker-compose.yml
+            - docker-compose.dev.yml
+            - buildkitd.toml
+            - .github/
+            - .dockerignore
+            - .env.example
+            - CLAUDE.md
+            - 任务.md
+        source_files: []
+        children:
+            - docs
+            - infrastructure
+            - zxyz_backend
+            - zxyz_frontend
+        depends_on: []
+        related_to: []
+    docs:
+        dir_name: 项目文档与架构规范
+        title: 项目文档与架构规范
+        scope:
+            - docs/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    infrastructure:
+        dir_name: 基础设施部署与运维脚本
+        title: 基础设施部署与运维脚本
+        scope:
+            - deploy/
+            - nacos-config/
+            - scripts/
+            - sql/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: zxyz_backend
+            - path: zxyz_frontend
+    zxyz_backend:
+        dir_name: ZXYZ 后端微服务集群（多模块 Maven 工程）
+        title: ZXYZ 后端微服务集群（多模块 Maven 工程）
+        scope:
+            - ZXYZdatabaseBack/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: infrastructure
+            - path: zxyz_frontend/admin_backend
+            - path: zxyz_frontend/file_management
+            - path: zxyz_frontend/im_chat
+            - path: zxyz_frontend/sharing
+            - path: zxyz_frontend/team_collaboration
+            - path: zxyz_frontend/user_auth
+    zxyz_frontend:
+        dir_name: ZXYZ 数据库前端应用
+        title: ZXYZ 数据库前端应用
+        scope:
+            - ZXYZdatabaseFront/
+        source_files: []
+        children:
+            - zxyz_frontend/admin_backend
+            - zxyz_frontend/file_management
+            - zxyz_frontend/im_chat
+            - zxyz_frontend/shared_infrastructure
+            - zxyz_frontend/sharing
+            - zxyz_frontend/team_collaboration
+            - zxyz_frontend/user_auth
+        depends_on: []
+        related_to:
+            - path: infrastructure
+    zxyz_frontend/admin_backend:
+        dir_name: 管理后台前端 API 与通用对话框组件
+        title: 管理后台前端 API 与通用对话框组件
+        scope:
+            - ZXYZdatabaseFront/src/api/configAdmin.js
+            - ZXYZdatabaseFront/src/api/databaseAdmin.js
+            - ZXYZdatabaseFront/src/api/emailAdmin.js
+            - ZXYZdatabaseFront/src/api/storage.js
+            - ZXYZdatabaseFront/src/components/uploader/shared.js
+            - ZXYZdatabaseFront/src/components/InputDialog.vue
+            - ZXYZdatabaseFront/src/components/ProjectSettingsDialog.vue
+            - ZXYZdatabaseFront/src/components/ConversationPickerDialog.vue
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: zxyz_backend
+    zxyz_frontend/file_management:
+        dir_name: 文件管理前端模块
+        title: 文件管理前端模块
+        scope:
+            - ZXYZdatabaseFront/src/composables/useSpaceFileList.js
+            - ZXYZdatabaseFront/src/composables/useFileNavigation.js
+            - ZXYZdatabaseFront/src/composables/useFileUpload.js
+            - ZXYZdatabaseFront/src/composables/useFileDownload.js
+            - ZXYZdatabaseFront/src/composables/useFileSearch.js
+            - ZXYZdatabaseFront/src/composables/useDeleteDialog.js
+            - ZXYZdatabaseFront/src/composables/useRenameAction.js
+            - ZXYZdatabaseFront/src/composables/useMoveCopyAction.js
+            - ZXYZdatabaseFront/src/composables/useBatchFeedback.js
+            - ZXYZdatabaseFront/src/composables/useSelectionManager.js
+            - ZXYZdatabaseFront/src/composables/useArchiveDownload.js
+            - ZXYZdatabaseFront/src/composables/useRecycleBinActions.js
+            - ZXYZdatabaseFront/src/composables/useRecycleBinList.js
+            - ZXYZdatabaseFront/src/api/files.js
+            - ZXYZdatabaseFront/src/models/file.js
+            - ZXYZdatabaseFront/src/models/fileActions.js
+            - ZXYZdatabaseFront/src/models/filePresentation.js
+            - ZXYZdatabaseFront/src/components/FileExplorer.vue
+            - ZXYZdatabaseFront/src/components/FileUploader.vue
+            - ZXYZdatabaseFront/src/components/FolderUploader.vue
+            - ZXYZdatabaseFront/src/components/CreateFolder.vue
+            - ZXYZdatabaseFront/src/components/DeleteConfirmDialog.vue
+            - ZXYZdatabaseFront/src/components/RenameFileDialog.vue
+            - ZXYZdatabaseFront/src/components/MoveCopyDialog.vue
+            - ZXYZdatabaseFront/src/components/ArchiveNameDialog.vue
+            - ZXYZdatabaseFront/src/components/RecycleBinExplorer.vue
+            - ZXYZdatabaseFront/src/services/upload.js
+            - ZXYZdatabaseFront/src/services/filePathResolver.js
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: zxyz_backend
+            - path: zxyz_frontend/shared_infrastructure
+            - path: zxyz_frontend/sharing
+    zxyz_frontend/im_chat:
+        dir_name: IM 即时通讯前端模块
+        title: IM 即时通讯前端模块
+        scope:
+            - ZXYZdatabaseFront/src/composables/useImWorkspace.js
+            - ZXYZdatabaseFront/src/composables/useSendToConversation.js
+            - ZXYZdatabaseFront/src/store/chat.js
+            - ZXYZdatabaseFront/src/store/plugins/chatBridge.js
+            - ZXYZdatabaseFront/src/api/im.js
+            - ZXYZdatabaseFront/src/api/teamIm.js
+            - ZXYZdatabaseFront/src/models/imPresentation.js
+            - ZXYZdatabaseFront/src/constants/conversationTypes.js
+            - ZXYZdatabaseFront/src/constants/messageStatus.js
+            - ZXYZdatabaseFront/src/utils/imRequest.js
+            - ZXYZdatabaseFront/src/utils/imWebSocket.js
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: zxyz_backend
+            - path: zxyz_frontend/team_collaboration
+    zxyz_frontend/shared_infrastructure:
+        dir_name: 文件资源管理器共享 Composables 与头像上传服务
+        title: 文件资源管理器共享 Composables 与头像上传服务
+        scope:
+            - ZXYZdatabaseFront/src/composables/useCorePathNavigation.js
+            - ZXYZdatabaseFront/src/composables/useDragSelection.js
+            - ZXYZdatabaseFront/src/composables/useFileExplorerHotkeys.js
+            - ZXYZdatabaseFront/src/composables/useFolderPickerNavigation.js
+            - ZXYZdatabaseFront/src/composables/useSortState.js
+            - ZXYZdatabaseFront/src/composables/useStorageUsage.js
+            - ZXYZdatabaseFront/src/composables/useSystemPermissionActions.js
+            - ZXYZdatabaseFront/src/services/avatarUpload.js
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: zxyz_frontend/file_management
+            - path: zxyz_frontend/sharing
+            - path: zxyz_frontend/user_auth
+    zxyz_frontend/sharing:
+        dir_name: 分享功能前端模块
+        title: 分享功能前端模块
+        scope:
+            - ZXYZdatabaseFront/src/composables/useShareVisit.js
+            - ZXYZdatabaseFront/src/composables/useMyShareList.js
+            - ZXYZdatabaseFront/src/composables/useShareCreateAction.js
+            - ZXYZdatabaseFront/src/composables/useShareFileList.js
+            - ZXYZdatabaseFront/src/composables/useShareFileDownload.js
+            - ZXYZdatabaseFront/src/composables/useShareArchiveDownload.js
+            - ZXYZdatabaseFront/src/composables/useShareFileNavigation.js
+            - ZXYZdatabaseFront/src/api/share.js
+            - ZXYZdatabaseFront/src/models/share.js
+            - ZXYZdatabaseFront/src/components/CreateShareDialog.vue
+            - ZXYZdatabaseFront/src/components/ShareFileExplorer.vue
+            - ZXYZdatabaseFront/src/components/ShareSuccessDialog.vue
+            - ZXYZdatabaseFront/src/components/FileCardPickerDialog.vue
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: zxyz_backend
+            - path: zxyz_frontend/file_management
+            - path: zxyz_frontend/shared_infrastructure
+    zxyz_frontend/team_collaboration:
+        dir_name: 团队协作与权限管理
+        title: 团队协作与权限管理
+        scope:
+            - ZXYZdatabaseFront/src/composables/useCurrentSpaceContext.js
+            - ZXYZdatabaseFront/src/composables/useTeamPermissionActions.js
+            - ZXYZdatabaseFront/src/store/team.js
+            - ZXYZdatabaseFront/src/api/team.js
+            - ZXYZdatabaseFront/src/api/adminTeam.js
+            - ZXYZdatabaseFront/src/api/permission.js
+            - ZXYZdatabaseFront/src/models/space.js
+            - ZXYZdatabaseFront/src/models/permission.js
+            - ZXYZdatabaseFront/src/constants/teamPermissions.js
+            - ZXYZdatabaseFront/src/components/TeamSelectDialog.vue
+            - ZXYZdatabaseFront/src/components/TeamSettingDrawer.vue
+            - ZXYZdatabaseFront/src/components/TeamSwitcher.vue
+            - ZXYZdatabaseFront/src/components/RoleManagementPanel.vue
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: zxyz_backend
+            - path: zxyz_frontend/im_chat
+    zxyz_frontend/user_auth:
+        dir_name: 用户认证与账户管理
+        title: 用户认证与账户管理
+        scope:
+            - ZXYZdatabaseFront/src/composables/useLoginForm.js
+            - ZXYZdatabaseFront/src/composables/usePasswordChange.js
+            - ZXYZdatabaseFront/src/composables/useProfileForm.js
+            - ZXYZdatabaseFront/src/composables/useContactVerification.js
+            - ZXYZdatabaseFront/src/composables/usePostLoginGuide.js
+            - ZXYZdatabaseFront/src/store/currentUser.js
+            - ZXYZdatabaseFront/src/store/session.js
+            - ZXYZdatabaseFront/src/api/auth.js
+            - ZXYZdatabaseFront/src/api/account.js
+            - ZXYZdatabaseFront/src/api/user.js
+            - ZXYZdatabaseFront/src/models/upload.js
+            - ZXYZdatabaseFront/src/components/LogoutDialog.vue
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: zxyz_backend
+            - path: zxyz_frontend/shared_infrastructure

@@ -1,0 +1,13 @@
+schema_version: 1
+module_path: infrastructure
+title: 基础设施部署与运维脚本
+scope:
+    - deploy/
+    - nacos-config/
+    - scripts/
+    - sql/
+source_files: []
+depends_on: []
+related_to:
+    - path: zxyz_backend
+    - path: zxyz_frontend

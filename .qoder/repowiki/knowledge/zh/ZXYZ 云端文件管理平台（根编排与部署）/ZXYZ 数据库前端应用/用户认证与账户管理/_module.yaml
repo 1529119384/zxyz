@@ -1,0 +1,21 @@
+schema_version: 1
+module_path: zxyz_frontend/user_auth
+title: 用户认证与账户管理
+scope:
+    - ZXYZdatabaseFront/src/composables/useLoginForm.js
+    - ZXYZdatabaseFront/src/composables/usePasswordChange.js
+    - ZXYZdatabaseFront/src/composables/useProfileForm.js
+    - ZXYZdatabaseFront/src/composables/useContactVerification.js
+    - ZXYZdatabaseFront/src/composables/usePostLoginGuide.js
+    - ZXYZdatabaseFront/src/store/currentUser.js
+    - ZXYZdatabaseFront/src/store/session.js
+    - ZXYZdatabaseFront/src/api/auth.js
+    - ZXYZdatabaseFront/src/api/account.js
+    - ZXYZdatabaseFront/src/api/user.js
+    - ZXYZdatabaseFront/src/models/upload.js
+    - ZXYZdatabaseFront/src/components/LogoutDialog.vue
+source_files: []
+depends_on: []
+related_to:
+    - path: zxyz_backend
+    - path: zxyz_frontend/shared_infrastructure
