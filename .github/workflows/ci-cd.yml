@@ -26,7 +26,7 @@ on:
         required: true
         default: 'latest'
       skip_quality:
-        description: '跳过质量检查（lint/test/compile）'
+        description: '跳过质量检查（仅限非保护分支，main/dev 强制检查）'
         required: false
         type: boolean
         default: false
@@ -65,13 +65,63 @@ jobs:
       audit-service: ${{ steps.filter.outputs.audit-service }}
       admin-service: ${{ steps.filter.outputs.admin-service }}
       gateway: ${{ steps.filter.outputs.gateway }}
-      frontend: ${{ steps.filter.outputs.frontend }}
       docker-config: ${{ steps.filter.outputs.docker-config }}
+      frontend: ${{ steps.filter.outputs.frontend }}
       backend-any: ${{ steps.backend-any.outputs.changed }}
       tag: ${{ steps.tag.outputs.tag }}
       skip_quality: ${{ steps.skip-quality.outputs.skip_quality }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Verify sub-repo sync consistency
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "===== 子仓库同步一致性检查 ====="
+          DRIFT=0
+          for sub in ZXYZdatabaseBack ZXYZdatabaseFront; do
+            echo "--- Checking $sub ---"
+            git clone --depth 1 --single-branch \
+              "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository_owner }}/${sub}.git" \
+              "/tmp/${sub}" 2>/dev/null || {
+              echo "::warning::无法克隆 ${sub}，跳过同步检查"
+              continue
+            }
+
+            # 根仓库 HEAD 中该子目录的文件 blob hash
+            git ls-tree -r HEAD -- "${sub}/" \
+              | awk '{print $3, $4}' \
+              | sed "s| ${sub}/| |" \
+              | sort -k2 > /tmp/root_${sub}.txt
+
+            # 子仓库 HEAD 的文件 blob hash
+            git -C "/tmp/${sub}" ls-tree -r HEAD \
+              | awk '{print $3, $4}' \
+              | sort -k2 > /tmp/sub_${sub}.txt
+
+            if ! diff -q /tmp/root_${sub}.txt /tmp/sub_${sub}.txt >/dev/null 2>&1; then
+              DRIFT=1
+              DIFF_COUNT=$(diff /tmp/root_${sub}.txt /tmp/sub_${sub}.txt | grep -c '^[<>]' || true)
+              echo "::error::${sub} 不同步！共 ${DIFF_COUNT} 处差异"
+              echo "不同步文件列表（前 20 条）:"
+              diff /tmp/root_${sub}.txt /tmp/sub_${sub}.txt | grep '^[<>]' | head -20 || true
+              echo ""
+              echo "修复命令:"
+              echo "  cd ${sub} && git add -A && git commit -m 'sync: 同步根仓库变更' && git push"
+              echo "  cd .. && git add ${sub}/ && git commit -m 'sync: 更新 ${sub} 引用' && git push"
+            else
+              echo "[OK] ${sub} 同步一致"
+            fi
+            rm -rf "/tmp/${sub}" /tmp/root_${sub}.txt /tmp/sub_${sub}.txt
+          done
+
+          if [ "$DRIFT" -ne 0 ]; then
+            echo ""
+            echo "::error::SUBREPO_SYNC_DRIFT: 子仓库与根仓库内容不一致，请同步后重新推送"
+            exit 1
+          fi
+          echo "===== 同步检查通过 ====="
 
       - uses: dorny/paths-filter@v3
         id: filter
@@ -101,12 +151,11 @@ jobs:
               - 'ZXYZdatabaseBack/zxyz-admin-service/**'
             gateway:
               - 'ZXYZdatabaseBack/zxyz-gateway/**'
-            frontend:
-              - 'ZXYZdatabaseFront/**'
-              - 'deploy/nginx/**'
             docker-config:
               - 'docker-compose.yml'
               - '.env.example'
+            frontend:
+              - 'ZXYZdatabaseFront/**'
 
       - name: Check if any backend changed
         id: backend-any
@@ -145,46 +194,39 @@ jobs:
       - name: Determine skip quality
         id: skip-quality
         run: |
-          # 不再针对 dev push 跳过质量检查；仅保留 workflow_dispatch 的手动输入
-          echo "skip_quality=false" >> $GITHUB_OUTPUT
+          REQUESTED="${{ github.event.inputs.skip_quality || 'false' }}"
+          BRANCH="${{ github.ref_name }}"
+          ACTOR="${{ github.actor }}"
+
+          # 保护分支（main/dev）永远不允许跳过质量检查
+          if [ "$BRANCH" = "main" ] || [ "$BRANCH" = "dev" ]; then
+            if [ "$REQUESTED" = "true" ]; then
+              echo "::warning::[AUDIT] skip_quality=true was requested by '${ACTOR}' on protected branch '${BRANCH}' — DENIED. Quality checks are mandatory for protected branches."
+            fi
+            echo "skip_quality=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # 非保护分支：允许跳过，但必须使用非 latest 的显式镜像标签并记录审计日志
+          if [ "$REQUESTED" = "true" ]; then
+            TAG_INPUT="${{ github.event.inputs.tag || '' }}"
+            if [ -z "$TAG_INPUT" ] || [ "$TAG_INPUT" = "latest" ]; then
+              echo "::error::SKIP_QUALITY_TAG_DENIED: skip_quality=true 时必须指定非 latest 的显式镜像标签（当前: '${TAG_INPUT:-<empty>}'），以防未经质量检查的镜像覆盖 latest"
+              exit 1
+            fi
+            echo "::warning::[AUDIT] skip_quality=true | actor=${ACTOR} | branch=${BRANCH} | ref=${{ github.ref }} | tag=${TAG_INPUT} | run_id=${{ github.run_id }} | triggered_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+            echo "skip_quality=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip_quality=false" >> $GITHUB_OUTPUT
+          fi
 
   # ============================================================
-  # Job 2a: 前端质量检查（与后端并行）
-  # ============================================================
-  quality-check-frontend:
-    needs: detect-changes
-    if: |
-      needs.detect-changes.outputs.frontend == 'true' &&
-      !(github.event_name == 'workflow_dispatch' && github.event.inputs.skip_quality == 'true') &&
-      needs.detect-changes.outputs.skip_quality != 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: ZXYZdatabaseFront/package-lock.json
-
-      - name: Install frontend deps
-        run: cd ZXYZdatabaseFront && npm ci
-
-      - name: Lint frontend
-        run: cd ZXYZdatabaseFront && npm run lint
-
-      - name: Test frontend
-        run: cd ZXYZdatabaseFront && npm run test
-
-  # ============================================================
-  # Job 2b: 后端质量检查（与前端并行）
+  # Job 2: 后端质量检查
   # ============================================================
   quality-check-backend:
     needs: detect-changes
     if: |
       needs.detect-changes.outputs.backend-any == 'true' &&
-      !(github.event_name == 'workflow_dispatch' && github.event.inputs.skip_quality == 'true') &&
       needs.detect-changes.outputs.skip_quality != 'true'
     runs-on: ubuntu-latest
     steps:
@@ -201,16 +243,56 @@ jobs:
         run: cd ZXYZdatabaseBack && mvn -B test
 
   # ============================================================
+  # Job 2.5: 前端质量检查
+  # ============================================================
+  quality-check-frontend:
+    needs: detect-changes
+    if: |
+      needs.detect-changes.outputs.frontend == 'true' &&
+      needs.detect-changes.outputs.skip_quality != 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ZXYZdatabaseFront
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ZXYZdatabaseFront/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test
+
+  # ============================================================
   # Job 3: 构建并推送镜像（只构建有变更的服务，仅 push 触发）
   # ============================================================
   build-and-push:
-    needs: [detect-changes, quality-check-frontend, quality-check-backend]
+    needs: [detect-changes, quality-check-backend, quality-check-frontend]
+    # 显式白名单：质量 job 必须 success；skipped 仅在两种情况下豁免——
+    # 1) 对应变更面不存在（前端无变更）；2) skip_quality=true 且已在 detect-changes 通过审计（强制非 latest 显式 tag）
     if: |
       always() &&
-      needs.quality-check-frontend.result != 'failure' &&
-      needs.quality-check-backend.result != 'failure' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
-      (needs.detect-changes.outputs.backend-any == 'true' || needs.detect-changes.outputs.frontend == 'true')
+      needs.detect-changes.outputs.backend-any == 'true' &&
+      (
+        needs.quality-check-backend.result == 'success' ||
+        (needs.quality-check-backend.result == 'skipped' && needs.detect-changes.outputs.skip_quality == 'true')
+      ) &&
+      (
+        needs.quality-check-frontend.result == 'success' ||
+        (needs.quality-check-frontend.result == 'skipped' &&
+          (needs.detect-changes.outputs.frontend != 'true' || needs.detect-changes.outputs.skip_quality == 'true'))
+      )
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -276,19 +358,11 @@ jobs:
             module: zxyz-gateway
             change: ${{ needs.detect-changes.outputs.gateway }}
             is_backend: true
-          # 前端（独立构建，不受 backend-common 变更影响）
-          - name: frontend-nginx
-            context: .
-            dockerfile: ZXYZdatabaseFront/Dockerfile
-            module: frontend
-            change: ${{ needs.detect-changes.outputs.frontend }}
-            is_backend: false
     steps:
       - name: Check if needs build
         id: should-build
         run: |
           # 后端服务：自身变更 || backend-common 变更
-          # 前端：自身变更（docker-compose 改动不触发重建，compose 是运行时配置）
           if [ "${{ matrix.change }}" = "true" ] || \
              ([ "${{ matrix.is_backend }}" = "true" ] && [ "${{ needs.detect-changes.outputs.backend-common }}" = "true" ]); then
             echo "build=true" >> $GITHUB_OUTPUT
@@ -313,6 +387,11 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Audit annotation for quality bypass
+        if: steps.should-build.outputs.build == 'true' && needs.detect-changes.outputs.skip_quality == 'true'
+        run: |
+          echo "::warning::[AUDIT] BUILD_WITHOUT_QUALITY_CHECK | image=zxyz-${{ matrix.name }}:${{ needs.detect-changes.outputs.tag }} | actor=${{ github.actor }} | branch=${{ github.ref_name }} | run_id=${{ github.run_id }}"
+
       - name: Build and push
         if: steps.should-build.outputs.build == 'true'
         uses: docker/build-push-action@v6
@@ -320,7 +399,11 @@ jobs:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           push: true
-          build-args: ${{ matrix.module != 'frontend' && format('MODULE={0}', matrix.module) || '' }}
+          build-args: MODULE=${{ matrix.module }}
+          labels: |
+            zxyz.ci.quality-check-skipped=${{ needs.detect-changes.outputs.skip_quality }}
+            zxyz.ci.run-id=${{ github.run_id }}
+            zxyz.ci.actor=${{ github.actor }}
           tags: |
             ${{ env.IMAGE_PREFIX }}/zxyz-${{ matrix.name }}:${{ needs.detect-changes.outputs.tag }}
             ${{ env.IMAGE_PREFIX }}/zxyz-${{ matrix.name }}:${{ github.sha }}
@@ -334,6 +417,7 @@ jobs:
     needs: [detect-changes, build-and-push]
     runs-on: ubuntu-latest
     if: always() && needs.build-and-push.result == 'success' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    environment: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && 'production' || 'development' }}
     steps:
       - name: Determine deploy target
         id: target
@@ -342,14 +426,22 @@ jobs:
             echo "host=${{ secrets.PROD_DEPLOY_HOST }}" >> $GITHUB_OUTPUT
             echo "env=production" >> $GITHUB_OUTPUT
           else
-            echo "host=${{ secrets.DEV_DEPLOY_HOST || secrets.DEPLOY_HOST }}" >> $GITHUB_OUTPUT
+            echo "host=${{ (secrets.DEV_DEPLOY_HOST || secrets.DEPLOY_HOST) }}" >> $GITHUB_OUTPUT
             echo "env=development" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Determine SSH key
+        id: ssh-key
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]] || [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "ssh_key=${{ secrets.PROD_SSH_KEY }}" >> $GITHUB_ENV
+          else
+            echo "ssh_key=${{ (secrets.DEV_SSH_KEY || secrets.DEPLOY_SSH_KEY) }}" >> $GITHUB_ENV
           fi
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         env:
-          SSH_KEY: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') && secrets.PROD_SSH_KEY || secrets.DEV_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
           FAST_DEPLOY: ${{ github.event.inputs.fast_deploy || 'false' }}
           BACKEND_COMMON: ${{ needs.detect-changes.outputs.backend-common }}
           PROJECT_SVC: ${{ needs.detect-changes.outputs.project-service }}
@@ -362,18 +454,17 @@ jobs:
           AUDIT_SVC: ${{ needs.detect-changes.outputs.audit-service }}
           ADMIN_SVC: ${{ needs.detect-changes.outputs.admin-service }}
           GATEWAY_SVC: ${{ needs.detect-changes.outputs.gateway }}
-          FRONTEND_SVC: ${{ needs.detect-changes.outputs.frontend }}
           DOCKER_CFG: ${{ needs.detect-changes.outputs.docker-config }}
         with:
           host: ${{ steps.target.outputs.host }}
           username: ${{ secrets.DEPLOY_USERNAME }}
-          key: ${{ env.SSH_KEY }}
+          key: ${{ env.ssh_key }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
           timeout: 600s
-          envs: BACKEND_COMMON,PROJECT_SVC,IM_SVC,EMAIL_SVC,USER_SVC,SHARE_SVC,FILE_SVC,TEAM_SVC,AUDIT_SVC,ADMIN_SVC,GATEWAY_SVC,FRONTEND_SVC,DOCKER_CFG,FAST_DEPLOY
+          envs: BACKEND_COMMON,PROJECT_SVC,IM_SVC,EMAIL_SVC,USER_SVC,SHARE_SVC,FILE_SVC,TEAM_SVC,AUDIT_SVC,ADMIN_SVC,GATEWAY_SVC,DOCKER_CFG,FAST_DEPLOY
           script: |
             #!/bin/bash
-            set +e
+            set -euo pipefail
 
             DEPLOY_DIR="${{ secrets.DEPLOY_PATH || '/www/zxyz' }}"
             IMAGE_TAG="${{ needs.detect-changes.outputs.tag }}"
@@ -383,6 +474,17 @@ jobs:
             echo "===== Deploying to ${{ steps.target.outputs.env }} ====="
             echo "Image tag: $IMAGE_TAG"
 
+            # --- 记录当前版本用于回滚 ---
+            echo "===== Recording current version for rollback ====="
+            if [ -f "$DEPLOY_DIR/.env" ]; then
+              if grep -qE "^APP_IMAGE_TAG=" "$DEPLOY_DIR/.env" 2>/dev/null; then
+                cp "$DEPLOY_DIR/.env" "$DEPLOY_DIR/.env.previous"
+                echo "Current tag recorded to .env.previous"
+              else
+                echo "WARN: APP_IMAGE_TAG not found in .env, skip rollback record"
+              fi
+            fi
+
             # --- 配置同步 ---
             REPO_DIR="${DEPLOY_DIR}-repo"
             UP_FLAGS=""
@@ -390,10 +492,18 @@ jobs:
               OLD_HASH=$(md5sum "$DEPLOY_DIR/docker-compose.yml" 2>/dev/null | cut -d' ' -f1)
               cd "$REPO_DIR" && git pull --ff-only -q
               cp "$REPO_DIR/docker-compose.yml" "$DEPLOY_DIR/docker-compose.yml"
-              cp "$REPO_DIR/deploy/nginx/default.conf" "$DEPLOY_DIR/deploy/nginx/default.conf"
               cd "$DEPLOY_DIR"
               NEW_HASH=$(md5sum "$DEPLOY_DIR/docker-compose.yml" | cut -d' ' -f1)
               [ "$OLD_HASH" != "$NEW_HASH" ] && UP_FLAGS="--force-recreate" && echo "docker-compose.yml changed, will force-recreate"
+            fi
+
+            # --- 验证 .env ---
+            if [ -f "$DEPLOY_DIR/scripts/validate-env.sh" ] && [ -f "$DEPLOY_DIR/.env" ]; then
+              echo "===== Validating .env ====="
+              bash "$DEPLOY_DIR/scripts/validate-env.sh" --sync-only "$DEPLOY_DIR/.env" || {
+                echo "WARN: .env validation had issues, continuing with deploy"
+              }
+              echo ""
             fi
 
             # --- 更新 .env ---
@@ -417,8 +527,7 @@ jobs:
               [ "$ADMIN_SVC" = "true" ] && UPDATE_SVC+=(admin-service)
               [ "$GATEWAY_SVC" = "true" ] && UPDATE_SVC+=(gateway)
             fi
-            [ "$FRONTEND_SVC" = "true" ] && UPDATE_SVC+=(frontend-nginx)
-            [ "$DOCKER_CFG" = "true" ] && UPDATE_SVC=(project-service im-service email-service user-service share-service file-service team-service audit-service admin-service gateway frontend-nginx)
+            [ "$DOCKER_CFG" = "true" ] && UPDATE_SVC=(project-service im-service email-service user-service share-service file-service team-service audit-service admin-service gateway)
 
             if [ ${#UPDATE_SVC[@]} -eq 0 ]; then
               echo "No service changed, skip deploy"
@@ -443,32 +552,106 @@ jobs:
               echo "===== Fast deploy: skipping health checks, sleep 10s ====="
               sleep 10
             else
+              HEALTH_OK=true
+
               # --- 分层健康检查 ---
               # 普通服务：6 次 × 5s = 30s
               echo "===== Waiting for common services ====="
               for i in $(seq 1 6); do
-                if ! docker compose ps 2>/dev/null | grep -qE "(im-service|email-service|user-service|share-service|file-service|team-service|audit-service|admin-service|frontend-nginx).*(unhealthy|starting)"; then
+                if ! docker compose ps 2>/dev/null | grep -qE "(im-service|email-service|user-service|share-service|file-service|team-service|audit-service|admin-service).*(unhealthy|starting)"; then
                   echo "Common services ready"
                   break
                 fi
                 if [ "$i" -eq 6 ]; then
-                  echo "WARN: Common services not all healthy, continuing"
+                  echo "ERROR: Common services not all healthy after 30s"
+                  echo "--- 诊断: 容器状态 ---"
+                  docker compose ps 2>/dev/null || true
+                  echo "--- 诊断: 最近日志 ---"
+                  for svc in im-service email-service user-service share-service file-service team-service audit-service admin-service; do
+                    echo ">>> $svc <<<"
+                    docker logs --tail 20 "zxyz-$svc" 2>&1 || true
+                  done
+                  HEALTH_OK=false
                 fi
                 sleep 5
               done
 
               # Gateway：12 次 × 5s = 60s
-              echo "===== Waiting for gateway ====="
-              for i in $(seq 1 12); do
-                if ! docker compose ps 2>/dev/null | grep -q "gateway.*(unhealthy|starting)"; then
-                  echo "Gateway ready"
-                  break
+              if [ "$HEALTH_OK" = true ]; then
+                echo "===== Waiting for gateway ====="
+                for i in $(seq 1 12); do
+                  if ! docker compose ps 2>/dev/null | grep -qE "gateway.*(unhealthy|starting)"; then
+                    echo "Gateway ready"
+                    break
+                  fi
+                  if [ "$i" -eq 12 ]; then
+                    echo "ERROR: Gateway startup timeout after 60s"
+                    echo "--- 诊断: 容器状态 ---"
+                    docker compose ps 2>/dev/null || true
+                    echo "--- 诊断: gateway 最近日志 ---"
+                    docker logs --tail 30 zxyz-gateway 2>&1 || true
+                    HEALTH_OK=false
+                  fi
+                  sleep 5
+                done
+              fi
+
+              # --- 健康检查失败 → 自动回滚 ---
+              if [ "$HEALTH_OK" = false ]; then
+                echo "::error::HEALTH_CHECK_FAILED: triggering automatic rollback"
+                echo "===== Starting automatic rollback ====="
+
+                if [ -f "$DEPLOY_DIR/.env.previous" ]; then
+                  PREV_TAG=$(sed -n 's/^APP_IMAGE_TAG=//p' "$DEPLOY_DIR/.env.previous" 2>/dev/null | head -1)
+                  if [ -n "$PREV_TAG" ]; then
+                    echo "Rolling back to previous tag: $PREV_TAG"
+
+                    # 恢复 .env 到上一版本
+                    sed -i "s|^APP_IMAGE_TAG=.*|APP_IMAGE_TAG=$PREV_TAG|" .env 2>/dev/null || true
+
+                    # 拉取上一版本镜像
+                    echo "===== Pulling previous version images ====="
+                    for svc in "${UPDATE_SVC[@]}"; do
+                      docker compose pull "$svc" &
+                    done
+                    wait
+                    echo "Pull complete"
+
+                    # 重启服务
+                    echo "===== Restarting with previous version ====="
+                    docker compose up -d "${UPDATE_SVC[@]}"
+
+                    # 回滚后健康检查：6 次 × 10s = 60s
+                    echo "===== Verifying rollback health ====="
+                    ROLLBACK_OK=false
+                    for i in $(seq 1 6); do
+                      if ! docker compose ps 2>/dev/null | grep -qE "(unhealthy|starting)"; then
+                        ROLLBACK_OK=true
+                        echo "Rollback health check passed (${i}0s)"
+                        break
+                      fi
+                      sleep 10
+                    done
+
+                    if [ "$ROLLBACK_OK" = true ]; then
+                      echo "===== Rollback successful: services restored to $PREV_TAG ====="
+                      docker compose ps
+                      echo "::notice::AUTO_ROLLBACK_SUCCESS: reverted to $PREV_TAG"
+                      exit 0
+                    else
+                      echo "::error::ROLLBACK_HEALTH_FAILED: services still unhealthy after rollback"
+                      docker compose ps 2>/dev/null || true
+                      exit 1
+                    fi
+                  else
+                    echo "::error::ROLLBACK_FAILED: APP_IMAGE_TAG empty in .env.previous"
+                    exit 1
+                  fi
+                else
+                  echo "::error::ROLLBACK_FAILED: .env.previous not found, cannot auto-rollback"
+                  exit 1
                 fi
-                if [ "$i" -eq 12 ]; then
-                  echo "WARN: Gateway startup timeout, continuing"
-                fi
-                sleep 5
-              done
+              fi
             fi
 
             echo "===== Container status ====="
