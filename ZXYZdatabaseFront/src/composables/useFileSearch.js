@@ -32,6 +32,8 @@ export function useFileSearch(options) {
   const results = ref({ ...EMPTY_SEARCH_RESULT })
   const list = computed(() => results.value.list)
   const total = computed(() => results.value.total || 0)
+  const page = ref(1)
+  const pageSize = ref(20)
   const isSearchMode = computed(() => Boolean(enabled?.value) && Boolean(searchText.value.trim()))
   const spaceParams = computed(() =>
     resolveSpaceRequestParams(spaceContext, {
@@ -48,6 +50,13 @@ export function useFileSearch(options) {
 
   function resetResults() {
     results.value = { ...EMPTY_SEARCH_RESULT }
+    page.value = 1
+  }
+
+  async function refresh() {
+    if (searchText.value.trim()) {
+      await search(searchText.value.trim())
+    }
   }
 
   async function search(keyword) {
@@ -66,7 +75,7 @@ export function useFileSearch(options) {
     loading.value = true
 
     try {
-      const response = await searchFiles(normalizedKeyword, 1, 20, {
+      const response = await searchFiles(normalizedKeyword, page.value, pageSize.value, {
         ...spaceParams.value,
         signal: activeAbortController.signal,
       })
@@ -112,6 +121,7 @@ export function useFileSearch(options) {
         return
       }
 
+      page.value = 1
       debounceTimer = setTimeout(() => {
         search(normalizedKeyword)
       }, FILE_SEARCH_DEBOUNCE_MS)
@@ -133,8 +143,11 @@ export function useFileSearch(options) {
     loading,
     results,
     total,
+    page,
+    pageSize,
     isSearchMode,
     search,
+    refresh,
     resetResults,
   }
 }

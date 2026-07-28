@@ -91,16 +91,16 @@ export function useTeamManagement({
     return row.name || row.username || (userId ? `用户 ${userId}` : '未知用户')
   }
 
-  function hasTeamPermission(code, teamId = selectedTeamId.value) {
-    const normalizedTeamId = normalizePositiveId(teamId)
+  function hasTeamPermission({ teamId, code }) {
+    const normalizedTeamId = normalizePositiveId(teamId) || selectedTeamId.value
     if (!normalizedTeamId || !code) {
       return false
     }
-    return teamManagement.hasTeamPermission(normalizedTeamId, code)
+    return teamManagement.hasTeamPermission({ teamId: normalizedTeamId, code })
   }
 
   function hasAnyTeamPermission(codes, teamId = selectedTeamId.value) {
-    return Array.isArray(codes) && codes.some((code) => hasTeamPermission(code, teamId))
+    return Array.isArray(codes) && codes.some((code) => hasTeamPermission({ teamId, code }))
   }
 
   function currentTeamId({ warn = true } = {}) {

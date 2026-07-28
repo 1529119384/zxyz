@@ -351,13 +351,15 @@ const filteredSystemUserOptions = computed(() =>
 const assignableTeamMembers = computed(() =>
   safeTeamMembers.value.filter((item) => Number(item.userId) !== Number(currentUserId.value)),
 )
-const canManageTeamRoles = computed(() => hasTeamPermission('team:role:manage'))
-const canAssignTeamMemberRole = computed(() => hasTeamPermission('team:member:assign-role'))
+const canManageTeamRoles = computed(() => hasTeamPermission({ code: 'team:role:manage' }))
+const canAssignTeamMemberRole = computed(() =>
+  hasTeamPermission({ code: 'team:member:assign-role' }),
+)
 const canReadTeamPermissionCenter = computed(() =>
   hasAnyTeamPermission(TEAM_PERMISSION_WORKBENCH_CODES),
 )
 const canReadTeamAudit = computed(
-  () => hasTeamPermission('team:audit:read') || canManageTeamRoles.value,
+  () => hasTeamPermission({ code: 'team:audit:read' }) || canManageTeamRoles.value,
 )
 const showSystemPermissionTab = computed(
   () => canReadSystemPermissionCenter.value || canReadSystemAudit.value,

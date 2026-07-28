@@ -79,9 +79,13 @@
 </template>
 
 <script setup>
+import { defineOptions } from 'vue'
+
 import { formatShareExpireText } from '@/models/share'
 import { useMyShareList } from '@/composables/useMyShareList'
 import { fmtTime } from '@/utils/format'
+
+defineOptions({ name: 'MyShare' })
 
 const {
   loading,

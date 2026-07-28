@@ -120,18 +120,18 @@ export function useCurrentSpaceContext(options = {}) {
     if (isProjectSpace.value) {
       return Boolean(projectId.value)
     }
-    return teamStore.hasTeamPermission(teamId.value, 'team:file:write')
+    return teamStore.hasTeamPermission({ teamId: teamId.value, code: 'team:file:write' })
   })
   const canWriteInExplorer = computed(() => {
     if (isTeamSpace.value && isProjectRootId(currentFolderId.value)) {
-      // 项目组虚拟根目录不是真实文件目录，需要允许展示“新建/申请项目组”入口。
+      // 项目组虚拟根目录不是真实文件目录，需要允许展示”新建/申请项目组”入口。
       return true
     }
 
     return canWrite.value
   })
   const canManageProjects = computed(() =>
-    teamStore.hasTeamPermission(teamId.value, 'team:project:manage'),
+    teamStore.hasTeamPermission({ teamId: teamId.value, code: 'team:project:manage' }),
   )
 
   function resolveRequestParams(overrides = {}) {

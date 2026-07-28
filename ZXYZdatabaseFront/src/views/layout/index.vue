@@ -73,7 +73,9 @@
         </el-aside>
         <el-main>
           <router-view v-slot="{ Component }">
-            <component :is="Component" :key="routeViewKey" />
+            <keep-alive :include="keepAliveNames">
+              <component :is="Component" :key="routeViewKey" />
+            </keep-alive>
           </router-view>
         </el-main>
       </el-container>
@@ -170,6 +172,7 @@ const routeViewKey = computed(() => {
 
   return `${route.path}?${queryKey}`
 })
+const keepAliveNames = ['IndexPage', 'ChatHome', 'MyShare', 'Projects']
 
 onMounted(() => {
   chatStore.ensureConnected()

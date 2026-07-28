@@ -43,9 +43,9 @@ describe('useCurrentSpaceContext', () => {
     const teamStore = {
       teams: ref(overrides.teams ?? [{ id: 100 }]),
       selectedTeamId: ref(overrides.selectedTeamId ?? null),
-      hasTeamPermission: vi.fn((teamId, permission) => {
+      hasTeamPermission: vi.fn(({ teamId, code }) => {
         const perms = overrides.teamPermissions ?? []
-        return perms.includes(permission)
+        return perms.includes(code)
       }),
     }
 

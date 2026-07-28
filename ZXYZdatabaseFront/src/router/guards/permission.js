@@ -16,7 +16,7 @@ function canAccessTeamPermissionCenter(to) {
   const teamId = resolvePermissionCenterTeamId(to, teamStore)
   return (
     Boolean(teamId) &&
-    TEAM_PERMISSION_CENTER_CODES.some((code) => teamStore.hasTeamPermission(teamId, code))
+    TEAM_PERMISSION_CENTER_CODES.some((code) => teamStore.hasTeamPermission({ teamId, code }))
   )
 }
 

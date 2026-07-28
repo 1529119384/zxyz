@@ -5,7 +5,7 @@ import { useChatStore } from '@/store/chat'
 import { useCurrentUserStore } from '@/store/currentUser'
 import { useSessionStore } from '@/store/session'
 import Layout from '@/views/layout/index.vue'
-import Index from '@/views/index/index.vue'
+const Index = () => import('@/views/index/index.vue')
 import { requirePermissionCenter, requireSystemAdminRole } from '@/router/guards/permission'
 import { handleBusinessError } from '@/utils/error'
 

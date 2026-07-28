@@ -194,8 +194,8 @@ export function createTeamDomain(state, deps = {}) {
     return updatedTeam
   }
 
-  function hasTeamPermission(teamId, code) {
-    const normalizedTeamId = normalizePositiveId(teamId)
+  function hasTeamPermission({ teamId, code }) {
+    const normalizedTeamId = normalizePositiveId(teamId) || selectedTeamId.value
     if (!normalizedTeamId || !code) {
       return false
     }

@@ -31,7 +31,12 @@ export function useTeamStorageAllocation({ teamStore = useTeamStore(), teamId = 
 
   const canAllocateStorage = computed(() => {
     const tid = selectedTeamId.value
-    return tid ? teamStore.hasTeamPermission(tid, TEAM_PERMISSION_CODES.allocateStorage) : false
+    return tid
+      ? teamStore.hasTeamPermission({
+          teamId: tid,
+          code: TEAM_PERMISSION_CODES.allocateStorage,
+        })
+      : false
   })
 
   async function loadMemberStorage() {

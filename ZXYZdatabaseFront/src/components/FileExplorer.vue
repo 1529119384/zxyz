@@ -96,7 +96,18 @@
       <div v-if="isSearchMode" class="search-result-info">共找到 {{ searchTotal }} 个结果</div>
 
       <el-pagination
-        v-if="!isSearchMode"
+        v-if="isSearchMode"
+        v-model:current-page="fileSearch.page"
+        v-model:page-size="fileSearch.pageSize"
+        :page-sizes="[20, 50, 100, 200]"
+        :total="searchTotal"
+        layout="total, sizes, prev, pager, next"
+        class="pagination-bar"
+        @current-change="fileSearch.refresh"
+        @size-change="fileSearch.refresh"
+      />
+      <el-pagination
+        v-else
         v-model:current-page="currentPage"
         v-model:page-size="pageSize"
         :page-sizes="[20, 50, 100, 200]"

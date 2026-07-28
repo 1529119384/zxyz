@@ -114,9 +114,11 @@
 </template>
 
 <script setup>
-import { ElMessage } from 'element-plus'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineOptions, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+
+defineOptions({ name: 'IndexPage' })
 
 import { logicalDeleteFiles } from '@/api/files'
 import ArchiveNameDialog from '@/components/ArchiveNameDialog.vue'

@@ -54,9 +54,12 @@
 </template>
 
 <script setup>
+import { defineOptions } from 'vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+
+defineOptions({ name: 'Projects' })
 
 import { archiveProject, fetchTeamProjects } from '@/api/project'
 import CreateProjectDialog from '@/components/CreateProjectDialog.vue'
@@ -75,7 +78,7 @@ const selectedTeamId = computed(
   () => teamManagement.selectedTeamId || teamManagement.teams[0]?.id || null,
 )
 const canCreateProject = computed(() =>
-  teamManagement.hasTeamPermission(selectedTeamId.value, 'team:project:manage'),
+  teamManagement.hasTeamPermission({ teamId: selectedTeamId.value, code: 'team:project:manage' }),
 )
 const createProjectButtonText = computed(() => (canCreateProject.value ? '新建项目' : '申请项目组'))
 

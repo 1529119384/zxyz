@@ -147,8 +147,11 @@
 </template>
 
 <script setup>
+import { defineOptions } from 'vue'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+
+defineOptions({ name: 'ChatHome' })
 
 import FileCardPickerDialog from '@/components/FileCardPickerDialog.vue'
 import TeamSettingDrawer from '@/components/TeamSettingDrawer.vue'
@@ -219,10 +222,10 @@ const activeTeamId = computed(() => {
   return Number.isSafeInteger(teamId) && teamId > 0 ? teamId : null
 })
 const canReviewProjectCreateRequests = computed(() =>
-  hasTeamPermission(
-    'team:project:manage',
-    activeConversation.value?.teamId || teamStore.selectedTeamId,
-  ),
+  hasTeamPermission({
+    teamId: activeConversation.value?.teamId || teamStore.selectedTeamId,
+    code: 'team:project:manage',
+  }),
 )
 const sendingDisabled = computed(
   () => isReadonlyConversation.value || !draft.value.trim() || !imChat.activeConversationId,
