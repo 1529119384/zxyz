@@ -119,7 +119,6 @@ spring:
               predicates:
                 - Path=/api/admin/database/**
               filters:
-                - RewritePath=/api/admin/database(?<segment>/?.*), /api/database/internal${segment}
                 - AddRequestHeader=X-Internal-Service-Token, ${INTERNAL_SERVICE_TOKEN}
 
             # 存储提供者管理路由：/api/admin/storage-providers/** → file-service

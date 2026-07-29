@@ -279,10 +279,22 @@ public class FileUploadService implements FileUploadPort {
                     .retrieve()
                     .toBodilessEntity();
         } catch (RestClientResponseException e) {
-            if (e.getStatusCode().value() == 403) {
+            int statusCode = e.getStatusCode().value();
+            String responseBody = e.getResponseBodyAsString();
+            log.error("调用存储配额校验失败(status={}, body={})", statusCode, responseBody, e);
+
+            // 403: 内部服务鉴权失败 或 存储空间不足
+            if (statusCode == 403) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "存储空间不足");
             }
-            log.error("调用存储配额校验失败(status={}): {}", e.getStatusCode().value(), e.getResponseBodyAsString(), e);
+            // 409: 配额超限（FILE_STATE_INVALID 映射为 409）
+            if (statusCode == 409) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "存储空间不足，请清理后重试");
+            }
+            // 400: 参数校验失败
+            if (statusCode == 400) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "上传参数异常：" + responseBody);
+            }
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "存储配额校验服务异常，请稍后重试");
         } catch (Exception e) {
             log.error("调用存储配额校验失败", e);
