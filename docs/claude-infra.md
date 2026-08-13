@@ -56,3 +56,41 @@
 - `docker-compose.yml` 变更不触发镜像重建（运行时配置，非构建依赖）
 - PR 仅执行 quality-check，不部署
 - 服务器 `.env` 在 `/www/zxyz/.env`，独立于仓库维护，CI/CD 不同步
+
+## 部署脚本与参数
+
+**快速部署（开发用）**: CI/CD 构建完成后，SSH 到服务器运行 `scripts/deploy-fast.sh <服务名>` 拉取+重启，跳过完整健康检查等待。参数：
+- `--no-health` 跳过健康检查
+- `--all` 重启所有 11 个 app 服务（10 后端 + frontend-nginx，不含基础设施/loki/promtail）
+- `--validate` 仅验证 .env
+- `--clean-nacos` 清理 Nacos 日志后部署
+- `--no-pull` 跳过镜像拉取
+- `--build` 本地 Maven 构建 + docker compose build
+
+**回滚**: `scripts/rollback.sh` 回滚到上一个部署版本，依赖 CI/CD 生成的 `.env.previous`，支持 `--no-pull`/`--validate`/指定服务。
+
+**其他脚本**:
+- `backup.sh` — MySQL + Redis 备份
+- `health-check.sh` — 轮询 16 容器健康
+- `setup-acr.sh` — GHCR / 阿里云 ACR 切换
+- `validate-env.sh .env` — 校验 `CHANGE_ME_*` 占位符与缺失变量；会从 `.env.example` 自动补全缺失 KEY（会修改 .env），`--sync-only` 仅补全不校验
+- `dev-up.sh` / `dev-up.ps1` — 本地 dev 启动基础设施（MySQL / Nacos / Redis / RabbitMQ），`down` 停止、`reset` 重置数据卷、`logs [服务]` 查看日志
+
+**Windows 本地开发**（PowerShell）:
+```powershell
+.\scripts\dev-up.ps1              # 启动基础设施（MySQL / Nacos / Redis / RabbitMQ）
+.\scripts\dev-up.ps1 down         # 停止基础设施
+.\scripts\dev-up.ps1 reset        # 重置数据卷（清空所有数据）
+.\scripts\dev-up.ps1 logs         # 查看所有服务日志
+.\scripts\dev-up.ps1 logs mysql   # 查看指定服务日志
+```
+
+## 部署注意事项与运维提示
+
+- 修改 `.env` 后必须用 `docker compose up -d` 重建容器，`docker compose restart` 不会重新加载环境变量
+- `.env` 中所有 `CHANGE_ME_*` 占位符必须在首次部署时替换，否则服务启动后连接失败
+- Nacos 日志会持续增长，已配置 sidecar 定期清理（保留 7 天，单文件限 100MB）
+- 10 个 Java 服务同时启动 CPU 压力大，建议分批：基础设施 → gateway → 业务服务
+- **JVM 启动优化**: docker-compose.yml 中 10 个后端服务配置了 `JAVA_OPTS="-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1"`，牺牲少量峰值性能换启动速度；Dockerfile 中 Maven 使用 `-T 1C` 并发编译
+- **Nginx DNS cache**: 重启后端容器后它们的 Docker 网络 IP 会变，Nginx 在启动时缓存 DNS 解析——服务变更后需 `docker compose restart frontend-nginx`
+- **RabbitMQ health check**: RabbitMQ 在高负载下经常超时 Docker health check 但仍正常工作，依赖它的服务可能显示 unhealthy 实则正常；用 `docker exec zxyz-rabbitmq rabbitmq-diagnostics -q ping` 验证
