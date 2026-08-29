@@ -51,6 +51,17 @@ public class ShareValidator {
         return fileInfoMap;
     }
 
+    /**
+     * 校验所选文件对指定用户均有读权限（P0-3 防 IDOR）。
+     * <p>调用 file-service 内部窄端点，杜绝为他人文件创建公开分享。</p>
+     */
+    public void requireShareFileAccess(List<Long> fileIds, Long userId) {
+        if (fileIds == null || fileIds.isEmpty()) {
+            return;
+        }
+        shareFileServiceClient.checkShareFileAccess(fileIds, userId);
+    }
+
     public boolean isActive(ShareFileProjection fileInfo) {
         return fileInfo != null && fileInfo.isActive();
     }

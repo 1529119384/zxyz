@@ -18,6 +18,7 @@ public class EmailProperties {
     private int retryFixedDelayMs = 60000;
     private int retryInitialDelayMs = 10000;
     private int verifyCodeExpireMinutes = 10;
+    private int verifyCodeMaxAttempts = 5;
     private int ipLimitPerMinute = 3;
     private int emailLimitPerMinute = 1;
 
@@ -115,6 +116,14 @@ public class EmailProperties {
 
     public void setVerifyCodeExpireMinutes(int verifyCodeExpireMinutes) {
         this.verifyCodeExpireMinutes = verifyCodeExpireMinutes;
+    }
+
+    public int getVerifyCodeMaxAttempts() {
+        return verifyCodeMaxAttempts;
+    }
+
+    public void setVerifyCodeMaxAttempts(int verifyCodeMaxAttempts) {
+        this.verifyCodeMaxAttempts = verifyCodeMaxAttempts;
     }
 
     public int getIpLimitPerMinute() {

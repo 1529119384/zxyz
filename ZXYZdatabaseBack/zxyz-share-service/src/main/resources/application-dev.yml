@@ -24,9 +24,9 @@ app:
     cookie-secret: ${SHARE_COOKIE_SECRET:share-secret}
     frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:5173}
     file-service:
-      base-url: ${FILE_SERVICE_BASE_URL:http://zxyz-file-service}
+      base-url: ${FILE_SERVICE_BASE_URL:http://localhost:18085}
     user-service:
-      base-url: ${USER_SERVICE_BASE_URL:http://zxyz-user-service}
+      base-url: ${USER_SERVICE_BASE_URL:http://localhost:18083}
     team-service:
-      base-url: ${TEAM_SERVICE_BASE_URL:http://zxyz-team-service}
+      base-url: ${TEAM_SERVICE_BASE_URL:http://localhost:18086}
       internal-service-token: ${INTERNAL_SERVICE_TOKEN}

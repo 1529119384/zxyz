@@ -19,6 +19,8 @@ FROM aclouda/zxyz-maven-base:latest AS builder
 
 WORKDIR /workspace
 
+ARG MODULE
+
 # 先复制 POM，利用 Docker layer 缓存 Maven 依赖。
 COPY ZXYZdatabaseBack/pom.xml ./pom.xml
 COPY ZXYZdatabaseBack/zxyz-common/pom.xml ./zxyz-common/pom.xml
@@ -60,7 +62,7 @@ COPY --from=builder /tmp/app.jar /app/app.jar
 
 EXPOSE 18000 18080 18081 18082 18083 18084 18085 18086 18087 18088 19090
 
-RUN groupadd -r appgroup && useradd -r -g appgroup appuser
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 USER appuser
 
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]

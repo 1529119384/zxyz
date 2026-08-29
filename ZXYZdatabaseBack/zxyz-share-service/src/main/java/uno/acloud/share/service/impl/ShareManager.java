@@ -65,6 +65,7 @@ public class ShareManager {
         }
         List<Long> normalizedFileIds = shareInputNormalizer.normalizeFileIds(request.getFileIds());
         Map<Long, ShareFileProjection> fileInfoMap = shareValidator.requireActiveFiles(normalizedFileIds);
+        shareValidator.requireShareFileAccess(normalizedFileIds, userId);
         InternalUserInfoVO user = shareValidator.requireUser(userId);
         return transactionHelper.execute(status -> {
             boolean needPassword = resolveNeedPassword(request);

@@ -161,7 +161,25 @@ public class ShareFileServiceClient extends AbstractServiceClient {
         p.setStorePath(data.path("storePath").asText(null));
         p.setDeleted(data.has("deleted") ? data.path("deleted").asInt() : null);
         p.setModifyTime(parseLocalDateTime(data.path("modifyTime")));
+        p.setUploadUserId(data.has("uploadUserId") && !data.path("uploadUserId").isNull() ? data.path("uploadUserId").asLong() : null);
+        p.setTeamId(data.has("teamId") && !data.path("teamId").isNull() ? data.path("teamId").asLong() : null);
         return p;
+    }
+
+    /**
+     * 创建分享前校验所选文件对指定用户均有读权限（P0-3 防 IDOR）。
+     * <p>调用 file-service 内部端点 POST /api/internal/files/share-access-check，
+     * 任一文件无读权限或已删除时服务端抛业务异常，此处转换为 BusinessException。</p>
+     */
+    public void checkShareFileAccess(List<Long> fileIds, Long userId) {
+        if (fileIds == null || fileIds.isEmpty()) {
+            return;
+        }
+        JsonNode body = objectMapper().createObjectNode()
+                .putPOJO("fileIds", fileIds)
+                .put("userId", userId);
+        JsonNode root = postJson("/api/internal/files/share-access-check", body);
+        enforceSuccessCode(root, "分享文件访问校验失败");
     }
 
     private LocalDateTime parseLocalDateTime(JsonNode node) {

@@ -27,6 +27,10 @@ spring:
         file-extension: yml
         group: ZXYZ
     gateway:
+      # 禁用 Spring 内置 ForwardedHeaderFilter：真实客户端 IP 由 ClientIpFilter 统一解析，
+      # 避免与内置 XFF 处理行为叠加导致解析不确定。
+      forwarded:
+        enabled: false
       default-filters:
         - name: RequestRateLimiter
           args:
@@ -150,3 +154,9 @@ sa-token:
 
 app:
   internal-service-token: ${INTERNAL_SERVICE_TOKEN}
+  # 真实客户端 IP 解析——可信代理 IP 白名单（单 IP 或 CIDR 网段，逗号分隔）。
+  # 默认关闭（空）：此时网关不信任任何 X-Forwarded-For，限流/安全基于直接连接地址（nginx IP），
+  # 从根本上杜绝客户端伪造源 IP。生产部署必须配置紧邻网关的前置代理（如 frontend-nginx 节点/网段），
+  # 例如：app.gateway.trusted-proxies: 172.18.0.0/16
+  gateway:
+    trusted-proxies: ${GATEWAY_TRUSTED_PROXIES:}

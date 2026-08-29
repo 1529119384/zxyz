@@ -131,6 +131,10 @@ if [ "${NACOS_PASSWORD:-}" = "nacos" ]; then
 else
   check_not_placeholder "NACOS_PASSWORD"
 fi
+# Nacos 鉴权凭证不能是占位符或公开周知弱值（生产环境）
+check_not_placeholder "NACOS_AUTH_TOKEN"
+check_not_placeholder "NACOS_AUTH_IDENTITY_VALUE" "^security$|^CHANGE_ME"
+check_required "NACOS_AUTH_IDENTITY_KEY"
 
 echo ""
 echo "--- 认证 ---"

@@ -526,7 +526,7 @@ public interface FileMapper {
 
     @Select("""
             SELECT id FROM file_node
-            WHERE parent_id IS NULL
+            WHERE parent_id = -1
               AND (space_type IS NULL OR space_type = 1)
               AND team_id IS NULL
               AND upload_user_id = #{userId}

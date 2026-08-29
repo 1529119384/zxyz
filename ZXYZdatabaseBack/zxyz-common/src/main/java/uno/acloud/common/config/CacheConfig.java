@@ -1,5 +1,6 @@
 package uno.acloud.common.config;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
@@ -41,6 +42,7 @@ import uno.acloud.common.config.ConfigGetter;
  */
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnClass(RedisConnectionFactory.class)
+@ConditionalOnBean(ConfigGetter.class)
 @EnableCaching
 public class CacheConfig {
 

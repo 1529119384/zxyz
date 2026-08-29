@@ -2,6 +2,7 @@ package uno.acloud.file.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
@@ -39,6 +40,8 @@ import java.util.Set;
 @Slf4j
 @Service
 public class FileUploadService implements FileUploadPort {
+
+    private static final int MAX_NAME_RETRY_ATTEMPTS = 64;
 
     private static final String FILE_OBJECT_PREFIX = "files/";
 
@@ -249,14 +252,35 @@ public class FileUploadService implements FileUploadPort {
     }
 
     private void checkBatchQuota(BatchConfirmUploadRequest request, Long userId) {
-        long totalSize = 0L;
+        // 先按与 confirmUpload 相同的默认填充逻辑，确保每个 item 的目标空间参数已解析完成
+        for (ConfirmUploadRequest item : request.getFiles()) {
+            if (item == null) {
+                continue;
+            }
+            if (item.getTeamId() == null) {
+                item.setTeamId(request.getTeamId());
+            }
+            if (item.getSpaceType() == null) {
+                item.setSpaceType(request.getSpaceType());
+            }
+            if (item.getProjectId() == null) {
+                item.setProjectId(request.getProjectId());
+            }
+        }
+        // 配额按每个 item 解析后的目标空间(teamId/spaceType/projectId 组合)分组累计字节数
+        Map<SpaceTarget, Long> sizeByTarget = new HashMap<>();
         for (ConfirmUploadRequest item : request.getFiles()) {
             if (item == null || item.getFileSize() == null || item.getFileSize() <= 0) {
                 continue;
             }
-            totalSize += item.getFileSize();
+            SpaceTarget target = SpaceTarget.fromRequest(item.getTeamId(), item.getSpaceType(), item.getProjectId());
+            sizeByTarget.merge(target, item.getFileSize(), Long::sum);
         }
-        checkUploadQuotaViaHttp(userId, request.getTeamId(), request.getSpaceType(), request.getProjectId(), totalSize);
+        // 对每个唯一空间分组逐个调用 check-quota，任何一组超额即整体拒绝
+        for (Map.Entry<SpaceTarget, Long> entry : sizeByTarget.entrySet()) {
+            SpaceTarget target = entry.getKey();
+            checkUploadQuotaViaHttp(userId, target.teamId(), target.spaceType(), target.projectId(), entry.getValue());
+        }
     }
 
     private void checkUploadQuotaViaHttp(Long userId, Long teamId, Integer spaceType, Long projectId, long totalSize) {
@@ -317,7 +341,15 @@ public class FileUploadService implements FileUploadPort {
             // 存储 HEAD 请求校验实际文件大小，防止客户端篡改 fileSize
             Long ossSize = registry.getDefaultProvider().getObjectSize(request.getObjectKey());
             if (ossSize == null) {
-                throw new BusinessException(ErrorCode.SYSTEM_ERROR, "存储服务不可用，请稍后重试");
+                // fail-closed：拿不到真实 ossSize 时拒绝确认，要求客户端重新上传
+                throw new BusinessException(ErrorCode.SYSTEM_ERROR, "存储服务不可用，请重新上传");
+            }
+            Long reportedSize = request.getFileSize();
+            if (reportedSize != null && !reportedSize.equals(ossSize)) {
+                // 客户端自报 fileSize 与真实 ossSize 不一致，拒绝确认防止绕过校验
+                log.warn("上传大小与存储实际不符，拒绝确认 objectKey={}, originalName={}, reportedFileSize={}, actualOssSize={}",
+                        request.getObjectKey(), request.getOriginalName(), reportedSize, ossSize);
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "文件大小校验失败，请重新上传");
             }
             if (ossSize > maxFileSizeBytes()) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST,
@@ -326,27 +358,37 @@ public class FileUploadService implements FileUploadPort {
             SpaceTarget target = resolveUploadTarget(request, userId);
             requireUploadAccess(target, userId);
             Set<String> reservedNames = reservedNamesByParent.computeIfAbsent(request.getParentId(), key -> new HashSet<>());
-            String finalName = fileDomainValidator.resolveAvailableName(
-                    request.getParentId(),
-                    target,
-                    FileNodeType.FILE,
-                    request.getOriginalName(),
-                    reservedNames,
-                    target.ownerUserId(userId)
-            );
-            reservedNames.add(finalName);
-
-            String fileUrl = registry.getDefaultProvider().generateDownloadInfo(request.getObjectKey(), request.getOriginalName()).getDownloadUrl();
-            FileItem fileItem = saveFileInfo(request.getObjectKey(), finalName, ossSize, request.getParentId(), target, userId, fileUrl);
+            FileItem fileItem;
+            for (int attempt = 0; ; attempt++) {
+                String finalName = fileDomainValidator.resolveAvailableName(
+                        request.getParentId(),
+                        target,
+                        FileNodeType.FILE,
+                        request.getOriginalName(),
+                        reservedNames,
+                        target.ownerUserId(userId)
+                );
+                reservedNames.add(finalName);
+                try {
+                    String fileUrl = registry.getDefaultProvider().generateDownloadInfo(request.getObjectKey(), request.getOriginalName()).getDownloadUrl();
+                    fileItem = saveFileInfo(request.getObjectKey(), finalName, ossSize, request.getParentId(), target, userId, fileUrl);
+                    break;
+                } catch (DuplicateKeyException e) {
+                    if (attempt >= MAX_NAME_RETRY_ATTEMPTS - 1) {
+                        throw e;
+                    }
+                    // 并发下同名被先提交者占用，重试下一个序号名
+                }
+            }
             log.info("确认上传成功 objectKey={}, originalName={}, finalName={}, fileUrl={}",
-                    request.getObjectKey(), request.getOriginalName(), finalName, fileUrl);
+                    request.getObjectKey(), request.getOriginalName(), fileItem.getOriginalName(), fileItem.getFileUrl());
             return new UploadConfirmItemResultVO(
                     request.getOriginalName(),
-                    finalName,
+                    fileItem.getOriginalName(),
                     request.getParentId(),
                     "success",
                     fileItem.getId(),
-                    fileUrl,
+                    fileItem.getFileUrl(),
                     ErrorCode.SUCCESS,
                     "success"
             );

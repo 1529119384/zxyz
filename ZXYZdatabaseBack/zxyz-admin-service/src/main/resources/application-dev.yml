@@ -11,3 +11,7 @@ config:
     hikari:
       maximum-pool-size: 5
       minimum-idle: 2
+
+app:
+  team-service:
+    base-url: ${TEAM_SERVICE_BASE_URL:http://localhost:18086}

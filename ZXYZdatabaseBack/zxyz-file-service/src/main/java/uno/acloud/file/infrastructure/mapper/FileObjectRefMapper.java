@@ -19,11 +19,11 @@ public interface FileObjectRefMapper extends BaseMapper<FileObjectRef> {
             "INSERT INTO file_object_ref (object_key, ref_count, delete_status, delete_retry_count, next_retry_time, last_delete_error, create_time, modify_time, storage_provider)",
             "VALUES (#{objectKey}, #{increment}, #{activeStatus}, 0, NULL, NULL, NOW(3), NOW(3), #{storageProvider})",
             "ON DUPLICATE KEY UPDATE",
-            "ref_count = ref_count + #{increment},",
+            "ref_count = CASE WHEN delete_status IN ('ACTIVE', 'PENDING_DELETE') THEN ref_count + #{increment} ELSE ref_count END,",
             "delete_status = CASE WHEN delete_status IN ('ACTIVE', 'PENDING_DELETE') THEN #{activeStatus} ELSE delete_status END,",
-            "delete_retry_count = 0,",
-            "next_retry_time = NULL,",
-            "last_delete_error = NULL,",
+            "delete_retry_count = CASE WHEN delete_status IN ('ACTIVE', 'PENDING_DELETE') THEN 0 ELSE delete_retry_count END,",
+            "next_retry_time = CASE WHEN delete_status IN ('ACTIVE', 'PENDING_DELETE') THEN NULL ELSE next_retry_time END,",
+            "last_delete_error = CASE WHEN delete_status IN ('ACTIVE', 'PENDING_DELETE') THEN NULL ELSE last_delete_error END,",
             "modify_time = NOW(3)"
     })
     int incrementReference(@Param("objectKey") String objectKey,

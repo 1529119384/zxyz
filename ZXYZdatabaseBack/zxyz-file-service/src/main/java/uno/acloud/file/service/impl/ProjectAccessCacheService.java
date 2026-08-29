@@ -15,7 +15,7 @@ import java.util.concurrent.TimeUnit;
 public class ProjectAccessCacheService {
 
     private static final String KEY_PREFIX = "file:project-access:";
-    private static final long CACHE_TTL_MINUTES = 5;
+    private static final long CACHE_TTL_SECONDS = 30;
 
     private final StringRedisTemplate redisTemplate;
     private final ProjectServiceAccessClient projectServiceAccessClient;
@@ -30,7 +30,7 @@ public class ProjectAccessCacheService {
      * Check project access with Redis caching.
      * Cache key: file:project-access:{projectId}:{userId}
      * Cache value: "1" (access granted)
-     * TTL: 5 minutes
+     * TTL: 30 seconds
      */
     public void checkAccess(Long projectId, Long userId) {
         String key = KEY_PREFIX + projectId + ":" + userId;
@@ -48,7 +48,7 @@ public class ProjectAccessCacheService {
 
         // cache the positive result
         try {
-            redisTemplate.opsForValue().set(key, "1", CACHE_TTL_MINUTES, TimeUnit.MINUTES);
+            redisTemplate.opsForValue().set(key, "1", CACHE_TTL_SECONDS, TimeUnit.SECONDS);
         } catch (Exception e) {
             log.warn("Redis 写入项目访问缓存失败: projectId={}, userId={}", projectId, userId, e);
         }

@@ -17,6 +17,8 @@ import uno.acloud.share.infrastructure.mapper.ShareMapper;
 import uno.acloud.share.service.model.ShareVerifyResult;
 import uno.acloud.share.vo.SharePublicInfoVO;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.Objects;
 
 @Component
@@ -111,7 +113,9 @@ public class ShareAccessManager {
         if (share == null || StringUtils.isBlank(shareAccessToken)) {
             return false;
         }
-        return Objects.equals(shareCookieManager.buildAccessToken(share, shareProperties.getCookieSecret()), shareAccessToken);
+        byte[] expected = shareCookieManager.buildAccessToken(share, shareProperties.getCookieSecret()).getBytes(StandardCharsets.UTF_8);
+        byte[] actual = shareAccessToken.getBytes(StandardCharsets.UTF_8);
+        return MessageDigest.isEqual(expected, actual);
     }
 
     private void validateSharePassword(Share share, String rawPassword) {

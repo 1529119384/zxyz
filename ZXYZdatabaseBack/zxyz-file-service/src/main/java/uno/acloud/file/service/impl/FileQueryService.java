@@ -277,6 +277,14 @@ public class FileQueryService implements FileQueryPort {
     }
 
     @Override
+    public List<FileNode> getActiveFileNodesByIds(List<Long> fileIds) {
+        if (fileIds == null || fileIds.isEmpty()) {
+            return List.of();
+        }
+        return fileMapper.getActiveFileNodesByIds(fileIds);
+    }
+
+    @Override
     public FileNode getFileNodeForStream(Long fileId, Long userId) {
         return fileDomainValidator.requireNode(fileId, userId, fileAccessGuardService);
     }

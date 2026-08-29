@@ -1,5 +1,6 @@
 package uno.acloud.file.service.impl;
 
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.FileDeleteStatus;
@@ -17,6 +18,8 @@ import java.util.Set;
 
 @Service
 public class FileFolderService implements FileFolderPort {
+
+    private static final int MAX_NAME_RETRY_ATTEMPTS = 64;
 
     private final FileMapper fileMapper;
     private final FilePathResolver filePathResolver;
@@ -41,16 +44,34 @@ public class FileFolderService implements FileFolderPort {
         SpaceTarget target = resolveFolderTarget(parentId, requestedTeamId, requestedSpaceType, requestedProjectId, userId);
         requireWriteAccess(target, userId);
         Set<String> reservedNames = new HashSet<>();
-        String finalFolderName = fileDomainValidator.resolveAvailableName(
-                parentId,
-                target,
-                FileNodeType.FOLDER,
-                folderName,
-                reservedNames,
-                target.ownerUserId(userId)
-        );
-        reservedNames.add(finalFolderName);
+        for (int attempt = 0; ; attempt++) {
+            String finalFolderName = fileDomainValidator.resolveAvailableName(
+                    parentId,
+                    target,
+                    FileNodeType.FOLDER,
+                    folderName,
+                    reservedNames,
+                    target.ownerUserId(userId)
+            );
+            reservedNames.add(finalFolderName);
 
+            try {
+                Folder folder = buildFolder(finalFolderName, parentId, target, userId);
+                Integer result = fileMapper.insertFolder(folder);
+                if (result == null || result == 0) {
+                    throw new BusinessException(ErrorCode.BAD_REQUEST, "创建文件夹失败");
+                }
+                return new FolderCreateResultVO(folder.getId(), finalFolderName, folder.getFileType(), folder.getParentId());
+            } catch (DuplicateKeyException e) {
+                if (attempt >= MAX_NAME_RETRY_ATTEMPTS - 1) {
+                    throw e;
+                }
+                // 并发下同名被先提交者占用，重试下一个序号名（name, name(1), name(2)…）
+            }
+        }
+    }
+
+    private Folder buildFolder(String finalFolderName, Long parentId, SpaceTarget target, Long userId) {
         Folder folder = Folder.create();
         folder.setOriginalName(finalFolderName);
         folder.setStorePath(filePathResolver.buildStorePath(parentId, finalFolderName));
@@ -62,12 +83,7 @@ public class FileFolderService implements FileFolderPort {
         folder.setCreateTime(LocalDateTime.now());
         folder.setModifyTime(LocalDateTime.now());
         folder.setDeleted(FileDeleteStatus.NORMAL);
-
-        Integer result = fileMapper.insertFolder(folder);
-        if (result == null || result == 0) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "创建文件夹失败");
-        }
-        return new FolderCreateResultVO(folder.getId(), finalFolderName, folder.getFileType(), folder.getParentId());
+        return folder;
     }
 
     private SpaceTarget resolveFolderTarget(Long parentId, Long requestedTeamId, Integer requestedSpaceType, Long requestedProjectId, Long userId) {

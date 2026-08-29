@@ -8,3 +8,11 @@ spring:
     url: ${IM_DATASOURCE_URL:jdbc:mysql://localhost:3306/zxyz_im}
     username: ${IM_DATASOURCE_USERNAME:root}
     password: ${IM_DATASOURCE_PASSWORD:123456}
+
+app:
+  user-service:
+    base-url: ${USER_SERVICE_BASE_URL:http://localhost:18083}
+  file-service:
+    base-url: ${FILE_SERVICE_BASE_URL:http://localhost:18085}
+  team-service:
+    base-url: ${TEAM_SERVICE_BASE_URL:http://localhost:18086}

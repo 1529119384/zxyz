@@ -114,7 +114,9 @@ class VerifyCodeServiceTest {
     @Test
     void checkCodeShouldMarkCodeUsed() {
         EmailProperties properties = new EmailProperties();
-        when(verifyCodeMapper.markUsedByCode("user@example.com", "EMAIL_BIND", "123456")).thenReturn(1);
+        properties.setVerifyCodeMaxAttempts(5);
+        when(verifyCodeMapper.bumpAttemptCount("user@example.com", "EMAIL_BIND", 5)).thenReturn(1);
+        when(verifyCodeMapper.markUsedByCode("user@example.com", "EMAIL_BIND", "123456", 5)).thenReturn(1);
         VerifyCodeService service = new VerifyCodeService(
                 verifyCodeMapper,
                 emailDispatchService,
@@ -125,7 +127,51 @@ class VerifyCodeServiceTest {
 
         service.checkCode("user@example.com", "EMAIL_BIND", "123456");
 
-        verify(verifyCodeMapper).markUsedByCode("user@example.com", "EMAIL_BIND", "123456");
+        verify(verifyCodeMapper).markUsedByCode("user@example.com", "EMAIL_BIND", "123456", 5);
+    }
+
+    @Test
+    void checkCodeShouldRejectWhenTooManyAttempts() {
+        EmailProperties properties = new EmailProperties();
+        properties.setVerifyCodeMaxAttempts(5);
+        when(verifyCodeMapper.bumpAttemptCount("user@example.com", "EMAIL_BIND", 5)).thenReturn(1);
+        when(verifyCodeMapper.markUsedByCode("user@example.com", "EMAIL_BIND", "444444", 5)).thenReturn(0);
+        when(verifyCodeMapper.findAttemptCount("user@example.com", "EMAIL_BIND")).thenReturn(5);
+        VerifyCodeService service = new VerifyCodeService(
+                verifyCodeMapper,
+                emailDispatchService,
+                emailRateLimiter,
+                properties,
+                emailSendingAvailabilityService
+        );
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.checkCode("user@example.com", "EMAIL_BIND", "444444"));
+
+        assertEquals(ErrorCode.BAD_REQUEST, exception.getErrorCode());
+        assertEquals("尝试次数过多，请重新发送", exception.getMessage());
+    }
+
+    @Test
+    void checkCodeShouldRejectWrongCodeBeforeLimit() {
+        EmailProperties properties = new EmailProperties();
+        properties.setVerifyCodeMaxAttempts(5);
+        when(verifyCodeMapper.bumpAttemptCount("user@example.com", "EMAIL_BIND", 5)).thenReturn(1);
+        when(verifyCodeMapper.markUsedByCode("user@example.com", "EMAIL_BIND", "111111", 5)).thenReturn(0);
+        when(verifyCodeMapper.findAttemptCount("user@example.com", "EMAIL_BIND")).thenReturn(2);
+        VerifyCodeService service = new VerifyCodeService(
+                verifyCodeMapper,
+                emailDispatchService,
+                emailRateLimiter,
+                properties,
+                emailSendingAvailabilityService
+        );
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.checkCode("user@example.com", "EMAIL_BIND", "111111"));
+
+        assertEquals(ErrorCode.BAD_REQUEST, exception.getErrorCode());
+        assertEquals("验证码无效或已过期", exception.getMessage());
     }
 
     @Test

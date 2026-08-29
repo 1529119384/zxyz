@@ -78,9 +78,26 @@ public class VerifyCodeService {
         if (!CODE_PATTERN.matcher(normalizedCode).matches()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "验证码无效或已过期");
         }
-        if (verifyCodeMapper.markUsedByCode(normalizedEmail, normalizedScene, normalizedCode) != 1) {
+        int maxAttempts = emailProperties.getVerifyCodeMaxAttempts();
+        // 一次校验先计一次尝试；达到上限即作废该码（防 6 位码爆破）
+        if (verifyCodeMapper.bumpAttemptCount(normalizedEmail, normalizedScene, maxAttempts) != 1) {
+            // 行已失效（无存活记录/已使用/已过期）：若此前已耗尽尝试次数则提示过多，否则无效
+            Integer attempt = verifyCodeMapper.findAttemptCount(normalizedEmail, normalizedScene);
+            if (attempt != null && attempt >= maxAttempts) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "尝试次数过多，请重新发送");
+            }
             throw new BusinessException(ErrorCode.BAD_REQUEST, "验证码无效或已过期");
         }
+        // 仅在未达上限且码正确时消费成功
+        if (verifyCodeMapper.markUsedByCode(normalizedEmail, normalizedScene, normalizedCode, maxAttempts) == 1) {
+            return;
+        }
+        // 未能消费：可能码错误，或本次尝试恰好触达上限
+        Integer attempt = verifyCodeMapper.findAttemptCount(normalizedEmail, normalizedScene);
+        if (attempt != null && attempt >= maxAttempts) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "尝试次数过多，请重新发送");
+        }
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "验证码无效或已过期");
     }
 
     private String normalizeEmail(String email) {

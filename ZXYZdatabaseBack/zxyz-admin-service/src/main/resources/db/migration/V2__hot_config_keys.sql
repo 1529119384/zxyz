@@ -3,11 +3,16 @@
 --
 -- ⚠️  CHECKSUM MISMATCH NOTICE（校验和不匹配警告）
 --
--- 本文件在 commit 9883823 中被修改（新增了 app.email.verify-code-cooldown-seconds 行），
--- 导致已运行原始 V2 的数据库出现 Flyway checksum mismatch。
--- Flyway 检测到 V2 校验不匹配后会拒绝执行所有后续迁移（包括 V3）。
+-- 修改历史：
+--   (a) commit 9883823：新增 app.email.verify-code-cooldown-seconds 行。
+--       当时导致已运行更旧 V2 的数据库出现 checksum mismatch。
+--   (b) P0-7 修复（本次）：阶段三批量 INSERT 末尾追加 ON DUPLICATE KEY UPDATE。
+--       原因：V1 阶段末尾（第 53 行）已种入 app.email.verify-code.cooldown-seconds
+--       （sys_config 有 uk_config_key 唯一键），阶段三又以普通 INSERT 重复插入该键，
+--       全新库 V1→V2 触发 1062 重复键使 V2 迁移失败。改为幂等写法后新装库不再 1062。
 --
--- 生产环境修复步骤（一次性操作，每次部署环境只需执行一次）：
+-- 对已运行过旧版 V2 的数据库：Flyway checksum mismatch 会拒绝后续迁移（含 V3）。
+-- 每次升级都需要执行一次 Flyway repair 更新 schema history 中的校验：
 --
 --   1. 确认新代码已部署（V2 文件内容为正确的目标状态）
 --   2. 执行 Flyway repair 更新 schema history 中的校验：
@@ -20,7 +25,8 @@
 --
 --   3. 修复后重启 admin-service，V3 将正常执行。
 --
--- 新数据库不受影响：V1 → V2 → V3 按序执行，数据正确。
+-- 执行过 (a) 修复的环境升级到 (b) 后校验和会再次变化，需再 repair 一次。
+-- 全新数据库不受影响：V1 → V2 → V3 按序执行，数据正确，不再报 1062。
 -- ============================================================================
 
 -- ============================================================================
@@ -75,4 +81,11 @@ INSERT INTO `sys_config` (`config_key`, `config_value`, `config_type`, `value_ty
 -- 文件复制 + 审计 + 头像
 ('app.file.copy.max-nodes-per-tx', '500', 'FEATURE', 'NUMBER', '单次复制最大节点数', '500', 1),
 ('app.audit.retention-days', '90', 'SYSTEM', 'NUMBER', '审计日志保留天数', '90', 1),
-('app.avatar.max-size-bytes', '5242880', 'SYSTEM', 'NUMBER', '头像最大文件大小（字节，默认 5MB）', '5242880', 1);
+('app.avatar.max-size-bytes', '5242880', 'SYSTEM', 'NUMBER', '头像最大文件大小（字节，默认 5MB）', '5242880', 1)
+ON DUPLICATE KEY UPDATE
+    `config_value` = VALUES(`config_value`),
+    `config_type` = VALUES(`config_type`),
+    `value_type` = VALUES(`value_type`),
+    `description` = VALUES(`description`),
+    `default_value` = VALUES(`default_value`),
+    `is_editable` = VALUES(`is_editable`);

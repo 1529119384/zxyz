@@ -12,12 +12,12 @@ spring:
 
 app:
   user-service:
-    base-url: ${USER_SERVICE_BASE_URL:http://zxyz-user-service}
+    base-url: ${USER_SERVICE_BASE_URL:http://localhost:18083}
   im-service:
-    base-url: ${IM_SERVICE_BASE_URL:http://zxyz-im-service}
+    base-url: ${IM_SERVICE_BASE_URL:http://localhost:18081}
   email-service:
-    base-url: ${EMAIL_SERVICE_BASE_URL:http://zxyz-email-service}
+    base-url: ${EMAIL_SERVICE_BASE_URL:http://localhost:18082}
   file-service:
-    base-url: ${FILE_SERVICE_BASE_URL:http://zxyz-file-service}
+    base-url: ${FILE_SERVICE_BASE_URL:http://localhost:18085}
   project-service:
-    base-url: ${PROJECT_SERVICE_BASE_URL:http://zxyz-project-service}
+    base-url: ${PROJECT_SERVICE_BASE_URL:http://localhost:18080}

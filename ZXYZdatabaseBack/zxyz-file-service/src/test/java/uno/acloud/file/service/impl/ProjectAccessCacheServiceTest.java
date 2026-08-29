@@ -55,7 +55,7 @@ class ProjectAccessCacheServiceTest {
         assertDoesNotThrow(() -> service.checkAccess(50L, 100L));
 
         verify(projectServiceAccessClient).checkAccess(50L, 100L);
-        verify(valueOperations).set("file:project-access:50:100", "1", 5, TimeUnit.MINUTES);
+        verify(valueOperations).set("file:project-access:50:100", "1", 30, TimeUnit.SECONDS);
     }
 
     @Test

@@ -3,7 +3,6 @@ package uno.acloud.audit.mq;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -15,16 +14,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.amqp.AmqpRejectAndDontRequeueException;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.dao.DuplicateKeyException;
 import uno.acloud.audit.mapper.OperateLogMapper;
 import uno.acloud.common.audit.OperateLog;
 
 import java.time.LocalDateTime;
-import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -33,12 +31,6 @@ class OperateLogConsumerTest {
 
     @Mock
     private OperateLogMapper operateLogMapper;
-
-    @Mock
-    private StringRedisTemplate redisTemplate;
-
-    @Mock
-    private ValueOperations<String, String> valueOperations;
 
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
@@ -49,11 +41,8 @@ class OperateLogConsumerTest {
     @Captor
     private ArgumentCaptor<OperateLog> logCaptor;
 
-    @BeforeEach
-    void setUp() {
-        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.setIfAbsent(anyString(), anyString(), anyLong(), any(TimeUnit.class))).thenReturn(true);
-    }
+    @Captor
+    private ArgumentCaptor<String> hashCaptor;
 
     // ==================== handleAuditLog — happy path ====================
 
@@ -73,7 +62,7 @@ class OperateLogConsumerTest {
 
         operateLogConsumer.handleAuditLog(json);
 
-        verify(operateLogMapper).insert(logCaptor.capture());
+        verify(operateLogMapper).insertWithHash(logCaptor.capture(), hashCaptor.capture());
         OperateLog captured = logCaptor.getValue();
         assertEquals("file-service", captured.getServiceName());
         assertEquals(42L, captured.getOperateUser());
@@ -82,9 +71,30 @@ class OperateLogConsumerTest {
         assertEquals("[projectId=1, fileName=test.txt]", captured.getMethodParams());
         assertEquals("{\"code\":0}", captured.getReturnValue());
         assertEquals(150L, captured.getCostTime());
+        // 幂等哈希应随消息写入，DB unique(message_hash) 承担去重
+        String hash = hashCaptor.getValue();
+        assertEquals(64, hash.length());
+        assertTrue(hash.matches("[0-9a-f]{64}"));
     }
 
-    // ==================== handleAuditLog — deserialization failure (poison message) ====================
+    // ==================== handleAuditLog — idempotency via DB unique key ====================
+
+    @Test
+    void handleAuditLog_duplicateKey_skipsSilentlyAsAck() throws Exception {
+        OperateLog input = new OperateLog();
+        input.setServiceName("file-service");
+        input.setMethodName("uploadFile");
+        String json = objectMapper.writeValueAsString(input);
+
+        doThrow(new DuplicateKeyException("Duplicate entry for key uk_operate_log_message_hash"))
+                .when(operateLogMapper).insertWithHash(any(OperateLog.class), anyString());
+
+        // 命中唯一键＝重复消息，正常返回（ACK），不再抛异常、不重投
+        assertDoesNotThrow(() -> operateLogConsumer.handleAuditLog(json));
+        verify(operateLogMapper).insertWithHash(any(OperateLog.class), anyString());
+    }
+
+    // ==================== deserialization failure (poison message) ====================
 
     @Test
     void handleAuditLog_invalidJson_shouldRejectToDlq() {
@@ -101,22 +111,20 @@ class OperateLogConsumerTest {
 
     @Test
     void handleAuditLog_throwsRuntimeExceptionWhenJsonMissingRequiredFields() {
-        // Valid JSON structure but missing fields — ObjectMapper will set them null.
+        // Valid JSON structure but missing fields — ObjectMapper sets them null.
         // The mapper insert may then fail on a NOT NULL constraint, but that's a DB-level check.
-        // Here we verify that even with missing fields, deserialization itself does not throw
-        // (Lombok-generated setters accept null), and the mapper IS called.
         String minimalJson = "{}";
 
-        // Should not throw — ObjectMapper happily deserializes to an OperateLog with null fields
+        // Should not throw inside consumer — ObjectMapper happily deserializes, insert is called.
         operateLogConsumer.handleAuditLog(minimalJson);
 
-        verify(operateLogMapper).insert(logCaptor.capture());
+        verify(operateLogMapper).insertWithHash(logCaptor.capture(), anyString());
         OperateLog captured = logCaptor.getValue();
         assertNull(captured.getServiceName());
         assertNull(captured.getOperateUser());
     }
 
-    // ==================== handleAuditLog — mapper failure ====================
+    // ==================== mapper failure ====================
 
     @Test
     void handleAuditLog_throwsRuntimeExceptionWhenMapperFails() throws Exception {
@@ -126,7 +134,7 @@ class OperateLogConsumerTest {
         String json = objectMapper.writeValueAsString(input);
 
         doThrow(new RuntimeException("DB connection lost"))
-                .when(operateLogMapper).insert(any(OperateLog.class));
+                .when(operateLogMapper).insertWithHash(any(OperateLog.class), anyString());
 
         RuntimeException ex = assertThrows(RuntimeException.class,
                 () -> operateLogConsumer.handleAuditLog(json));
@@ -134,22 +142,21 @@ class OperateLogConsumerTest {
         assertTrue(ex.getCause().getMessage().contains("DB connection lost"));
     }
 
-    // ==================== handleAuditLog — re-throw ensures DLQ routing ====================
+    // ==================== re-throw ensures DLQ routing ====================
 
     @Test
     void handleAuditLog_reThrowsToTriggerDeadLetterQueue() throws Exception {
         // RabbitMQ routes messages to DLQ when listener throws.
-        // This test documents that contract: any failure must propagate as an unchecked exception.
         OperateLog input = new OperateLog();
         input.setServiceName("svc");
         String json = objectMapper.writeValueAsString(input);
 
-        doThrow(new org.apache.ibatis.exceptions.PersistenceException("constraint violation"))
-                .when(operateLogMapper).insert(any(OperateLog.class));
+        doThrow(new org.apache.ibatis.exceptions.PersistenceException("non-dup constraint violation"))
+                .when(operateLogMapper).insertWithHash(any(OperateLog.class), anyString());
 
         RuntimeException ex = assertThrows(RuntimeException.class,
                 () -> operateLogConsumer.handleAuditLog(json));
-        // The cause chain preserves the original MyBatis exception
+        // 非重复键的持久化失败必须抛出以触发重投/DLQ
         assertInstanceOf(org.apache.ibatis.exceptions.PersistenceException.class, ex.getCause());
     }
 }

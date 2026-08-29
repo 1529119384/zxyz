@@ -46,6 +46,12 @@ public interface FileQueryPort {
     uno.acloud.file.infrastructure.entity.FileNode getFileNodeById(Long fileId);
 
     /**
+     * 批量获取活动文件节点实体（内部操作使用，不进行权限校验）。
+     * <p>按传入顺序不保证；缺失/已删除节点不会出现在结果中。</p>
+     */
+    List<uno.acloud.file.infrastructure.entity.FileNode> getActiveFileNodesByIds(List<Long> fileIds);
+
+    /**
      * 获取文件节点实体（流式下载等内部操作使用）
      */
     uno.acloud.file.infrastructure.entity.FileNode getFileNodeForStream(Long fileId, Long userId);

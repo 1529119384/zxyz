@@ -208,6 +208,18 @@
         </dependencies>
     </dependencyManagement>
 
+    <!-- 共享依赖：所有模块（含 10 个 app 模块）继承。
+         spring-boot-devtools：本地开发热部署（Debug 模式生效），
+         optional 不传递、runtime 不参与编译，repackage 自动排除，不影响生产镜像。 -->
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-devtools</artifactId>
+            <scope>runtime</scope>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+
     <build>
         <plugins>
             <plugin>

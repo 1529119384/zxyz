@@ -152,13 +152,15 @@ public class GetSignUrl {
                     .bucket(ossProperties.getBucket())
                     .key(objectKey)
                     .build();
-            GetObjectResult result = ossClient.getObject(request);
-            byte[] buffer = new byte[maxBytes];
-            int bytesRead = result.body().read(buffer);
-            if (bytesRead <= 0) {
-                return null;
+            // GetObjectResult 实现 AutoCloseable，try-with-resources 关闭响应流
+            try (GetObjectResult result = ossClient.getObject(request)) {
+                byte[] buffer = new byte[maxBytes];
+                int bytesRead = result.body().read(buffer);
+                if (bytesRead <= 0) {
+                    return null;
+                }
+                return bytesRead == maxBytes ? buffer : java.util.Arrays.copyOf(buffer, bytesRead);
             }
-            return bytesRead == maxBytes ? buffer : java.util.Arrays.copyOf(buffer, bytesRead);
         } catch (Exception e) {
             log.debug("读取 OSS 对象头部字节失败，objectKey: {}", objectKey);
             return null;

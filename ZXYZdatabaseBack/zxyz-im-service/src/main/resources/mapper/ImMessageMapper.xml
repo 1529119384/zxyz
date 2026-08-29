@@ -14,7 +14,7 @@
         m.message_type AS messageType,
         CASE
             WHEN m.status = 0 AND m.message_type IN ('PROJECT_CREATION_APPLICATION', 'PROJECT_CREATE_RESULT') THEN CAST(m.content AS CHAR)
-            WHEN m.status = 0 AND m.message_type = 'TEXT' THEN m.content_text
+            WHEN m.status = 0 AND m.message_type = 'TEXT' THEN m.content_extracted
             WHEN m.status = 0 AND m.message_type IN ('ANNOUNCEMENT', 'SYSTEM_NOTIFICATION') THEN CAST(m.content AS CHAR)
             ELSE NULL
         END AS content,
@@ -56,7 +56,7 @@
     <!-- Common GROUP BY clause (matches all columns + aggregates) -->
     <sql id="messageRowGroupBy">
         GROUP BY m.id, m.conversation_id, m.sender_user_id, up.username, up.name, up.avatar,
-                 m.message_type, m.content, m.content_text, m.status, m.client_message_id,
+                 m.message_type, m.content, m.content_extracted, m.status, m.client_message_id,
                  m.recall_by_user_id, m.recall_time, m.recall_reason, c.type, m.create_time
     </sql>
 

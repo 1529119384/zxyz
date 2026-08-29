@@ -21,15 +21,6 @@ services:
     volumes:
       - ${DATA_DIR:-./data}/mysql:/var/lib/mysql
       - ./sql/00-init-zxyz.sh:/docker-entrypoint-initdb.d/00-init-zxyz.sh:ro
-      - ./sql/schema_project.sql:/docker-entrypoint-sql/schema_project.sql:ro
-      - ./sql/schema_im.sql:/docker-entrypoint-sql/schema_im.sql:ro
-      - ./sql/schema_email.sql:/docker-entrypoint-sql/schema_email.sql:ro
-      - ./sql/schema_share.sql:/docker-entrypoint-sql/schema_share.sql:ro
-      - ./sql/schema_file.sql:/docker-entrypoint-sql/schema_file.sql:ro
-      - ./sql/schema_team.sql:/docker-entrypoint-sql/schema_team.sql:ro
-      - ./sql/schema_user.sql:/docker-entrypoint-sql/schema_user.sql:ro
-      - ./sql/schema_audit.sql:/docker-entrypoint-sql/schema_audit.sql:ro
-      - ./sql/schema_nacos.sql:/docker-entrypoint-sql/schema_nacos.sql:ro
     networks:
       - zxyz-net
     healthcheck:
@@ -71,13 +62,15 @@ services:
       # Nacos 鉴权配置 — 生产环境必须通过环境变量注入，禁止使用默认密码
       NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN}
       NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY:-serverIdentity}
-      NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE:-security}
+      NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE}
       # Nacos 控制台管理员密码，必须在 .env 中覆盖默认值
       NACOS_PASSWORD: ${NACOS_PASSWORD:-CHANGE_ME_NACOS}
       TZ: Asia/Shanghai
     ports:
       - "127.0.0.1:${NACOS_PORT:-8848}:8848"
       - "127.0.0.1:${NACOS_CONSOLE_PORT:-8080}:8080"
+      # Nacos 3.x gRPC 端口（主端口+1000，客户端自动 +1000 连接，宿主端口须为 NACOS_PORT+1000）
+      - "127.0.0.1:${NACOS_GRPC_PORT:-19048}:9848"
     volumes:
       - ${DATA_DIR:-./data}/nacos:/home/nacos/data
       - ${DATA_DIR:-./data}/nacos-logs:/home/nacos/logs

@@ -30,4 +30,4 @@ email:
 app:
   # RemoteStpInterfaceAutoConfig 需要此属性进行服务间权限校验
   team-service:
-    base-url: ${TEAM_SERVICE_BASE_URL:http://zxyz-team-service}
+    base-url: ${TEAM_SERVICE_BASE_URL:http://localhost:18086}

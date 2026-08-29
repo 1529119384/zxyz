@@ -151,10 +151,8 @@ public interface ImMessageMapper extends BaseMapper<ImMessage> {
             LEFT JOIN im_user_profile up ON up.user_id = m.sender_user_id
             WHERE m.conversation_id = #{conversationId}
               AND m.status = 0
-              AND (
-                  m.content_extracted LIKE CONCAT(#{keyword}, '%')
-                  OR CAST(m.content AS CHAR) LIKE CONCAT(#{keyword}, '%')
-              )
+              -- 仅用生成列前缀索引（content_extracted 已提取 TEXT 消息内容）；去掉 OR CAST 使前缀索引可剪枝（P2-C5-1）
+              AND m.content_extracted LIKE CONCAT(#{keyword}, '%')
             ORDER BY m.id DESC
             LIMIT #{limit}
             """)

@@ -64,25 +64,41 @@ public abstract class AbstractServiceClient {
     // ==================== Resilience ====================
 
     /**
-     * 使用 Resilience4j 包装 HTTP 调用，提供重试和熔断保护。
-     * <p>重试策略：最多 3 次，间隔 500ms，仅对 IO/超时异常重试；
+     * 使用 Resilience4j 包装 HTTP 调用（等价于 {@link #executeWithResilience(Supplier, boolean)} 且 allowRetry=true）。
+     * <p>重试策略：最多 3 次，间隔 500ms，对 IOException/TimeoutException/ResourceAccessException
+     * 及 HTTP 5xx 响应重试；4xx 与业务异常（BusinessException）不重试，快速失败。
      * 熔断器：滑动窗口 10 次调用，失败率 50% 时熔断，30s 后半开。</p>
      */
     private <T> T executeWithResilience(Supplier<T> action) {
+        return executeWithResilience(action, true);
+    }
+
+    /**
+     * 使用 Resilience4j 包装 HTTP 调用，提供重试和熔断保护。
+     * <p>allowRetry=true（读操作、显式 WithRetry 写操作）：最多重试 3 次、间隔 500ms，
+     * 仅对 IO/超时/连接异常与 HTTP 5xx（服务端可用性错误）重试；4xx 解析出的 BusinessException
+     * 不重试（业务错误快速失败）。allowRetry=false（默认写操作）：跳过重试只保留熔断，
+     * 避免非幂等写入因读超时/连接重置时服务端可能已执行而重复产生副作用。</p>
+     */
+    private <T> T executeWithResilience(Supplier<T> action, boolean allowRetry) {
         String name = "serviceClient-" + serviceName();
-        Retry retry = RETRY_CACHE.computeIfAbsent(name, key -> Retry.of(key, RetryConfig.custom()
-                .maxAttempts(3)
-                .waitDuration(Duration.ofMillis(500))
-                .retryExceptions(IOException.class, TimeoutException.class, ResourceAccessException.class)
-                .ignoreExceptions(BusinessException.class)
-                .build()));
+        Retry retry = null;
+        if (allowRetry) {
+            retry = RETRY_CACHE.computeIfAbsent(name, key -> Retry.of(key, RetryConfig.custom()
+                    .maxAttempts(3)
+                    .waitDuration(Duration.ofMillis(500))
+                    .retryExceptions(IOException.class, TimeoutException.class,
+                            ResourceAccessException.class, RestClientResponseException.class)
+                    .ignoreExceptions(BusinessException.class)
+                    .build()));
+        }
         CircuitBreaker cb = CB_CACHE.computeIfAbsent(name, key -> CircuitBreaker.of(key, CircuitBreakerConfig.custom()
                 .slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)
                 .slidingWindowSize(10)
                 .failureRateThreshold(50)
                 .waitDurationInOpenState(Duration.ofSeconds(30))
                 .build()));
-        return retry.executeSupplier(() -> cb.executeSupplier(() -> {
+        Supplier<T> guarded = () -> cb.executeSupplier(() -> {
             try {
                 return action.get();
             } catch (BusinessException e) {
@@ -90,12 +106,26 @@ public abstract class AbstractServiceClient {
             } catch (ResourceAccessException e) {
                 throw e;
             } catch (RestClientResponseException e) {
+                if (e.getStatusCode().is5xxServerError()) {
+                    // 服务端可用性错误：原样抛出，由 Retry 重试
+                    throw e;
+                }
+                // 客户端 4xx：业务错误，转换为 BusinessException 快速失败（Retry 忽略 BusinessException）
                 throw parseErrorResponse(e, serviceName() + "调用失败: " + e.getStatusCode());
             } catch (Exception e) {
                 throw new BusinessException(ErrorCode.SYSTEM_ERROR,
                         serviceName() + "调用失败: " + e.getMessage());
             }
-        }));
+        });
+        try {
+            if (retry != null) {
+                return retry.executeSupplier(guarded);
+            }
+            return guarded.get();
+        } catch (RestClientResponseException e) {
+            // 重试耗尽或未启用重试时，5xx 保持调用方预期的 BusinessException 契约
+            throw parseErrorResponse(e, serviceName() + "调用失败: " + e.getStatusCode());
+        }
     }
 
     // ==================== Accessors ====================
@@ -158,6 +188,9 @@ public abstract class AbstractServiceClient {
                 if (e.getStatusCode().value() == 404) {
                     return null;
                 }
+                if (e.getStatusCode().is5xxServerError()) {
+                    throw e; // 服务端可用性错误：交给 Retry 重试
+                }
                 throw parseErrorResponse(e, serviceName() + "请求失败: " + path);
             }
         });
@@ -165,6 +198,8 @@ public abstract class AbstractServiceClient {
 
     /**
      * 发送 JSON POST 请求。
+     * <p>默认不重试（写操作非幂等，读超时/连接重置时服务端可能已执行，重试会重复副作用）；
+     * 确认端点幂等时使用 {@link #postJsonWithRetry(String, Object)}。</p>
      *
      * @param path    请求路径（相对于 baseUrl）
      * @param payload 请求体
@@ -172,21 +207,11 @@ public abstract class AbstractServiceClient {
      * @throws BusinessException 请求失败时抛出
      */
     protected JsonNode postJson(String path, Object payload) {
-        return executeWithResilience(() -> {
-            String body = restClient.post()
-                    .uri(baseUrl + path)
-                    .headers(this::internalHeaders)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .accept(MediaType.APPLICATION_JSON)
-                    .body(payload)
-                    .retrieve()
-                    .body(String.class);
-            return readJsonNode(body);
-        });
+        return post(path, payload, false, new Object[0]);
     }
 
     /**
-     * 发送 JSON POST 请求（支持 URI 模板变量）。
+     * 发送 JSON POST 请求（支持 URI 模板变量，默认不重试）。
      *
      * @param path         请求路径模板（相对于 baseUrl）
      * @param payload      请求体
@@ -195,6 +220,35 @@ public abstract class AbstractServiceClient {
      * @throws BusinessException 请求失败时抛出
      */
     protected JsonNode postJson(String path, Object payload, Object... uriVariables) {
+        return post(path, payload, false, uriVariables);
+    }
+
+    /**
+     * 发送 JSON POST 请求（幂等端点显式重试版本，最多重试 3 次）。
+     *
+     * @param path    请求路径（相对于 baseUrl）
+     * @param payload 请求体
+     * @return 响应 JSON 根节点
+     * @throws BusinessException 请求失败时抛出
+     */
+    protected JsonNode postJsonWithRetry(String path, Object payload) {
+        return post(path, payload, true, new Object[0]);
+    }
+
+    /**
+     * 发送 JSON POST 请求（支持 URI 模板变量，幂等端点显式重试版本，最多重试 3 次）。
+     *
+     * @param path         请求路径模板（相对于 baseUrl）
+     * @param payload      请求体
+     * @param uriVariables URI 模板变量值
+     * @return 响应 JSON 根节点
+     * @throws BusinessException 请求失败时抛出
+     */
+    protected JsonNode postJsonWithRetry(String path, Object payload, Object... uriVariables) {
+        return post(path, payload, true, uriVariables);
+    }
+
+    private JsonNode post(String path, Object payload, boolean allowRetry, Object... uriVariables) {
         return executeWithResilience(() -> {
             String body = restClient.post()
                     .uri(baseUrl + path, uriVariables)
@@ -205,11 +259,12 @@ public abstract class AbstractServiceClient {
                     .retrieve()
                     .body(String.class);
             return readJsonNode(body);
-        });
+        }, allowRetry);
     }
 
     /**
      * 发送 JSON PUT 请求。
+     * <p>默认不重试（非幂等写；确认幂等时使用 {@link #putJsonWithRetry(String, Object)}）。</p>
      *
      * @param path    请求路径（相对于 baseUrl）
      * @param payload 请求体
@@ -217,21 +272,11 @@ public abstract class AbstractServiceClient {
      * @throws BusinessException 请求失败时抛出
      */
     protected JsonNode putJson(String path, Object payload) {
-        return executeWithResilience(() -> {
-            String body = restClient.put()
-                    .uri(baseUrl + path)
-                    .headers(this::internalHeaders)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .accept(MediaType.APPLICATION_JSON)
-                    .body(payload)
-                    .retrieve()
-                    .body(String.class);
-            return readJsonNode(body);
-        });
+        return put(path, payload, false, new Object[0]);
     }
 
     /**
-     * 发送 JSON PUT 请求（支持 URI 模板变量）。
+     * 发送 JSON PUT 请求（支持 URI 模板变量，默认不重试）。
      *
      * @param path         请求路径模板（相对于 baseUrl）
      * @param payload      请求体
@@ -240,6 +285,24 @@ public abstract class AbstractServiceClient {
      * @throws BusinessException 请求失败时抛出
      */
     protected JsonNode putJson(String path, Object payload, Object... uriVariables) {
+        return put(path, payload, false, uriVariables);
+    }
+
+    /**
+     * 发送 JSON PUT 请求（幂等端点显式重试版本，最多重试 3 次）。
+     */
+    protected JsonNode putJsonWithRetry(String path, Object payload) {
+        return put(path, payload, true, new Object[0]);
+    }
+
+    /**
+     * 发送 JSON PUT 请求（支持 URI 模板变量，幂等端点显式重试版本，最多重试 3 次）。
+     */
+    protected JsonNode putJsonWithRetry(String path, Object payload, Object... uriVariables) {
+        return put(path, payload, true, uriVariables);
+    }
+
+    private JsonNode put(String path, Object payload, boolean allowRetry, Object... uriVariables) {
         return executeWithResilience(() -> {
             String body = restClient.put()
                     .uri(baseUrl + path, uriVariables)
@@ -250,11 +313,12 @@ public abstract class AbstractServiceClient {
                     .retrieve()
                     .body(String.class);
             return readJsonNode(body);
-        });
+        }, allowRetry);
     }
 
     /**
      * 发送 JSON PATCH 请求。
+     * <p>默认不重试（非幂等写；确认幂等时使用 {@link #patchJsonWithRetry(String, Object)}）。</p>
      *
      * @param path    请求路径（相对于 baseUrl）
      * @param payload 请求体
@@ -262,21 +326,11 @@ public abstract class AbstractServiceClient {
      * @throws BusinessException 请求失败时抛出
      */
     protected JsonNode patchJson(String path, Object payload) {
-        return executeWithResilience(() -> {
-            String body = restClient.patch()
-                    .uri(baseUrl + path)
-                    .headers(this::internalHeaders)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .accept(MediaType.APPLICATION_JSON)
-                    .body(payload)
-                    .retrieve()
-                    .body(String.class);
-            return readJsonNode(body);
-        });
+        return patch(path, payload, false, new Object[0]);
     }
 
     /**
-     * 发送 JSON PATCH 请求（支持 URI 模板变量）。
+     * 发送 JSON PATCH 请求（支持 URI 模板变量，默认不重试）。
      *
      * @param path         请求路径模板（相对于 baseUrl）
      * @param payload      请求体
@@ -285,6 +339,24 @@ public abstract class AbstractServiceClient {
      * @throws BusinessException 请求失败时抛出
      */
     protected JsonNode patchJson(String path, Object payload, Object... uriVariables) {
+        return patch(path, payload, false, uriVariables);
+    }
+
+    /**
+     * 发送 JSON PATCH 请求（幂等端点显式重试版本，最多重试 3 次）。
+     */
+    protected JsonNode patchJsonWithRetry(String path, Object payload) {
+        return patch(path, payload, true, new Object[0]);
+    }
+
+    /**
+     * 发送 JSON PATCH 请求（支持 URI 模板变量，幂等端点显式重试版本，最多重试 3 次）。
+     */
+    protected JsonNode patchJsonWithRetry(String path, Object payload, Object... uriVariables) {
+        return patch(path, payload, true, uriVariables);
+    }
+
+    private JsonNode patch(String path, Object payload, boolean allowRetry, Object... uriVariables) {
         return executeWithResilience(() -> {
             String body = restClient.patch()
                     .uri(baseUrl + path, uriVariables)
@@ -295,27 +367,45 @@ public abstract class AbstractServiceClient {
                     .retrieve()
                     .body(String.class);
             return readJsonNode(body);
-        });
+        }, allowRetry);
     }
 
     /**
-     * 发送 DELETE 请求（无响应体）。
+     * 发送 DELETE 请求（无响应体，默认不重试）。
      *
      * @param path 请求路径（相对于 baseUrl）
      * @throws BusinessException 请求失败时抛出
      */
     protected void deleteJson(String path) {
-        deleteJson(path, new Object[0]);
+        delete(path, false, new Object[0]);
     }
 
     /**
-     * 发送 DELETE 请求（支持 URI 模板变量，无响应体）。
+     * 发送 DELETE 请求（支持 URI 模板变量，无响应体，默认不重试）。
      *
      * @param path         请求路径模板（相对于 baseUrl）
      * @param uriVariables URI 模板变量值
      * @throws BusinessException 请求失败时抛出
      */
     protected void deleteJson(String path, Object... uriVariables) {
+        delete(path, false, uriVariables);
+    }
+
+    /**
+     * 发送 DELETE 请求（幂等端点显式重试版本，最多重试 3 次）。
+     */
+    protected void deleteJsonWithRetry(String path) {
+        delete(path, true, new Object[0]);
+    }
+
+    /**
+     * 发送 DELETE 请求（支持 URI 模板变量，幂等端点显式重试版本，最多重试 3 次）。
+     */
+    protected void deleteJsonWithRetry(String path, Object... uriVariables) {
+        delete(path, true, uriVariables);
+    }
+
+    private void delete(String path, boolean allowRetry, Object... uriVariables) {
         executeWithResilience(() -> {
             restClient.delete()
                     .uri(baseUrl + path, uriVariables)
@@ -323,7 +413,7 @@ public abstract class AbstractServiceClient {
                     .retrieve()
                     .toBodilessEntity();
             return null;
-        });
+        }, allowRetry);
     }
 
     /**

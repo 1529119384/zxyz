@@ -18,17 +18,22 @@ import uno.acloud.exception.BusinessException;
 import uno.acloud.file.controller.model.ShareFileProjectionVO;
 import uno.acloud.file.dto.InternalBatchFileIdsRequest;
 import uno.acloud.file.dto.InternalBatchParentIdsRequest;
+import uno.acloud.file.dto.InternalShareAccessCheckRequest;
 import uno.acloud.file.infrastructure.entity.FileItem;
 import uno.acloud.file.infrastructure.entity.FileNode;
 import uno.acloud.file.service.FileQueryPort;
+import uno.acloud.file.service.impl.FileAccessGuard;
 import uno.acloud.file.storage.StorageProvider;
 import uno.acloud.file.storage.StorageProviderRegistry;
 
 import java.io.OutputStream;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 @Hidden
 @RestController
@@ -38,10 +43,14 @@ public class InternalFileController {
 
     private final FileQueryPort fileQueryPort;
     private final StorageProviderRegistry registry;
+    private final FileAccessGuard fileAccessGuard;
 
-    public InternalFileController(FileQueryPort fileQueryPort, StorageProviderRegistry registry) {
+    public InternalFileController(FileQueryPort fileQueryPort,
+                                  StorageProviderRegistry registry,
+                                  FileAccessGuard fileAccessGuard) {
         this.fileQueryPort = fileQueryPort;
         this.registry = registry;
+        this.fileAccessGuard = fileAccessGuard;
     }
 
     @Operation(summary = "获取文件流式下载信息（内部调用）")
@@ -91,18 +100,18 @@ public class InternalFileController {
     @Operation(summary = "获取文件 share 投影")
     @GetMapping("/{fileId}/share-projection")
     public Result<ShareFileProjectionVO> getShareProjection(@PathVariable Long fileId) {
-        List<FileInfoDTO> infos = fileQueryPort.getFileInfoByIds(List.of(fileId));
-        if (infos.isEmpty() || infos.get(0) == null) {
+        List<FileNode> nodes = fileQueryPort.getActiveFileNodesByIds(List.of(fileId));
+        if (nodes.isEmpty() || nodes.get(0) == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "文件不存在");
         }
-        return Result.of(toShareProjectionVO(infos.get(0)));
+        return Result.of(toShareProjectionVO(nodes.get(0)));
     }
 
     @Operation(summary = "批量获取文件 share 投影")
     @PostMapping("/batch-share-projection")
     public Result<List<ShareFileProjectionVO>> getBatchShareProjection(@Valid @RequestBody InternalBatchFileIdsRequest request) {
-        List<FileInfoDTO> fileInfos = fileQueryPort.getFileInfoByIds(request.getFileIds());
-        return Result.of(fileInfos.stream()
+        List<FileNode> nodes = fileQueryPort.getActiveFileNodesByIds(request.getFileIds());
+        return Result.of(nodes.stream()
                 .filter(Objects::nonNull)
                 .map(this::toShareProjectionVO)
                 .toList());
@@ -133,6 +142,29 @@ public class InternalFileController {
         return Result.of(projected);
     }
 
+    @Operation(summary = "创建分享前校验文件归属与读权限（P0-3，内部调用）")
+    @PostMapping("/share-access-check")
+    public Result<Void> checkShareFileAccess(@Valid @RequestBody InternalShareAccessCheckRequest request) {
+        if (request.getUserId() == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "userId 不能为空");
+        }
+        List<FileNode> nodes = fileQueryPort.getActiveFileNodesByIds(request.getFileIds());
+        if (nodes.size() != new LinkedHashSet<>(request.getFileIds()).size()) {
+            // 请求中存在已删除/不存在的文件，杜绝静默吞掉（与 requireActiveFiles 语义对齐）
+            Set<Long> found = new LinkedHashSet<>();
+            for (FileNode node : nodes) {
+                found.add(node.getId());
+            }
+            for (Long fileId : request.getFileIds()) {
+                if (!found.contains(fileId)) {
+                    throw new BusinessException(ErrorCode.NOT_FOUND, "所选文件中包含已删除或不存在的数据: " + fileId);
+                }
+            }
+        }
+        fileAccessGuard.requireReadAccess(nodes, request.getUserId());
+        return Result.success();
+    }
+
     @Operation(summary = "获取分享文件下载链接（窄端点，直接返回下载链接字符串）")
     @GetMapping("/{fileId}/share-download-url")
     public Result<String> getShareDownloadUrl(@PathVariable Long fileId) {
@@ -150,7 +182,7 @@ public class InternalFileController {
 
 
     /**
-     * 将 FileInfoDTO 转换为 ShareFileProjectionVO。
+     * 将 FileInfoDTO 转换为 ShareFileProjectionVO（children 投影；uploadUserId 在 DTO 上不可得时为 null）。
      */
     private ShareFileProjectionVO toShareProjectionVO(FileInfoDTO dto) {
         ShareFileProjectionVO vo = new ShareFileProjectionVO();
@@ -163,6 +195,27 @@ public class InternalFileController {
         vo.setStorePath(dto.getStorePath());
         vo.setDeleted(dto.getDeleted());
         vo.setModifyTime(dto.getModifyTime());
+        vo.setUploadUserId(null); // FileInfoDTO 不含 uploadUserId；归属校验走 share-access-check 端点
+        vo.setTeamId(dto.getTeamId());
+        return vo;
+    }
+
+    /**
+     * 将 FileNode 转换为 ShareFileProjectionVO（含归属字段，用于 share 投影/share-access-check 的 JSON 输出）。
+     */
+    private ShareFileProjectionVO toShareProjectionVO(FileNode node) {
+        ShareFileProjectionVO vo = new ShareFileProjectionVO();
+        vo.setId(node.getId());
+        vo.setFileType(node.getFileType());
+        vo.setUuidName(node instanceof FileItem item ? item.getUuidName() : null);
+        vo.setOriginalName(node.getOriginalName());
+        vo.setCategory(node instanceof FileItem item ? item.getCategory() : null);
+        vo.setFileSize(node instanceof FileItem item ? item.getFileSize() : null);
+        vo.setStorePath(node.getStorePath());
+        vo.setDeleted(node.getDeleted());
+        vo.setModifyTime(node.getModifyTime());
+        vo.setUploadUserId(node.getUploadUserId());
+        vo.setTeamId(node.getTeamId());
         return vo;
     }
 }
