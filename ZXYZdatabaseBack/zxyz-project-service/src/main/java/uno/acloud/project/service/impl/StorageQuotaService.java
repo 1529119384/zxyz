@@ -90,9 +90,9 @@ public class StorageQuotaService implements StorageQuotaPort {
     }
 
     @Override
-    public void checkUploadQuota(Long userId, Long teamId, Integer spaceType, Long projectId, long uploadBytes) {
+    public Long checkUploadQuota(Long userId, Long teamId, Integer spaceType, Long projectId, long uploadBytes) {
         if (uploadBytes <= 0) {
-            return;
+            return null;
         }
         Integer normalizedSpaceType = FileSpaceType.normalize(spaceType, teamId, projectId);
 
@@ -117,6 +117,9 @@ public class StorageQuotaService implements StorageQuotaPort {
         if (FileSpaceType.isPersonal(normalizedSpaceType)) {
             checkPersonalUploadUnderTeamLimit(userId, uploadBytes, personalCtx);
         }
+
+        // 返回该作用域的有效上限（null=不限制），供 file-service 预检阶段写入配额台账。
+        return usage.getUnlimited() ? null : usage.getStorageLimit();
     }
 
     /**

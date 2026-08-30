@@ -14,6 +14,8 @@ import uno.acloud.project.entity.UserQuota;
 import uno.acloud.project.mapper.ProjectQuotaMapper;
 import uno.acloud.project.vo.StorageUsageVO;
 
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -38,6 +40,9 @@ class StorageQuotaServiceTest {
     @Mock
     private StorageQuotaCacheService cacheService;
 
+    /** 真实线程池：避免 mock 的 submit() 返回永不完成的 Future 导致 CompletableFuture.join() 挂起 */
+    private ThreadPoolTaskExecutor quotaExecutor;
+
     private StorageQuotaService storageQuotaService;
 
     private static final long DEFAULT_PERSONAL_LIMIT = 10737418240L; // 10GB
@@ -46,9 +51,14 @@ class StorageQuotaServiceTest {
     void setUp() {
         ServiceProperties props = new ServiceProperties();
         props.getStorage().setPersonalDefaultLimit(DEFAULT_PERSONAL_LIMIT);
+        quotaExecutor = new ThreadPoolTaskExecutor();
+        quotaExecutor.setCorePoolSize(2);
+        quotaExecutor.setMaxPoolSize(4);
+        quotaExecutor.setQueueCapacity(10);
+        quotaExecutor.initialize();
         storageQuotaService = new StorageQuotaService(
                 fileServiceClient, userQuotaClient, projectQuotaMapper,
-                teamServiceClient, cacheService, props);
+                teamServiceClient, cacheService, props, quotaExecutor);
     }
 
     // ==================== checkUploadQuota — sufficient quota ====================

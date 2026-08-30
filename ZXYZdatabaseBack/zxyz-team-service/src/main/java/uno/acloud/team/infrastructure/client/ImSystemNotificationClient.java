@@ -62,7 +62,7 @@ public class ImSystemNotificationClient extends AbstractServiceClient {
 
         try {
             restClient().post()
-                    .uri(baseUrl() + "/api/im/internal/system-notifications/batch")
+                    .uri(baseUrl() + "/api/internal/im/system-notifications/batch")
                     .headers(this::internalHeaders)
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_JSON)

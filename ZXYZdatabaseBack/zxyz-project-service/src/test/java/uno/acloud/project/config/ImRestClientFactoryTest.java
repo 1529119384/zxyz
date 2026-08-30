@@ -27,7 +27,7 @@ class ImRestClientFactoryTest {
         AtomicReference<String> capturedMethod = new AtomicReference<>();
         AtomicReference<String> capturedPath = new AtomicReference<>();
         AtomicReference<String> capturedToken = new AtomicReference<>();
-        httpServer.createContext("/api/im/internal/team-sync/members/remove", exchange -> {
+        httpServer.createContext("/api/internal/im/team-sync/members/remove", exchange -> {
             capturedMethod.set(exchange.getRequestMethod());
             capturedPath.set(exchange.getRequestURI().getPath());
             capturedToken.set(exchange.getRequestHeaders().getFirst(InternalServiceHeaders.TOKEN_HEADER));
@@ -45,13 +45,13 @@ class ImRestClientFactoryTest {
                     RestClient.builder(), properties);
 
             restClient.post()
-                    .uri("/api/im/internal/team-sync/members/remove")
+                    .uri("/api/internal/im/team-sync/members/remove")
                     .header(InternalServiceHeaders.TOKEN_HEADER, "internal-token")
                     .retrieve()
                     .toBodilessEntity();
 
             assertEquals("POST", capturedMethod.get());
-            assertEquals("/api/im/internal/team-sync/members/remove", capturedPath.get());
+            assertEquals("/api/internal/im/team-sync/members/remove", capturedPath.get());
             assertEquals("internal-token", capturedToken.get());
         } finally {
             httpServer.stop(0);

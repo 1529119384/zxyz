@@ -20,6 +20,7 @@ import uno.acloud.file.dto.BatchConfirmUploadRequest;
 import uno.acloud.file.dto.ConfirmUploadRequest;
 import uno.acloud.file.infrastructure.entity.FileItem;
 import uno.acloud.file.infrastructure.entity.Folder;
+import uno.acloud.file.infrastructure.mapper.UsageLedgerMapper;
 import uno.acloud.file.storage.StorageProvider;
 import uno.acloud.file.storage.StorageProviderRegistry;
 import uno.acloud.file.storage.UploadInfo;
@@ -64,6 +65,9 @@ class FileUploadServiceTest {
     @Mock
     private ConfigGetter configGetter;
 
+    @Mock
+    private UsageLedgerMapper usageLedgerMapper;
+
     private ServiceProperties serviceProperties;
 
     private FileUploadService fileUploadService;
@@ -86,7 +90,7 @@ class FileUploadServiceTest {
         fileUploadService = new FileUploadService(
                 registry, fileUploadPersistenceService, fileDomainValidator,
                 filePathResolver, fileAccessGuardService, restClient,
-                objectMapper, configGetter, serviceProperties);
+                objectMapper, configGetter, serviceProperties, usageLedgerMapper);
     }
 
     // ==================== Upload with sufficient quota — should succeed ====================
@@ -129,6 +133,8 @@ class FileUploadServiceTest {
                         "oss", "https://oss.example.com/files/uuid-test.txt",
                         "test.txt", true));
         when(fileUploadPersistenceService.saveFileItem(any(FileItem.class))).thenReturn(savedFile);
+        // getObjectSize 是 fail-closed：未命中将拒绝确认。须与实际 fileSize 一致（1024）
+        when(defaultProvider.getObjectSize("files/uuid-test.txt")).thenReturn(1024L);
 
         BatchUploadConfirmResultVO result = fileUploadService.confirmUpload(request, userId);
 
@@ -178,7 +184,7 @@ class FileUploadServiceTest {
         FileUploadService quotaService = new FileUploadService(
                 registry, fileUploadPersistenceService, fileDomainValidator,
                 filePathResolver, fileAccessGuardService, restClient,
-                objectMapper, quotaConfigGetter, quotaProps);
+                objectMapper, quotaConfigGetter, quotaProps, usageLedgerMapper);
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> quotaService.confirmUpload(request, userId));
@@ -477,7 +483,7 @@ class FileUploadServiceTest {
         FileUploadService quotaService = new FileUploadService(
                 registry, fileUploadPersistenceService, fileDomainValidator,
                 filePathResolver, fileAccessGuardService, restClient,
-                objectMapper, quotaConfigGetter, quotaProps);
+                objectMapper, quotaConfigGetter, quotaProps, usageLedgerMapper);
 
         when(fileDomainValidator.validateInputName("quota-test.txt")).thenReturn("quota-test.txt");
         when(defaultProvider.supportsPresignedUpload()).thenReturn(false);

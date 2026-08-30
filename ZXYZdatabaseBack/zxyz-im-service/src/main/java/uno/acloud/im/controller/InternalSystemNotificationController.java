@@ -14,7 +14,7 @@ import uno.acloud.im.dto.InternalBatchSystemNotificationRequest;
 
 @Hidden
 @RestController
-@RequestMapping("/api/im/internal/system-notifications")
+@RequestMapping("/api/internal/im/system-notifications")
 @Tag(name = "系统通知（内部）", description = "内部服务系统通知 API")
 public class InternalSystemNotificationController {
 

@@ -16,7 +16,7 @@ import uno.acloud.im.dto.InternalTeamSyncRequest;
 
 @Hidden
 @RestController
-@RequestMapping("/api/im/internal/team-sync")
+@RequestMapping("/api/internal/im/team-sync")
 @Tag(name = "团队同步（内部）", description = "内部服务团队数据同步 API")
 public class InternalTeamSyncController {
 

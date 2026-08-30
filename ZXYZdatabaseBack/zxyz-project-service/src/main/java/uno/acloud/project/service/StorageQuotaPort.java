@@ -11,5 +11,9 @@ public interface StorageQuotaPort {
 
     long sumUsedStorage(Long userId, Long teamId, Integer spaceType, Long projectId);
 
-    void checkUploadQuota(Long userId, Long teamId, Integer spaceType, Long projectId, long uploadBytes);
+    /**
+     * 检查上传配额（超限即抛 {@link BusinessException}），并返回该作用域的有效存储上限（null=不限制）。
+     * <p>返回的上限供 file-service 预检阶段写入配额台账，作为 confirm 原子扣减的守卫值。
+     */
+    Long checkUploadQuota(Long userId, Long teamId, Integer spaceType, Long projectId, long uploadBytes);
 }

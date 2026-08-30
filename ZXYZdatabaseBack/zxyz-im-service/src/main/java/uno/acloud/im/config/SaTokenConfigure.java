@@ -25,9 +25,9 @@ public class SaTokenConfigure implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(imHttpAuthInterceptor)
-                .addPathPatterns("/api/im/**", "/api/team-collaboration/**", "/api/permissions/teams/**");
+                .addPathPatterns("/api/im/**", "/api/internal/im/**", "/api/team-collaboration/**", "/api/permissions/teams/**");
         registry.addInterceptor(new SaInterceptor())
                 .addPathPatterns("/**")
-                .excludePathPatterns("/actuator/**", "/api/im/internal/**");
+                .excludePathPatterns("/actuator/**", "/api/internal/im/**");
     }
 }

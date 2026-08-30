@@ -122,4 +122,34 @@ public interface FileObjectRefMapper extends BaseMapper<FileObjectRef> {
 
     @Delete("DELETE FROM file_object_ref WHERE delete_status = 'DELETED' AND delete_time < DATE_SUB(NOW(), INTERVAL 30 DAY)")
     int deleteExpiredDeleted();
+
+    @Select({
+            "SELECT object_key",
+            "FROM file_object_ref",
+            "WHERE object_key LIKE CONCAT(#{prefix}, '%')"
+    })
+    List<String> selectObjectKeysByPrefix(@Param("prefix") String prefix);
+
+    /**
+     * 孤儿对象登记：仅当 object_key 尚不存在任何行时插入一条 PENDING_DELETE 记录。
+     * <p>
+     * 已存在的行（无论 ACTIVE/DELETING/DELETED 等状态）一律不修改（INSERT IGNORE 被忽略，
+     * 返回 0），只对完全没有 ref 行的对象生效。ref_count 置 0 使其满足
+     * FileObjectDeleteRetryTask 的 {@code listPendingDeletes} 条件（ref_count = 0），
+     * 从而真正进入物理删除管道。
+     * </p>
+     *
+     * @param objectKey      对象键
+     * @param pendingStatus  待删除状态（PENDING_DELETE）
+     * @param storageProvider 存储提供者标识（oss）
+     * @return 插入行数：1 = 新增孤儿登记，0 = 已存在行未修改
+     */
+    @Insert({
+            "INSERT IGNORE INTO file_object_ref",
+            "(object_key, ref_count, delete_status, delete_retry_count, next_retry_time, create_time, modify_time, storage_provider)",
+            "VALUES (#{objectKey}, 0, #{pendingStatus}, 0, NOW(3), NOW(3), NOW(3), #{storageProvider})"
+    })
+    int markOrphanPendingDelete(@Param("objectKey") String objectKey,
+                                @Param("pendingStatus") String pendingStatus,
+                                @Param("storageProvider") String storageProvider);
 }

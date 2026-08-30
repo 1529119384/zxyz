@@ -17,6 +17,8 @@ import uno.acloud.file.dto.BatchConfirmUploadRequest;
 import uno.acloud.file.dto.ConfirmUploadRequest;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.file.infrastructure.entity.FileItem;
+import uno.acloud.file.infrastructure.entity.UsageLedger;
+import uno.acloud.file.infrastructure.mapper.UsageLedgerMapper;
 import uno.acloud.common.util.FileNameUtil;
 import uno.acloud.file.service.FileUploadPort;
 import uno.acloud.file.storage.StorageProvider;
@@ -83,6 +85,7 @@ public class FileUploadService implements FileUploadPort {
     private final String projectServiceBaseUrl;
     private final String internalServiceToken;
     private final ConfigGetter configGetter;
+    private final UsageLedgerMapper usageLedgerMapper;
 
     public FileUploadService(StorageProviderRegistry registry,
                              FileUploadPersistenceManager fileUploadPersistenceService,
@@ -92,7 +95,8 @@ public class FileUploadService implements FileUploadPort {
                              RestClient restClient,
                              ObjectMapper objectMapper,
                              ConfigGetter configGetter,
-                             ServiceProperties serviceProperties) {
+                             ServiceProperties serviceProperties,
+                             UsageLedgerMapper usageLedgerMapper) {
         this.registry = registry;
         this.fileUploadPersistenceService = fileUploadPersistenceService;
         this.fileDomainValidator = fileDomainValidator;
@@ -103,6 +107,7 @@ public class FileUploadService implements FileUploadPort {
         this.projectServiceBaseUrl = serviceProperties.getProjectService().getBaseUrl();
         this.internalServiceToken = serviceProperties.getInternalServiceToken();
         this.configGetter = configGetter;
+        this.usageLedgerMapper = usageLedgerMapper;
     }
 
     private Set<String> allowedExtensions() {
@@ -295,13 +300,16 @@ public class FileUploadService implements FileUploadPort {
             body.put("spaceType", spaceType);
             body.put("projectId", projectId);
             body.put("totalSize", totalSize);
-            restClient.post()
+            QuotaCheckResponse response = restClient.post()
                     .uri(normalizeBaseUrl(projectServiceBaseUrl) + "/api/internal/storage/check-quota")
                     .header(InternalServiceHeaders.TOKEN_HEADER, internalServiceToken)
                     .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                     .body(body)
                     .retrieve()
-                    .toBodilessEntity();
+                    .toEntity(QuotaCheckResponse.class)
+                    .getBody();
+            // P2-C2：把配额校验解析出的有效存储上限写入台账，供 confirm 同事务原子扣减守卫使用
+            upsertLedgerLimit(userId, teamId, spaceType, projectId, response);
         } catch (RestClientResponseException e) {
             int statusCode = e.getStatusCode().value();
             String responseBody = e.getResponseBodyAsString();
@@ -323,6 +331,30 @@ public class FileUploadService implements FileUploadPort {
         } catch (Exception e) {
             log.error("调用存储配额校验失败", e);
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "存储配额校验服务不可用，请稍后重试");
+        }
+    }
+
+    /** 内部 check-quota 响应体（Result<T> 的投影，data 为有效存储上限字节，NULL=不限制）。 */
+    private record QuotaCheckResponse(Long data) {
+    }
+
+    /** 把内部校验返回的有效存储上限埋入配额台账对应作用域。 */
+    private void upsertLedgerLimit(Long userId, Long teamId, Integer spaceType, Long projectId, QuotaCheckResponse response) {
+        try {
+            String scopeKey = UsageLedger.scopeKeyOf(spaceType, teamId, projectId, userId);
+            Long limit = response == null ? null : response.data();
+            usageLedgerMapper.ensureScopeAndLimit(scopeKey, limit);
+        } catch (Exception ex) {
+            // 台账写入失败不回阻断上传（原子扣减会以"行缺失=不限制"兜底，对账任务校正）
+            log.warn("写入配额台账上限失败，本次按不限制处理: scopeKey={}", scopeKeyOfOrSkip(userId, teamId, spaceType, projectId), ex);
+        }
+    }
+
+    private String scopeKeyOfOrSkip(Long userId, Long teamId, Integer spaceType, Long projectId) {
+        try {
+            return UsageLedger.scopeKeyOf(spaceType, teamId, projectId, userId);
+        } catch (Exception e) {
+            return "unknown";
         }
     }
 

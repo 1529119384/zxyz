@@ -10,6 +10,7 @@ import uno.acloud.exception.BusinessException;
 import uno.acloud.file.infrastructure.entity.FileNode;
 import uno.acloud.file.infrastructure.entity.Folder;
 import uno.acloud.file.infrastructure.mapper.FileMapper;
+import uno.acloud.file.infrastructure.mapper.UsageLedgerMapper;
 import uno.acloud.file.service.FileLifecyclePort;
 import uno.acloud.common.util.TransactionHelper;
 import uno.acloud.file.util.TransactionUtils;
@@ -35,12 +36,13 @@ public class FileLifecycleService implements FileLifecyclePort {
     private final FileConverter fileConverter;
     private final FileResourceChangedPublisher fileResourceChangedPublisher;
     private final TransactionHelper transactionHelper;
+    private final UsageLedgerMapper usageLedgerMapper;
 
     public FileLifecycleService(FileMapper fileMapper, FileDomainValidator fileDomainValidator,
                                 ShareCleanupClient shareCleanupClient, FileAccessGuard fileAccessGuardService,
                                 FileObjectReferenceManager fileObjectReferenceService, FileConverter fileConverter,
                                 Optional<FileResourceChangedPublisher> fileResourceChangedPublisher,
-                                TransactionHelper transactionHelper) {
+                                TransactionHelper transactionHelper, UsageLedgerMapper usageLedgerMapper) {
         this.fileMapper = fileMapper;
         this.fileDomainValidator = fileDomainValidator;
         this.shareCleanupClient = shareCleanupClient;
@@ -49,6 +51,7 @@ public class FileLifecycleService implements FileLifecyclePort {
         this.fileConverter = fileConverter;
         this.fileResourceChangedPublisher = fileResourceChangedPublisher.orElse(null);
         this.transactionHelper = transactionHelper;
+        this.usageLedgerMapper = usageLedgerMapper;
     }
 
     @Override
@@ -95,6 +98,7 @@ public class FileLifecycleService implements FileLifecyclePort {
         List<Long> allIds = collectDescendantIds(normalizedFileIds);
         int updatedRows = transactionHelper.execute(status -> {
             List<String> ossKeys = fileMapper.getOssKeysByIds(allIds);
+            releaseQuota(allIds);
             int rows = fileMapper.reallyDeleteByIds(allIds, userId);
             if (rows != allIds.size()) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "彻底删除文件失败");
@@ -223,6 +227,32 @@ public class FileLifecycleService implements FileLifecyclePort {
 
     private static final String TOMBSTONE_PREFIX = ".deleted.";
     private static final int MAX_NAME_FOR_TOMBSTONE = 221;
+
+    /**
+     * 彻底删除时按作用域释放配额台账（P2-C2）。
+     * <p>
+     * 被删节点离开 quota 口径（deleted IN (0,1)）前，按其所属 scope_key 累计释放字节。
+     * 台账行缺失时忽略（后台对账会以 SUM 权威值校正）。
+     * </p>
+     */
+    private void releaseQuota(List<Long> allIds) {
+        try {
+            List<Map<String, Object>> scoped = fileMapper.sumDeletedFileBytesByScopeKey(allIds);
+            if (scoped == null) {
+                return;
+            }
+            for (Map<String, Object> row : scoped) {
+                String scopeKey = row.get("scopeKey") == null ? null : row.get("scopeKey").toString();
+                Number totalBytes = (Number) row.get("totalBytes");
+                if (scopeKey == null || totalBytes == null || totalBytes.longValue() <= 0) {
+                    continue;
+                }
+                usageLedgerMapper.decrement(scopeKey, totalBytes.longValue());
+            }
+        } catch (Exception e) {
+            log.warn("彻底删除释放配额台账失败，交由对账校正", e);
+        }
+    }
 
     private void renameToTombstone(List<Long> fileIds) {
         List<FileNode> nodes = fileMapper.getFileNodesByIds(fileIds);

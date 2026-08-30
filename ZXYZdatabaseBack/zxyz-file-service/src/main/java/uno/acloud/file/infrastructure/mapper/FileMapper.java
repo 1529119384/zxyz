@@ -1,6 +1,7 @@
 package uno.acloud.file.infrastructure.mapper;
 
 import org.apache.ibatis.annotations.Case;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Options;
@@ -455,7 +456,7 @@ public interface FileMapper {
             "<script>",
             "SELECT COALESCE(SUM(file_size), 0)",
             "FROM file_node",
-            "WHERE deleted = 0 AND file_type = 1",
+            "WHERE deleted IN (0, 1) AND file_type = 1",
             "<choose>",
             "  <when test='spaceType != null and spaceType == 3'>AND space_type = 3 AND project_id = #{projectId}</when>",
             "  <when test='spaceType != null and spaceType == 2'>AND space_type = 2 AND team_id = #{teamId}</when>",
@@ -472,7 +473,7 @@ public interface FileMapper {
             "<script>",
             "SELECT COALESCE(SUM(file_size), 0)",
             "FROM file_node",
-            "WHERE deleted = 0 AND file_type = 1",
+            "WHERE deleted IN (0, 1) AND file_type = 1",
             "AND (space_type IS NULL OR space_type = 1)",
             "AND team_id IS NULL",
             "AND upload_user_id IN",
@@ -487,7 +488,7 @@ public interface FileMapper {
             "<script>",
             "SELECT upload_user_id AS userId, COALESCE(SUM(file_size), 0) AS usedStorage",
             "FROM file_node",
-            "WHERE deleted = 0 AND file_type = 1",
+            "WHERE deleted IN (0, 1) AND file_type = 1",
             "AND (space_type IS NULL OR space_type = 1)",
             "AND team_id IS NULL",
             "AND upload_user_id IN",
@@ -510,7 +511,7 @@ public interface FileMapper {
             "<script>",
             "SELECT team_id AS teamId, COALESCE(SUM(file_size), 0) AS usedStorage",
             "FROM file_node",
-            "WHERE deleted = 0 AND file_type = 1 AND space_type = 2",
+            "WHERE deleted IN (0, 1) AND file_type = 1 AND space_type = 2",
             "AND team_id IN",
             "<foreach collection='teamIds' item='teamId' open='(' separator=',' close=')'>",
             "#{teamId}",
@@ -533,4 +534,53 @@ public interface FileMapper {
               AND deleted IN (0, 1)
             """)
     List<Long> getPersonalRootFileIds(@Param("userId") Long userId);
+
+    @Select("""
+            SELECT f.id
+            FROM file_node f
+            WHERE f.deleted = 1
+              AND f.modify_time < #{cutoff}
+              AND NOT EXISTS (
+                    SELECT 1 FROM file_node p
+                    WHERE p.id = f.parent_id AND p.deleted = 1
+              )
+            LIMIT #{limit}
+            """)
+    List<Long> selectRecycleExpiredRootIds(@Param("cutoff") java.sql.Timestamp cutoff, @Param("limit") int limit);
+
+    @Select("""
+            SELECT id FROM file_node
+            WHERE deleted = 2
+              AND modify_time < #{cutoff}
+            LIMIT #{limit}
+            """)
+    List<Long> selectTombstoneExpiredIds(@Param("cutoff") java.sql.Timestamp cutoff, @Param("limit") int limit);
+
+    @Delete("""
+            <script>
+            DELETE FROM file_node WHERE id IN
+            <foreach collection='fileIds' item='fileId' open='(' separator=',' close=')'>
+                #{fileId}
+            </foreach>
+            </script>
+            """)
+    int deleteTombstoneRows(@Param("fileIds") List<Long> fileIds);
+
+    @Select("""
+            <script>
+            SELECT scope_key AS scopeKey, COALESCE(SUM(file_size), 0) AS totalBytes
+            FROM file_node
+            WHERE id IN
+            <foreach collection='fileIds' item='fileId' open='(' separator=',' close=')'>
+                #{fileId}
+            </foreach>
+              AND file_size IS NOT NULL
+            GROUP BY scope_key
+            </script>
+            """)
+    List<Map<String, Object>> sumDeletedFileBytesByScopeKey(@Param("fileIds") List<Long> fileIds);
+
+    /** 对账用：按作用域聚合存活文件字节（quota 口径 deleted IN (0,1)）。 */
+    @Select("SELECT scope_key AS scopeKey, COALESCE(SUM(file_size), 0) AS totalBytes FROM file_node WHERE deleted IN (0, 1) AND file_size IS NOT NULL GROUP BY scope_key")
+    List<Map<String, Object>> selectScopeUsageAll();
 }

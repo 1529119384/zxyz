@@ -46,7 +46,7 @@ public class ImHttpAuthInterceptor implements HandlerInterceptor {
     }
 
     private boolean isInternalRequest(HttpServletRequest request) {
-        return request.getRequestURI() != null && request.getRequestURI().startsWith("/api/im/internal/");
+        return request.getRequestURI() != null && request.getRequestURI().startsWith("/api/internal/im/");
     }
 
     private boolean verifyInternalToken(HttpServletRequest request, HttpServletResponse response) {

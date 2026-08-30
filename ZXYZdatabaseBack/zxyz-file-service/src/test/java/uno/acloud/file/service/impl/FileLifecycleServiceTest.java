@@ -13,6 +13,7 @@ import uno.acloud.exception.BusinessException;
 import uno.acloud.file.infrastructure.entity.FileItem;
 import uno.acloud.file.infrastructure.entity.FileNode;
 import uno.acloud.file.infrastructure.mapper.FileMapper;
+import uno.acloud.file.infrastructure.mapper.UsageLedgerMapper;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -50,6 +51,9 @@ class FileLifecycleServiceTest {
     @Mock
     private TransactionHelper transactionHelper;
 
+    @Mock
+    private UsageLedgerMapper usageLedgerMapper;
+
     private FileLifecycleService service;
 
     @BeforeEach
@@ -57,7 +61,7 @@ class FileLifecycleServiceTest {
         service = new FileLifecycleService(
                 fileMapper, fileDomainValidator, shareCleanupClient,
                 fileAccessGuardService, fileObjectReferenceService, fileConverter,
-                Optional.ofNullable(fileResourceChangedPublisher), transactionHelper);
+                Optional.ofNullable(fileResourceChangedPublisher), transactionHelper, usageLedgerMapper);
         // Mock TransactionHelper to execute lambdas directly
         lenient().when(transactionHelper.execute(any())).thenAnswer(invocation -> {
             TransactionHelper.TransactionCallback<?> callback = invocation.getArgument(0);

@@ -29,10 +29,10 @@ public class InternalStorageController {
 
     @Operation(summary = "检查上传配额")
     @PostMapping("/check-quota")
-    public Result<Void> checkUploadQuota(@Valid @RequestBody CheckUploadQuotaRequest body) {
-        storageQuotaPort.checkUploadQuota(
+    public Result<Long> checkUploadQuota(@Valid @RequestBody CheckUploadQuotaRequest body) {
+        Long limit = storageQuotaPort.checkUploadQuota(
                 body.userId(), body.teamId(), body.spaceType(), body.projectId(),
                 body.totalSize() == null ? 0 : body.totalSize());
-        return Result.success();
+        return Result.success(limit);
     }
 }

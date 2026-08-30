@@ -14,7 +14,7 @@ import uno.acloud.im.dto.InternalUserProfileSyncRequest;
 
 @Hidden
 @RestController
-@RequestMapping("/api/im/internal/user-profiles")
+@RequestMapping("/api/internal/im/user-profiles")
 @Tag(name = "用户资料同步（内部）", description = "内部服务用户资料同步 API")
 public class InternalUserProfileSyncController {
 
