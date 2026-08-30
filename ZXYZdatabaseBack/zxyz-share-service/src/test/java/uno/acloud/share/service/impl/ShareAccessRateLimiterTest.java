@@ -122,4 +122,46 @@ class ShareAccessRateLimiterTest {
                 any(Object[].class)
         );
     }
+
+    @Test
+    void reset_deletesAllKeysUnderSharePrefix() throws Exception {
+        // 模拟 scan 返回该分享前缀下的多个 key（覆盖换 IP 遗留计数）
+        org.springframework.data.redis.core.Cursor<byte[]> cursor = mockCursor(
+                "zxyz:share:verify:share1:192.168.1.1",
+                "zxyz:share:verify:share1:10.0.0.2");
+
+        when(stringRedisTemplate.execute(any(org.springframework.data.redis.core.RedisCallback.class)))
+                .thenReturn(cursor);
+
+        rateLimiter.reset("share1");
+
+        verify(stringRedisTemplate).delete(List.of(
+                "zxyz:share:verify:share1:192.168.1.1",
+                "zxyz:share:verify:share1:10.0.0.2"));
+    }
+
+    @Test
+    void reset_scansShareKeyPrefixSameAsCheckAndIncrement() throws Exception {
+        org.springframework.data.redis.core.Cursor<byte[]> cursor = mockCursor("zxyz:share:verify:share1:unknown");
+        when(stringRedisTemplate.execute(any(org.springframework.data.redis.core.RedisCallback.class)))
+                .thenReturn(cursor);
+
+        rateLimiter.reset("share1");
+
+        verify(stringRedisTemplate).delete(java.util.List.of("zxyz:share:verify:share1:unknown"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private org.springframework.data.redis.core.Cursor<byte[]> mockCursor(String... keys) {
+        org.springframework.data.redis.core.Cursor<byte[]> cursor =
+                org.mockito.Mockito.mock(org.springframework.data.redis.core.Cursor.class);
+        java.util.List<byte[]> remaining = new java.util.ArrayList<>();
+        for (String k : keys) {
+            remaining.add(k.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }
+        java.util.Iterator<byte[]> it = remaining.iterator();
+        org.mockito.Mockito.when(cursor.hasNext()).thenAnswer(invocation -> it.hasNext());
+        org.mockito.Mockito.when(cursor.next()).thenAnswer(invocation -> it.next());
+        return cursor;
+    }
 }

@@ -40,14 +40,33 @@ const canCreateTeam = computed(() => currentUserStore.isAdmin)
 const canShowPermissionCenter = computed(
   () => currentUserStore.canReadSystemPermissionCenter || canAccessPermissionCenter.value,
 )
-const navItems = computed(() => [
-  { name: 'accountSettings', label: '个人设置', visible: true },
-  { name: 'teamAdminSettings', label: '创建团队', visible: canCreateTeam.value },
-  { name: 'systemAdminSettings', label: '系统运营', visible: canCreateTeam.value },
-  { name: 'configAdminSettings', label: '配置管理', visible: true },
-  { name: 'storageAdminSettings', label: '存储管理', visible: canCreateTeam.value },
-  { name: 'permissionCenter', label: '权限管理', visible: canShowPermissionCenter.value },
-])
+// 导航 Tab 从路由 meta 派生（settings 子路由声明 meta.settingTab），
+// 新增设置页只需添加子路由即可自动出现 Tab；可见性与路由守卫读取同一权限来源，
+// 避免导航与守卫不一致（如非管理员看到「配置管理」Tab 却访问被拒）。
+const settingRoutes = computed(() => {
+  const layoutRoute = router.options.routes.find((route) => route.name === 'layout')
+  const settingRoot = layoutRoute?.children?.find((route) => route.name === 'settingRoot')
+  return settingRoot?.children || []
+})
+const navItems = computed(() =>
+  settingRoutes.value
+    .filter((route) => route.meta?.settingTab)
+    .map((route) => ({
+      name: route.name,
+      label: route.meta?.label || route.name,
+      visible: resolveNavVisibility(route.name, route.meta),
+    })),
+)
+function resolveNavVisibility(routeName, meta = {}) {
+  if (routeName === 'permissionCenter' || meta.requiresSystemPermissionCenter) {
+    return canShowPermissionCenter.value
+  }
+  if (meta.requiresAdmin) {
+    return canCreateTeam.value
+  }
+  // 个人设置等无权限门槛的 Tab 始终可见。
+  return true
+}
 const visibleNavItems = computed(() => navItems.value.filter((item) => item.visible))
 const activeRouteName = computed(() => {
   const currentRoute = visibleNavItems.value.find((item) => item.name === route.name)

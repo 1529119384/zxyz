@@ -1,0 +1,86 @@
+# =============================================================================
+# Dependabot 配置 — 根仓库依赖/镜像/操作依赖自动更新
+# 覆盖 4 个生态系统：Maven、npm、Docker、GitHub Actions。
+# =============================================================================
+version: 2
+updates:
+
+  # --- Maven（后端 ZXYZdatabaseBack） ---
+  - package-ecosystem: maven
+    directory: /ZXYZdatabaseBack/
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    labels:
+      - dependencies
+      - maven
+
+  # --- npm（前端 ZXYZdatabaseFront） ---
+  - package-ecosystem: npm
+    directory: /ZXYZdatabaseFront/
+    schedule:
+      interval: weekly
+      day: tuesday
+      time: "03:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 20
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    labels:
+      - dependencies
+      - npm
+
+  # --- Docker: 后端基础镜像（Dockerfile + Dockerfile.base） ---
+  # 用于维护后端构建/运行基础镜像标签（maven、eclipse-temurin 等）。
+  # 若后续把 Dockerfile 中的镜像标签替换为 sha256 digest，Dependabot
+  # 会自动建议 digest 升级并保持可复现构建。
+  - package-ecosystem: docker
+    directory: /ZXYZdatabaseBack/
+    schedule:
+      interval: weekly
+      day: wednesday
+      time: "03:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - dependencies
+      - docker
+
+  # --- Docker: 前端镜像（node/nginx） ---
+  - package-ecosystem: docker
+    directory: /ZXYZdatabaseFront/
+    schedule:
+      interval: weekly
+      day: wednesday
+      time: "03:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - dependencies
+      - docker
+
+  # --- GitHub Actions（根仓库 .github/workflows） ---
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: thursday
+      time: "03:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "ci(deps)"
+    labels:
+      - dependencies
+      - ci

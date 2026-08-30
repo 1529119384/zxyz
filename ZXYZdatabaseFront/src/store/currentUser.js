@@ -3,18 +3,10 @@ import { defineStore } from 'pinia'
 import { useLocalStorage } from '@vueuse/core'
 
 import { fetchCurrentUser, login as loginByPassword } from '@/api/auth'
+import { SYSTEM_ADMIN_ROLE, SYSTEM_PERMISSIONS } from '@/constants/systemPermissions'
 import { clearToken } from '@/utils/auth'
 
 const DISPLAY_USER_KEY = 'displayUser'
-const SYSTEM_ADMIN_ROLE = 'system_admin'
-const SYSTEM_PERMISSIONS = {
-  fileWrite: 'file:write',
-  fileDelete: 'file:delete',
-  trashRead: 'trash:read',
-  systemRoleManage: 'system:role:manage',
-  systemPermissionRead: 'system:permission:read',
-  systemAuditRead: 'system:audit:read',
-}
 
 function normalizeCurrentUser(data = {}) {
   return {

@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import uno.acloud.common.Result;
-import uno.acloud.project.common.SystemRoleCodes;
+import uno.acloud.common.SystemRoleCodes;
 
 import java.util.List;
 import java.util.Map;

@@ -36,6 +36,7 @@ export function useSpaceFileList(options) {
   const pageSize = ref(50)
   const total = ref(0)
   let latestRefreshToken = 0
+  let forcedRefreshToken = 0
 
   function resolveSpaceParams() {
     return resolveSpaceRequestParams(spaceContext, {
@@ -52,8 +53,11 @@ export function useSpaceFileList(options) {
    * @param {Array} [refreshOptions.prefetchedList] - 预取的文件列表，跳过网络请求。
    */
   async function refresh(refreshOptions = {}) {
-    const { prefetchedList = null } = refreshOptions
+    const { prefetchedList = null, force = false } = refreshOptions
     const refreshToken = ++latestRefreshToken
+    if (force) {
+      forcedRefreshToken = refreshToken
+    }
     loading.value = true
 
     try {
@@ -67,7 +71,7 @@ export function useSpaceFileList(options) {
 
       if (spaceParams.spaceType === SPACE_TYPE.TEAM && isProjectRootId(currentId.value)) {
         const response = await fetchTeamProjects(spaceParams.teamId)
-        if (refreshToken !== latestRefreshToken) return
+        if (refreshToken !== latestRefreshToken && refreshToken !== forcedRefreshToken) return
         const projects = Array.isArray(response?.data) ? response.data : []
         list.value = projects.map(createProjectFolderEntry)
         return
@@ -79,7 +83,7 @@ export function useSpaceFileList(options) {
         page: currentPage.value,
         pageSize: pageSize.value,
       })
-      if (refreshToken !== latestRefreshToken) return
+      if (refreshToken !== latestRefreshToken && refreshToken !== forcedRefreshToken) return
       const paged = fileList.data && typeof fileList.data === 'object'
       const entries = Array.isArray(paged ? fileList.data.list : fileList.data)
         ? paged
@@ -102,11 +106,11 @@ export function useSpaceFileList(options) {
 
       list.value = entries
     } catch (error) {
-      if (refreshToken !== latestRefreshToken) return
+      if (refreshToken !== latestRefreshToken && refreshToken !== forcedRefreshToken) return
       list.value = []
       handleBusinessError(error, '加载文件列表失败，请稍后重试')
     } finally {
-      if (refreshToken === latestRefreshToken) {
+      if (refreshToken === latestRefreshToken || refreshToken === forcedRefreshToken) {
         loading.value = false
       }
     }

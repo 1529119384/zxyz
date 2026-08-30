@@ -5,6 +5,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import static uno.acloud.common.ShareErrorCode.*;
 import uno.acloud.common.ErrorCode;
@@ -17,6 +19,7 @@ import uno.acloud.share.infrastructure.entity.Share;
 import uno.acloud.share.infrastructure.mapper.ShareMapper;
 import uno.acloud.share.service.model.ShareVerifyResult;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -25,6 +28,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -44,6 +49,10 @@ class ShareAccessManagerTest {
     private ShareCookieManager shareCookieManager;
     @Mock
     private PasswordEncoder passwordEncoder;
+    @Mock
+    private StringRedisTemplate stringRedisTemplate;
+    @Mock
+    private ValueOperations<String, String> valueOperations;
 
     @InjectMocks
     private ShareAccessManager shareAccessManager;
@@ -145,7 +154,7 @@ class ShareAccessManagerTest {
     }
 
     @Test
-    void verifyShare_throwsWhenAccessQuotaExhausted() {
+    void verifyShare_doesNotBurnQuota() {
         ShareVerifyRequest request = new ShareVerifyRequest();
         request.setShareKey("abc123");
         Share share = createNormalShare();
@@ -153,15 +162,17 @@ class ShareAccessManagerTest {
         share.setCurrentAccessCount(10);
         when(shareMapper.getByShareKey("abc123")).thenReturn(share);
         when(shareStatusCalculator.refreshStatusIfNeeded(share)).thenReturn(share);
-        when(shareMapper.tryIncrementAccessCountWhenUnderLimit(1L)).thenReturn(0);
-        // After quota exhausted, refreshStatusIfNeeded is called again; status stays NORMAL
-        // so invalidShareException is called with the current share status (NORMAL=0)
-        when(shareStatusCalculator.invalidShareException(ShareStatus.NORMAL))
-                .thenReturn(new BusinessException(SHARE_STATUS_INVALID.getCode(), "分享访问次数已用尽"));
+        when(shareProperties.getCookieSecret()).thenReturn("test-secret");
+        when(shareCookieManager.buildAccessToken(share, "test-secret")).thenReturn("some-token");
 
-        BusinessException ex = assertThrows(BusinessException.class,
-                () -> shareAccessManager.verifyShare(request, null));
-        assertEquals(SHARE_STATUS_INVALID.getCode(), ex.getErrorCode());
+        ShareVerifyResult result = shareAccessManager.verifyShare(request, null);
+
+        assertNotNull(result);
+        assertTrue(result.getResponse().getPassed());
+        // verify 只发令牌、不烧配额（即使配额已用尽），配额扣减改在内容访问路径
+        assertEquals("some-token", result.getAccessToken());
+        verify(shareMapper, never()).incrementAccessCount(anyLong());
+        verify(shareMapper, never()).tryIncrementAccessCountWhenUnderLimit(anyLong());
     }
 
     @Test
@@ -175,8 +186,6 @@ class ShareAccessManagerTest {
         when(shareStatusCalculator.refreshStatusIfNeeded(share)).thenReturn(share);
         when(shareProperties.getCookieSecret()).thenReturn("test-secret");
         when(shareCookieManager.buildAccessToken(share, "test-secret")).thenReturn("some-token");
-        when(shareMapper.tryIncrementAccessCountWhenUnderLimit(1L)).thenReturn(1);
-        when(shareStatusCalculator.defaultZero(5)).thenReturn(5);
 
         ShareVerifyResult result = shareAccessManager.verifyShare(request, null);
 
@@ -184,7 +193,7 @@ class ShareAccessManagerTest {
         assertTrue(result.getResponse().getPassed());
         assertEquals("some-token", result.getAccessToken());
         assertEquals(share.getExpireTime(), result.getExpireTime());
-        verify(shareMapper).tryIncrementAccessCountWhenUnderLimit(1L);
+        verify(shareMapper, never()).tryIncrementAccessCountWhenUnderLimit(anyLong());
     }
 
     @Test
@@ -197,8 +206,6 @@ class ShareAccessManagerTest {
         share.setCurrentAccessCount(0);
         when(shareMapper.getByShareKey("abc123")).thenReturn(share);
         when(shareStatusCalculator.refreshStatusIfNeeded(share)).thenReturn(share);
-        when(shareMapper.tryIncrementAccessCountWhenUnderLimit(1L)).thenReturn(1);
-        when(shareStatusCalculator.defaultZero(0)).thenReturn(0);
         when(shareProperties.getCookieSecret()).thenReturn("test-secret");
         when(shareCookieManager.buildAccessToken(share, "test-secret")).thenReturn("token-val");
 
@@ -208,6 +215,59 @@ class ShareAccessManagerTest {
         assertTrue(result.getResponse().getPassed());
         assertEquals("token-val", result.getAccessToken());
         verify(passwordEncoder, never()).matches(any(), any());
+    }
+
+    // --- consumeAccessQuota tests ---
+
+    @Test
+    void consumeAccessQuota_burnsOncePerTokenWithinDay_dedup() {
+        Share share = createNormalShare();
+        share.setMaxAccessCount(100);
+        share.setCurrentAccessCount(5);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        // 第一次：令牌当日首次访问 → 应扣减
+        when(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenReturn(true);
+        when(shareMapper.tryIncrementAccessCountWhenUnderLimit(1L)).thenReturn(1);
+        when(shareStatusCalculator.defaultZero(5)).thenReturn(5);
+
+        shareAccessManager.consumeAccessQuota(share, "some-access-token");
+
+        verify(shareMapper).tryIncrementAccessCountWhenUnderLimit(1L);
+        assertEquals(6, share.getCurrentAccessCount());
+    }
+
+    @Test
+    void consumeAccessQuota_skipsWhenAlreadyBurnedToday() {
+        Share share = createNormalShare();
+        share.setMaxAccessCount(100);
+        share.setCurrentAccessCount(5);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        // 令牌当日已出现过 → 去重，不扣减
+        when(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenReturn(false);
+
+        shareAccessManager.consumeAccessQuota(share, "some-access-token");
+
+        verify(shareMapper, never()).incrementAccessCount(anyLong());
+        verify(shareMapper, never()).tryIncrementAccessCountWhenUnderLimit(anyLong());
+        assertEquals(5, share.getCurrentAccessCount());
+    }
+
+    @Test
+    void consumeAccessQuota_throwsWhenQuotaExhausted() {
+        Share share = createNormalShare();
+        share.setMaxAccessCount(10);
+        share.setCurrentAccessCount(10);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenReturn(true);
+        when(shareMapper.tryIncrementAccessCountWhenUnderLimit(1L)).thenReturn(0);
+        when(shareStatusCalculator.invalidShareException(ShareStatus.ACCESS_LIMIT_REACHED))
+                .thenReturn(new BusinessException(SHARE_STATUS_INVALID.getCode(), "分享访问次数已用尽"));
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> shareAccessManager.consumeAccessQuota(share, "some-access-token"));
+
+        assertEquals(SHARE_STATUS_INVALID.getCode(), ex.getErrorCode());
+        assertEquals(10, share.getCurrentAccessCount());
     }
 
     // --- requireAccessibleShare tests ---

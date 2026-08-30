@@ -25,6 +25,7 @@ public class ConfigService {
 
     private static final String NULL_SENTINEL = "§NULL§";
     private static final String REDIS_CHANNEL = "zxyz:config:changed";
+    private static final String SENSITIVE_MASK = "ENC:****";
 
     private final SysConfigMapper configMapper;
     private final SysConfigAuditMapper auditMapper;
@@ -101,7 +102,8 @@ public class ConfigService {
     public void update(String key, String value, Long operatorId) {
         String oldValue = get(key);
         configMapper.updateValue(key, value);
-        auditMapper.insert(key, oldValue, value, operatorId);
+        // 审计表不得落盘明文密钥：敏感键（OSS/SMTP/密码等）以掩码写入，键名保持明文以便追踪是哪一项被改（P3-3）
+        auditMapper.insert(key, maskIfSensitive(key, oldValue), maskIfSensitive(key, value), operatorId);
         cache.invalidate(key);
         log.info("配置已更新: key={}, operatorId={}", key, operatorId);
 
@@ -120,5 +122,36 @@ public class ConfigService {
                     }
                 }
         );
+    }
+
+    /**
+     * 判断配置键是否属于敏感类（密钥/口令），此类值的明文不得进入审计表。
+     * 采用子串匹配，覆盖常见命名（OSS/SMTP/Redis 口令、token、jasypt 密钥等）。
+     */
+    private static boolean isSensitive(String key) {
+        if (key == null || key.isBlank()) {
+            return false;
+        }
+        String lower = key.toLowerCase();
+        String[] sensitiveMarkers = {
+                "secret", "password", "pwd", "token", "accesskey", "access-key",
+                "secretkey", "secret-key", "oss", "smtp", "jasypt", "encrypt",
+        };
+        for (String marker : sensitiveMarkers) {
+            if (lower.contains(marker)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 对敏感键的值做脱敏，非敏感键原样返回，避免秘密类配置在审计表永久明文留存（P3-3）。
+     */
+    private static String maskIfSensitive(String key, String value) {
+        if (value == null || value.isBlank()) {
+            return value;
+        }
+        return isSensitive(key) ? SENSITIVE_MASK : value;
     }
 }

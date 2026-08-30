@@ -1,10 +1,11 @@
 package uno.acloud.project.service.impl;
 
 import org.springframework.lang.Nullable;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.FileSpaceType;
-import uno.acloud.project.common.SystemRoleCodes;
+import uno.acloud.common.SystemRoleCodes;
 import uno.acloud.project.config.ServiceProperties;
 import uno.acloud.project.entity.ProjectQuota;
 import uno.acloud.project.entity.UserQuota;
@@ -18,14 +19,12 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 @Service
 public class StorageQuotaService implements StorageQuotaPort {
 
-    private static final ExecutorService QUOTA_EXECUTOR = Executors.newFixedThreadPool(4);
+    private final ThreadPoolTaskExecutor quotaExecutor;
 
     private final FileServiceClient fileServiceClient;
     private final UserQuotaClient userQuotaClient;
@@ -39,12 +38,14 @@ public class StorageQuotaService implements StorageQuotaPort {
                                ProjectQuotaMapper projectQuotaMapper,
                                TeamServiceClient teamServiceClient,
                                StorageQuotaCacheService cacheService,
-                               ServiceProperties serviceProperties) {
+                               ServiceProperties serviceProperties,
+                               ThreadPoolTaskExecutor quotaExecutor) {
         this.fileServiceClient = fileServiceClient;
         this.userQuotaClient = userQuotaClient;
         this.projectQuotaMapper = projectQuotaMapper;
         this.teamServiceClient = teamServiceClient;
         this.cacheService = cacheService;
+        this.quotaExecutor = quotaExecutor;
         this.defaultPersonalStorageLimit = serviceProperties.getStorage().getPersonalDefaultLimit();
     }
 
@@ -153,9 +154,9 @@ public class StorageQuotaService implements StorageQuotaPort {
     private PersonalLimitContext resolvePersonalLimitContext(Long userId) {
         // C6: Pre-warm cache — fetch system roles and user team IDs in parallel
         CompletableFuture<List<String>> rolesFuture = CompletableFuture.supplyAsync(
-                () -> cacheService.getSystemRolesByUserId(userId), QUOTA_EXECUTOR);
+                () -> cacheService.getSystemRolesByUserId(userId), quotaExecutor);
         CompletableFuture<List<Long>> teamIdsFuture = CompletableFuture.supplyAsync(
-                () -> cacheService.listUserTeamIds(userId), QUOTA_EXECUTOR);
+                () -> cacheService.listUserTeamIds(userId), quotaExecutor);
         CompletableFuture.allOf(rolesFuture, teamIdsFuture).join();
 
         if (rolesFuture.join().contains(SystemRoleCodes.SYSTEM_ADMIN)) {

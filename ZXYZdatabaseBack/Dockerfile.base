@@ -5,6 +5,9 @@
 #   docker build -t aclouda/zxyz-maven-base:latest -f ZXYZdatabaseBack/Dockerfile.base ZXYZdatabaseBack/
 # -----------------------------------------------------------------------------
 
+# TODO(pin-digest): maven 官方 tag 会随上游滚动（maven:3.9-eclipse-temurin-17 非不可变）。
+# 因无法在此 host 上用 `docker manifest inspect` 校验确切 digest，暂保留该 tag 并可复现，
+# 但构建不可复现。建议后续固化为验证后的 sha256 digest，Dependabot(docker) 可维护它。
 FROM maven:3.9-eclipse-temurin-17 AS base
 
 WORKDIR /workspace

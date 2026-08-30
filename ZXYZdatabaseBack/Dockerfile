@@ -15,6 +15,10 @@
 
 # 使用预构建基础镜像（已缓存 Maven 依赖），需要时手动重建：
 #   docker build -t aclouda/zxyz-maven-base:latest -f ZXYZdatabaseBack/Dockerfile.base ZXYZdatabaseBack/
+# TODO(pin-digest): 该基础镜像由外部账号 aclouda 维护、tag 为可变的 latest，
+# 构建不可复现。因无法在此 host 上 `docker manifest inspect` 校验其
+# sha256 digest，暂保留浮动 tag；后续应由 Dependabot(docker) 维护或在
+# 服务器验证后固化 digest。对应脚手架见 Dockerfile.base 顶部的 FROM。
 FROM aclouda/zxyz-maven-base:latest AS builder
 
 WORKDIR /workspace
@@ -46,6 +50,9 @@ RUN mvn -B -T 1C -pl zxyz-common -am install -Dmaven.test.skip=false -DskipTests
 # Alpine 瘦身：eclipse-temurin:17-jre-alpine 体积更小。
 # 阻塞点检查：项目仅使用 Netty NIO（纯 Java），不依赖 netty-transport-native，
 # 因此 Alpine musl libc 不会影响 Netty 功能。
+# TODO(pin-digest): 浮动 tag 使运行时基础镜像不可复现。建议固化为确切的 patch
+# 版本（如 17.0.13-jre-alpine）或验证后的 sha256 digest；Dependabot(docker) 可维护之。
+# 当前未固化是因为本 host 无法校验对应架构的 digest，宁可保留浮动 tag 也不要盲目写入无效 digest。
 FROM eclipse-temurin:17-jre-alpine
 
 RUN apk add --no-cache curl

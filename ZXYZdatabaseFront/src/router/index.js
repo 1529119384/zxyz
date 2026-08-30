@@ -4,7 +4,8 @@ import { sanitizeRedirectPath } from '@/utils/sanitizeRedirect'
 import { useChatStore } from '@/store/chat'
 import { useCurrentUserStore } from '@/store/currentUser'
 import { useSessionStore } from '@/store/session'
-import Layout from '@/views/layout/index.vue'
+// Layout 是应用外壳（含登录/注册未用到的重组件），改为懒加载以减小登录页首屏 chunk。
+const Layout = () => import('@/views/layout/index.vue')
 const Index = () => import('@/views/index/index.vue')
 import { requirePermissionCenter, requireSystemAdminRole } from '@/router/guards/permission'
 import { handleBusinessError } from '@/utils/error'
@@ -80,36 +81,55 @@ const router = createRouter({
           name: 'settingRoot',
           component: Setting,
           children: [
-            { path: '', name: 'setting', redirect: redirectLegacySettingTab },
-            { path: 'account', name: 'accountSettings', component: AccountSettings },
+            // 设置导航路由规范：每个子路由用 meta.settingTab 标记导航 Tab，
+            // meta.label 为菜单文案；requiresAdmin / requiresSystemPermissionCenter 控制可见性。
+            // 新增设置页只需在子路由声明 meta.settingTab，导航 Tab 会自动出现。
+            // 可见性始终与对应 beforeEnter 守卫取自同一 source（权限码常量/守卫），避免导航与守卫不一致。
+            {
+              path: '',
+              name: 'setting',
+              redirect: redirectLegacySettingTab,
+              meta: { settingTab: false },
+            },
+            {
+              path: 'account',
+              name: 'accountSettings',
+              component: AccountSettings,
+              meta: { settingTab: true, label: '个人设置' },
+            },
             {
               path: 'team-admin',
               name: 'teamAdminSettings',
               component: TeamAdminSettings,
+              meta: { settingTab: true, label: '创建团队', requiresAdmin: true },
               beforeEnter: requireSystemAdminRole(),
             },
             {
               path: 'system-admin',
               name: 'systemAdminSettings',
               component: SystemAdminSettings,
+              meta: { settingTab: true, label: '系统运营', requiresAdmin: true },
               beforeEnter: requireSystemAdminRole(),
             },
             {
               path: 'config-admin',
               name: 'configAdminSettings',
               component: ConfigAdminSettings,
+              meta: { settingTab: true, label: '配置管理', requiresAdmin: true },
               beforeEnter: requireSystemAdminRole(),
             },
             {
               path: 'storage-admin',
               name: 'storageAdminSettings',
               component: StorageAdminSettings,
+              meta: { settingTab: true, label: '存储管理', requiresAdmin: true },
               beforeEnter: requireSystemAdminRole(),
             },
             {
               path: 'permissions',
               name: 'permissionCenter',
               component: PermissionCenter,
+              meta: { settingTab: true, label: '权限管理', requiresSystemPermissionCenter: true },
               beforeEnter: requirePermissionCenter,
             },
           ],

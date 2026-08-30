@@ -172,6 +172,9 @@ const routeViewKey = computed(() => {
 
   return `${route.path}?${queryKey}`
 })
+// keep-alive 仅缓存高频视图，避免路由/查询变化时整棵树重挂载丢失滚动位置与表格状态。
+// include 按组件 name 匹配（对应视图用 defineOptions 声明 name，如 IndexPage/ChatHome/MyShare/Projects）。
+// 需要新增缓存视图时：给组件加 defineOptions(name) 并加入本数组。
 const keepAliveNames = ['IndexPage', 'ChatHome', 'MyShare', 'Projects']
 
 onMounted(() => {

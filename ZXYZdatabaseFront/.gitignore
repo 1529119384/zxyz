@@ -40,6 +40,9 @@ ZXYZDatabasefronted.zip
 
 # Vite
 .vite/
+auto-imports.d.ts
+components.d.ts
+env.d.ts
 
 # Coverage report
 coverage/

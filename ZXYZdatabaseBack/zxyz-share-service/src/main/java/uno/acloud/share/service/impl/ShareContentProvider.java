@@ -41,6 +41,7 @@ public class ShareContentProvider {
 
     public List<ShareFilesResponseItemVO> getShareFiles(String shareKey, String path, String shareAccessToken) {
         Share share = shareAccessService.requireAccessibleShare(shareKey, shareAccessToken);
+        shareAccessService.consumeAccessQuota(share, shareAccessToken);
         return listShareFiles(share, shareInputNormalizer.normalizePath(path), new ShareFileResolveContext());
     }
 
@@ -49,6 +50,7 @@ public class ShareContentProvider {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "fileId 不能为空");
         }
         Share share = shareAccessService.requireAccessibleShare(shareKey, shareAccessToken);
+        shareAccessService.consumeAccessQuota(share, shareAccessToken);
         requireDownloadableSharedFile(share.getId(), fileId, new ShareFileResolveContext());
         return new ShareDownloadResponseVO(fileServiceClient.getShareDownloadUrl(fileId));
     }
@@ -58,6 +60,7 @@ public class ShareContentProvider {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "fileId 不能为空");
         }
         Share share = shareAccessService.requireAccessibleShare(shareKey, shareAccessToken);
+        shareAccessService.consumeAccessQuota(share, shareAccessToken);
         requireDownloadableSharedFile(share.getId(), fileId, new ShareFileResolveContext());
 
         // 获取文件信息

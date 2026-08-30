@@ -10,6 +10,7 @@ import uno.acloud.exception.BusinessException;
 import uno.acloud.file.infrastructure.entity.FileItem;
 import uno.acloud.file.infrastructure.entity.Folder;
 import uno.acloud.file.service.FileQueryPort;
+import uno.acloud.file.service.impl.FileAccessGuard;
 import uno.acloud.file.storage.StorageProvider;
 import uno.acloud.file.storage.StorageProviderRegistry;
 
@@ -28,6 +29,9 @@ class InternalFileControllerTest {
     @Mock
     private StorageProviderRegistry registry;
 
+    @Mock
+    private FileAccessGuard fileAccessGuard;
+
     @Test
     void streamFile_existingFile_nonPresignedProvider_writesStream() throws Exception {
         FileItem fileItem = new FileItem();
@@ -44,7 +48,7 @@ class InternalFileControllerTest {
 
         MockHttpServletResponse response = new MockHttpServletResponse();
 
-        InternalFileController controller = new InternalFileController(fileQueryPort, registry);
+        InternalFileController controller = new InternalFileController(fileQueryPort, registry, fileAccessGuard);
         controller.streamFile(1L, response);
 
         assertEquals("application/octet-stream", response.getContentType());
@@ -66,7 +70,7 @@ class InternalFileControllerTest {
         when(provider.supportsPresignedDownload()).thenReturn(true);
         when(registry.resolveForFile(fileItem)).thenReturn(provider);
 
-        InternalFileController controller = new InternalFileController(fileQueryPort, registry);
+        InternalFileController controller = new InternalFileController(fileQueryPort, registry, fileAccessGuard);
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> controller.streamFile(1L, new MockHttpServletResponse()));
@@ -78,7 +82,7 @@ class InternalFileControllerTest {
     void streamFile_notFound_throwsNotFound() {
         when(fileQueryPort.getFileNodeById(999L)).thenReturn(null);
 
-        InternalFileController controller = new InternalFileController(fileQueryPort, registry);
+        InternalFileController controller = new InternalFileController(fileQueryPort, registry, fileAccessGuard);
 
         assertThrows(BusinessException.class,
                 () -> controller.streamFile(999L, new MockHttpServletResponse()));
@@ -91,7 +95,7 @@ class InternalFileControllerTest {
         folder.setOriginalName("myfolder");
         when(fileQueryPort.getFileNodeById(1L)).thenReturn(folder);
 
-        InternalFileController controller = new InternalFileController(fileQueryPort, registry);
+        InternalFileController controller = new InternalFileController(fileQueryPort, registry, fileAccessGuard);
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> controller.streamFile(1L, new MockHttpServletResponse()));

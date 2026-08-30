@@ -1,6 +1,6 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import zhCn from 'element-plus/es/locale/zh-cn.mjs'
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
 
 import { chatBridgePlugin } from '@/store/plugins/chatBridge'
 

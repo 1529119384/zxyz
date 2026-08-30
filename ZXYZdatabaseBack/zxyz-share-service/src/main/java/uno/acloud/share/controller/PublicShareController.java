@@ -50,6 +50,8 @@ public class PublicShareController {
         verifyRequest.setPassword(request == null ? null : request.getPassword());
         String shareAccessToken = shareCookieManager.resolveAccessToken(shareKey, httpServletRequest);
         ShareVerifyResult verifyResult = shareService.verifyShare(verifyRequest, shareAccessToken);
+        // 校验成功即清空该分享的验证失败计数，避免成功校验计入限流
+        rateLimiter.reset(shareKey);
         shareCookieManager.writeAccessToken(shareKey, verifyResult.getAccessToken(), verifyResult.getExpireTime(), httpServletResponse);
         return Result.of(verifyResult.getResponse());
     }

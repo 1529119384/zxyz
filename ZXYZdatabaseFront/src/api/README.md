@@ -37,3 +37,17 @@
 | `request` | `utils/request.js` | 已认证接口（默认） | `true` |
 | `publicRequest` | `utils/publicRequest.js` | 公开/分享接口 | `true` |
 | `imRequest` | `utils/imRequest.js` | IM 接口 | `true` |
+
+## 导航 = 路由 Meta 派生（settings 导航规范）
+
+设置页（`src/views/setting/index.vue`）的导航 Tab **从路由 meta 派生**，不再手写硬编码数组。
+
+新增一个设置页时，只需在 `src/router/index.js` 的 `settingRoot` 子路由上声明：`meta: { settingTab: true, label: '页面名' }`，Tab 会自动出现；顺序即路由数组顺序。
+
+可见性从不重复声明 —— 统一由 meta 标记映射 + 原子权限源决定，且与路由 `beforeEnter` 守卫读同一权限来源，避免「导航可见但访问被拒」的不一致：
+
+- `meta.requiresAdmin` → 仅 `currentUserStore.isAdmin` 可见（对应 `requireSystemAdminRole()` 守卫）
+- `meta.requiresSystemPermissionCenter` → 系统权限中心或当前团队权限中心可见（对应 `requirePermissionCenter` 守卫）
+- 其余无门槛 Tab 始终可见
+
+权限码常量统一收敛到 `src/constants/`：系统级在 `systemPermissions.js`，团队级在 `teamPermissions.js`。不在业务代码里散落字符串。

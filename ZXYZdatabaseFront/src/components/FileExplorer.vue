@@ -259,6 +259,10 @@ async function refresh(options = {}) {
   await spaceFileList.refresh(options)
 }
 
+async function forceRefresh() {
+  await spaceFileList.refresh({ force: true })
+}
+
 const {
   selectedIds,
   selectedRows,
@@ -461,6 +465,7 @@ function handleContextAction(payload) {
 
 defineExpose({
   refresh,
+  forceRefresh,
   openFolder: enterFolder,
   getCurrentList() {
     return [...list.value]

@@ -77,6 +77,15 @@ mvn clean package -DskipTests                    # package for Docker build
 mvn -pl zxyz-project-service spring-boot:run     # run single service
 ```
 
+**本地热调试（spring-boot-devtools，父 pom 已统一引入）**：
+- 前置：IDEA Settings→Compiler 勾选 **Build project automatically** + Registry（Ctrl+Shift+Alt+/）勾选 `compiler.automake.allow.when.app.running`
+- **必须 Debug 模式启动**才生效（Run 模式不触发热部署）；`mvn spring-boot:run` 同样支持 classpath 变更自动重启
+- dev profile 已开 `lazy-initialization: true`，DevTools 重启比冷启动快
+- 生产镜像不受影响：spring-boot-maven-plugin repackage 默认排除 devtools
+- 本地全栈跑通：各服务 `application-dev.yml` 的 `app.*.base-url` 默认值已指向 `localhost:1808x`（环境变量仍可覆盖），先用 `scripts/dev-up.ps1`（或 dev-up.sh）启动 MySQL/Nacos/Redis/RabbitMQ，再本地起需要调试的服务
+
+**本地一键启动（免 IDE 环境变量配置）**：`bash scripts/run-local.sh <service>`（如 `team-service`/`gateway`）——自动读根目录 `.env` 注入 Nacos(18048)/Redis/RabbitMQ/Jasypt/内部 Token，并按服务把 `XXX_DATASOURCE_PASSWORD` 统一指向 `MYSQL_ROOT_PASSWORD`（dev yml 默认 123456 与 Docker MySQL 不一致），再 `mvn spring-boot:run` 启动，DevTools 改代码自动重启；换机器/换目录零配置。`DRY_RUN=1` 可只打印注入变量不启动。需要断点调试时再用 IDEA 运行配置（同一套环境变量）。
+
 ### Frontend (run in `ZXYZdatabaseFront/`)
 
 ```bash
@@ -178,7 +187,7 @@ WHEN 添加 setting 子路由, DO 确保 `route.name` 在 Setting 组件 watcher
 
 **CI/CD**: `.github/workflows/ci-cd.yml` 按路径变更选择性构建部署。push 到 dev/main、`v*` tag、PR、手动 dispatch；`dorny/paths-filter` 按服务目录判断重建；backend-common 变更触发全部后端重建；docker-compose.yml 变更不触发重建；workflow_dispatch 输入 `tag`（必填）/`skip_quality`/`fast_deploy`。
 
-> Gateway 路由表与服务间调用图：`docs/infrastructure.md`；技术栈：`docs/architecture.md`；部署指南：`DEPLOYMENT.md`；设计方案：`ISSUE/`（#09-#13）；代码评审：`ISSUE/CODEX-CODE-REVIEW-RESULTS.md`（42 项，P0-P3）。
+> Gateway 路由表与服务间调用图：`docs/infrastructure.md`；技术栈：`docs/architecture.md`；部署指南：`DEPLOYMENT.md`。项目历史审查报告见 `ISSUE/`（`PROJECT-REVIEW-2026-07-27.md` 全面审查、`PROJECT-DEEP-REVIEW-2026-07-28.md` 深度审查；目录已 gitignore，仅本机保留）。
 > docker-compose 服务编排详情、deploy-fast/rollback/backup/dev-up 脚本参数、部署注意事项与运维提示详见 [docs/claude-infra.md](docs/claude-infra.md)。
 
 ## 服务间接口设计规范

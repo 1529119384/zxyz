@@ -15,6 +15,16 @@ const BASE_RECONNECT_DELAY_MS = 1000
 const MAX_RECONNECT_DELAY_MS = 30000
 const MAX_RECONNECT_ATTEMPTS = 20
 
+/**
+ * 指数退避重连延迟：基线 1s，每多一次失败翻倍，封顶 MAX_RECONNECT_DELAY_MS。
+ * 抽出为纯函数以便单测覆盖指数增长与封顶边界（P1-E4）。
+ * @param {number} attempt 已失败/即将尝试的次数（从 0 起）
+ * @returns {number} 本轮应等待的毫秒数
+ */
+function computeReconnectDelay(attempt) {
+  return Math.min(BASE_RECONNECT_DELAY_MS * 2 ** attempt, MAX_RECONNECT_DELAY_MS)
+}
+
 function getImWebSocketUrl() {
   return resolveWebSocketUrl(requireViteEnv('VITE_IM_WS_URL'))
 }
@@ -91,13 +101,16 @@ export function createImWebSocketClient(options = {}) {
       return
     }
     if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
+      // 达到重连上限：停止自动重试，转为需要用户手动干预的终态。
+      // 用 CONNECTION_ERROR 而非 DISCONNECTED，以便 UI 区分「服务端/网络持续不可用
+      // 需点击『重新连接』」与「用户主动断开」，并提供 WebSocket.reconnect() 的手动恢复路径（P1-E2）。
       manualClose = true
-      emitStatus(IM_WS_STATUS.DISCONNECTED)
-      onError?.(new Error('WebSocket 重连次数已达上限'))
+      emitStatus(IM_WS_STATUS.CONNECTION_ERROR)
+      onError?.(new Error('WebSocket 重连次数已达上限，请手动重新连接'))
       return
     }
     emitStatus(IM_WS_STATUS.RECONNECTING)
-    const delay = Math.min(BASE_RECONNECT_DELAY_MS * 2 ** reconnectAttempt, MAX_RECONNECT_DELAY_MS)
+    const delay = computeReconnectDelay(reconnectAttempt)
     reconnectAttempt += 1
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null
@@ -176,9 +189,24 @@ export function createImWebSocketClient(options = {}) {
     emitStatus(IM_WS_STATUS.DISCONNECTED)
   }
 
+  /**
+   * 手动重新连接：从终态（重连次数达上限 / 主动断开）恢复。
+   * 清除 manualClose 并重置重连计数，让 UI 的『重新连接』按钮可以真正重新拉取
+   * 并建立连接，而不是停在 CONNECTION_ERROR 终态（P1-E2）。
+   */
+  function reconnect() {
+    manualClose = false
+    reconnectAttempt = 0
+    clearReconnect()
+    connect()
+  }
+
   return {
     connect,
+    reconnect,
     disconnect,
     sendEnvelope,
   }
 }
+
+export { computeReconnectDelay }

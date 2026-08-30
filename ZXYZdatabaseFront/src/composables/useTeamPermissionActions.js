@@ -5,7 +5,7 @@ import {
   updateTeamRole,
   deleteTeamRole as deleteTeamRoleApi,
   assignTeamRolePermissions,
-  assignMemberRole,
+  assignTeamMemberRole,
 } from '@/api/teamIm'
 import { handleBusinessError } from '@/utils/error'
 
@@ -97,7 +97,7 @@ export function useTeamPermissionActions({
       return
     }
     try {
-      await assignMemberRole(teamId.value, { userId, roleCode: form.roleCode })
+      await assignTeamMemberRole(teamId.value, { userId, roleCode: form.roleCode })
       form.userId = ''
       form.roleCode = ''
       await refreshAll()

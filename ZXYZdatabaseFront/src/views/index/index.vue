@@ -195,7 +195,7 @@ const {
 } = useSendToConversation({ chatStore: imChat })
 
 function refreshFileList() {
-  return fileShowRef.value?.refresh?.()
+  return fileShowRef.value?.forceRefresh?.() || fileShowRef.value?.refresh?.()
 }
 
 function getCurrentEntries() {

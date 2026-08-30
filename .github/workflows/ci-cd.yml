@@ -411,6 +411,98 @@ jobs:
           cache-to: type=gha,mode=max
 
   # ============================================================
+  # Job 3.5: 镜像安全扫描（Trivy，仅扫描实际构建的镜像）
+  # 在 build-and-push 之后对所有后端镜像执行 SCA 漏洞扫描。
+  # HIGH/CRITICAL 漏洞会导致本 job 失败，从而整条 run 变红。
+  # 说明：
+  #   - ignore-unfixed: true 只告警可修复漏洞，避免噪音
+  #   - 若某个已知漏洞已在外部组件修复但尚无新镜像，可在必要时通过
+  #     ignore 配置临时豁免（见下方示例，勿长期使用）
+  #   - 自定义基础镜像 aclouda/zxyz-maven-base 不在 Docker Hub，无法被
+  #     Trivy 按 tag 拉取，暂不扫描 builder stage 本身（见 Dockerfile TODO）
+  # ============================================================
+  security-scan:
+    needs: [detect-changes, build-and-push]
+    if: |
+      always() &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      needs.detect-changes.outputs.backend-any == 'true' &&
+      needs.build-and-push.result == 'success'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: project-service
+            change: ${{ needs.detect-changes.outputs.project-service }}
+            is_backend: true
+          - name: im-service
+            change: ${{ needs.detect-changes.outputs.im-service }}
+            is_backend: true
+          - name: email-service
+            change: ${{ needs.detect-changes.outputs.email-service }}
+            is_backend: true
+          - name: user-service
+            change: ${{ needs.detect-changes.outputs.user-service }}
+            is_backend: true
+          - name: share-service
+            change: ${{ needs.detect-changes.outputs.share-service }}
+            is_backend: true
+          - name: file-service
+            change: ${{ needs.detect-changes.outputs.file-service }}
+            is_backend: true
+          - name: team-service
+            change: ${{ needs.detect-changes.outputs.team-service }}
+            is_backend: true
+          - name: audit-service
+            change: ${{ needs.detect-changes.outputs.audit-service }}
+            is_backend: true
+          - name: admin-service
+            change: ${{ needs.detect-changes.outputs.admin-service }}
+            is_backend: true
+          - name: gateway
+            change: ${{ needs.detect-changes.outputs.gateway }}
+            is_backend: true
+    steps:
+      # 仅当该服务真实构建过才扫描（与 build-and-push 的 should-build 逻辑一致）
+      - name: Check if image was built
+        id: was-built
+        run: |
+          if [ "${{ matrix.change }}" = "true" ] || \
+             ([ "${{ matrix.is_backend }}" = "true" ] && [ "${{ needs.detect-changes.outputs.backend-common }}" = "true" ]); then
+            echo "built=true" >> $GITHUB_OUTPUT
+          else
+            echo "built=false" >> $GITHUB_OUTPUT
+            echo "⏭️ Skip scan: ${{ matrix.name }} (not built)"
+          fi
+
+      - name: Login to GHCR
+        if: steps.was-built.outputs.built == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Scan image with Trivy
+        if: steps.was-built.outputs.built == 'true'
+        uses: aquasecurity/trivy-action@0.29.0
+        with:
+          image-ref: ${{ env.IMAGE_PREFIX }}/zxyz-${{ matrix.name }}:${{ needs.detect-changes.outputs.tag }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: '1'
+          output: trivy-${{ matrix.name }}.txt
+
+      - name: Upload Trivy report (SARIF output with HIGH/CRITICAL summary)
+        if: steps.was-built.outputs.built == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-${{ matrix.name }}
+          path: trivy-${{ matrix.name }}.txt
+          if-no-files-found: ignore
+
+  # ============================================================
   # Job 4: 部署到服务器（仅 push 触发且有镜像构建时）
   # ============================================================
   deploy:
@@ -489,21 +581,42 @@ jobs:
             REPO_DIR="${DEPLOY_DIR}-repo"
             UP_FLAGS=""
             if [ -d "$REPO_DIR" ]; then
+              # --- 验签 .env（生产门禁）——在拉取/部署之前执行，失败即中止部署 ---
+              # validate-env.sh 在检测到必需变量缺失/占位符(EERROR)时返回 1。
+              # 此处不使用 --sync-only（它会跳过全部校验，等同于无效），
+              # 也不吞掉失败；校验失败即硬失败中止部署。
+              # --prod 门禁已是脚本默认行为（Nacos/RabbitMQ/OSS 等生产敏感项只在
+              # 校验通过时放行）；此脚本当前不识别 --prod 参数，故直接用完整校验。
+              if [ -f "$DEPLOY_DIR/scripts/validate-env.sh" ] && [ -f "$DEPLOY_DIR/.env" ]; then
+                echo "===== Validating .env (prod gate) ====="
+                if ! bash "$DEPLOY_DIR/scripts/validate-env.sh" "$DEPLOY_DIR/.env"; then
+                  echo "::error::VALIDATE_ENV_FAILED: .env 校验未通过（必需变量缺失或仍为占位符），已中止部署"
+                  exit 1
+                fi
+                echo "::notice::VALIDATE_ENV_PASSED: .env 校验通过"
+                echo ""
+              else
+                echo "::warning::跳过 .env 校验（validate-env.sh 或 .env 不存在）"
+              fi
+
               OLD_HASH=$(md5sum "$DEPLOY_DIR/docker-compose.yml" 2>/dev/null | cut -d' ' -f1)
               cd "$REPO_DIR" && git pull --ff-only -q
+
+              # --- 漂移检测：拉取后若工作区非空即中止并要求人工确认 ---
+              echo "===== 检测部署配置仓库工作区漂移 ====="
+              DRIFT_OUTPUT=$(git -C "$REPO_DIR" status --porcelain)
+              if [ -n "$DRIFT_OUTPUT" ]; then
+                echo "::error::GIT_DRIFT_DETECTED: $REPO_DIR 工作区存在未提交/漂移变更"
+                printf '%s\n' "$DRIFT_OUTPUT"
+                echo "::error::若确需保留这些变更请人工确认并提交；在清理漂移前 CI 部署已中止，以防配置文件被静默覆盖"
+                exit 1
+              fi
+              echo "工作区清洁，无漂移"
+
               cp "$REPO_DIR/docker-compose.yml" "$DEPLOY_DIR/docker-compose.yml"
               cd "$DEPLOY_DIR"
               NEW_HASH=$(md5sum "$DEPLOY_DIR/docker-compose.yml" | cut -d' ' -f1)
               [ "$OLD_HASH" != "$NEW_HASH" ] && UP_FLAGS="--force-recreate" && echo "docker-compose.yml changed, will force-recreate"
-            fi
-
-            # --- 验证 .env ---
-            if [ -f "$DEPLOY_DIR/scripts/validate-env.sh" ] && [ -f "$DEPLOY_DIR/.env" ]; then
-              echo "===== Validating .env ====="
-              bash "$DEPLOY_DIR/scripts/validate-env.sh" --sync-only "$DEPLOY_DIR/.env" || {
-                echo "WARN: .env validation had issues, continuing with deploy"
-              }
-              echo ""
             fi
 
             # --- 更新 .env ---

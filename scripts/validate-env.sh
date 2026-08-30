@@ -124,6 +124,8 @@ check_not_placeholder "RABBITMQ_PASSWORD"
 
 echo ""
 echo "--- Nacos ---"
+# Nacos 用户名不能未设置（compose 已移除 :-nacos 默认值，未配置将启动失败）
+check_required "NACOS_USERNAME"
 # Nacos 密码不能是默认值 nacos（生产环境）
 if [ "${NACOS_PASSWORD:-}" = "nacos" ]; then
   echo "  WARN: NACOS_PASSWORD 是默认值 'nacos'，生产环境建议修改"

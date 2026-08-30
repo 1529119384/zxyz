@@ -308,6 +308,16 @@ export function createRealtimeDomain(state, deps) {
     wsStatus.value = IM_WS_STATUS.DISCONNECTED
   }
 
+  /**
+   * 手动重新连接：包一层 wsClient.reconnect()，供 UI 在重连达上限的终态
+   * 提供『重新连接』按钮时调用（P1-E2）。
+   */
+  function reconnectWebSocket() {
+    if (wsClient) {
+      wsClient.reconnect()
+    }
+  }
+
   function sendTextMessage(conversationId, content, mentions = []) {
     const normalizedContent = typeof content === 'string' ? content.trim() : ''
     if (!normalizedContent) {
@@ -423,6 +433,7 @@ export function createRealtimeDomain(state, deps) {
     loadMyPresence,
     ensureWebSocketConnected,
     disconnectWebSocket,
+    reconnectWebSocket,
     sendTextMessage,
     sendFileCardMessage,
     buildFileCardPayload,

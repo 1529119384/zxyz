@@ -64,7 +64,7 @@ class FileObjectReferenceManagerTest {
 
     @Test
     void retainReference_silentlyReturnsWhenKeyBlank() {
-        assertDoesNotThrow(() -> manager.retainReference("  "));
+        assertDoesNotThrow(() -> manager.retainReference("  ", "oss"));
         verifyNoInteractions(fileObjectRefMapper);
     }
 

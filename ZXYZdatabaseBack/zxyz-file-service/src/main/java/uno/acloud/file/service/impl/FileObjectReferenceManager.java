@@ -47,11 +47,6 @@ public class FileObjectReferenceManager {
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public void retainReference(String objectKey) {
-        retainReference(objectKey, null);
-    }
-
-    @Transactional(rollbackFor = Exception.class)
     public void releaseReferences(Collection<String> objectKeys) {
         if (objectKeys == null || objectKeys.isEmpty()) {
             return;

@@ -9,9 +9,7 @@ services:
       - ${DATA_DIR:-./data}/mysql:/var/lib/mysql
 
   nacos:
-    ports:
-      - "${NACOS_PORT:-8848}:8848"
-      - "${NACOS_CONSOLE_PORT:-8080}:8080"
+    # 端口映射已由 docker-compose.yml 声明（127.0.0.1:${NACOS_PORT}:8848），此处不重复声明
     environment:
       MODE: standalone
       SPRING_DATASOURCE_PLATFORM: mysql
@@ -39,7 +37,7 @@ services:
 
   rabbitmq:
     ports:
-      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
+      # 15672 已由 docker-compose.yml 声明（127.0.0.1:${RABBITMQ_MGMT_PORT}:15672），此处仅补充 AMQP 端口
       - "${RABBITMQ_AMQP_PORT:-5672}:5672"
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
