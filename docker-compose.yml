@@ -62,10 +62,10 @@ services:
       JVM_XMN: 256m
       # Nacos 鉴权配置 — 生产环境必须通过环境变量注入，禁止使用默认密码
       NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN}
-      NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY:-serverIdentity}
+      NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY}
       NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE}
       # Nacos 控制台管理员密码，必须在 .env 中覆盖默认值
-      NACOS_PASSWORD: ${NACOS_PASSWORD:-CHANGE_ME_NACOS}
+      NACOS_PASSWORD: ${NACOS_PASSWORD}
       TZ: Asia/Shanghai
     ports:
       - "127.0.0.1:${NACOS_PORT:-8848}:8848"
