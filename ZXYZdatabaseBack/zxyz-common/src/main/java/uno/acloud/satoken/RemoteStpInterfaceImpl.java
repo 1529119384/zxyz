@@ -25,15 +25,21 @@ public class RemoteStpInterfaceImpl implements StpInterface {
     private final String teamServiceBaseUrl;
     private final ObjectMapper objectMapper;
     private final String internalServiceToken;
+    private final String sourceService;
+    private final String selfServiceKey;
 
     public RemoteStpInterfaceImpl(RestClient restClient,
                                   String teamServiceBaseUrl,
                                   ObjectMapper objectMapper,
-                                  String internalServiceToken) {
+                                  String internalServiceToken,
+                                  String sourceService,
+                                  String selfServiceKey) {
         this.restClient = restClient;
         this.teamServiceBaseUrl = teamServiceBaseUrl;
         this.objectMapper = objectMapper;
         this.internalServiceToken = internalServiceToken;
+        this.sourceService = sourceService;
+        this.selfServiceKey = selfServiceKey;
     }
 
     @Override
@@ -48,9 +54,11 @@ public class RemoteStpInterfaceImpl implements StpInterface {
 
     private List<String> fetchCodes(String path, Object loginId, String label) {
         try {
+            String token = (selfServiceKey != null && !selfServiceKey.isBlank()) ? selfServiceKey : internalServiceToken;
             String responseBody = restClient.get()
                     .uri(teamServiceBaseUrl + path, loginId)
-                    .header(InternalServiceHeaders.TOKEN_HEADER, internalServiceToken)
+                    .header(InternalServiceHeaders.TOKEN_HEADER, token)
+                    .header(InternalServiceHeaders.CALLER_SERVICE_HEADER, sourceService)
                     .retrieve()
                     .body(String.class);
             JsonNode root = objectMapper.readTree(responseBody);

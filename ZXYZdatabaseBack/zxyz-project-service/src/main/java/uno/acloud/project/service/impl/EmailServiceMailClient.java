@@ -3,6 +3,7 @@ package uno.acloud.project.service.impl;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import uno.acloud.common.InternalServiceHeaders;
 import uno.acloud.project.service.MailClient;
 
 import java.time.LocalDateTime;
@@ -14,6 +15,13 @@ import java.util.Map;
 public class EmailServiceMailClient implements MailClient {
 
     private final RestClient restClient;
+
+    @org.springframework.beans.factory.annotation.Value("${app.internal-service-key:}")
+    private String selfServiceKey;
+    @org.springframework.beans.factory.annotation.Value("${app.internal-service-token:}")
+    private String internalServiceToken;
+    @org.springframework.beans.factory.annotation.Value("${spring.application.name:unknown}")
+    private String sourceService;
 
     public EmailServiceMailClient(@Qualifier("emailRestClient") RestClient restClient) {
         this.restClient = restClient;
@@ -90,8 +98,11 @@ public class EmailServiceMailClient implements MailClient {
     }
 
     private void post(String path, Map<String, Object> body) {
+        String token = (selfServiceKey != null && !selfServiceKey.isBlank()) ? selfServiceKey : internalServiceToken;
         restClient.post()
                 .uri(path)
+                .header(InternalServiceHeaders.TOKEN_HEADER, token)
+                .header(InternalServiceHeaders.CALLER_SERVICE_HEADER, sourceService)
                 .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                 .body(body)
                 .retrieve()

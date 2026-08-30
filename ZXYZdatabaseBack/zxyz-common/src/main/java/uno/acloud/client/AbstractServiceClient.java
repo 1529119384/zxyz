@@ -45,6 +45,17 @@ public abstract class AbstractServiceClient {
     private final String internalServiceToken;
     private final ObjectMapper objectMapper;
 
+    /** 来源服务名（spring.application.name），随内部调用写入 X-Internal-Caller-Service 供收方查白名单矩阵 */
+    @org.springframework.beans.factory.annotation.Value("${spring.application.name:unknown}")
+    protected String sourceService;
+
+    /**
+     * 本服务独立密钥（app.internal-service-key = ${SVC_<SERVICE>_KEY}，经 docker-compose 注入）。
+     * 非空时作为 X-Internal-Service-Token 输出；为空则回退构造传入的 internalServiceToken（过渡/兼容）。
+     */
+    @org.springframework.beans.factory.annotation.Value("${app.internal-service-key:}")
+    protected String selfServiceKey;
+
     protected AbstractServiceClient(RestClient restClient,
                                     String baseUrl,
                                     String internalServiceToken,
@@ -475,7 +486,12 @@ public abstract class AbstractServiceClient {
      * 供子类在自定义 RestClient 调用中复用。
      */
     protected void internalHeaders(org.springframework.http.HttpHeaders headers) {
-        headers.set(InternalServiceHeaders.TOKEN_HEADER, internalServiceToken);
+        // 每服务独立密钥优先；未配置时回退构造传入的共享 token（过渡兼容）
+        String token = (selfServiceKey != null && !selfServiceKey.isBlank()) ? selfServiceKey : internalServiceToken;
+        headers.set(InternalServiceHeaders.TOKEN_HEADER, token);
+        if (sourceService != null && !sourceService.isBlank()) {
+            headers.set(InternalServiceHeaders.CALLER_SERVICE_HEADER, sourceService);
+        }
         String requestId = MDC.get("requestId");
         if (requestId != null && !requestId.isBlank()) {
             headers.set(InternalServiceHeaders.REQUEST_ID_HEADER, requestId);

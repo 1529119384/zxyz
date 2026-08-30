@@ -33,7 +33,10 @@ public class RemoteStpInterfaceAutoConfig {
     public StpInterface stpInterface(RestClient restClient,
                                      @Value("${app.team-service.base-url}") String teamServiceBaseUrl,
                                      ObjectMapper objectMapper,
-                                     @Value("${app.internal-service-token:}") String internalServiceToken) {
-        return new RemoteStpInterfaceImpl(restClient, teamServiceBaseUrl, objectMapper, internalServiceToken);
+                                     @Value("${app.internal-service-token:}") String internalServiceToken,
+                                     @Value("${spring.application.name:unknown}") String sourceService,
+                                     @Value("${app.internal-service-key:}") String selfServiceKey) {
+        return new RemoteStpInterfaceImpl(restClient, teamServiceBaseUrl, objectMapper,
+                internalServiceToken, sourceService, selfServiceKey);
     }
 }

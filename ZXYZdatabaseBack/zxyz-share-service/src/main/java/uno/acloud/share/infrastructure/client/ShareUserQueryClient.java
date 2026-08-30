@@ -36,7 +36,7 @@ public class ShareUserQueryClient extends UserQueryClient {
         try {
             String responseBody = restClient().get()
                     .uri(baseUrl() + "/api/internal/users/{userId}/info", userId)
-                    .header(InternalServiceHeaders.TOKEN_HEADER, internalServiceToken())
+                    .headers(this::internalHeaders)
                     .retrieve()
                     .body(String.class);
             JsonNode data = ServiceResponseParser.parseSuccessData(objectMapper(), responseBody, "获取用户信息失败");

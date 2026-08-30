@@ -97,6 +97,10 @@ app:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:4173}
   # 服务间调用鉴权 token，生产环境必须通过环境变量注入
   internal-service-token: ${INTERNAL_SERVICE_TOKEN}
+  # 服务级白名单矩阵（P2-A2）：允许来源服务名 -> 该来源独立密钥。
+  # 默认空 = 过渡模式（仅校验 INTERNAL_SERVICE_TOKEN）；生产各服务覆盖此 map 以启用矩阵。
+  internal:
+    allowed-sources: {}
   # auth timeout 默认值：zxyz-dynamic.yml（Nacos 热更新）会覆盖此处
   auth:
     secure: ${AUTH_COOKIE_SECURE:true}

@@ -115,7 +115,10 @@ spring:
                 - Path=/api/admin/email/**
               filters:
                 - RewritePath=/api/admin/email(?<segment>/?.*), /api/email/internal${segment}
+                # gateway 作为 admin 桥接的合法调用方身份：token 自注入，caller 声明为 zxyz-gateway；
+                # StripInternalHeadersFilter 先剥外部伪造的内部头，再经 filters 补回受信身份。
                 - AddRequestHeader=X-Internal-Service-Token, ${INTERNAL_SERVICE_TOKEN}
+                - AddRequestHeader=X-Internal-Caller-Service, zxyz-gateway
 
             # 管理后台数据库路由：/api/admin/database/** → project-service
             - id: admin-database

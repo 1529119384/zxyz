@@ -28,6 +28,16 @@ public class EmailServiceRestClient {
     private final String internalServiceToken;
     private final ObjectMapper objectMapper;
 
+    @org.springframework.beans.factory.annotation.Value("${app.internal-service-key:}")
+    private String selfServiceKey;
+    @org.springframework.beans.factory.annotation.Value("${spring.application.name:unknown}")
+    private String sourceService;
+
+    /** 独立密钥优先，否则回退构造传入的共享 token（过渡兼容） */
+    private String effectiveInternalToken() {
+        return (selfServiceKey != null && !selfServiceKey.isBlank()) ? selfServiceKey : internalServiceToken;
+    }
+
     public EmailServiceRestClient(@Qualifier("emailRestClient") RestClient restClient,
                                   ServiceProperties serviceProperties,
                                   ObjectMapper objectMapper) {
@@ -39,7 +49,8 @@ public class EmailServiceRestClient {
     public void postForVoid(String path, Object body) {
         exchange(path, () -> restClient.post()
                 .uri(path)
-                .header(InternalServiceHeaders.TOKEN_HEADER, internalServiceToken)
+                .header(InternalServiceHeaders.TOKEN_HEADER, effectiveInternalToken())
+                .header(InternalServiceHeaders.CALLER_SERVICE_HEADER, sourceService)
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON)
                 .body(body)
@@ -50,7 +61,8 @@ public class EmailServiceRestClient {
     public Object getForData(String path) {
         return exchange(path, () -> restClient.get()
                 .uri(path)
-                .header(InternalServiceHeaders.TOKEN_HEADER, internalServiceToken)
+                .header(InternalServiceHeaders.TOKEN_HEADER, effectiveInternalToken())
+                .header(InternalServiceHeaders.CALLER_SERVICE_HEADER, sourceService)
                 .accept(MediaType.APPLICATION_JSON)
                 .retrieve()
                 .body(Result.class));
@@ -59,7 +71,8 @@ public class EmailServiceRestClient {
     public Object postForData(String path, Object body) {
         return exchange(path, () -> restClient.post()
                 .uri(path)
-                .header(InternalServiceHeaders.TOKEN_HEADER, internalServiceToken)
+                .header(InternalServiceHeaders.TOKEN_HEADER, effectiveInternalToken())
+                .header(InternalServiceHeaders.CALLER_SERVICE_HEADER, sourceService)
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON)
                 .body(body == null ? java.util.Map.of() : body)
@@ -70,7 +83,8 @@ public class EmailServiceRestClient {
     public Object putForData(String path, Object body) {
         return exchange(path, () -> restClient.put()
                 .uri(path)
-                .header(InternalServiceHeaders.TOKEN_HEADER, internalServiceToken)
+                .header(InternalServiceHeaders.TOKEN_HEADER, effectiveInternalToken())
+                .header(InternalServiceHeaders.CALLER_SERVICE_HEADER, sourceService)
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON)
                 .body(body)

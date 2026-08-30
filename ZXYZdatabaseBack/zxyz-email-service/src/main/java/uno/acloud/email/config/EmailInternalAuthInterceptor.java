@@ -5,21 +5,18 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Component;
-import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.HandlerInterceptor;
 import uno.acloud.common.InternalServiceHeaders;
-
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
+import uno.acloud.common.config.InternalAllowList;
 
 @Slf4j
 @Component
 public class EmailInternalAuthInterceptor implements HandlerInterceptor {
 
-    private final String internalServiceToken;
+    private final InternalAllowList internalAllowList;
 
-    public EmailInternalAuthInterceptor(AppProperties appProperties) {
-        this.internalServiceToken = appProperties.getInternalServiceToken();
+    public EmailInternalAuthInterceptor(InternalAllowList internalAllowList) {
+        this.internalAllowList = internalAllowList;
     }
 
     @Override
@@ -28,20 +25,13 @@ public class EmailInternalAuthInterceptor implements HandlerInterceptor {
             return true;
         }
         String providedToken = request.getHeader(InternalServiceHeaders.TOKEN_HEADER);
-        if (!StringUtils.hasText(internalServiceToken)
-                || !StringUtils.hasText(providedToken)
-                || !constantTimeEquals(internalServiceToken, providedToken)) {
-            log.warn("拒绝邮件服务内部请求：uri={}, remoteAddr={}", request.getRequestURI(), request.getRemoteAddr());
+        String caller = request.getHeader(InternalServiceHeaders.CALLER_SERVICE_HEADER);
+        if (!internalAllowList.verify(caller, providedToken)) {
+            log.warn("拒绝邮件服务内部请求：uri={}, caller={}, remoteAddr={}",
+                    request.getRequestURI(), caller, request.getRemoteAddr());
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             return false;
         }
         return true;
-    }
-
-    private boolean constantTimeEquals(String expected, String actual) {
-        return MessageDigest.isEqual(
-                expected.getBytes(StandardCharsets.UTF_8),
-                actual.getBytes(StandardCharsets.UTF_8)
-        );
     }
 }

@@ -11,8 +11,10 @@ public class StpInterfaceImpl extends RemoteStpInterfaceImpl {
 
     public StpInterfaceImpl(RestClient restClient,
                             TeamServiceProperties teamServiceProperties,
-                            ObjectMapper objectMapper) {
+                            ObjectMapper objectMapper,
+                            @org.springframework.beans.factory.annotation.Value("${spring.application.name:unknown}") String sourceService,
+                            @org.springframework.beans.factory.annotation.Value("${app.internal-service-key:}") String selfServiceKey) {
         super(restClient, teamServiceProperties.normalizedBaseUrl(),
-              objectMapper, teamServiceProperties.getInternalServiceToken());
+              objectMapper, teamServiceProperties.getInternalServiceToken(), sourceService, selfServiceKey);
     }
 }

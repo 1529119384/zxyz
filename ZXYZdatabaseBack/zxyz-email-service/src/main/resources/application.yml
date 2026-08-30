@@ -41,3 +41,20 @@ email:
   verify-code-expire-minutes: ${EMAIL_VERIFY_CODE_EXPIRE_MINUTES:10}
   ip-limit-per-minute: ${EMAIL_IP_LIMIT_PER_MINUTE:3}
   email-limit-per-minute: ${EMAIL_ADDRESS_LIMIT_PER_MINUTE:1}
+
+# ---------------------------------------------------------------------------
+# 服务间鉴权（P2-A2 白名单矩阵，email 是试点收方）
+# 默认空 = 过渡模式（回退 INTERNAL_SERVICE_TOKEN）。生产启用矩阵时打开下面映射，
+# 只列「允许调用本服务」的来源密钥；密钥在 .env 定义（SVC_*_KEY），未定义会导致启动拒绝（fail-closed）。
+# 注意：gateway 以 zxyz-gateway 身份经 admin-email 桥接调用 /api/email/internal/**，须列入来源。
+# app:
+#   internal:
+#     allowed-sources:
+#       zxyz-user-service: ${SVC_USER_KEY}
+#       zxyz-admin-service: ${SVC_ADMIN_KEY}
+#       zxyz-project-service: ${SVC_PROJECT_KEY}
+#       zxyz-im-service: ${SVC_IM_KEY}
+#       zxyz-file-service: ${SVC_FILE_KEY}
+#       zxyz-team-service: ${SVC_TEAM_KEY}
+#       zxyz-gateway: ${SVC_GATEWAY_KEY}
+# ----

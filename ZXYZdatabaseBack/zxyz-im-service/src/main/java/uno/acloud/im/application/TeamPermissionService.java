@@ -33,15 +33,21 @@ public class TeamPermissionService {
     private final ObjectMapper objectMapper;
     private final TeamServiceProperties teamServiceProperties;
     private final String internalServiceToken;
+    private final String selfServiceKey;
+    private final String sourceService;
 
     public TeamPermissionService(RestClient restClient,
                                  ObjectMapper objectMapper,
                                  TeamServiceProperties teamServiceProperties,
-                                 ServiceProperties serviceProperties) {
+                                 ServiceProperties serviceProperties,
+                                 @org.springframework.beans.factory.annotation.Value("${spring.application.name:unknown}") String sourceService,
+                                 @org.springframework.beans.factory.annotation.Value("${app.internal-service-key:}") String selfServiceKey) {
         this.restClient = restClient;
         this.objectMapper = objectMapper;
         this.teamServiceProperties = teamServiceProperties;
         this.internalServiceToken = serviceProperties.getInternalServiceToken();
+        this.sourceService = sourceService;
+        this.selfServiceKey = selfServiceKey;
     }
 
     // ==================== 权限检查 ====================
@@ -171,9 +177,11 @@ public class TeamPermissionService {
 
     private String postToTeamService(String path, Object body) {
         String url = teamServiceProperties.normalizedBaseUrl() + path;
+        String token = (selfServiceKey != null && !selfServiceKey.isBlank()) ? selfServiceKey : internalServiceToken;
         return restClient.post()
                 .uri(url)
-                .header(InternalServiceHeaders.TOKEN_HEADER, internalServiceToken)
+                .header(InternalServiceHeaders.TOKEN_HEADER, token)
+                .header(InternalServiceHeaders.CALLER_SERVICE_HEADER, sourceService)
                 .body(body)
                 .retrieve()
                 .body(String.class);

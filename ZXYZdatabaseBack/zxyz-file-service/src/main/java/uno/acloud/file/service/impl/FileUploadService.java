@@ -84,6 +84,10 @@ public class FileUploadService implements FileUploadPort {
     private final ObjectMapper objectMapper;
     private final String projectServiceBaseUrl;
     private final String internalServiceToken;
+    @org.springframework.beans.factory.annotation.Value("${app.internal-service-key:}")
+    private String selfServiceKey;
+    @org.springframework.beans.factory.annotation.Value("${spring.application.name:unknown}")
+    private String sourceService;
     private final ConfigGetter configGetter;
     private final UsageLedgerMapper usageLedgerMapper;
 
@@ -256,6 +260,10 @@ public class FileUploadService implements FileUploadPort {
         );
     }
 
+    private String effectiveInternalToken() {
+        return (selfServiceKey != null && !selfServiceKey.isBlank()) ? selfServiceKey : internalServiceToken;
+    }
+
     private void checkBatchQuota(BatchConfirmUploadRequest request, Long userId) {
         // 先按与 confirmUpload 相同的默认填充逻辑，确保每个 item 的目标空间参数已解析完成
         for (ConfirmUploadRequest item : request.getFiles()) {
@@ -302,7 +310,8 @@ public class FileUploadService implements FileUploadPort {
             body.put("totalSize", totalSize);
             QuotaCheckResponse response = restClient.post()
                     .uri(normalizeBaseUrl(projectServiceBaseUrl) + "/api/internal/storage/check-quota")
-                    .header(InternalServiceHeaders.TOKEN_HEADER, internalServiceToken)
+                    .header(InternalServiceHeaders.TOKEN_HEADER, effectiveInternalToken())
+                    .header(InternalServiceHeaders.CALLER_SERVICE_HEADER, sourceService)
                     .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                     .body(body)
                     .retrieve()

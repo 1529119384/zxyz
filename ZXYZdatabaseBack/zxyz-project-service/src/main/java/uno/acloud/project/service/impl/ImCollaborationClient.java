@@ -26,6 +26,11 @@ public class ImCollaborationClient {
     private final RestClient restClient;
     private final String internalServiceToken;
 
+    @org.springframework.beans.factory.annotation.Value("${app.internal-service-key:}")
+    private String selfServiceKey;
+    @org.springframework.beans.factory.annotation.Value("${spring.application.name:unknown}")
+    private String sourceService;
+
     public ImCollaborationClient(@Qualifier("imRestClient") RestClient restClient,
                                  ServiceProperties serviceProperties) {
         this.restClient = restClient;
@@ -140,7 +145,9 @@ public class ImCollaborationClient {
     }
 
     private void internalHeaders(HttpHeaders headers) {
-        headers.set(InternalServiceHeaders.TOKEN_HEADER, internalServiceToken);
+        String token = (selfServiceKey != null && !selfServiceKey.isBlank()) ? selfServiceKey : internalServiceToken;
+        headers.set(InternalServiceHeaders.TOKEN_HEADER, token);
+        headers.set(InternalServiceHeaders.CALLER_SERVICE_HEADER, sourceService);
     }
 
     private String safeText(String value) {

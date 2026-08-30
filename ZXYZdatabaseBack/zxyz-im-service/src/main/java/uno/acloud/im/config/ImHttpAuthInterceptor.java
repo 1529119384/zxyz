@@ -9,21 +9,19 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.HandlerInterceptor;
 import uno.acloud.common.InternalServiceHeaders;
-
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
+import uno.acloud.common.config.InternalAllowList;
 
 @Slf4j
 @Component
 public class ImHttpAuthInterceptor implements HandlerInterceptor {
 
     private final ImTokenAuthService tokenAuthService;
-    private final String internalServiceToken;
+    private final InternalAllowList internalAllowList;
 
     public ImHttpAuthInterceptor(ImTokenAuthService tokenAuthService,
-                                 ServiceProperties serviceProperties) {
+                                 InternalAllowList internalAllowList) {
         this.tokenAuthService = tokenAuthService;
-        this.internalServiceToken = serviceProperties.getInternalServiceToken();
+        this.internalAllowList = internalAllowList;
     }
 
     @Override
@@ -51,18 +49,13 @@ public class ImHttpAuthInterceptor implements HandlerInterceptor {
 
     private boolean verifyInternalToken(HttpServletRequest request, HttpServletResponse response) {
         String providedToken = request.getHeader(InternalServiceHeaders.TOKEN_HEADER);
-        if (!StringUtils.hasText(internalServiceToken) || !StringUtils.hasText(providedToken)
-                || !constantTimeEquals(internalServiceToken, providedToken)) {
-            log.warn("Rejected IM internal request: uri={}, remoteAddr={}", request.getRequestURI(), request.getRemoteAddr());
+        String caller = request.getHeader(InternalServiceHeaders.CALLER_SERVICE_HEADER);
+        if (!internalAllowList.verify(caller, providedToken)) {
+            log.warn("Rejected IM internal request: uri={}, caller={}, remoteAddr={}",
+                    request.getRequestURI(), caller, request.getRemoteAddr());
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             return false;
         }
         return true;
-    }
-
-    private boolean constantTimeEquals(String expected, String actual) {
-        byte[] expectedBytes = expected.getBytes(StandardCharsets.UTF_8);
-        byte[] actualBytes = actual.getBytes(StandardCharsets.UTF_8);
-        return MessageDigest.isEqual(expectedBytes, actualBytes);
     }
 }
