@@ -55,24 +55,29 @@ else
 fi
 
 # Redis 备份 — 轮询 LASTSAVE 确认 BGSAVE 完成
+# 注意: LASTSAVE 是 Unix 秒级时间戳。BGSAVE 完成后若与下一次轮询落在同一秒内，
+# LASTSAVE 可能与变更前相等（同秒）。因此"前移判定"采用严格随大——只要某次
+# 读到的 LASTSAVE 已较基线前移即可判定完成；同秒未前移则继续轮询，靠 60s 总
+# 上限兜底超时（不因单次同秒而误判失败）。
 echo "备份 Redis..."
-PREV_SAVE=$(docker exec zxyz-redis redis-cli -a "$REDIS_PASSWORD" LASTSAVE)
+PREV_SAVE=$(docker exec zxyz-redis redis-cli -a "$REDIS_PASSWORD" LASTSAVE) || { echo "ERROR: Redis LASTSAVE 失败" >&2; FAILED=1; exit 1; }
 docker exec zxyz-redis redis-cli -a "$REDIS_PASSWORD" BGSAVE >/dev/null
 
 echo "等待 Redis BGSAVE 完成..."
 for i in $(seq 1 60); do
   sleep 1
-  CURR_SAVE=$(docker exec zxyz-redis redis-cli -a "$REDIS_PASSWORD" LASTSAVE)
-  if [ "$CURR_SAVE" != "$PREV_SAVE" ]; then
-    echo "Redis BGSAVE 完成 (${i}s)"
+  CURR_SAVE=$(docker exec zxyz-redis redis-cli -a "$REDIS_PASSWORD" LASTSAVE 2>/dev/null || echo "$PREV_SAVE")
+  if [ "$CURR_SAVE" -gt "$PREV_SAVE" ]; then
+    echo "Redis BGSAVE 完成 (${i}s, LASTSAVE=$CURR_SAVE)"
+    BACKUP_READY=1
     break
   fi
-  if [ "$i" -eq 60 ]; then
-    echo "ERROR: Redis BGSAVE 超时 (60s)" >&2
-    FAILED=1
-    exit 1
-  fi
 done
+if [ "${BACKUP_READY:-0}" -ne 1 ]; then
+  echo "ERROR: Redis BGSAVE 超时 (60s)" >&2
+  FAILED=1
+  exit 1
+fi
 
 docker cp zxyz-redis:/data/dump.rdb "$BACKUP_DIR/redis_$DATE.rdb"
 

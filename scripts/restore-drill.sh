@@ -6,7 +6,8 @@
 #   1. 取 $BACKUP_DIR 下最近一个 mysql_*.sql.gz
 #   2. 用 docker run 起一个临时 MySQL 容器
 #   3. 将备份解压灌入该容器
-#   4. 校验核心表（zxyz_user.user）行数非空
+#   4. 校验多张核心表（zxyz_user.user、file_node、project、team、im_message…）行数非空，
+#      任一表为空视为 FAIL，避免单表误判掩盖整体恢复问题
 #   5. 输出 PASS/FAIL；FAIL 则 exit 1；成功后清理临时容器
 #
 # 注意：
@@ -90,19 +91,32 @@ else
   exit 1
 fi
 
-# 校验核心表是否有数据（zxyz_user 库的 user 表）
+# 校验核心表是否有数据（各服务主库各取一张核心表，覆盖恢复完整性）
+# 每个条目为 "库.表"，恢复演练须全部非空才算 PASS，避免单表误判。
+CHECKS=(
+  "zxyz_user.user"
+  "zxyz_file.file_node"
+  "zxyz_project.project"
+  "zxyz_project.project_member"
+  "zxyz_team.team"
+  "zxyz_im.im_message"
+  "zxyz_share.share"
+)
 echo "校验核心表行数..."
-ROW_COUNT=$(docker exec "$CONTAINER_NAME" \
-  mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -N -e \
-  "SELECT COUNT(*) FROM \`zxyz_user\`.\`user\`;" 2>/dev/null || true)
-
-if [ -n "$ROW_COUNT" ] && [ "$ROW_COUNT" -ge 1 ] 2>/dev/null; then
-  echo "PASS: 恢复成功，zxyz_user.user 行数 = $ROW_COUNT"
-  PASSED=1
-else
-  echo "FAIL: zxyz_user.user 行数校验未通过 (ROW_COUNT='$ROW_COUNT')" >&2
-  PASSED=0
-fi
+PASSED=1
+for CHECK in "${CHECKS[@]}"; do
+  DB="${CHECK%%.*}"
+  TBL="${CHECK#*.}"
+  ROW_COUNT=$(docker exec "$CONTAINER_NAME" \
+    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -N -e \
+    "SELECT COUNT(*) FROM \`${DB}\`.\`${TBL}\`;" 2>/dev/null || true)
+  if [ -n "$ROW_COUNT" ] && [ "$ROW_COUNT" -ge 1 ] 2>/dev/null; then
+    echo "  PASS: ${DB}.${TBL} 行数 = $ROW_COUNT"
+  else
+    echo "  FAIL: ${DB}.${TBL} 行数校验未通过 (ROW_COUNT='$ROW_COUNT')" >&2
+    PASSED=0
+  fi
+done
 
 # 演练结束后清理临时容器
 cleanup
