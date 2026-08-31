@@ -34,3 +34,6 @@ ZXYZDatabaseBackend.zip
 
 # Lombok generates
 lombok.config
+
+# Claude agent local memory（勿提交）
+**/.claude/

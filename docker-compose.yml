@@ -6,13 +6,16 @@
 # 现有 dev/生产无需配置即可启动，行为与历史一致。
 #
 # 启用服务级白名单矩阵（生产安全隔离，阻止「持 token 服务伪造任意来源」）：
-#   1) 在 .env 定义每个服务的独立密钥：SVC_<SERVICE>_KEY （如 SVC_TEAM_KEY、SVC_USER_KEY、SVC_GATEWAY_KEY）
-#   2) 在 Nacos zxyz-dynamic.yml 或服务自身 application.yml 的 app.internal.allowed-sources 声明
-#      “允许来源服务名 -> 该来源密钥”映射（示例见各服务 application.yml 注释）。收方只存允许调用自己的来源密钥。
-#   3) 网关已用 StripInternalHeadersFilter 剥离外部伪造的 X-Internal-Service-Token / X-Internal-Caller-Service，
+#   1) 在 .env 取消 SVC_*_KEY 注释并改为高强度随机串（见 .env.example 顶部矩阵说明）
+#   2) 【必做】在每个服务 environment 加 `APP_INTERNAL_SERVICE_KEY: ${SVC_<SERVICE>_KEY}`
+#      （= 该服务自己向收方签发的密钥；缺此则矩阵启用后发方仍持 legacy token 会被收方拒）
+#   3) 在收方 app.internal.allowed-sources 声明「允许来源服务名 -> 该来源密钥」映射，
+#      收方只存允许调用自己的来源密钥；示例见各服务 application.yml 注释。
+#   4) 网关已用 StripInternalHeadersFilter 剥离外部伪造的 X-Internal-Service-Token / X-Internal-Caller-Service，
 #      并在 admin-email 桥接路由以 zxyz-gateway 身份自注入受信内部头。
-# 警告：allowed-sources 一旦启用，任何未列举来源将被拒绝（fail-closed）；密钥键禁 YAML 默认值，
-#      未定义环境变量会导致服务拒绝启动（强制配齐）。建议先单服务（如 email）灰度，再逐服务铺开。
+# 警告：allowed-sources 一旦启用，任何未列举来源将被拒（fail-closed）；密钥键禁 YAML 默认值，
+#      未定义环境变量对应服务拒绝启动（强制配齐）。SVC_GATEWAY_KEY 必须与 gateway 桥接注入的 token 一致，
+#      否则 admin 邮件管理经网关调用在矩阵下 401。建议先单服务（如 email）灰度再铺开。
 # ---------------------------------------------------------------------------
 services:
   mysql:

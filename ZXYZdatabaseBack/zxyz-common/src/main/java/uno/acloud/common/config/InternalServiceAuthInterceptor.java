@@ -31,9 +31,10 @@ public class InternalServiceAuthInterceptor implements HandlerInterceptor {
         String caller = request.getHeader(InternalServiceHeaders.CALLER_SERVICE_HEADER);
         String token = request.getHeader(InternalServiceHeaders.TOKEN_HEADER);
         if (!internalAllowList.verify(caller, token)) {
-            log.warn("内部服务鉴权失败: caller={}, tokenLen={}",
+            // 鉴权失败日志不暴露令牌长度，避免辅助枚举（安全最小暴露）
+            log.warn("内部服务鉴权失败: caller={}, tokenProvided={}",
                     caller == null ? "null" : caller,
-                    token == null ? "null" : token.length());
+                    token == null ? "null" : "***");
             throw new BusinessException(ErrorCode.NO_PERMISSION, "内部服务鉴权失败");
         }
         return true;
