@@ -1,6 +1,7 @@
 package uno.acloud.team.service.impl;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -9,6 +10,7 @@ import uno.acloud.common.ErrorCode;
 import uno.acloud.common.TeamPermissionPolicy;
 import uno.acloud.common.TeamRoleCodes;
 import uno.acloud.exception.BusinessException;
+import uno.acloud.satoken.PermissionCache;
 import uno.acloud.team.infrastructure.client.UserServiceClient;
 import uno.acloud.team.mapper.TeamPermissionMapper;
 
@@ -21,13 +23,16 @@ public class TeamPermissionManager {
     private final TeamPermissionMapper mapper;
     private final TeamPermissionCacheService teamPermissionCacheService;
     private final UserServiceClient userServiceClient;
+    private final StringRedisTemplate stringRedisTemplate;
 
     public TeamPermissionManager(TeamPermissionMapper mapper,
                                  TeamPermissionCacheService teamPermissionCacheService,
-                                 UserServiceClient userServiceClient) {
+                                 UserServiceClient userServiceClient,
+                                 StringRedisTemplate stringRedisTemplate) {
         this.mapper = mapper;
         this.teamPermissionCacheService = teamPermissionCacheService;
         this.userServiceClient = userServiceClient;
+        this.stringRedisTemplate = stringRedisTemplate;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -55,6 +60,7 @@ public class TeamPermissionManager {
                 } catch (Exception e) {
                     log.warn("Failed to clear permission cache for user {}", userId, e);
                 }
+                publishPermissionInvalidation(userId);
             }
         });
     }
@@ -71,6 +77,7 @@ public class TeamPermissionManager {
                 } catch (Exception e) {
                     log.warn("Failed to clear permission cache for user {}", userId, e);
                 }
+                publishPermissionInvalidation(userId);
             }
         });
     }
@@ -145,5 +152,19 @@ public class TeamPermissionManager {
             mapper.insertRolePermission(teamId, roleId, permissionId);
         }
         teamPermissionCacheService.evictTeam(teamId);
+    }
+
+    /**
+     * 发布用户权限/角色变更失效通知（跨节点秒级失效）。
+     * 通过 Redis Pub/Sub 频道 {@link PermissionCache#INVALIDATION_TOPIC} 广播 userId，
+     * 各消费服务的 {@code PermissionCache} 订阅后清除该用户本地缓存。
+     * Redis 不可用时静默降级，不影响主流程（5 分钟 TTL 兜底）。
+     */
+    private void publishPermissionInvalidation(Long userId) {
+        try {
+            stringRedisTemplate.convertAndSend(PermissionCache.INVALIDATION_TOPIC, String.valueOf(userId));
+        } catch (Exception e) {
+            log.warn("Failed to publish permission invalidation for user {} after commit", userId, e);
+        }
     }
 }

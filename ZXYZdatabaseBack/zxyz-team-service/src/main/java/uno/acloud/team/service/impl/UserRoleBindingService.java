@@ -1,6 +1,7 @@
 package uno.acloud.team.service.impl;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -10,6 +11,7 @@ import uno.acloud.common.SystemRoleCodes;
 import uno.acloud.common.SystemPermissionCodes;
 import uno.acloud.common.util.BatchPermissionHelper;
 import uno.acloud.exception.BusinessException;
+import uno.acloud.satoken.PermissionCache;
 import uno.acloud.team.entity.RoleEntity;
 import uno.acloud.team.infrastructure.client.UserServiceClient;
 import uno.acloud.team.mapper.PermissionRoleMapper;
@@ -29,13 +31,16 @@ public class UserRoleBindingService {
     private final PermissionRoleMapper permissionRoleMapper;
     private final UserServiceClient userServiceClient;
     private final AuditLogService auditLogService;
+    private final StringRedisTemplate stringRedisTemplate;
 
     public UserRoleBindingService(PermissionRoleMapper permissionRoleMapper,
                                   UserServiceClient userServiceClient,
-                                  AuditLogService auditLogService) {
+                                  AuditLogService auditLogService,
+                                  StringRedisTemplate stringRedisTemplate) {
         this.permissionRoleMapper = permissionRoleMapper;
         this.userServiceClient = userServiceClient;
         this.auditLogService = auditLogService;
+        this.stringRedisTemplate = stringRedisTemplate;
     }
 
     /** 获取用户系统角色 code 列表 */
@@ -66,6 +71,7 @@ public class UserRoleBindingService {
                 } catch (Exception e) {
                     log.warn("Failed to clear permission cache for user {} after commit", userId, e);
                 }
+                publishPermissionInvalidation(userId);
             }
         });
     }
@@ -87,6 +93,7 @@ public class UserRoleBindingService {
                 } catch (Exception e) {
                     log.warn("Failed to clear permission cache for user {} after commit", userId, e);
                 }
+                publishPermissionInvalidation(userId);
             }
         });
     }
@@ -106,6 +113,7 @@ public class UserRoleBindingService {
                 } catch (Exception e) {
                     log.warn("Failed to clear permission cache for user {} after commit", userId, e);
                 }
+                publishPermissionInvalidation(userId);
             }
         });
     }
@@ -154,6 +162,20 @@ public class UserRoleBindingService {
             case SystemRoleCodes.SYSTEM_USER -> "普通用户";
             default -> roleCode;
         };
+    }
+
+    /**
+     * 发布用户权限/角色变更失效通知（跨节点秒级失效）。
+     * 通过 Redis Pub/Sub 频道 {@link PermissionCache#INVALIDATION_TOPIC} 广播 userId，
+     * 各消费服务的 {@code PermissionCache} 订阅后清除该用户本地缓存。
+     * Redis 不可用时静默降级，不影响主流程（5 分钟 TTL 兜底）。
+     */
+    private void publishPermissionInvalidation(Long userId) {
+        try {
+            stringRedisTemplate.convertAndSend(PermissionCache.INVALIDATION_TOPIC, String.valueOf(userId));
+        } catch (Exception e) {
+            log.warn("Failed to publish permission invalidation for user {} after commit", userId, e);
+        }
     }
 
     private static final Set<String> BASIC_PERMISSIONS = Set.of(

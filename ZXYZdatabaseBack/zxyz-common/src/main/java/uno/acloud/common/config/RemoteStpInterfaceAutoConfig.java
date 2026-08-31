@@ -1,5 +1,6 @@
 package uno.acloud.common.config;
 
+import uno.acloud.satoken.PermissionCache;
 import uno.acloud.satoken.RemoteStpInterfaceImpl;
 
 import cn.dev33.satoken.stp.StpInterface;
@@ -31,12 +32,13 @@ public class RemoteStpInterfaceAutoConfig {
     @ConditionalOnBean(RestClient.class)
     @ConditionalOnMissingBean(StpInterface.class)
     public StpInterface stpInterface(RestClient restClient,
+                                     PermissionCache permissionCache,
                                      @Value("${app.team-service.base-url}") String teamServiceBaseUrl,
                                      ObjectMapper objectMapper,
                                      @Value("${app.internal-service-token:}") String internalServiceToken,
                                      @Value("${spring.application.name:unknown}") String sourceService,
                                      @Value("${app.internal-service-key:}") String selfServiceKey) {
         return new RemoteStpInterfaceImpl(restClient, teamServiceBaseUrl, objectMapper,
-                internalServiceToken, sourceService, selfServiceKey);
+                internalServiceToken, sourceService, selfServiceKey, permissionCache);
     }
 }

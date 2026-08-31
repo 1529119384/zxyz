@@ -1,6 +1,7 @@
 package uno.acloud.team.service.impl;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -10,6 +11,7 @@ import uno.acloud.common.TeamErrorCode;
 import uno.acloud.common.TeamPermissionPolicy;
 import uno.acloud.common.util.BatchPermissionHelper;
 import uno.acloud.exception.BusinessException;
+import uno.acloud.satoken.PermissionCache;
 import uno.acloud.team.dto.permission.AssignTeamMemberRoleRequest;
 import uno.acloud.team.dto.permission.AssignTeamRolePermissionsRequest;
 import uno.acloud.team.dto.permission.SaveTeamRoleRequest;
@@ -40,19 +42,22 @@ public class RoleManagementService {
     private final UserServiceClient userServiceClient;
     private final AuditLogService auditLogService;
     private final TeamEntityMapper teamEntityMapper;
+    private final StringRedisTemplate stringRedisTemplate;
 
     public RoleManagementService(TeamPermissionMapper teamPermissionMapper,
                                  TeamMapper teamMapper,
                                  TeamPermissionCacheService teamPermissionCacheService,
                                  UserServiceClient userServiceClient,
                                  AuditLogService auditLogService,
-                                 TeamEntityMapper teamEntityMapper) {
+                                 TeamEntityMapper teamEntityMapper,
+                                 StringRedisTemplate stringRedisTemplate) {
         this.teamPermissionMapper = teamPermissionMapper;
         this.teamMapper = teamMapper;
         this.teamPermissionCacheService = teamPermissionCacheService;
         this.userServiceClient = userServiceClient;
         this.auditLogService = auditLogService;
         this.teamEntityMapper = teamEntityMapper;
+        this.stringRedisTemplate = stringRedisTemplate;
     }
 
     // ==================== 初始化 ====================
@@ -140,6 +145,7 @@ public class RoleManagementService {
                 } catch (Exception e) {
                     log.warn("Failed to clear permission cache for user {}", userId, e);
                 }
+                publishPermissionInvalidation(userId);
             }
         });
     }
@@ -162,6 +168,7 @@ public class RoleManagementService {
                 } catch (Exception e) {
                     log.warn("Failed to clear permission cache for user {}", userId, e);
                 }
+                publishPermissionInvalidation(userId);
             }
         });
     }
@@ -179,6 +186,7 @@ public class RoleManagementService {
                 } catch (Exception e) {
                     log.warn("Failed to clear permission cache for user {}", userId, e);
                 }
+                publishPermissionInvalidation(userId);
             }
         });
     }
@@ -278,5 +286,19 @@ public class RoleManagementService {
                     return vo;
                 })
                 .toList();
+    }
+
+    /**
+     * 发布用户权限/角色变更失效通知（跨节点秒级失效）。
+     * 通过 Redis Pub/Sub 频道 {@link PermissionCache#INVALIDATION_TOPIC} 广播 userId，
+     * 各消费服务的 {@code PermissionCache} 订阅后清除该用户本地缓存。
+     * Redis 不可用时静默降级，不影响主流程（5 分钟 TTL 兜底）。
+     */
+    private void publishPermissionInvalidation(Long userId) {
+        try {
+            stringRedisTemplate.convertAndSend(PermissionCache.INVALIDATION_TOPIC, String.valueOf(userId));
+        } catch (Exception e) {
+            log.warn("Failed to publish permission invalidation for user {} after commit", userId, e);
+        }
     }
 }
