@@ -20,6 +20,7 @@
 
     <modules>
         <module>zxyz-common</module>
+        <module>zxyz-starter</module>
         <module>zxyz-gateway</module>
         <module>zxyz-project-service</module>
         <module>zxyz-im-service</module>
@@ -84,6 +85,11 @@
                 <version>${project.version}</version>
                 <type>test-jar</type>
                 <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>uno.acloud</groupId>
+                <artifactId>zxyz-starter</artifactId>
+                <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.baomidou</groupId>
@@ -242,6 +248,7 @@
                         <exclude>uno/acloud/*/*Application.class</exclude>
                         <exclude>uno/acloud/*/config/*AutoConfiguration*</exclude>
                         <exclude>uno/acloud/*/config/RestClientConfig.class</exclude>
+                        <exclude>uno/acloud/starter/*AutoConfiguration*</exclude>
                         <exclude>uno/acloud/*/config/*Properties.class</exclude>
                         <exclude>uno/acloud/*/config/*DataSourceConfig.class</exclude>
                     </excludes>

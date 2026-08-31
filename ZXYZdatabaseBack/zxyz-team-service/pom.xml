@@ -21,6 +21,10 @@
             <artifactId>zxyz-common</artifactId>
         </dependency>
         <dependency>
+            <groupId>uno.acloud</groupId>
+            <artifactId>zxyz-starter</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-lang3</artifactId>
         </dependency>
