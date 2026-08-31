@@ -28,7 +28,7 @@ class EmailRecordQueryServiceTest {
         record.setId(9L);
         record.setRecipient("user@example.com");
         record.setSubject("通知");
-        record.setStatus("SENT");
+        record.markSent();
         when(emailRecordMapper.countRecords("SENT", "user@example.com", "SYSTEM_MESSAGE")).thenReturn(1L);
         when(emailRecordMapper.listRecords("SENT", "user@example.com", "SYSTEM_MESSAGE", 20, 0))
                 .thenReturn(List.of(record));

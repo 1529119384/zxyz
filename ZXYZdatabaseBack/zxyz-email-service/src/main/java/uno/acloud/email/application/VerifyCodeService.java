@@ -62,8 +62,7 @@ public class VerifyCodeService {
         verifyCode.setEmail(normalizedEmail);
         verifyCode.setScene(normalizedScene);
         verifyCode.setCode(code);
-        verifyCode.setExpireTime(now.plusMinutes(emailProperties.getVerifyCodeExpireMinutes()));
-        verifyCode.setUsed(false);
+        verifyCode.markCreated(now.plusMinutes(emailProperties.getVerifyCodeExpireMinutes()));
         verifyCode.setRequestIp(requestIp);
         verifyCode.setEmailRecordId(recordId);
         verifyCode.setCreateTime(now);

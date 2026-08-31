@@ -25,4 +25,11 @@ public class EmailTemplate implements Serializable {
     private Integer status;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
+
+    // ===== 领域行为 =====
+
+    /** 模板是否可用（status = 0 表示启用）。 */
+    public boolean isUsable() {
+        return this.status != null && this.status == 0;
+    }
 }

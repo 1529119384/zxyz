@@ -10,7 +10,6 @@ import uno.acloud.common.ErrorCode;
 import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.email.config.EmailProperties;
 import uno.acloud.email.domain.EmailRecord;
-import uno.acloud.email.domain.EmailRecordStatus;
 import uno.acloud.email.domain.EmailSenderSnapshot;
 import uno.acloud.email.domain.EmailTemplate;
 import uno.acloud.email.infrastructure.EmailRecordMapper;
@@ -175,9 +174,7 @@ public class EmailDispatchService {
         record.setRecipient(normalizeEmail(recipient));
         record.setSubject(requireText(subject, "邮件主题不能为空", MAX_SUBJECT_LENGTH, "邮件主题不能超过 255 个字符"));
         record.setContentHtml(requireText(contentHtml, "邮件内容不能为空"));
-        record.setStatus(EmailRecordStatus.PENDING);
-        record.setAttemptCount(0);
-        record.setMaxAttempts(maxAttempts);
+        record.initializeNew(maxAttempts);
         record.setScheduledTime(scheduledTime);
         record.setBusinessType(optionalText(businessType, MAX_BUSINESS_LENGTH, "业务类型不能超过 64 个字符"));
         record.setBusinessId(optionalText(businessId, MAX_BUSINESS_LENGTH, "业务 ID 不能超过 64 个字符"));
@@ -201,7 +198,7 @@ public class EmailDispatchService {
     private EmailTemplate requireTemplate(String templateCode) {
         String normalizedCode = requireText(templateCode, "模板编码不能为空", 64, "模板编码不能超过 64 个字符");
         EmailTemplate template = emailTemplateMapper.getActiveByCode(normalizedCode);
-        if (template == null) {
+        if (template == null || !template.isUsable()) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "邮件模板不存在或未启用");
         }
         return template;
@@ -245,16 +242,16 @@ public class EmailDispatchService {
 
     private void handleSendFailure(EmailRecord record, Exception e) {
         String failureReason = normalizeFailureReason(e);
-        int attemptCount = record.getAttemptCount() == null ? 1 : record.getAttemptCount();
-        int maxAttempts = record.getMaxAttempts() == null ? this.maxAttempts : record.getMaxAttempts();
-        if (attemptCount >= maxAttempts) {
+        if (!record.canRetry()) {
+            record.markFailed(failureReason);
             emailRecordMapper.markFailed(record.getId(), failureReason);
             log.warn("邮件发送最终失败：recordId={}, recipient={}, reason={}", record.getId(), record.getRecipient(), failureReason, e);
             return;
         }
-        emailRecordMapper.markRetry(record.getId(), failureReason, resolveNextRetryTime(attemptCount));
+        record.scheduleRetry(resolveNextRetryTime(record.getAttemptCount()));
+        emailRecordMapper.markRetry(record.getId(), failureReason, record.getNextRetryTime());
         log.warn("邮件发送失败，等待重试：recordId={}, recipient={}, attempt={}/{}",
-                record.getId(), record.getRecipient(), attemptCount, maxAttempts, e);
+                record.getId(), record.getRecipient(), record.getAttemptCount(), record.getMaxAttempts(), e);
     }
 
     private LocalDateTime resolveNextRetryTime(int attemptCount) {

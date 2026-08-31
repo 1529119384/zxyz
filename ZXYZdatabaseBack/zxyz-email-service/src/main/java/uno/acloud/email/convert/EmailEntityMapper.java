@@ -24,7 +24,7 @@ public interface EmailEntityMapper {
      * active 为 null 时按 false 处理（与原始 Boolean.TRUE.equals 语义一致）。
      */
     @Mapping(target = "passwordSet", expression = "java(config.getPasswordCipher() != null && !config.getPasswordCipher().isBlank())")
-    @Mapping(target = "active", expression = "java(Boolean.TRUE.equals(config.getActive()))")
+    @Mapping(target = "active", expression = "java(config.isEnabled())")
     EmailServerConfigVO toServerConfigVO(EmailServerConfig config);
 
     List<EmailServerConfigVO> toServerConfigVOList(List<EmailServerConfig> configs);

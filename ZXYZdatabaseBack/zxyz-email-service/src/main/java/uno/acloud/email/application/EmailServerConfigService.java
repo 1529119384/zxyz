@@ -182,7 +182,7 @@ public class EmailServerConfigService {
         config.setPasswordCipher(resolvePasswordCipher(existing, request.getPassword(), passwordRequired));
         config.setFromAddress(optionalText(request.getFromAddress(), MAX_ADDRESS_LENGTH, "发件人地址不能超过 255 个字符"));
         config.setTransportStrategy(normalizeTransportStrategy(request.getTransportStrategy()));
-        config.setActive(existing != null && Boolean.TRUE.equals(existing.getActive()));
+        config.setActive(existing != null && existing.isEnabled());
         config.setLastTestStatus(existing == null ? EmailTestStatus.NOT_TESTED : existing.getLastTestStatus());
         config.setLastTestTime(existing == null ? null : existing.getLastTestTime());
         config.setLastTestMessage(existing == null ? null : existing.getLastTestMessage());
