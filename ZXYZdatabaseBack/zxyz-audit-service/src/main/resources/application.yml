@@ -23,6 +23,3 @@ spring:
     baseline-on-migrate: true
     baseline-version: 1
 
-server:
-  port: ${SERVER_PORT:18087}
-
