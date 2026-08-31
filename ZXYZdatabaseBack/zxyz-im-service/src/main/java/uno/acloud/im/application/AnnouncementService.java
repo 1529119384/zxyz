@@ -12,7 +12,7 @@ import uno.acloud.common.TeamPermissionCodes;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.domain.enums.MessageType;
 import uno.acloud.im.domain.event.ImDomainEventType;
-import uno.acloud.im.domain.model.ImMessage;
+import uno.acloud.im.infrastructure.persistence.entity.ImMessage;
 import uno.acloud.im.infrastructure.mapper.ConversationMapper;
 import uno.acloud.im.infrastructure.mapper.ImMessageMapper;
 import uno.acloud.im.dto.PublishAnnouncementRequest;

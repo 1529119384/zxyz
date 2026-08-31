@@ -3,7 +3,7 @@ package uno.acloud.im.application;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import uno.acloud.im.domain.model.UserProfile;
+import uno.acloud.im.infrastructure.persistence.entity.UserProfile;
 import uno.acloud.im.infrastructure.client.UserServiceClient;
 import uno.acloud.im.infrastructure.mapper.UserProfileMapper;
 import uno.acloud.im.vo.UserProfileVO;

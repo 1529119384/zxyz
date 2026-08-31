@@ -4,7 +4,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.common.TeamPermissionCodes;
 import uno.acloud.im.config.InviteLinkProperties;
-import uno.acloud.im.domain.model.TeamInviteLink;
+import uno.acloud.im.infrastructure.persistence.entity.TeamInviteLink;
 import uno.acloud.im.infrastructure.mapper.TeamManagementMapper;
 import uno.acloud.im.dto.CreateInviteLinkRequest;
 import uno.acloud.im.vo.TeamInviteLinkVO;

@@ -1,4 +1,4 @@
-package uno.acloud.im.domain.model;
+package uno.acloud.im.infrastructure.persistence.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;

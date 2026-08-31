@@ -3,7 +3,7 @@ package uno.acloud.im.application;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.exception.BusinessException;
-import uno.acloud.im.domain.model.FileCardContent;
+import uno.acloud.im.infrastructure.persistence.entity.FileCardContent;
 
 public final class FileCardContentUtils {
 

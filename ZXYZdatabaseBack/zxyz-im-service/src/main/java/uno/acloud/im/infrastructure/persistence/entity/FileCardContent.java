@@ -1,4 +1,4 @@
-package uno.acloud.im.domain.model;
+package uno.acloud.im.infrastructure.persistence.entity;
 
 import lombok.Getter;
 import lombok.Setter;

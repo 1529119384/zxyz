@@ -6,7 +6,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
-import uno.acloud.im.domain.model.UserPresence;
+import uno.acloud.im.infrastructure.persistence.entity.UserPresence;
 
 import java.time.LocalDateTime;
 import java.util.List;

@@ -1,4 +1,4 @@
-package uno.acloud.im.domain.model;
+package uno.acloud.im.domain.event;
 
 import lombok.Getter;
 import lombok.Setter;
@@ -10,15 +10,13 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 @ToString
-public class FileCardEntrySnapshot implements Serializable {
+public class FileResourceChangedEvent implements Serializable {
     private static final long serialVersionUID = 1L;
 
     private Long fileId;
-    private Integer fileType;
-    private String originalName;
-    private Integer category;
-    private Long fileSize;
+    private String eventType;
     private Long parentId;
     private String storePath;
+    private Integer deleted;
     private LocalDateTime modifyTime;
 }

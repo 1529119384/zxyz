@@ -6,7 +6,7 @@ import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.domain.enums.MessageType;
-import uno.acloud.im.domain.model.ImMessage;
+import uno.acloud.im.infrastructure.persistence.entity.ImMessage;
 import uno.acloud.im.infrastructure.mapper.ConversationMapper;
 import uno.acloud.im.infrastructure.mapper.ImMessageMapper;
 import uno.acloud.im.vo.ImMessageVO;

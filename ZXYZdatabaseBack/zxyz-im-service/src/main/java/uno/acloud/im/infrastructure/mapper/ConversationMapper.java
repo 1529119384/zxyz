@@ -7,8 +7,8 @@ import org.apache.ibatis.annotations.Options;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
-import uno.acloud.im.domain.model.ImConversation;
-import uno.acloud.im.domain.model.ImConversationMember;
+import uno.acloud.im.infrastructure.persistence.entity.ImConversation;
+import uno.acloud.im.infrastructure.persistence.entity.ImConversationMember;
 import uno.acloud.im.vo.ConversationSummaryVO;
 import uno.acloud.im.vo.TeamConversationVO;
 

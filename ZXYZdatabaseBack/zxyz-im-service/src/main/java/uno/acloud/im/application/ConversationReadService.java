@@ -4,7 +4,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.exception.BusinessException;
-import uno.acloud.im.domain.model.ImConversationMember;
+import uno.acloud.im.infrastructure.persistence.entity.ImConversationMember;
 import uno.acloud.im.infrastructure.mapper.ConversationMapper;
 import uno.acloud.im.infrastructure.mapper.ImMessageMapper;
 import uno.acloud.im.vo.ConversationReadVO;

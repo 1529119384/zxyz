@@ -6,7 +6,7 @@ import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
-import uno.acloud.im.domain.model.UserProfile;
+import uno.acloud.im.infrastructure.persistence.entity.UserProfile;
 import uno.acloud.im.vo.UserProfileVO;
 
 import java.util.List;

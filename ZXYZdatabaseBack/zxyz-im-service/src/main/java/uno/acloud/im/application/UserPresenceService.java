@@ -2,7 +2,7 @@ package uno.acloud.im.application;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import uno.acloud.im.domain.model.UserPresence;
+import uno.acloud.im.infrastructure.persistence.entity.UserPresence;
 import uno.acloud.im.infrastructure.mapper.ImEntityMapper;
 import uno.acloud.im.infrastructure.mapper.UserPresenceMapper;
 import uno.acloud.im.vo.UserPresenceVO;

@@ -1,9 +1,8 @@
-package uno.acloud.im.domain.model;
+package uno.acloud.im.infrastructure.persistence.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
@@ -14,20 +13,21 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 @ToString
-@TableName("team_invite_link")
-public class TeamInviteLink implements Serializable {
+@TableName("im_conversation")
+public class ImConversation implements Serializable {
     private static final long serialVersionUID = 1L;
 
     @TableId(value = "id", type = IdType.AUTO)
     private Long id;
+    private String type;
     private Long teamId;
-    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
-    private String token;
-    private Long createdByUserId;
-    private LocalDateTime expireTime;
-    private Integer maxUses;
-    private Integer usedCount;
+    private Long projectId;
+    private String name;
+    private String bizKey;
+    private Long directUserA;
+    private Long directUserB;
     private Integer status;
+    private Boolean readOnly;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 }

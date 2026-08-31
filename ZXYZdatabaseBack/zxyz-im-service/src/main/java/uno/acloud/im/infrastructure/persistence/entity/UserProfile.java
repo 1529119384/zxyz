@@ -1,4 +1,4 @@
-package uno.acloud.im.domain.model;
+package uno.acloud.im.infrastructure.persistence.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -13,18 +13,15 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 @ToString
-@TableName("team_mute")
-public class TeamMute implements Serializable {
+@TableName("im_user_profile")
+public class UserProfile implements Serializable {
     private static final long serialVersionUID = 1L;
 
-    @TableId(value = "id", type = IdType.AUTO)
-    private Long id;
-    private Long teamId;
+    @TableId(value = "user_id", type = IdType.INPUT)
     private Long userId;
-    private Long mutedByUserId;
-    private String reason;
-    private LocalDateTime expireTime;
-    private Integer status;
+    private String username;
+    private String name;
+    private String avatar;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 }

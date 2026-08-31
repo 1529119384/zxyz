@@ -10,7 +10,7 @@ import uno.acloud.common.TeamRoleCodes;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.domain.enums.SystemNotificationType;
 import uno.acloud.im.domain.event.ImDomainEventType;
-import uno.acloud.im.domain.model.TeamMember;
+import uno.acloud.im.infrastructure.persistence.entity.TeamMember;
 import uno.acloud.im.infrastructure.mapper.ConversationMapper;
 import uno.acloud.im.infrastructure.mapper.TeamMapper;
 

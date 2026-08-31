@@ -7,7 +7,7 @@ import org.apache.ibatis.annotations.Options;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
-import uno.acloud.im.domain.model.TeamInvitation;
+import uno.acloud.im.infrastructure.persistence.entity.TeamInvitation;
 
 @Mapper
 public interface TeamInvitationMapper extends BaseMapper<TeamInvitation> {

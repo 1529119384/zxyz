@@ -9,7 +9,7 @@ import uno.acloud.common.ErrorCode;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.config.ServiceProperties;
 import uno.acloud.im.config.UserServiceProperties;
-import uno.acloud.im.domain.model.UserProfile;
+import uno.acloud.im.infrastructure.persistence.entity.UserProfile;
 
 import java.util.ArrayList;
 import java.util.List;

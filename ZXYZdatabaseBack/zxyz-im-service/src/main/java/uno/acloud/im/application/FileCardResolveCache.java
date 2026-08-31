@@ -1,7 +1,7 @@
 package uno.acloud.im.application;
 
 import org.springframework.stereotype.Component;
-import uno.acloud.im.domain.model.FileCardResolveResult;
+import uno.acloud.im.infrastructure.persistence.entity.FileCardResolveResult;
 
 import java.util.Optional;
 import java.util.Set;

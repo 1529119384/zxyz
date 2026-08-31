@@ -5,7 +5,7 @@ import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.domain.enums.SystemNotificationStatus;
-import uno.acloud.im.domain.model.SystemNotification;
+import uno.acloud.im.infrastructure.persistence.entity.SystemNotification;
 import uno.acloud.im.infrastructure.mapper.SystemNotificationMapper;
 import uno.acloud.im.vo.SystemNotificationVO;
 import uno.acloud.im.vo.UnreadCountVO;

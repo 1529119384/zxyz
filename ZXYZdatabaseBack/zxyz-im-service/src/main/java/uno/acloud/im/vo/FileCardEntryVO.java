@@ -5,7 +5,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
 
-import uno.acloud.im.domain.model.FileCardEntrySnapshot;
+import uno.acloud.im.infrastructure.persistence.entity.FileCardEntrySnapshot;
 
 import java.io.Serializable;
 import java.time.LocalDateTime;

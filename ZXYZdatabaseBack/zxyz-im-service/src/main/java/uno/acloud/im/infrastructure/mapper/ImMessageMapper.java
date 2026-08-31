@@ -5,7 +5,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
-import uno.acloud.im.domain.model.ImMessage;
+import uno.acloud.im.infrastructure.persistence.entity.ImMessage;
 
 import java.io.Serializable;
 import java.time.LocalDateTime;

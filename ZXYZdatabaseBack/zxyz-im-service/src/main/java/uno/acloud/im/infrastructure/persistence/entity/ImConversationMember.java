@@ -1,4 +1,4 @@
-package uno.acloud.im.domain.model;
+package uno.acloud.im.infrastructure.persistence.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -13,15 +13,17 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 @ToString
-@TableName("im_user_profile")
-public class UserProfile implements Serializable {
+@TableName("im_conversation_member")
+public class ImConversationMember implements Serializable {
     private static final long serialVersionUID = 1L;
 
-    @TableId(value = "user_id", type = IdType.INPUT)
+    @TableId(value = "id", type = IdType.AUTO)
+    private Long id;
+    private Long conversationId;
     private Long userId;
-    private String username;
-    private String name;
-    private String avatar;
+    private Long lastReadMessageId;
+    private Integer unreadCount;
+    private Integer status;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 }

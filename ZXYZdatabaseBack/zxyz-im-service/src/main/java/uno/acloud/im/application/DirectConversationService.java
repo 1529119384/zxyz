@@ -6,7 +6,7 @@ import uno.acloud.common.ErrorCode;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.domain.enums.ConversationMemberStatus;
 import uno.acloud.im.domain.enums.ConversationType;
-import uno.acloud.im.domain.model.ImConversation;
+import uno.acloud.im.infrastructure.persistence.entity.ImConversation;
 import uno.acloud.im.infrastructure.mapper.ConversationMapper;
 import uno.acloud.im.vo.ConversationSummaryVO;
 

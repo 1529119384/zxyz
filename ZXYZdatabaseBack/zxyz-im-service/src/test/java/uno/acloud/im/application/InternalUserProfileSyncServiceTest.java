@@ -7,7 +7,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.exception.BusinessException;
-import uno.acloud.im.domain.model.UserProfile;
+import uno.acloud.im.infrastructure.persistence.entity.UserProfile;
 import uno.acloud.im.infrastructure.mapper.UserProfileMapper;
 import uno.acloud.im.dto.InternalUserProfileSyncRequest;
 

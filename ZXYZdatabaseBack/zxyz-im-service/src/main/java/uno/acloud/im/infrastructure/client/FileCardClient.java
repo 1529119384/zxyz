@@ -12,10 +12,10 @@ import uno.acloud.common.ErrorCode;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.config.FileServiceProperties;
 import uno.acloud.im.config.ServiceProperties;
-import uno.acloud.im.domain.model.FileCardArchiveEntry;
-import uno.acloud.im.domain.model.FileCardContent;
-import uno.acloud.im.domain.model.FileCardEntrySnapshot;
-import uno.acloud.im.domain.model.FileCardResolveResult;
+import uno.acloud.im.infrastructure.persistence.entity.FileCardArchiveEntry;
+import uno.acloud.im.infrastructure.persistence.entity.FileCardContent;
+import uno.acloud.im.infrastructure.persistence.entity.FileCardEntrySnapshot;
+import uno.acloud.im.infrastructure.persistence.entity.FileCardResolveResult;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;

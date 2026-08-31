@@ -6,9 +6,9 @@ import org.apache.ibatis.annotations.Options;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
-import uno.acloud.im.domain.model.TeamInviteLink;
-import uno.acloud.im.domain.model.TeamJoinRequest;
-import uno.acloud.im.domain.model.TeamMute;
+import uno.acloud.im.infrastructure.persistence.entity.TeamInviteLink;
+import uno.acloud.im.infrastructure.persistence.entity.TeamJoinRequest;
+import uno.acloud.im.infrastructure.persistence.entity.TeamMute;
 import uno.acloud.im.vo.TeamJoinRequestVO;
 import uno.acloud.im.vo.TeamMuteVO;
 

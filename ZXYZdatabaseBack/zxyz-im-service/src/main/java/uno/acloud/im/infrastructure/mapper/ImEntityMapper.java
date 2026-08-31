@@ -2,9 +2,9 @@ package uno.acloud.im.infrastructure.mapper;
 
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
-import uno.acloud.im.domain.model.ImConversation;
-import uno.acloud.im.domain.model.TeamInvitation;
-import uno.acloud.im.domain.model.UserPresence;
+import uno.acloud.im.infrastructure.persistence.entity.ImConversation;
+import uno.acloud.im.infrastructure.persistence.entity.TeamInvitation;
+import uno.acloud.im.infrastructure.persistence.entity.UserPresence;
 import uno.acloud.im.vo.ProjectConversationVO;
 import uno.acloud.im.vo.TeamInvitationVO;
 import uno.acloud.im.vo.UserPresenceVO;

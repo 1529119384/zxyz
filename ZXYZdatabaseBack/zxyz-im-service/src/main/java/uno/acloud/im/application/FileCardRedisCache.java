@@ -6,7 +6,7 @@ import org.springframework.data.redis.connection.StringRedisConnection;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
-import uno.acloud.im.domain.model.FileCardResolveResult;
+import uno.acloud.im.infrastructure.persistence.entity.FileCardResolveResult;
 
 import java.time.Duration;
 import java.util.Collections;

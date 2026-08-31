@@ -9,8 +9,8 @@ import org.apache.ibatis.annotations.Result;
 import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
-import uno.acloud.im.domain.model.Team;
-import uno.acloud.im.domain.model.TeamMember;
+import uno.acloud.im.infrastructure.persistence.entity.Team;
+import uno.acloud.im.infrastructure.persistence.entity.TeamMember;
 import uno.acloud.im.vo.TeamMemberVO;
 import uno.acloud.im.vo.TeamVO;
 
