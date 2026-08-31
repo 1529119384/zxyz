@@ -86,7 +86,7 @@ zxyz-common 中的事件定义（`uno.acloud.common.event`）：
 
 **admin-service data source**: Uses `config.datasource.*` prefix (not `spring.datasource.*`) with `@Primary` DataSource. HikariCP requires `jdbc-url` (not `url`) in YAML when using `@ConfigurationProperties`.
 
-**Config management API**: admin-service exposes `GET/PUT /configs` (no `/api/admin` prefix — Gateway's `RewritePath` strips it). `ConfigServiceClient.get(key)` calls `GET /api/admin/configs/{key}` — ensure this single-key endpoint exists in `ConfigAdminController`. Frontend page at `/setting/config-admin` (requires `requireSystemAdminRole()`). Redis Pub/Sub on `zxyz:config:changed` channel notifies config changes. Config keys follow `app.{domain}.{property}` naming convention.
+**Config management API**: admin-service exposes `GET/PUT /configs` (no `/api/admin` prefix — Gateway's `RewritePath` strips it). `ConfigGetter.get(key)` calls `GET /api/admin/configs/{key}` — ensure this single-key endpoint exists in `ConfigAdminController`. ConfigGetter 是项目内唯一的 HTTP 配置客户端，禁止再自行构建另一套 HTTP 配置客户端副本（如历史上的 ConfigServiceClient）。 Frontend page at `/setting/config-admin` (requires `requireSystemAdminRole()`). Redis Pub/Sub on `zxyz:config:changed` channel notifies config changes. Config keys follow `app.{domain}.{property}` naming convention.
 
 **Gateway route rewrite**: Routes with `RewritePath=/api/admin/(?<segment>.*)` → `/${segment}` strip the `/api/admin` prefix. Backend controllers must map to the rewritten path (e.g., `@RequestMapping("/configs")`, NOT `@RequestMapping("/api/admin/configs")`). Known issue: `ProviderAdminController` previously had wrong path `/api/admin/providers` → fixed to `/providers`.
 
