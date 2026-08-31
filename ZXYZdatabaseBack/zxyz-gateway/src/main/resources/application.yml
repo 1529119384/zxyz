@@ -117,16 +117,24 @@ spring:
                 - RewritePath=/api/admin/email(?<segment>/?.*), /api/email/internal${segment}
                 # gateway 作为 admin 桥接的合法调用方身份：token 自注入，caller 声明为 zxyz-gateway；
                 # StripInternalHeadersFilter 先剥外部伪造的内部头，再经 filters 补回受信身份。
-                - AddRequestHeader=X-Internal-Service-Token, ${INTERNAL_SERVICE_TOKEN}
+                # 密钥取值：优先网关专属 SVC_GATEWAY_KEY（矩阵模式，必须与收方 allowed-sources 中
+                # zxyz-gateway 项同值）；过渡期未设 SVC_GATEWAY_KEY 时回退共享 INTERNAL_SERVICE_TOKEN。
+                # 禁止在此写任何字面量默认值——密钥一律来自 .env，缺值由收方 fail-closed 拒绝。
+                - AddRequestHeader=X-Internal-Service-Token, ${SVC_GATEWAY_KEY:${INTERNAL_SERVICE_TOKEN}}
                 - AddRequestHeader=X-Internal-Caller-Service, zxyz-gateway
 
             # 管理后台数据库路由：/api/admin/database/** → project-service
+            # 【此处不注入内部鉴权头，是有意为之】
+            # 该路径由 project-service 的 Sa-Token 登录态 + @SaCheckRole(SYSTEM_ADMIN) 把关
+            # （见 AdminDatabaseController），不参与服务间鉴权——project-service 的
+            # InternalServiceAuthInterceptor 只覆盖 /api/internal/**。
+            # 原先在此注入的 X-Internal-Service-Token 属于「既无 caller 声明、也无消费方」的冗余遗留：
+            # 一旦 project-service 启用矩阵、或把该路径纳入内部鉴权，缺 X-Internal-Caller-Service
+            # 会直接 401。故移除。若将来该路径确需内部鉴权，必须同时补 token 与 caller 两个头。
             - id: admin-database
               uri: lb://zxyz-project-service
               predicates:
                 - Path=/api/admin/database/**
-              filters:
-                - AddRequestHeader=X-Internal-Service-Token, ${INTERNAL_SERVICE_TOKEN}
 
             # 存储提供者管理路由：/api/admin/storage-providers/** → file-service
             - id: file-service-storage-providers

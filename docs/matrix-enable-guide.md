@@ -61,14 +61,35 @@ SVC_GATEWAY_KEY=...
 
 ### 3.4 网关 admin 桥接身份
 
-网关 `application.yml` 的 `admin-email` 路由已注入：
+网关 `application.yml` 的两条 admin 桥接路由现状（已按矩阵启用要求整改）：
+
+| 路由 | 目标 | token 头 | caller 头 | 说明 |
+|---|---|---|---|---|
+| `admin-email` | email-service `/api/email/internal/**` | `${SVC_GATEWAY_KEY:${INTERNAL_SERVICE_TOKEN}}` | `zxyz-gateway` | **真正走内部鉴权的桥接**，email 的 `EmailInternalAuthInterceptor` 覆盖该前缀 |
+| `admin-database` | project-service `/api/admin/database/**` | 无（已移除） | 无 | 该路径由 Sa-Token 登录态 + `@SaCheckRole(SYSTEM_ADMIN)` 把关，**不消费内部 token** |
+
+- `StripInternalHeadersFilter` 会先剥外部伪造内部头，再由 route filters 补回受信身份（时序：GlobalFilter 先剥、route filter 后补，成立）。
+- **`admin-email` 的密钥是嵌套默认值**：优先取 `SVC_GATEWAY_KEY`，过渡期未设时回退 `INTERNAL_SERVICE_TOKEN`。
+  已实测 Spring Boot 3.5.7 的 `PropertySourcesPlaceholdersResolver` 支持这种嵌套（`${A:${B}}` 会被递归解析），
+  过渡态无需改网关即可启动。禁止改写字面量默认值。
+- **`admin-database` 的头已移除而非补齐**：project-service 的 `InternalServiceAuthInterceptor` 只注册在
+  `/api/internal/**`（`SaTokenConfigure` 硬编码），`/api/admin/database/**` 不参与服务间鉴权，
+  原先注入的 token 既无 `X-Internal-Caller-Service` 配对、也无消费方，属冗余遗留。
+  保留它只会在「将来有人把该路径纳入内部鉴权」时变成一次隐蔽的 401。
+  若将来确需内部鉴权，必须同时补 token **和** caller 两个头。
+
+### 3.4.1 网关容器必须收到 SVC_GATEWAY_KEY
+
+`SVC_*_KEY` 默认不在 compose 的 gateway `environment` 里，容器内看不到该变量，
+`${SVC_GATEWAY_KEY:${INTERNAL_SERVICE_TOKEN}}` 就会一直走回退分支。启用矩阵时在 gateway 服务补：
+
 ```yaml
-- AddRequestHeader=X-Internal-Service-Token, ${INTERNAL_SERVICE_TOKEN}
-- AddRequestHeader=X-Internal-Caller-Service, zxyz-gateway
+      # 用 :? 硬失败，避免「变量未设置 → 空串 → 桥接带空 token → 邮件管理后台 401」这一静默陷阱
+      SVC_GATEWAY_KEY: ${SVC_GATEWAY_KEY:?启用矩阵必须设置 SVC_GATEWAY_KEY}
 ```
-- `StripInternalHeadersFilter` 会先剥外部伪造内部头，再由该 filters 补回受信身份（时序：GlobalFilter 先剥、route filter 后补，成立）。
-- 若要用独立密钥，把 token 改用 `${SVC_GATEWAY_KEY}`；**并保证 `zxyz-gateway` 被 email 的 `allowed-sources` 列为允许来源**。
-- `admin-database` 路由的 `AddRequestHeader` 是**冗余遗留**（project 该路径走用户登录态、不校验内部 token）——勿误依赖，删改需谨慎。
+
+写普通 `${SVC_GATEWAY_KEY}` 也可以但**不推荐**：变量缺失时 compose 只告警并替换为空串，
+Spring 会把它当作「已解析为空串」而不会走回退，结果是邮件管理后台全线 401 且报错信息毫无指向性。
 
 ### 3.5 打开收方矩阵（建议先 email 试点）
 
@@ -120,9 +141,11 @@ cd /www/zxyz
 | # | 症状 | 根因 | 处理 |
 |---|---|---|---|
 | 1 | 开矩阵后某服务全线 500/401 | 调用方容器未设 `APP_INTERNAL_SERVICE_KEY`（sent 仍发 legacy token） | 按 3.3 补齐所有调用方容器签发密钥 |
-| 2 | admin 邮件管理后台全 401 | email 开了矩阵，但 `SVC_GATEWAY_KEY` ≠ 网关桥接 token，或 email 名单未列 `zxyz-gateway` | 对齐 3.4/3.5 |
+| 2 | admin 邮件管理后台全 401 | email 开了矩阵，但 `SVC_GATEWAY_KEY` ≠ 网关桥接 token，或 email 名单未列 `zxyz-gateway`，或网关容器根本没收到 `SVC_GATEWAY_KEY` | 对齐 3.4 / 3.4.1 / 3.5 |
 | 3 | 服务启动瞬间失败（`@Value` 未定义变量） | `allowed-sources` 引用了未定义的 `${SVC_X}` | 在 `.env` 补上 SVC_X 再重建 |
 | 4 | 某服务调用偶发 401 | 收件人名单漏了该调用方 | 把调用方加进 `allowed-sources` |
 | 5 | 改了配置仍旧旧行为 | 改了 `.env` 没 `docker compose up -d`（`restart` 不重载 env） | 重建容器 |
+| 6 | 网关起来了、`.env` 也配了，桥接仍走共享 token | compose gateway 服务没把 `SVC_GATEWAY_KEY` 传进容器（3.4.1） | 补 3.4.1 的 environment 映射并 `up -d`，用 `docker compose config` 复核 |
+| 7 | 邮件管理后台 401 且网关日志里 token 是空串 | 用了普通 `${SVC_GATEWAY_KEY}` 且变量缺失 → 空串被当作「已解析」，**不会**回退到共享 token | 改用 3.4.1 的 `:?` 硬失败写法 |
 
 > 先小范围灰度（email + 其调用方），稳定后再对 team/project/share 批量铺开。矩阵启用是安全从**共享单 key** 到**服务级隔离**的跃迁，请预留回滚窗口。

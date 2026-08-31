@@ -11,11 +11,17 @@
 #      （= 该服务自己向收方签发的密钥；缺此则矩阵启用后发方仍持 legacy token 会被收方拒）
 #   3) 在收方 app.internal.allowed-sources 声明「允许来源服务名 -> 该来源密钥」映射，
 #      收方只存允许调用自己的来源密钥；示例见各服务 application.yml 注释。
-#   4) 网关已用 StripInternalHeadersFilter 剥离外部伪造的 X-Internal-Service-Token / X-Internal-Caller-Service，
-#      并在 admin-email 桥接路由以 zxyz-gateway 身份自注入受信内部头。
+#   4) 【易漏】在 gateway 服务 environment 补
+#      `SVC_GATEWAY_KEY: ${SVC_GATEWAY_KEY:?启用矩阵必须设置 SVC_GATEWAY_KEY}`
+#      （用 :? 硬失败；写成普通 ${SVC_GATEWAY_KEY} 时变量缺失会变成空串而非回退，桥接将带空 token 401）。
+#      网关已用 StripInternalHeadersFilter 剥离外部伪造的 X-Internal-Service-Token / X-Internal-Caller-Service，
+#      并在 admin-email 桥接路由以 zxyz-gateway 身份自注入受信内部头：
+#      token 取 ${SVC_GATEWAY_KEY:${INTERNAL_SERVICE_TOKEN}}（矩阵优先、过渡回退）。
+#      admin-database 路由不注入内部头（该路径走 Sa-Token 登录态 + @SaCheckRole，不消费内部 token）。
 # 警告：allowed-sources 一旦启用，任何未列举来源将被拒（fail-closed）；密钥键禁 YAML 默认值，
-#      未定义环境变量对应服务拒绝启动（强制配齐）。SVC_GATEWAY_KEY 必须与 gateway 桥接注入的 token 一致，
-#      否则 admin 邮件管理经网关调用在矩阵下 401。建议先单服务（如 email）灰度再铺开。
+#      未定义环境变量对应服务拒绝启动（强制配齐）。SVC_GATEWAY_KEY 必须与 email 的 allowed-sources
+#      中 zxyz-gateway 项一致，否则 admin 邮件管理经网关调用在矩阵下 401。
+#      建议先单服务（如 email）灰度再铺开；完整手稿见 docs/matrix-enable-guide.md。
 # ---------------------------------------------------------------------------
 services:
   mysql:

@@ -186,4 +186,13 @@ JsonNode → Projection 使用手动字段提取，不使用 treeToValue：
 | project-service | `InternalStorageController` | `POST /check-quota` | — | — |
 | im-service | `InternalTeamSyncController`/`InternalUserProfileSyncController`/`InternalSystemNotificationController` | `/api/im/internal/**`（故意避开 `/api/internal/**` 以绕开 SaToken filter 的 internal 拒绝规则，仍受登录态校验保护） | — | — |
 
-Gateway 还有两条 admin→业务的"桥接路由"：`/api/admin/email/**` → email-service `/api/email/internal/**`、`/api/admin/database/**` → project-service `/api/database/internal/**`，配合 `RewritePath` + `AddRequestHeader=X-Internal-Service-Token` 注入内部 token。
+Gateway 有两条 admin→业务的"桥接路由"，鉴权方式不同，不要混为一谈：
+
+- `/api/admin/email/**` → email-service `/api/email/internal/**`（`RewritePath` 重写）：由网关自注入
+  `X-Internal-Service-Token`（取 `${SVC_GATEWAY_KEY:${INTERNAL_SERVICE_TOKEN}}`，矩阵模式优先网关专属密钥、
+  过渡期回退共享 token）+ `X-Internal-Caller-Service: zxyz-gateway`。这是**真正走服务间鉴权**的桥接
+  （email 的 `EmailInternalAuthInterceptor` 覆盖 `/api/email/internal/**`）。
+- `/api/admin/database/**` → project-service：**不 RewritePath**，原样转发到 `/api/admin/database/**`，
+  且**不注入任何内部头**。该路径由 Sa-Token 登录态 + `@SaCheckRole(SYSTEM_ADMIN)` 把关，
+  project-service 的 `InternalServiceAuthInterceptor` 只覆盖 `/api/internal/**`，不消费内部 token。
+  （历史版本曾在此注入 `X-Internal-Service-Token`，属无 caller 配对、无消费方的冗余遗留，已移除。）
