@@ -13,6 +13,13 @@ jasypt:
 
 # Redis 配置（所有服务共享）
 spring:
+  task:
+    scheduling:
+      # @Scheduled 任务统一调度线程池大小（P3-5）：默认 Spring 为单线程，多个定时任务会串行阻塞。
+      # file-service 就有 5 个 @Scheduled（对账/孤儿/清理/删除重试/墓碑），单线程相互拖慢。
+      # 各服务若需不同值可在自身 yml/环境覆盖。
+      pool:
+        size: ${SCHEDULING_POOL_SIZE:8}
   lifecycle:
     timeout-per-shutdown-phase: 20s
   datasource:
