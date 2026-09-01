@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ESNext"],
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true
+  },
+  "include": ["vite.config.js"]
+}

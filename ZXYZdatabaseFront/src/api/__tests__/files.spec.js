@@ -29,17 +29,19 @@ describe('files API', () => {
   })
 
   it('应调用 GET /api/files 获取文件列表（分页格式）', async () => {
-    request.get.mockResolvedValue({ data: { list: [{ id: 1 }], total: 1 } })
+    request.get.mockResolvedValue({ code: 1, msg: 'ok', data: { list: [{ id: 1 }], total: 1 } })
     const result = await fetchFileList(1, { teamId: 10, sortField: 'name', page: 1, pageSize: 20 })
     expect(request.get).toHaveBeenCalledWith('/api/files', {
       params: { parentId: 1, teamId: 10, sortField: 'name', page: 1, pageSize: 20 },
       signal: undefined,
     })
+    // 返回完整信封，data 被映射为数组
+    expect(result.code).toBe(1)
     expect(result.data).toEqual([{ id: 1 }])
   })
 
   it('应调用 GET /api/files/search 搜索文件', async () => {
-    request.get.mockResolvedValue({ data: {} })
+    request.get.mockResolvedValue({ code: 1, msg: 'ok', data: {} })
     await searchFiles('test', 1, 20, { teamId: 5 })
     expect(request.get).toHaveBeenCalledWith('/api/files/search', {
       params: { keyword: 'test', page: 1, pageSize: 20, teamId: 5 },
@@ -48,44 +50,49 @@ describe('files API', () => {
   })
 
   it('应调用 GET 获取下载链接', async () => {
-    request.get.mockResolvedValue({ data: { downloadUrl: 'https://cdn/file.pdf' } })
+    request.get.mockResolvedValue({ code: 1, msg: 'ok', data: { downloadUrl: 'https://cdn/file.pdf' } })
     await getFileDownloadUrl(42)
     expect(request.get).toHaveBeenCalledWith('/api/files/42/download-url')
   })
 
   it('应调用 PATCH 重命名文件', async () => {
-    request.patch.mockResolvedValue({})
+    request.patch.mockResolvedValue({ code: 1, msg: 'ok', data: null })
     await renameFile({ fileId: 1, newName: 'new.txt' })
     expect(request.patch).toHaveBeenCalledWith('/api/files/1', { fileId: 1, newName: 'new.txt' })
   })
 
-  it('应调用 PATCH 移动文件', async () => {
-    request.patch.mockResolvedValue({ data: {} })
-    await moveFiles({ fileIds: [1, 2], targetParentId: 5, teamId: 10 })
+  it('应调用 PATCH 移动文件并返回信封', async () => {
+    request.patch.mockResolvedValue({ code: 1, msg: 'ok', data: { successCount: 2 } })
+    const result = await moveFiles({ fileIds: [1, 2], targetParentId: 5, teamId: 10 })
     expect(request.patch).toHaveBeenCalledWith('/api/files', {
       fileIds: [1, 2],
       targetParentId: 5,
       teamId: 10,
     })
+    // 移动/复制统一返回完整信封，业务结果在 data 中
+    expect(result.code).toBe(1)
+    expect(result.data.successCount).toBe(2)
   })
 
-  it('应调用 POST 复制文件', async () => {
-    request.post.mockResolvedValue({ data: {} })
-    await copyFiles({ fileIds: [1], targetParentId: 3 })
+  it('应调用 POST 复制文件并返回信封', async () => {
+    request.post.mockResolvedValue({ code: 1, msg: 'ok', data: { successCount: 1 } })
+    const result = await copyFiles({ fileIds: [1], targetParentId: 3 })
     expect(request.post).toHaveBeenCalledWith('/api/files/copies', {
       fileIds: [1],
       targetParentId: 3,
     })
+    expect(result.code).toBe(1)
+    expect(result.data.successCount).toBe(1)
   })
 
   it('应调用 PATCH 删除文件到回收站', async () => {
-    request.patch.mockResolvedValue({})
+    request.patch.mockResolvedValue({ code: 1, msg: 'ok', data: null })
     await logicalDeleteFiles([1, 2])
     expect(request.patch).toHaveBeenCalledWith('/api/files/trash', { fileIds: [1, 2] })
   })
 
   it('应调用 POST 创建文件夹', async () => {
-    request.post.mockResolvedValue({})
+    request.post.mockResolvedValue({ code: 1, msg: 'ok', data: {} })
     await createFolder({ folderName: 'new', parentId: 1, teamId: 10 })
     expect(request.post).toHaveBeenCalledWith('/api/folders', {
       folderName: 'new',

@@ -86,7 +86,10 @@ export function useMoveCopyAction(options) {
         ...payload,
         ...spaceParams,
       }
-      const result = isCopy ? await copyFiles(requestPayload) : await moveFiles(requestPayload)
+      // moveFiles/copyFiles 返回完整信封 { code, msg, data }，业务结果在 data 中。
+      const { data: result } = isCopy
+        ? await copyFiles(requestPayload)
+        : await moveFiles(requestPayload)
 
       showFeedback(result, {
         actionName: isCopy ? '复制' : '移动',
