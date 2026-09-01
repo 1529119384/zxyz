@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.Result;
+import uno.acloud.common.util.LogSanitizer;
 
 /**
  * IM 服务特有的异常处理器。
@@ -23,7 +24,7 @@ public class ImExceptionHandler {
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<Result<Void>> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
-        log.warn("IM 请求参数格式错误：{}={}", e.getName(), e.getValue());
+        log.warn("IM 请求参数格式错误：{}={}", LogSanitizer.sanitize(e.getName()), LogSanitizer.sanitize(String.valueOf(e.getValue())));
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(Result.error(ErrorCode.BAD_REQUEST, "请求参数格式错误"));
     }

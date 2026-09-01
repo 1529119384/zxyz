@@ -18,6 +18,7 @@ import cn.dev33.satoken.exception.NotLoginException;
 import cn.dev33.satoken.exception.NotPermissionException;
 import cn.dev33.satoken.exception.NotRoleException;
 import uno.acloud.exception.BusinessException;
+import uno.acloud.common.util.LogSanitizer;
 
 import java.util.List;
 import java.util.Set;
@@ -29,7 +30,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<?> handleBusinessException(BusinessException e) {
-        log.warn("业务异常：{}", e.getMessage());
+        log.warn("业务异常：{}", LogSanitizer.sanitize(e.getMessage()));
         if (e.getData() != null) {
             return ResponseEntity.status(ErrorCode.resolveHttpStatus(e.getErrorCode()))
                     .body(Result.error(e.getErrorCode(), e.getMessage(), e.getData()));
@@ -40,28 +41,28 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(NotLoginException.class)
     public ResponseEntity<Result<Void>> handleNotLoginException(NotLoginException e) {
-        log.warn("未登录访问: {}", e.getMessage());
+        log.warn("未登录访问: {}", LogSanitizer.sanitize(e.getMessage()));
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(Result.error(ErrorCode.NO_LOGIN, "未登录或登录已过期"));
     }
 
     @ExceptionHandler(NotPermissionException.class)
     public ResponseEntity<Result<Void>> handleNotPermissionException(NotPermissionException e) {
-        log.warn("无权限访问: permission={}, message={}", e.getPermission(), e.getMessage());
+        log.warn("无权限访问: permission={}, message={}", LogSanitizer.sanitize(e.getPermission()), LogSanitizer.sanitize(e.getMessage()));
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(Result.error(ErrorCode.NO_PERMISSION, "无操作权限: " + e.getPermission()));
     }
 
     @ExceptionHandler(NotRoleException.class)
     public ResponseEntity<Result<Void>> handleNotRoleException(NotRoleException e) {
-        log.warn("无角色访问: role={}, message={}", e.getRole(), e.getMessage());
+        log.warn("无角色访问: role={}, message={}", LogSanitizer.sanitize(e.getRole()), LogSanitizer.sanitize(e.getMessage()));
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(Result.error(ErrorCode.NO_PERMISSION, "无角色权限: " + e.getRole()));
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Result<Void>> handleOther(Exception e) {
-        log.error("系统异常", e);
+        log.error("系统异常: {}", LogSanitizer.sanitize(e.getMessage()), e);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Result.error(ErrorCode.SYSTEM_ERROR, "操作失败，请稍后重试"));
     }
@@ -71,7 +72,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Result<Void>> handleMethodArgumentNotValid(MethodArgumentNotValidException e) {
-        log.warn("参数校验异常：{}", e.getMessage());
+        log.warn("参数校验异常：{}", LogSanitizer.sanitize(e.getMessage()));
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(Result.error(ErrorCode.BAD_REQUEST, extractBindingMessage(e.getBindingResult())));
     }
@@ -81,7 +82,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(MissingServletRequestParameterException.class)
     public ResponseEntity<Result<Void>> handleMissingParam(MissingServletRequestParameterException e) {
-        String message = "缺少参数：" + e.getParameterName();
+        String message = "缺少参数：" + LogSanitizer.sanitize(e.getParameterName());
         log.warn("缺少请求参数：{}", message);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(Result.error(ErrorCode.BAD_REQUEST, message));
@@ -92,7 +93,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<Result<Void>> handleNotReadable(HttpMessageNotReadableException e) {
-        log.warn("请求体格式错误：{}", e.getMessage());
+        log.warn("请求体格式错误：{}", LogSanitizer.sanitize(e.getMessage()));
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(Result.error(ErrorCode.BAD_REQUEST, "请求体格式错误"));
     }
@@ -102,7 +103,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(BindException.class)
     public ResponseEntity<Result<Void>> handleBind(BindException e) {
-        log.warn("绑定校验异常：{}", e.getMessage());
+        log.warn("绑定校验异常：{}", LogSanitizer.sanitize(e.getMessage()));
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(Result.error(ErrorCode.BAD_REQUEST, extractBindingMessage(e.getBindingResult())));
     }
@@ -112,7 +113,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<Result<Void>> handleConstraintViolation(ConstraintViolationException e) {
-        log.warn("约束校验异常：{}", e.getMessage());
+        log.warn("约束校验异常：{}", LogSanitizer.sanitize(e.getMessage()));
         Set<ConstraintViolation<?>> violations = e.getConstraintViolations();
         String message = violations.stream()
                 .findFirst()
