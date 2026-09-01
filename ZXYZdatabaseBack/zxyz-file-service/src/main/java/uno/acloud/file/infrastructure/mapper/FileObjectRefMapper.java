@@ -120,6 +120,35 @@ public interface FileObjectRefMapper extends BaseMapper<FileObjectRef> {
                          @Param("lastDeleteError") String lastDeleteError,
                          @Param("nextRetryTime") LocalDateTime nextRetryTime);
 
+    /**
+     * 列出长期卡在 DELETING 状态的行（对账入口，配合
+     * {@code StuckDeletingObjectReconcileTask} 使用）。
+     * <p>
+     * 正常流程下 DELETING 只会存在极短时间：{@link #markDeleting} 之后立刻 deleteObject 再
+     * {@link #markDeleted}。但若进程在 deleteObject 成功之后、markDeleted 之前崩溃，这一行就
+     * 永久停在 DELETING——{@link #listPendingDeletes} 只捞 PENDING_DELETE，
+     * {@link #deleteExpiredDeleted} 只清 DELETED，没有任何代码路径能再拾取它，是不可见的
+     * 存储泄漏。这里以 modify_time 为判据（markDeleting 会刷新 modify_time）把它暴露出来。
+     * </p>
+     *
+     * @param deletingStatus 删除中状态（DELETING）
+     * @param cutoffTime     modify_time 早于该时间点才视为卡死
+     * @param limit          单次扫描条数上限
+     * @return 卡死行，按 modify_time 升序（停留最久的排在最前）
+     */
+    @Select({
+            "SELECT object_key, ref_count, delete_status, delete_retry_count, storage_provider,",
+            "       next_retry_time, last_delete_error, create_time, modify_time, delete_time",
+            "FROM file_object_ref",
+            "WHERE delete_status = #{deletingStatus}",
+            "  AND modify_time < #{cutoffTime}",
+            "ORDER BY modify_time ASC",
+            "LIMIT #{limit}"
+    })
+    List<FileObjectRef> listStuckDeleting(@Param("deletingStatus") String deletingStatus,
+                                          @Param("cutoffTime") LocalDateTime cutoffTime,
+                                          @Param("limit") int limit);
+
     @Delete("DELETE FROM file_object_ref WHERE delete_status = 'DELETED' AND delete_time < DATE_SUB(NOW(), INTERVAL 30 DAY)")
     int deleteExpiredDeleted();
 
