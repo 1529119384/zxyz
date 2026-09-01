@@ -41,7 +41,7 @@
 
 表结构由各服务的 Flyway 迁移脚本在运行时管理（`src/main/resources/db/migration/`）。
 
-`sql/` 目录下的 `schema_*.sql` 文件用于手动重建，不会被 MySQL entrypoint 自动执行。
+手动重建脚本已移除，`sql/` 目录仅保留 `00-init-zxyz.sh`；表结构由各服务 Flyway 迁移在运行时管理，不会被 MySQL entrypoint 自动执行。
 
 ## CI/CD 流水线
 

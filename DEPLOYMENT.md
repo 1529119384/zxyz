@@ -365,25 +365,11 @@ MySQL 容器首次启动时（数据目录为空），Docker 入口脚本会自�
 
 `00-init-zxyz.sh` 执行以下操作：
 
-1. **创建 8 个数据库**：`zxyz_project`、`zxyz_im`、`zxyz_email`、`zxyz_share`、`zxyz_file`、`zxyz_team`、`zxyz_user`、`nacos`
-2. **导入各库 Schema**：依次执行 8 个 `schema_*.sql` 文件
+1. **创建 10 个数据库**（9 个 `zxyz_*` 业务库 + `nacos`）：`zxyz_project`、`zxyz_im`、`zxyz_email`、`zxyz_share`、`zxyz_file`、`zxyz_team`、`zxyz_user`、`zxyz_audit`、`zxyz_config`、`nacos`
 
-SQL Schema 文件通过只读挂载映射到容器内的 `/docker-entrypoint-sql/` 目录，不会被 MySQL 入口脚本自动重复执行。
+表结构由各服务的 Flyway 迁移脚本在运行时自动管理（见 `docs/claude-infra.md`），无需手动导入 `schema_*.sql` 文件。
 
-### 5.3 Schema 文件列表
-
-| 文件 | 目标数据库 |
-|---|---|
-| `sql/schema_project.sql` | `zxyz_project` |
-| `sql/schema_im.sql` | `zxyz_im` |
-| `sql/schema_email.sql` | `zxyz_email` |
-| `sql/schema_share.sql` | `zxyz_share` |
-| `sql/schema_file.sql` | `zxyz_file` |
-| `sql/schema_team.sql` | `zxyz_team` |
-| `sql/schema_user.sql` | `zxyz_user` |
-| `sql/schema_nacos.sql` | `nacos` |
-
-### 5.4 重新初始化
+### 5.3 重新初始化
 
 如果需要重建数据库，删除数据目录（会丢失所有数据）：
 
@@ -557,7 +543,7 @@ Nginx 默认添加以下安全响应头：
 
 ### 8.4 请求体限制
 
-`client_max_body_size 1024m` — 允许最大 1 GB 的请求体，用于文件上传和数据库导入。
+`client_max_body_size 512m` — 允许最大 512 MB 的请求体，用于文件上传和数据库导入。
 
 ---
 
@@ -643,8 +629,8 @@ sudo ss -tlnp | grep :80
 # 进入 MySQL 容器
 docker compose exec mysql mysql -uroot -p
 
-# 手动执行 SQL 文件
-docker compose exec mysql mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" < /docker-entrypoint-sql/schema_xxx.sql
+# 手动重建时，可重新执行初始化脚本
+docker compose exec mysql mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" < /docker-entrypoint-initdb.d/00-init-zxyz.sh
 ```
 
 ### 9.8 admin-service V2 迁移校验不匹配（Flyway Checksum Mismatch）
