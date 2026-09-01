@@ -585,6 +585,23 @@ jobs:
               echo "::warning::跳过预部署备份（backup.sh 不存在）"
             fi
 
+            # --- 首次部署自动生成机密（幂等，已有值不覆盖）---
+            # 为什么：新环境 .env 里一堆 CHANGE_ME_* 占位符强密码需手填，体验极差。
+            # 本步骤在「校验/部署」之前、且独立于 REPO_DIR 是否存在，自动生成纯本地的
+            # 系统内部机密（DB/Redis/RabbitMQ/Nacos/Jasypt/Grafana 等），写回 .env 持久化，
+            # 完整值仅落服务器本地 init-secrets.log（chmod 600），终端只打码，不进 CI 公开日志。
+            # 幂等：已有非占位符值跳过，避免重启后换密码破坏 MySQL/Redis/Jasypt 连接与跨服务 token 一致。
+            # 外部凭证（OSS 访问密钥/邮箱密码/前端地址等）init-secrets.sh 不生成，仍由后续 validate-env 拦截手填。
+            echo "===== Initializing secrets (if missing) ====="
+            if [ -f "$DEPLOY_DIR/scripts/init-secrets.sh" ] && [ -f "$DEPLOY_DIR/.env" ]; then
+              if ! bash "$DEPLOY_DIR/scripts/init-secrets.sh" "$DEPLOY_DIR/.env"; then
+                echo "::error::INIT_SECRETS_FAILED: 首次部署机密初始化失败，已中止部署"
+                exit 1
+              fi
+            else
+              echo "::warning::跳过机密初始化（init-secrets.sh 或 .env 不存在）"
+            fi
+
             # --- 记录当前版本用于回滚 ---
             echo "===== Recording current version for rollback ====="
             if [ -f "$DEPLOY_DIR/.env" ]; then
