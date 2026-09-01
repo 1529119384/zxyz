@@ -159,6 +159,25 @@ else
 fi
 
 echo ""
+echo "--- 本地存储（生产禁用） ---"
+if [ "${STORAGE_LOCAL_ENABLED:-false}" = "true" ]; then
+  echo "  ERROR: STORAGE_LOCAL_ENABLED=true 不允许用于生产：本地磁盘存储在容器/卷卸载时会丢失数据，且不可跨节点共享"
+  ERRORS=$((ERRORS + 1))
+else
+  echo "  OK: STORAGE_LOCAL_ENABLED 为 false（使用 OSS 对象存储）"
+fi
+
+echo ""
+echo "--- 监控栈（仅告警，不阻断部署） ---"
+# Grafana 默认 admin/admin 极危险：.env 未设时 compose 回退为 admin（弱密码），故空值也要告警。
+if [ -z "${GRAFANA_ADMIN_PASSWORD:-}" ] || echo "${GRAFANA_ADMIN_PASSWORD}" | grep -qE "CHANGE_ME|admin"; then
+  echo "  WARN: GRAFANA_ADMIN_PASSWORD 未设置或仍是占位符/弱密码，生产环境请改为高强度密码（不阻断部署）"
+  WARNINGS=$((WARNINGS + 1))
+else
+  echo "  OK: GRAFANA_ADMIN_PASSWORD 已设置"
+fi
+
+echo ""
 echo "--- CORS ---"
 check_not_placeholder "CORS_ALLOWED_ORIGINS"
 

@@ -210,6 +210,11 @@ services:
         limits:
           memory: 512M
           cpus: '1.0'
+        # 为什么：原来只有 limits 没有 reservations，调度器无法预留资源，节点压力下易被驱逐。
+        # reservations 取 limits 约 40%（512M→256M、1.0→0.4），且严格小于 limits（compose 不允许 reservations>limits）。
+        reservations:
+          memory: 256M
+          cpus: '0.4'
     depends_on:
       mysql:
         condition: service_healthy
@@ -280,6 +285,11 @@ services:
         limits:
           memory: 512M
           cpus: '1.0'
+        # 为什么：原来只有 limits 没有 reservations，调度器无法预留资源，节点压力下易被驱逐。
+        # reservations 取 limits 约 40%（512M→256M、1.0→0.4），且严格小于 limits（compose 不允许 reservations>limits）。
+        reservations:
+          memory: 256M
+          cpus: '0.4'
     depends_on:
       mysql:
         condition: service_healthy
@@ -346,6 +356,10 @@ services:
         limits:
           memory: 512M
           cpus: '0.5'
+        # 为什么：与上方 512M/1.0 服务同策略，reservations 取 limits 约 40%（512M→256M、0.5→0.25）。
+        reservations:
+          memory: 256M
+          cpus: '0.25'
     depends_on:
       mysql:
         condition: service_healthy
@@ -415,6 +429,10 @@ services:
         limits:
           memory: 512M
           cpus: '0.5'
+        # 为什么：与上方 512M/1.0 服务同策略，reservations 取 limits 约 40%（512M→256M、0.5→0.25）。
+        reservations:
+          memory: 256M
+          cpus: '0.25'
     depends_on:
       mysql:
         condition: service_healthy
@@ -481,6 +499,11 @@ services:
         limits:
           memory: 512M
           cpus: '1.0'
+        # 为什么：原来只有 limits 没有 reservations，调度器无法预留资源，节点压力下易被驱逐。
+        # reservations 取 limits 约 40%（512M→256M、1.0→0.4），且严格小于 limits（compose 不允许 reservations>limits）。
+        reservations:
+          memory: 256M
+          cpus: '0.4'
     depends_on:
       mysql:
         condition: service_healthy
@@ -558,6 +581,11 @@ services:
         limits:
           memory: 512M
           cpus: '1.0'
+        # 为什么：原来只有 limits 没有 reservations，调度器无法预留资源，节点压力下易被驱逐。
+        # reservations 取 limits 约 40%（512M→256M、1.0→0.4），且严格小于 limits（compose 不允许 reservations>limits）。
+        reservations:
+          memory: 256M
+          cpus: '0.4'
     depends_on:
       mysql:
         condition: service_healthy
@@ -630,6 +658,11 @@ services:
         limits:
           memory: 512M
           cpus: '1.0'
+        # 为什么：原来只有 limits 没有 reservations，调度器无法预留资源，节点压力下易被驱逐。
+        # reservations 取 limits 约 40%（512M→256M、1.0→0.4），且严格小于 limits（compose 不允许 reservations>limits）。
+        reservations:
+          memory: 256M
+          cpus: '0.4'
     depends_on:
       mysql:
         condition: service_healthy
@@ -692,6 +725,11 @@ services:
         limits:
           memory: 512M
           cpus: '1.0'
+        # 为什么：原来只有 limits 没有 reservations，调度器无法预留资源，节点压力下易被驱逐。
+        # reservations 取 limits 约 40%（512M→256M、1.0→0.4），且严格小于 limits（compose 不允许 reservations>limits）。
+        reservations:
+          memory: 256M
+          cpus: '0.4'
     depends_on:
       mysql:
         condition: service_healthy
@@ -751,6 +789,11 @@ services:
         limits:
           memory: 512M
           cpus: '1.0'
+        # 为什么：原来只有 limits 没有 reservations，调度器无法预留资源，节点压力下易被驱逐。
+        # reservations 取 limits 约 40%（512M→256M、1.0→0.4），且严格小于 limits（compose 不允许 reservations>limits）。
+        reservations:
+          memory: 256M
+          cpus: '0.4'
     depends_on:
       mysql:
         condition: service_healthy
@@ -944,10 +987,18 @@ services:
         limits:
           memory: 128M
           cpus: '0.25'
+    # 为什么：原 promtail 无 healthcheck，编排无法感知其异常。promtail 3.x ready 端点为 /ready，端口 9080（见 deploy/promtail-config.yml server.http_listen_port）。
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9080/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./deploy/promtail-config.yml:/etc/promtail/config.yml:ro
+      # 为什么：positions 持久化到宿主机，避免容器重启后从 /tmp 丢失、导致 promtail 重推全部历史日志。路径与 deploy/promtail-config.yml positions.filename 对应。
+      - ./data/promtail:/data/promtail
     networks:
       - zxyz-net
     depends_on:
@@ -958,6 +1009,114 @@ services:
       options:
         max-size: "50m"
         max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # 监控栈（P1-D3）：Prometheus 抓取各服务 micrometer /actuator/prometheus 端点，
+  # Alertmanager 接告警，Grafana 做可视化。三者仅绑定 127.0.0.1（与 nacos/rabbitmq 管理端口一致），
+  # 生产经宿主机 Nginx 反代并加来源限制，切勿直接暴露公网。
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: zxyz-prometheus
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    # 为什么：挂载配置与规则为只读，数据卷持久化 TSDB，避免容器重建丢失历史指标。
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+    ports:
+      # 仅绑定回环地址，避免监控数据裸奔到公网
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    networks:
+      - zxyz-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: zxyz-alertmanager
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+    volumes:
+      - ./deploy/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+    ports:
+      - "127.0.0.1:${ALERTMANAGER_PORT:-9093}:9093"
+    networks:
+      - zxyz-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9093/-/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: zxyz-grafana
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    # 为什么：安全红线——Grafana 默认 admin/admin，密码一律从 .env 注入，严禁硬编码。
+    # 若 .env 未设置则回退 admin/admin，但 validate-env.sh 会对 CHANGE_ME 占位符告警（WARNING，不阻断部署）。
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_SERVER_HTTP_PORT: "3000"
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    networks:
+      - zxyz-net
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+# 命名数据卷：compose 自动创建，用于监控组件持久化
+volumes:
+  prometheus_data:
+  grafana_data:
 
 networks:
   zxyz-net:

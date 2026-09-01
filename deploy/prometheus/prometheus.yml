@@ -1,0 +1,107 @@
+# ZXYZ Prometheus 配置
+# 抓取 9 个 Spring Boot 服务的 /actuator/prometheus（micrometer 已暴露，见各服务 application-common.yml）。
+# 注意：targets 端口是各服务 SERVER_PORT 的默认值（compose 内服务名即 DNS），
+#       prometheus.yml 不被 compose 的 envsubst 处理，故此处写死默认端口；
+#       若通过 .env 的 *_PORT 改了服务端口，需同步修改本文件的 targets。
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: zxyz
+
+# 告警发往同网络内的 alertmanager:9093
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+# 告警规则（基础存活/JVM/重启等）
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  # Prometheus 自身
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # 网关
+  - job_name: gateway
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['zxyz-gateway:18000']
+        labels:
+          service: gateway
+
+  # 项目服务
+  - job_name: project-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['zxyz-project-service:18080']
+        labels:
+          service: project
+
+  # IM 服务
+  - job_name: im-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['zxyz-im-service:18081']
+        labels:
+          service: im
+
+  # 邮件服务
+  - job_name: email-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['zxyz-email-service:18082']
+        labels:
+          service: email
+
+  # 用户服务
+  - job_name: user-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['zxyz-user-service:18083']
+        labels:
+          service: user
+
+  # 分享服务
+  - job_name: share-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['zxyz-share-service:18084']
+        labels:
+          service: share
+
+  # 文件服务
+  - job_name: file-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['zxyz-file-service:18085']
+        labels:
+          service: file
+
+  # 团队服务
+  - job_name: team-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['zxyz-team-service:18086']
+        labels:
+          service: team
+
+  # 审计服务
+  - job_name: audit-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['zxyz-audit-service:18087']
+        labels:
+          service: audit
+
+  # 管理服务
+  - job_name: admin-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['zxyz-admin-service:18088']
+        labels:
+          service: admin

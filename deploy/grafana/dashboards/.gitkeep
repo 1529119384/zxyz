@@ -1,0 +1,2 @@
+# 放置 Grafana dashboard JSON 文件（如从官网导入的 JVM/Spring Boot 仪表盘 ID 4701、12900）。
+# 文件名任意，Grafana 启动时会自动加载本目录内的 json。

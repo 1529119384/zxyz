@@ -1,0 +1,22 @@
+# ZXYZ Alertmanager 配置（最小可用）
+# 仅做合法占位路由；实际告警投递渠道（企业微信/钉钉/邮件）请在 receivers 下补充对应 *_configs。
+# 注意：不要在此写入真实外部 webhook 地址，敏感地址应来自 .env 或密钥管理。
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: 'default'
+  group_by: ['alertname', 'service']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  # 占位 receiver：当前不投递任何渠道（无 *_configs），仅使告警路由合法。
+  # 生产接入示例（替换 name 下内容）：
+  #   - name: 'default'
+  #     webhook_configs:
+  #       - url: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY'
+  #         send_resolved: true
+  - name: 'default'
