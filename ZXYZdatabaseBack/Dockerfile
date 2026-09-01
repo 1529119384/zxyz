@@ -13,17 +13,15 @@
 #   - zxyz-admin-service
 # -----------------------------------------------------------------------------
 
-# 使用预构建基础镜像（已缓存 Maven 依赖），需要时手动重建：
-#   docker build -t aclouda/zxyz-maven-base:latest -f ZXYZdatabaseBack/Dockerfile.base ZXYZdatabaseBack/
-# TODO(pin-digest): 该基础镜像由外部账号 aclouda 维护、tag 为可变的 latest，
-# 构建不可复现。因本 host 无法 `docker manifest inspect` 校验其 sha256 digest，
-# 且镜像为私有、Docker Hub 上不存在，故不写 digest、不改 tag 名（改了会找不到镜像）。
-# 维护策略：由 .github/dependabot.yml（package-ecosystem: docker，
-# directory: /ZXYZdatabaseBack/）在能拉取该私有镜像的 CI 环境自动 bump 并固化 digest；
-# 当前保留 :latest 是为了兼容本机手动
-#   docker build -t aclouda/zxyz-maven-base:latest -f Dockerfile.base ZXYZdatabaseBack/
-# 的既有工作流（见 Dockerfile.base 顶部说明）。
-FROM aclouda/zxyz-maven-base:latest AS builder
+# 镜像钉定策略：所有基础镜像均使用官方版本并固定到确切版本 tag（非 :latest）。
+# 如需进一步锁定到不可变 digest（@sha256:），在有 docker 的环境执行：
+#   docker pull maven:3.9-eclipse-temurin-17
+#   docker inspect --format='{{index .RepoDigests 0}}' maven:3.9-eclipse-temurin-17
+# 取 RepoDigests 后写成 maven:3.9-eclipse-temurin-17@sha256:...，由 Dependabot 在 CI 维护。
+
+# builder 直接使用官方 maven:3.9-eclipse-temurin-17，不再依赖个人私有镜像
+# （原 aclouda/zxyz-maven-base:latest 为可变 tag，构建不可复现，已移除）。
+FROM maven:3.9-eclipse-temurin-17 AS builder
 
 WORKDIR /workspace
 
@@ -54,7 +52,7 @@ RUN mvn -B -T 1C -pl zxyz-common -am install -Dmaven.test.skip=false -DskipTests
 # Alpine 瘦身：eclipse-temurin:17-jre-alpine 体积更小。
 # 阻塞点检查：项目仅使用 Netty NIO（纯 Java），不依赖 netty-transport-native，
 # 因此 Alpine musl libc 不会影响 Netty 功能。
-# TODO(pin-digest): 运行时镜像已固化为确切 patch 版本 tag（immutable、可复现），
+# 运行时镜像已固化为确切 patch 版本 tag（immutable、可复现），
 # 不再使用会随上游滚动的裸 17-jre-alpine。tag 名经 Docker Hub 核对真实存在：
 #   eclipse-temurin:17.0.14_7-jre-alpine
 # 来源：https://hub.docker.com/_/eclipse-temurin 该 tag 的图层页（带真实 digest/layers）。

@@ -37,7 +37,7 @@ updates:
       - dependencies
       - npm
 
-  # --- Docker: 后端基础镜像（Dockerfile + Dockerfile.base） ---
+  # --- Docker: 后端镜像（Dockerfile） ---
   # 用于维护后端构建/运行基础镜像标签（maven、eclipse-temurin 等）。
   # 若后续把 Dockerfile 中的镜像标签替换为 sha256 digest，Dependabot
   # 会自动建议 digest 升级并保持可复现构建。

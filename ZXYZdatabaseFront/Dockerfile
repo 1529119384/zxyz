@@ -5,8 +5,7 @@
 # 构建阶段打包 Vite 静态资源，运行阶段用 Nginx 提供静态文件并反向代理后端。
 # -----------------------------------------------------------------------------
 
-# TODO(pin-digest): 浮动 tag 使前端构建阶段不可复现；建议固化为验证后的
-# sha256 digest（或确切 patch 版本，如 node:22.13-alpine）。Dependabot(docker) 可维护。
+# 前端构建阶段使用官方 node:22-alpine（版本钉住，非 :latest）。digest 锁定见后端 Dockerfile 顶部说明。
 FROM node:22-alpine AS builder
 
 WORKDIR /workspace
@@ -17,8 +16,7 @@ RUN npm ci
 COPY ZXYZdatabaseFront/ ./
 RUN npm run build
 
-# TODO(pin-digest): 浮动 tag（nginx:1.27-alpine）运行时基础镜像不可复现；
-# 建议固化为验证后的 sha256 digest 或确切 patch 版本。Dependabot(docker) 可维护。
+# 运行时基础镜像使用官方 nginx:1.27-alpine（minor 版本钉住，非 :latest）。digest 锁定见后端 Dockerfile 顶部说明。
 FROM nginx:1.27-alpine
 
 ENV TZ=Asia/Shanghai

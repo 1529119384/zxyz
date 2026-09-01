@@ -418,8 +418,8 @@ jobs:
   #   - ignore-unfixed: true 只告警可修复漏洞，避免噪音
   #   - 若某个已知漏洞已在外部组件修复但尚无新镜像，可在必要时通过
   #     ignore 配置临时豁免（见下方示例，勿长期使用）
-  #   - 自定义基础镜像 aclouda/zxyz-maven-base 不在 Docker Hub，无法被
-  #     Trivy 按 tag 拉取，暂不扫描 builder stage 本身（见 Dockerfile TODO）
+  #   - builder 现已改用官方 maven:3.9-eclipse-temurin-17（在 Docker Hub，
+  #     可被 Trivy 按 tag 拉取扫描）。
   # ============================================================
   security-scan:
     needs: [detect-changes, build-and-push]
