@@ -116,13 +116,7 @@ public class TeamNotificationConversationService {
                                      String messageType,
                                      Map<String, Object> payload) {
         ImMessage message = new ImMessage();
-        message.setConversationId(conversationId);
-        message.setSenderUserId(senderUserId);
-        message.setMessageType(messageType);
-        message.setContent(writeValue(payload));
-        message.setStatus(0);
-        message.setClientMessageId("team-notify-" + UUID.randomUUID());
-        message.setCreateTime(LocalDateTime.now());
+        message.initializeNew(conversationId, senderUserId, messageType, writeValue(payload), "team-notify-" + UUID.randomUUID());
         imMessageMapper.insert(message);
         conversationMapper.incrementUnreadForOthers(conversationId, senderUserId == null ? -1 : senderUserId);
         conversationMapper.touchConversation(conversationId);

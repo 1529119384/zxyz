@@ -76,6 +76,8 @@ public class MessageModerationService {
         if (imMessageMapper.recallMessage(messageId, operatorUserId, reason) != 1) {
             throw new BusinessException(ErrorCode.CONCURRENT_OPERATION, "消息状态已变化");
         }
+        // 守卫 SQL 已成功将 DB 行置为撤回；此处同步内存实体状态（不含并发守卫，守卫在 mapper SQL 内）。
+        message.markRecalled(operatorUserId, reason);
         ImMessage recalled = imMessageMapper.getById(messageId);
         MessageRecallVO recall = new MessageRecallVO(
                 messageId,

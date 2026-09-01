@@ -4,7 +4,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.exception.BusinessException;
-import uno.acloud.im.domain.enums.ConversationMemberStatus;
 import uno.acloud.im.domain.enums.ConversationType;
 import uno.acloud.im.infrastructure.persistence.entity.ImConversation;
 import uno.acloud.im.infrastructure.mapper.ConversationMapper;
@@ -14,7 +13,6 @@ import uno.acloud.im.dto.ProjectCreateRequestMessageRequest;
 import uno.acloud.im.dto.ProjectCreateRequestReviewResultRequest;
 import uno.acloud.im.vo.ProjectConversationVO;
 
-import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -50,7 +48,6 @@ public class ProjectConversationService {
             return imEntityMapper.toConversationVO(existing);
         }
 
-        LocalDateTime now = LocalDateTime.now();
         ImConversation conversation = new ImConversation();
         conversation.setType(ConversationType.PROJECT);
         conversation.setTeamId(teamId);
@@ -59,10 +56,7 @@ public class ProjectConversationService {
         conversation.setBizKey(bizKey);
         conversation.setDirectUserA(null);
         conversation.setDirectUserB(null);
-        conversation.setStatus(ConversationMemberStatus.ACTIVE);
-        conversation.setReadOnly(Boolean.FALSE);
-        conversation.setCreateTime(now);
-        conversation.setUpdateTime(now);
+        conversation.markActive();
         conversationMapper.insertConversation(conversation);
         conversationMapper.upsertConversationMember(conversation.getId(), leaderUserId);
         return imEntityMapper.toConversationVO(conversation);

@@ -49,13 +49,7 @@ public class SystemConversationService {
     public void appendNotification(Long userId, String title, String content, String type, Long businessId) {
         Long conversationId = ensureSystemConversation(userId);
         ImMessage message = new ImMessage();
-        message.setConversationId(conversationId);
-        message.setSenderUserId(null);
-        message.setMessageType(MessageType.SYSTEM_NOTIFICATION);
-        message.setContent(writeSystemContent(title, content, type, businessId));
-        message.setStatus(0);
-        message.setClientMessageId("system-" + UUID.randomUUID());
-        message.setCreateTime(LocalDateTime.now());
+        message.initializeNew(conversationId, null, MessageType.SYSTEM_NOTIFICATION, writeSystemContent(title, content, type, businessId), "system-" + UUID.randomUUID());
         imMessageMapper.insert(message);
         conversationMapper.incrementUnreadForOthers(conversationId, 0L);
         conversationMapper.touchConversation(conversationId);

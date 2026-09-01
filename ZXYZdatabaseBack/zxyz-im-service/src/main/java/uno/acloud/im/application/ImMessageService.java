@@ -143,15 +143,8 @@ public class ImMessageService {
                                                     String clientMessageId,
                                                     String content,
                                                     List<Long> mentions) {
-        LocalDateTime now = LocalDateTime.now();
         ImMessage message = new ImMessage();
-        message.setConversationId(conversationId);
-        message.setSenderUserId(senderUserId);
-        message.setMessageType(MessageType.TEXT);
-        message.setContent(writeTextContent(content, mentions));
-        message.setStatus(0);
-        message.setClientMessageId(clientMessageId);
-        message.setCreateTime(now);
+        message.initializeNew(conversationId, senderUserId, MessageType.TEXT, writeTextContent(content, mentions), clientMessageId);
         imMessageMapper.insert(message);
 
         conversationMapper.incrementUnreadForOthers(conversationId, senderUserId);

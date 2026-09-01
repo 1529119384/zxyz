@@ -6,7 +6,6 @@ import uno.acloud.common.TeamErrorCode;
 import uno.acloud.common.TeamPermissionCodes;
 import uno.acloud.common.TeamRoleCodes;
 import uno.acloud.exception.BusinessException;
-import uno.acloud.im.domain.enums.ConversationMemberStatus;
 import uno.acloud.im.domain.enums.ConversationType;
 import uno.acloud.im.domain.enums.TeamMemberStatus;
 import uno.acloud.im.domain.enums.TeamStatus;
@@ -75,9 +74,7 @@ public class TeamService {
         conversation.setBizKey("TEAM:" + team.getId());
         conversation.setDirectUserA(null);
         conversation.setDirectUserB(null);
-        conversation.setStatus(ConversationMemberStatus.ACTIVE);
-        conversation.setCreateTime(now);
-        conversation.setUpdateTime(now);
+        conversation.markActive();
         conversationMapper.insertConversation(conversation);
         conversationMapper.upsertConversationMember(conversation.getId(), ownerUserId);
 

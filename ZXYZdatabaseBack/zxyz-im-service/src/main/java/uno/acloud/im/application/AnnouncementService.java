@@ -64,13 +64,7 @@ public class AnnouncementService {
         String content = requireText(request == null ? null : request.getContent(), "公告内容不能为空", 5000, "内容长度不能超过 5000");
 
         ImMessage message = new ImMessage();
-        message.setConversationId(conversationId);
-        message.setSenderUserId(operatorUserId);
-        message.setMessageType(MessageType.ANNOUNCEMENT);
-        message.setContent(writeAnnouncementContent(title, content));
-        message.setStatus(0);
-        message.setClientMessageId("announcement-" + UUID.randomUUID());
-        message.setCreateTime(LocalDateTime.now());
+        message.initializeNew(conversationId, operatorUserId, MessageType.ANNOUNCEMENT, writeAnnouncementContent(title, content), "announcement-" + UUID.randomUUID());
         imMessageMapper.insert(message);
         conversationMapper.incrementUnreadForOthers(conversationId, operatorUserId);
         conversationMapper.touchConversation(conversationId);

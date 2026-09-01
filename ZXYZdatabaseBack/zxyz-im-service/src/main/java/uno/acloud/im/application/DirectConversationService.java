@@ -4,13 +4,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.exception.BusinessException;
-import uno.acloud.im.domain.enums.ConversationMemberStatus;
 import uno.acloud.im.domain.enums.ConversationType;
 import uno.acloud.im.infrastructure.persistence.entity.ImConversation;
 import uno.acloud.im.infrastructure.mapper.ConversationMapper;
 import uno.acloud.im.vo.ConversationSummaryVO;
-
-import java.time.LocalDateTime;
 
 @Service
 public class DirectConversationService {
@@ -59,16 +56,13 @@ public class DirectConversationService {
                                                   String bizKey) {
         ImConversation existing = conversationMapper.getConversationByBizKey(bizKey);
         if (existing == null) {
-            LocalDateTime now = LocalDateTime.now();
             ImConversation conversation = new ImConversation();
             conversation.setType(ConversationType.DIRECT);
             conversation.setTeamId(teamId);
             conversation.setBizKey(bizKey);
             conversation.setDirectUserA(directUserA);
             conversation.setDirectUserB(directUserB);
-            conversation.setStatus(ConversationMemberStatus.ACTIVE);
-            conversation.setCreateTime(now);
-            conversation.setUpdateTime(now);
+            conversation.markActive();
             conversationMapper.insertConversation(conversation);
             conversationMapper.upsertConversationMember(conversation.getId(), directUserA);
             conversationMapper.upsertConversationMember(conversation.getId(), directUserB);

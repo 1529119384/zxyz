@@ -9,7 +9,6 @@ import uno.acloud.common.TeamPermissionCodes;
 import uno.acloud.common.TeamRoleCodes;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.domain.event.ImDomainEventType;
-import uno.acloud.im.domain.enums.ConversationMemberStatus;
 import uno.acloud.im.domain.enums.ConversationType;
 import uno.acloud.im.domain.enums.InvitationStatus;
 import uno.acloud.im.domain.enums.SystemNotificationType;
@@ -175,14 +174,11 @@ public class TeamInvitationService {
     }
 
     private Long createMissingTeamConversation(Long teamId) {
-        LocalDateTime now = LocalDateTime.now();
         ImConversation conversation = new ImConversation();
         conversation.setType(ConversationType.TEAM);
         conversation.setTeamId(teamId);
         conversation.setBizKey("TEAM:" + teamId);
-        conversation.setStatus(ConversationMemberStatus.ACTIVE);
-        conversation.setCreateTime(now);
-        conversation.setUpdateTime(now);
+        conversation.markActive();
         conversationMapper.insertConversation(conversation);
         return conversation.getId();
     }

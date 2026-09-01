@@ -20,7 +20,6 @@ import uno.acloud.im.vo.FileCardResolveVO;
 import uno.acloud.im.vo.FileCardVO;
 import uno.acloud.im.vo.ImMessageVO;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -114,15 +113,8 @@ public class FileCardMessageService {
                                                                          Long conversationId,
                                                                          String clientMessageId,
                                                                          FileCardContent fileCardContent) {
-        LocalDateTime now = LocalDateTime.now();
         ImMessage message = new ImMessage();
-        message.setConversationId(conversationId);
-        message.setSenderUserId(senderUserId);
-        message.setMessageType(MessageType.FILE_CARD);
-        message.setContent(writeValue(fileCardContent));
-        message.setStatus(0);
-        message.setClientMessageId(clientMessageId);
-        message.setCreateTime(now);
+        message.initializeNew(conversationId, senderUserId, MessageType.FILE_CARD, writeValue(fileCardContent), clientMessageId);
         imMessageMapper.insert(message);
 
         conversationMapper.incrementUnreadForOthers(conversationId, senderUserId);

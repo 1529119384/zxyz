@@ -9,7 +9,6 @@ import uno.acloud.common.ErrorCode;
 import uno.acloud.common.TeamErrorCode;
 import uno.acloud.common.TeamRoleCodes;
 import uno.acloud.exception.BusinessException;
-import uno.acloud.im.domain.enums.ConversationMemberStatus;
 import uno.acloud.im.domain.enums.ConversationType;
 import uno.acloud.im.domain.enums.TeamMemberStatus;
 import uno.acloud.im.domain.enums.TeamStatus;
@@ -146,10 +145,7 @@ public class InternalTeamSyncService {
         conversation.setType(ConversationType.TEAM);
         conversation.setTeamId(teamId);
         conversation.setBizKey("TEAM:" + teamId);
-        conversation.setStatus(ConversationMemberStatus.ACTIVE);
-        conversation.setReadOnly(false);
-        conversation.setCreateTime(LocalDateTime.now());
-        conversation.setUpdateTime(LocalDateTime.now());
+        conversation.markActive();
         conversationMapper.insertConversation(conversation);
         conversationMapper.upsertConversationMember(conversation.getId(), ownerUserId);
     }
