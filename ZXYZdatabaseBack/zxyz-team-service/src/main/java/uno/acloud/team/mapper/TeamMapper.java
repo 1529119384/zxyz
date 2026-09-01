@@ -6,10 +6,12 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
+import uno.acloud.common.TeamRoleCodes;
 import uno.acloud.team.entity.Team;
 import uno.acloud.team.entity.TeamMember;
 import uno.acloud.team.vo.team.AdminTeamOverviewVO;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Mapper
@@ -161,4 +163,58 @@ public interface TeamMapper extends BaseMapper<Team> {
     int updateMemberRoleLabel(@Param("teamId") Long teamId,
                               @Param("userId") Long userId,
                               @Param("roleCode") String roleCode);
+
+    // ==================== 所有者注销后的终态处理 ====================
+
+    /**
+     * 继任者角色优先级表达式：team_owner &gt; team_admin &gt; 其它成员。
+     * MyBatis 注解值必须是编译期常量，所以用常量拼接而非运行时取值。
+     */
+    String SUCCESSOR_ROLE_PRIORITY =
+            "FIELD(role_code, '" + TeamRoleCodes.OWNER + "', '" + TeamRoleCodes.ADMIN + "')";
+
+    /**
+     * 转让团队所有权。
+     * WHERE 带上 owner_user_id = #{fromUserId} 与 status = 0：既避免误改他人团队，
+     * 也让「重复消费同一条用户注销事件」天然幂等（第二次执行影响行数为 0）。
+     */
+    @Update("""
+            UPDATE team
+            SET owner_user_id = #{toUserId},
+                update_time = #{updateTime}
+            WHERE id = #{teamId}
+              AND owner_user_id = #{fromUserId}
+              AND status = 0
+            """)
+    int transferOwner(@Param("teamId") Long teamId,
+                      @Param("fromUserId") Long fromUserId,
+                      @Param("toUserId") Long toUserId,
+                      @Param("updateTime") LocalDateTime updateTime);
+
+    /**
+     * 解散团队（所有者注销且无继任者时的终态：status = 2）。
+     * 同样带 owner_user_id + status = 0 条件，保证只有「当前所有者且仍正常」的团队能被解散。
+     */
+    @Update("""
+            UPDATE team
+            SET status = 2,
+                update_time = #{updateTime}
+            WHERE id = #{teamId}
+              AND owner_user_id = #{ownerUserId}
+              AND status = 0
+            """)
+    int dissolveTeam(@Param("teamId") Long teamId,
+                     @Param("ownerUserId") Long ownerUserId,
+                     @Param("updateTime") LocalDateTime updateTime);
+
+    /**
+     * 挑选继任所有者：优先 team_admin，其次最早加入（id 最小）的普通成员，排除即将注销的用户。
+     * FIELD() 对未命中的角色返回 0，所以先用 "= 0" 把普通成员整体排到最后，
+     * 再按 FIELD() 升序区分 team_owner(1) 与 team_admin(2)，最后用 id 保证结果稳定。
+     */
+    @Select("SELECT user_id FROM team_member "
+            + "WHERE team_id = #{teamId} AND status = 0 AND user_id != #{excludeUserId} "
+            + "ORDER BY " + SUCCESSOR_ROLE_PRIORITY + " = 0, " + SUCCESSOR_ROLE_PRIORITY + ", id ASC "
+            + "LIMIT 1")
+    Long selectSuccessorOwner(@Param("teamId") Long teamId, @Param("excludeUserId") Long excludeUserId);
 }
