@@ -1,17 +1,24 @@
 import { mapRecycleFileEntries, mapSearchFileEntries, mapSpaceFileEntries } from '@/models/file'
 import rawRequest, { UPLOAD_REQUEST_TIMEOUT } from '@/utils/request'
+import type { AxiosRequestConfig } from 'axios'
 
 // axios 实例的响应拦截器会把成功响应解包为后端信封 { code, msg, data }（见
 // src/utils/createApiClient.js：code === 1 时返回整个 payload），与原生 AxiosResponse
-// 类型不符。这里统一断言为返回 Promise<any> 的请求方法，由各 API 函数标注精确的信封类型。
+// 类型不符。下面用带泛型的精确签名收口：每个方法返回 Promise<ApiResult<T>>，
+// T 由各 API 函数调用时显式传入（如 request.get<UploadSignResult>(...)），从而保留 data 的类型。
 type ApiRequest = {
-  get: (...args: any[]) => Promise<any>
-  post: (...args: any[]) => Promise<any>
-  patch: (...args: any[]) => Promise<any>
-  delete: (...args: any[]) => Promise<any>
+  // get：拉取资源；T 为响应 data 的精确类型
+  get: <T = unknown>(url: string, config?: AxiosRequestConfig) => Promise<ApiResult<T>>
+  // post：新建资源；data 为请求体，config 透传 axios 配置（timeout/headers 等）
+  post: <T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig) => Promise<ApiResult<T>>
+  // patch：部分更新
+  patch: <T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig) => Promise<ApiResult<T>>
+  // delete：删除；axios 把请求体放在 config.data 中
+  delete: <T = unknown>(url: string, config?: AxiosRequestConfig) => Promise<ApiResult<T>>
 }
 
-const request = rawRequest as unknown as ApiRequest
+// rawRequest 本质为 axios 实例，单次断言到带泛型的 ApiRequest（响应已被拦截器解包为信封）
+const request = rawRequest as ApiRequest
 
 /** 后端统一 Result 信封：code === 1 表示成功，业务数据在 data 中。 */
 export interface ApiResult<T = unknown> {
@@ -71,6 +78,76 @@ export interface DownloadUrlResult {
   fileName?: string
 }
 
+/** getUploadSign 的 data：预签名上传所需签名信息（upload.js 读取 uploadUrl/objectKey/contentType/contentDisposition/directUpload）。 */
+export interface UploadSignResult {
+  uploadUrl?: string
+  objectKey?: string
+  contentType?: string
+  contentDisposition?: string
+  directUpload?: boolean
+}
+
+/** directUpload 的 data：后端直传结果。当前调用方未消费返回值，端点精确结构未知，留空以收敛 unknown。 */
+export interface DirectUploadResult {}
+
+/** confirmUpload 的 data：批量确认上传结果。模型 @/models/upload 读取 items[0] 各字段，兼容旧接口单对象返回。 */
+export interface ConfirmUploadResultItem {
+  status?: string
+  code?: number
+  msg?: string
+  originalName?: string
+  clientOriginalName?: string
+  finalName?: string
+  fileType?: number
+  fileSize?: number
+  fileId?: string | number
+  id?: string | number
+  parentId?: string | number
+  fileUrl?: string
+  clientRequestId?: string
+}
+
+export interface ConfirmUploadResult {
+  items?: ConfirmUploadResultItem[]
+  // 兼容旧接口直接返回单对象的情况（normalizeUploadConfirmResult 会按字段兜底）
+  originalName?: string
+  finalName?: string
+  fileType?: number
+  fileSize?: number
+  id?: string | number
+  parentId?: string | number
+  fileUrl?: string
+  clientRequestId?: string
+}
+
+/** fetchStorageUsage 的 data：存储用量（useStorageUsage 读取 usedStorage/storageLimit/unlimited）。 */
+export interface StorageUsageResult {
+  usedStorage?: number
+  storageLimit?: number
+  unlimited?: boolean
+}
+
+/** createFolder 的 data：新建文件夹结果（normalizeFolderCreateResult 读取 originalName/finalName/fileType/id/parentId）。 */
+export interface CreateFolderResult {
+  originalName?: string
+  finalName?: string
+  fileType?: number
+  id?: string | number
+  parentId?: string | number
+}
+
+/** renameFile 的 data：重命名结果。调用方未消费返回值，结构未知，留空收敛 unknown。 */
+export interface RenameFileResult {}
+
+/** logicalDeleteFiles 的 data：逻辑删除结果。调用方未消费返回值，结构未知，留空收敛 unknown。 */
+export interface LogicalDeleteResult {}
+
+/** restoreFiles 的 data：从回收站恢复结果。调用方未消费返回值，结构未知，留空收敛 unknown。 */
+export interface RestoreFilesResult {}
+
+/** deleteFilesForever 的 data：彻底删除结果。调用方未消费返回值，结构未知，留空收敛 unknown。 */
+export interface DeleteForeverResult {}
+
 /** fetchFileList 的排序与空间参数。 */
 export interface FileListSortOptions {
   sortField?: string
@@ -124,7 +201,7 @@ export const fetchFileList = async (
   sortOptions: FileListSortOptions = {},
 ): Promise<ApiResult<ApiFileItem[]>> => {
   const { page, pageSize, signal, ...restSortOptions } = sortOptions
-  const response = await request.get('/api/files', {
+  const response = await request.get<Record<string, unknown>>('/api/files', {
     params: {
       ...buildFileListParams(parentId, restSortOptions),
       ...(page ? { page } : {}),
@@ -135,7 +212,8 @@ export const fetchFileList = async (
 
   return {
     ...response,
-    data: mapSpaceFileEntries(response?.data?.list ?? response?.data) as ApiFileItem[],
+    // 后端可能返回 { list: [...] } 或直接的列表，原始 data 用宽松类型承载 map* 映射
+    data: mapSpaceFileEntries((response?.data?.list ?? response?.data) as unknown[]) as ApiFileItem[],
   }
 }
 
@@ -146,7 +224,7 @@ export const searchFiles = async (
   options: SearchOptions = {},
 ): Promise<ApiResult<PagedFileResult>> => {
   const { signal, ...paramsOptions } = options
-  const response = await request.get('/api/files/search', {
+  const response = await request.get<Record<string, unknown>>('/api/files/search', {
     params: {
       keyword,
       page,
@@ -165,11 +243,11 @@ export const searchFiles = async (
 }
 
 export const getFileDownloadUrl = (fileId: string | number): Promise<ApiResult<DownloadUrlResult>> => {
-  return request.get(`/api/files/${fileId}/download-url`)
+  return request.get<DownloadUrlResult>(`/api/files/${fileId}/download-url`)
 }
 
-export const getUploadSign = (originalName: string): Promise<ApiResult<unknown>> => {
-  return request.post('/api/files/uploads', null, {
+export const getUploadSign = (originalName: string): Promise<ApiResult<UploadSignResult>> => {
+  return request.post<UploadSignResult>('/api/files/uploads', null, {
     params: { originalName },
     timeout: UPLOAD_REQUEST_TIMEOUT,
   })
@@ -182,7 +260,7 @@ export const directUpload = (
   teamId?: string | number,
   spaceType?: number | string,
   projectId?: string | number,
-): Promise<ApiResult<unknown>> => {
+): Promise<ApiResult<DirectUploadResult>> => {
   const formData = new FormData()
   formData.append('file', file)
   if (parentId != null) formData.append('parentId', String(parentId))
@@ -190,7 +268,7 @@ export const directUpload = (
   if (spaceType != null) formData.append('spaceType', String(spaceType))
   if (projectId != null) formData.append('projectId', String(projectId))
 
-  return request.post('/api/files/uploads/direct', formData, {
+  return request.post<DirectUploadResult>('/api/files/uploads/direct', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
     timeout: UPLOAD_REQUEST_TIMEOUT,
   })
@@ -216,8 +294,8 @@ export const confirmUpload = ({
   projectId?: string | number
   batchId?: string | number
   clientRequestId?: string
-}): Promise<ApiResult<unknown>> => {
-  return request.post(
+}): Promise<ApiResult<ConfirmUploadResult>> => {
+  return request.post<ConfirmUploadResult>(
     '/api/files/uploads/confirmations',
     {
       ...(teamId ? { teamId } : {}),
@@ -248,8 +326,8 @@ export const fetchStorageUsage = ({
   spaceType?: number | string
   teamId?: string | number
   projectId?: string | number
-} = {}): Promise<ApiResult<unknown>> => {
-  return request.get('/api/storage/usage', {
+} = {}): Promise<ApiResult<StorageUsageResult>> => {
+  return request.get<StorageUsageResult>('/api/storage/usage', {
     params: {
       ...(spaceType ? { spaceType } : {}),
       ...(teamId ? { teamId } : {}),
@@ -270,8 +348,8 @@ export const createFolder = ({
   teamId?: string | number
   spaceType?: number | string
   projectId?: string | number
-}): Promise<ApiResult<unknown>> => {
-  return request.post('/api/folders', {
+}): Promise<ApiResult<CreateFolderResult>> => {
+  return request.post<CreateFolderResult>('/api/folders', {
     folderName,
     parentId,
     ...(teamId ? { teamId } : {}),
@@ -286,8 +364,8 @@ export const renameFile = ({
 }: {
   fileId: string | number
   newName: string
-}): Promise<ApiResult<unknown>> => {
-  return request.patch(`/api/files/${fileId}`, {
+}): Promise<ApiResult<RenameFileResult>> => {
+  return request.patch<RenameFileResult>(`/api/files/${fileId}`, {
     fileId,
     newName,
   })
@@ -306,7 +384,7 @@ export const moveFiles = async ({
   spaceType?: number | string
   projectId?: string | number
 }): Promise<ApiResult<MoveCopyResult>> => {
-  const response = await request.patch('/api/files', {
+  const response = await request.patch<MoveCopyResult>('/api/files', {
     fileIds,
     targetParentId,
     ...(teamId ? { teamId } : {}),
@@ -330,7 +408,7 @@ export const copyFiles = async ({
   spaceType?: number | string
   projectId?: string | number
 }): Promise<ApiResult<MoveCopyResult>> => {
-  const response = await request.post('/api/files/copies', {
+  const response = await request.post<MoveCopyResult>('/api/files/copies', {
     fileIds,
     targetParentId,
     ...(teamId ? { teamId } : {}),
@@ -341,8 +419,8 @@ export const copyFiles = async ({
   return response
 }
 
-export const logicalDeleteFiles = (fileIds: Array<string | number>): Promise<ApiResult<unknown>> => {
-  return request.patch('/api/files/trash', { fileIds })
+export const logicalDeleteFiles = (fileIds: Array<string | number>): Promise<ApiResult<LogicalDeleteResult>> => {
+  return request.patch<LogicalDeleteResult>('/api/files/trash', { fileIds })
 }
 
 export const fetchRecycleList = async (
@@ -362,14 +440,14 @@ export const fetchRecycleList = async (
 
   return {
     ...response,
-    data: mapRecycleFileEntries(response?.data) as RecycleFileItem[],
+    data: mapRecycleFileEntries(response.data as unknown[]) as RecycleFileItem[],
   }
 }
 
-export const restoreFiles = (fileIds: Array<string | number>): Promise<ApiResult<unknown>> => {
-  return request.delete('/api/files/trash', { data: { fileIds } })
+export const restoreFiles = (fileIds: Array<string | number>): Promise<ApiResult<RestoreFilesResult>> => {
+  return request.delete<RestoreFilesResult>('/api/files/trash', { data: { fileIds } })
 }
 
-export const deleteFilesForever = (fileIds: Array<string | number>): Promise<ApiResult<unknown>> => {
-  return request.delete('/api/files', { data: { fileIds } })
+export const deleteFilesForever = (fileIds: Array<string | number>): Promise<ApiResult<DeleteForeverResult>> => {
+  return request.delete<DeleteForeverResult>('/api/files', { data: { fileIds } })
 }
