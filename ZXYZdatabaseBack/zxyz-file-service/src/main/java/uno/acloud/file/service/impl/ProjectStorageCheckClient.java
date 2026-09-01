@@ -1,5 +1,6 @@
 package uno.acloud.file.service.impl;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -18,6 +19,10 @@ import java.util.Map;
  * <p>继承 {@link AbstractServiceClient}，获得 Resilience4j 重试+熔断保护。</p>
  *
  * <p>错误处理契约：配额不足(409) → BAD_REQUEST；其他异常 → SYSTEM_ERROR。</p>
+ *
+ * <p>P1-B2：本接口的 {@code data} 字段是「有效存储上限字节数（NULL=不限制）」，
+ * 由调用方埋入配额台账（usage_ledger.storage_limit），供写入同事务的原子扣减守卫使用。
+ * 因此本方法把解析出的上限返回，不再丢弃。</p>
  */
 @Slf4j
 @Component
@@ -43,9 +48,10 @@ public class ProjectStorageCheckClient extends AbstractServiceClient {
      * @param spaceType  空间类型
      * @param projectId  项目 ID（非项目空间为 null）
      * @param totalSize  本次操作所需总字节数
+     * @return 有效存储上限字节数；NULL 表示不限制（未配置或解析失败）
      * @throws BusinessException 配额不足或服务不可用时抛出
      */
-    public void checkQuota(Long userId, Long teamId, Integer spaceType, Long projectId, long totalSize) {
+    public Long checkQuota(Long userId, Long teamId, Integer spaceType, Long projectId, long totalSize) {
         Map<String, Object> body = new HashMap<>();
         body.put("userId", userId);
         body.put("teamId", teamId);
@@ -53,7 +59,8 @@ public class ProjectStorageCheckClient extends AbstractServiceClient {
         body.put("projectId", projectId);
         body.put("totalSize", totalSize);
         try {
-            postJson("/api/internal/storage/check-quota", body);
+            JsonNode response = postJson("/api/internal/storage/check-quota", body);
+            return parseStorageLimit(response);
         } catch (RestClientResponseException e) {
             if (e.getStatusCode().value() == 409) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "存储空间不足");
@@ -65,6 +72,28 @@ public class ProjectStorageCheckClient extends AbstractServiceClient {
         } catch (Exception e) {
             log.error("调用存储配额校验失败", e);
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "存储配额校验服务不可用，请稍后重试");
+        }
+    }
+
+    /**
+     * 解析 check-quota 响应体的 {@code data} 字段（有效存储上限字节数）。
+     * <p>解析失败（字段缺失/类型异常）返回 null 而不抛异常 —— 与上传路径
+     * FileUploadService.upsertLedgerLimit 的容错口径一致：limit 为 NULL 时台账守卫退化为
+     * 「不限制」，由小时级对账任务（UsageLedgerReconcileTask）兜底，不阻断业务操作。</p>
+     */
+    private Long parseStorageLimit(JsonNode response) {
+        if (response == null) {
+            return null;
+        }
+        try {
+            JsonNode data = response.path("data");
+            if (data.isMissingNode() || data.isNull() || !data.canConvertToLong()) {
+                return null;
+            }
+            return data.asLong();
+        } catch (Exception ex) {
+            log.warn("解析存储配额上限失败，本次按不限制处理", ex);
+            return null;
         }
     }
 }

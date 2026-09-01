@@ -10,7 +10,9 @@ import uno.acloud.exception.BusinessException;
 import uno.acloud.file.infrastructure.entity.FileItem;
 import uno.acloud.file.infrastructure.entity.FileNode;
 import uno.acloud.file.infrastructure.entity.Folder;
+import uno.acloud.file.infrastructure.entity.UsageLedger;
 import uno.acloud.file.infrastructure.mapper.FileMapper;
+import uno.acloud.file.infrastructure.mapper.UsageLedgerMapper;
 import uno.acloud.file.vo.BatchOperationDetailVO;
 
 import java.time.LocalDateTime;
@@ -39,6 +41,7 @@ public class FileCopyService {
     private final TransactionTemplate transactionTemplate;
     private final ConfigGetter configGetter;
     private final ProjectStorageCheckClient projectStorageCheckClient;
+    private final UsageLedgerMapper usageLedgerMapper;
     private final int maxCopyNodesPerTransaction;
 
     public FileCopyService(FileMapper fileMapper,
@@ -49,7 +52,8 @@ public class FileCopyService {
                            FileOperationHelper helper,
                            TransactionTemplate transactionTemplate,
                            ConfigGetter configGetter,
-                           ProjectStorageCheckClient projectStorageCheckClient) {
+                           ProjectStorageCheckClient projectStorageCheckClient,
+                           UsageLedgerMapper usageLedgerMapper) {
         this.fileMapper = fileMapper;
         this.fileDomainValidator = fileDomainValidator;
         this.filePathResolver = filePathResolver;
@@ -59,6 +63,7 @@ public class FileCopyService {
         this.transactionTemplate = transactionTemplate;
         this.configGetter = configGetter;
         this.projectStorageCheckClient = projectStorageCheckClient;
+        this.usageLedgerMapper = usageLedgerMapper;
         this.maxCopyNodesPerTransaction = configGetter.getInt("app.file.copy.max-nodes-per-tx", FALLBACK_MAX_COPY_NODES_PER_TRANSACTION);
     }
 
@@ -106,8 +111,12 @@ public class FileCopyService {
                 totalBytesToCopy += fileItem.getFileSize();
             }
         }
+        // HTTP 预检仅作快速失败（避免明知超限还开大事务）；最终裁决交给批次事务内的 incrementWhenUnderLimit。
+        // 同时把预检解析出的有效存储上限埋入台账，供同事务原子扣减守卫使用（P1-B2）。
         if (totalBytesToCopy > 0) {
-            projectStorageCheckClient.checkQuota(userId, target.teamId(), target.spaceType(), target.projectId(), totalBytesToCopy);
+            Long storageLimit = projectStorageCheckClient.checkQuota(
+                    userId, target.teamId(), target.spaceType(), target.projectId(), totalBytesToCopy);
+            upsertLedgerLimit(scopeKeyOf(target, userId), storageLimit);
         }
 
         // Guard: reject excessively large copy operations to avoid long-running transactions
@@ -129,26 +138,92 @@ public class FileCopyService {
                                                             Long userId) {
         FileOperationHelper.CopyTargetContext rootTargetContext = new FileOperationHelper.CopyTargetContext(targetParentId, target);
         List<BatchOperationDetailVO.ItemDetail> details = new ArrayList<>();
+        String scopeKey = scopeKeyOf(target, userId);
 
         // 注意：分批独立事务，后续批次失败时前面批次已提交（部分成功语义）。
         // 调用方应通过返回的 BatchOperationDetailVO 中的 status 字段判断每个节点的处理结果。
+        // 因此配额扣减必须按批次落在各自事务内（不能在循环外一次性扣总量），否则某批回滚会造成台账泄漏。
         List<List<FileNode>> batches = partition(topLevelNodes, 30);
         for (List<FileNode> batch : batches) {
+            // 记录本批开始前已累积的明细条数：批次回滚时可用它丢弃本批明细。
+            int detailsMark = details.size();
             try {
                 transactionTemplate.executeWithoutResult(status -> {
+                    ByteAccumulator batchBytes = new ByteAccumulator();
                     for (FileNode fileNode : batch) {
                         fileDomainValidator.validateFolderTarget(fileNode, targetFolder);
-                        String resolvedName = copySingleNode(fileNode, rootTargetContext, userId, childrenMap);
+                        String resolvedName = copySingleNode(fileNode, rootTargetContext, userId, childrenMap, batchBytes);
                         details.add(helper.buildDetail(fileNode, FileOperationHelper.ACTION_COPIED, resolvedName,
                                 helper.isRenamed(fileNode, resolvedName),
                                 FileOperationHelper.STATUS_SUCCESS, ErrorCode.SUCCESS, FileOperationHelper.STATUS_SUCCESS));
                     }
+                    // 事务提交前扣减：超限抛 BusinessException 回滚本批（含已插入的 file_node 行），
+                    // 由外层 catch 捕获并携带批次明细。
+                    chargeQuotaInTransaction(scopeKey, batchBytes.value());
                 });
-            } catch (BusinessException e) {
-                throw helper.withBatchData(e, details, targetParentId);
+            } catch (RuntimeException e) {
+                // 本批事务已整体回滚，其明细条目必须一并丢弃，否则返回值会把未落库的节点报成"成功"。
+                details.subList(detailsMark, details.size()).clear();
+                if (e instanceof BusinessException businessException) {
+                    throw helper.withBatchData(businessException, details, targetParentId);
+                }
+                throw e;
             }
         }
         return helper.buildBatchResult(details, targetParentId);
+    }
+
+    /**
+     * 批次事务内的原子配额扣减：与已落库的 file_node 行同生共死。
+     * <p>先 ensure 兜底行缺失（配额服务未配置时 limit 为 NULL=不限制，不会覆盖已配置上限），
+     * 再用条件 UPDATE 做"检查+扣减"原子守卫；受影响行数非 1 即超限或作用域缺失，抛异常回滚本批。
+     * 错误码与语义对齐上传路径 FileUploadPersistenceManager.saveFileItem。</p>
+     */
+    private void chargeQuotaInTransaction(String scopeKey, long batchBytes) {
+        if (batchBytes <= 0) {
+            return;
+        }
+        usageLedgerMapper.ensureScopeAndLimit(scopeKey, null);
+        int affected = usageLedgerMapper.incrementWhenUnderLimit(scopeKey, batchBytes);
+        if (affected != 1) {
+            throw new BusinessException(ErrorCode.FILE_STATE_INVALID, "复制超过当前空间配额，请清理后重试");
+        }
+    }
+
+    /**
+     * 把 HTTP 预检解析出的有效存储上限埋入配额台账，供批次事务内的原子扣减守卫使用。
+     * 写入失败不阻断复制（limit 为 NULL 时守卫退化为"不限制"，由小时级对账任务校正）。
+     */
+    private void upsertLedgerLimit(String scopeKey, Long storageLimit) {
+        try {
+            usageLedgerMapper.ensureScopeAndLimit(scopeKey, storageLimit);
+        } catch (Exception ex) {
+            log.warn("写入配额台账上限失败，本次按不限制处理: scopeKey={}", scopeKey, ex);
+        }
+    }
+
+    /**
+     * 与 file_node.scope_key 生成列、克隆行写入字段（uploadUserId/teamId/spaceType/projectId）
+     * 严格对应的作用域键，对账任务按同一口径聚合 SUM(file_size)。
+     */
+    private static String scopeKeyOf(SpaceTarget target, Long userId) {
+        return UsageLedger.scopeKeyOf(target.spaceType(), target.teamId(), target.projectId(), userId);
+    }
+
+    /** 批次内实际写入字节数的累加器（Folder 计 0，仅 FileItem 的 fileSize 计入）。 */
+    private static final class ByteAccumulator {
+
+        private long bytes;
+
+        void add(FileItem copied) {
+            if (copied != null && copied.getFileSize() != null) {
+                bytes += copied.getFileSize();
+            }
+        }
+
+        long value() {
+            return bytes;
+        }
     }
 
     private static <T> List<List<T>> partition(List<T> list, int batchSize) {
@@ -159,16 +234,20 @@ public class FileCopyService {
         return partitions;
     }
 
-    private String copySingleNode(FileNode source, FileOperationHelper.CopyTargetContext targetContext, Long userId, Map<Long, List<FileNode>> childrenMap) {
+    private String copySingleNode(FileNode source,
+                                   FileOperationHelper.CopyTargetContext targetContext,
+                                   Long userId,
+                                   Map<Long, List<FileNode>> childrenMap,
+                                   ByteAccumulator batchBytes) {
         LocalDateTime now = LocalDateTime.now();
         String resolvedName = helper.resolveCopyName(source, targetContext, userId);
         if (source instanceof FileItem fileItem) {
-            cloneFileItem(fileItem, targetContext.parentId(), targetContext.target(), resolvedName, userId, now);
+            batchBytes.add(cloneFileItem(fileItem, targetContext.parentId(), targetContext.target(), resolvedName, userId, now));
             return resolvedName;
         }
 
         Folder copiedRoot = cloneFolder((Folder) source, targetContext.parentId(), targetContext.target(), resolvedName, userId, now);
-        copyChildrenRecursively(source.getId(), new FileOperationHelper.CopyTargetContext(copiedRoot.getId(), targetContext.target()), userId, now, childrenMap);
+        copyChildrenRecursively(source.getId(), new FileOperationHelper.CopyTargetContext(copiedRoot.getId(), targetContext.target()), userId, now, childrenMap, batchBytes);
         return resolvedName;
     }
 
@@ -231,11 +310,11 @@ public class FileCopyService {
         return clone;
     }
 
-    private void copyChildrenRecursively(Long sourceParentId, FileOperationHelper.CopyTargetContext targetContext, Long userId, LocalDateTime now, Map<Long, List<FileNode>> childrenMap) {
+    private void copyChildrenRecursively(Long sourceParentId, FileOperationHelper.CopyTargetContext targetContext, Long userId, LocalDateTime now, Map<Long, List<FileNode>> childrenMap, ByteAccumulator batchBytes) {
         helper.walkDescendantsPreloaded(sourceParentId, childrenMap, targetContext, (child, currentTargetContext) -> {
             String resolvedName = helper.resolveCopyName(child, currentTargetContext, userId);
             if (child instanceof FileItem fileItem) {
-                cloneFileItem(fileItem, currentTargetContext.parentId(), currentTargetContext.target(), resolvedName, userId, now);
+                batchBytes.add(cloneFileItem(fileItem, currentTargetContext.parentId(), currentTargetContext.target(), resolvedName, userId, now));
                 return currentTargetContext;
             }
             Folder copiedChild = cloneFolder((Folder) child, currentTargetContext.parentId(), currentTargetContext.target(), resolvedName, userId, now);

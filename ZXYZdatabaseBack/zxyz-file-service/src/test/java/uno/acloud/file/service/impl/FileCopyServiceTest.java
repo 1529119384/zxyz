@@ -15,7 +15,7 @@ import uno.acloud.file.infrastructure.entity.FileItem;
 import uno.acloud.file.infrastructure.entity.FileNode;
 import uno.acloud.file.infrastructure.entity.Folder;
 import uno.acloud.file.infrastructure.mapper.FileMapper;
-import uno.acloud.file.service.impl.ProjectStorageCheckClient;
+import uno.acloud.file.infrastructure.mapper.UsageLedgerMapper;
 import uno.acloud.file.vo.BatchOperationDetailVO;
 
 import java.util.ArrayList;
@@ -56,6 +56,9 @@ class FileCopyServiceTest {
     @Mock
     private ProjectStorageCheckClient projectStorageCheckClient;
 
+    @Mock
+    private UsageLedgerMapper usageLedgerMapper;
+
     private FileCopyService fileCopyService;
 
     @BeforeEach
@@ -64,13 +67,15 @@ class FileCopyServiceTest {
         fileCopyService = new FileCopyService(
                 fileMapper, fileDomainValidator, filePathResolver,
                 fileAccessGuardService, fileObjectReferenceService, helper, transactionTemplate, configGetter,
-                projectStorageCheckClient);
+                projectStorageCheckClient, usageLedgerMapper);
         // Mock TransactionTemplate to execute lambdas directly
         lenient().doAnswer(invocation -> {
             java.util.function.Consumer<?> callback = invocation.getArgument(0);
             callback.accept(null);
             return null;
         }).when(transactionTemplate).executeWithoutResult(any());
+        // 默认配额充足；个别用例可覆盖为 0 模拟超限
+        lenient().when(usageLedgerMapper.incrementWhenUnderLimit(anyString(), anyLong())).thenReturn(1);
     }
 
     // ==================== copyFiles — single file success ====================
