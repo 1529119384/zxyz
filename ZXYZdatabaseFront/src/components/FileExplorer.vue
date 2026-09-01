@@ -126,15 +126,12 @@
     />
 
     <FileContextMenu
+      v-bind="contextMenuBindings"
       :visible="contextMenu.visible"
       :position="contextMenu.position"
-      mode="space"
       :context-type="contextMenu.contextType"
       :selected-items="contextMenu.contextType === 'blank' ? [] : selectedRows"
       :target-item="contextMenu.targetItem"
-      :can-write="explorerCanWrite"
-      :virtual-directory="virtualDirectoryType"
-      :can-manage-projects="explorerCanManageProjects"
       @action="handleContextAction"
       @close="closeContextMenu"
     />
@@ -147,14 +144,11 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import FileContextMenu from '@/components/FileContextMenu.vue'
-import { useDragSelection } from '@/composables/useDragSelection'
 import { useProvidedSpaceContext } from '@/composables/useCurrentSpaceContext'
-import { useFileContextMenu } from '@/composables/useFileContextMenu'
-import { useFileExplorerHotkeys } from '@/composables/useFileExplorerHotkeys'
+import { useExplorerTableInteractions } from '@/composables/useExplorerTableInteractions'
 import { useFileNavigation } from '@/composables/useFileNavigation'
 import { useFileSearch } from '@/composables/useFileSearch'
 import { getFileIcon } from '@/models/file'
-import { useSelectionManager } from '@/composables/useSelectionManager'
 import { useSpaceFileList } from '@/composables/useSpaceFileList'
 import { useSortState } from '@/composables/useSortState'
 import { useCurrentIdStore } from '@/store/currentId'
@@ -193,34 +187,11 @@ const virtualDirectoryType = computed(() => (isProjectVirtualDirectory.value ? '
 const tableRef = ref(null)
 const tableWrapperRef = ref(null)
 const filePageRef = ref(null)
-let closeContextMenu = () => {}
 const { sortState, getSortLabel, isColumnSorted, getSortIndicator, getAriaSort, toggleSort } =
   useSortState({
     canSort: () => !isSearchMode.value,
   })
 const currentParentId = computed(() => currentIdStore.currentId)
-
-function isCheckboxClick(target) {
-  return Boolean(target.closest('.el-checkbox'))
-}
-
-const selectionPointerState = ref({
-  shiftKey: false,
-  ctrlKey: false,
-  metaKey: false,
-  anchorId: null,
-})
-
-function getSelectionModifiers() {
-  const currentState = selectionPointerState.value
-  selectionPointerState.value = {
-    shiftKey: false,
-    ctrlKey: false,
-    metaKey: false,
-    anchorId: null,
-  }
-  return currentState
-}
 
 const spaceFileList = useSpaceFileList({
   currentId: currentParentId,
@@ -264,27 +235,6 @@ async function forceRefresh() {
 }
 
 const {
-  selectedIds,
-  selectedRows,
-  selectionAnchorId,
-  setSelectedIds,
-  clearSelection: clearSelectionState,
-  selectAll,
-  handleRowClick: handleSelectionRowClick,
-  handleCheckboxSelect,
-  handleCheckboxSelectAll,
-  pruneSelection,
-} = useSelectionManager({
-  list: filteredList,
-  filteredList,
-  tableRef,
-  isCheckboxClick,
-  getSelectionModifiers,
-  onSelectionChange: (payload) => emit('selection-change', payload),
-  onBeforeSelect: () => closeContextMenu(),
-})
-
-const {
   currentPath,
   crumbArr,
   crumbPath: buildCrumbPath,
@@ -299,57 +249,40 @@ const {
   onOpenFolder: (payload) => emit('open-folder', payload),
 })
 
-const { dragState, selectionBoxStyle, getRowFromTarget, shouldSuppressRowClick } = useDragSelection(
-  {
-    dragContainerRef: filePageRef,
-    tableWrapperRef,
-    filteredList,
-    isCheckboxClick,
-    selectedIds,
-    setSelectedIds,
-    closeContextMenu: () => closeContextMenu(),
-  },
-)
-
-const fileContextMenu = useFileContextMenu({
-  containerRef: filePageRef,
+// 复用表格通用交互（选择 / 框选 / 右键菜单 / 快捷键 / context-action），差异通过参数注入。
+const {
   selectedRows,
-  selectedIds,
-  setSelectedIds,
-  getRowFromTarget,
+  contextMenu,
+  handlePageContextMenu,
+  closeContextMenu,
+  handleContextAction,
+  dragState,
+  selectionBoxStyle,
   shouldSuppressRowClick,
+  handleRowClick,
+  handleCheckboxSelect,
+  handleCheckboxSelectAll,
+  captureSelectionPointerState,
+  clearSelection,
+  pruneSelection,
+  contextMenuBindings,
+} = useExplorerTableInteractions({
+  tableRef,
+  tableWrapperRef,
+  filePageRef,
+  filteredList,
+  isRecycleBin: false,
+  emit,
+  getContextMenuProps: () => ({
+    canWrite: explorerCanWrite.value,
+    virtualDirectory: virtualDirectoryType.value,
+    canManageProjects: explorerCanManageProjects.value,
+  }),
+  buildContextExtra: ({ targetItem }) => ({
+    currentPath: currentPath.value,
+    targetPath: targetItem?.type === 0 ? buildFolderPath(targetItem) : currentPath.value,
+  }),
 })
-const contextMenu = fileContextMenu.contextMenu
-const handlePageContextMenu = fileContextMenu.handlePageContextMenu
-closeContextMenu = fileContextMenu.closeContextMenu
-
-useFileExplorerHotkeys({
-  selectAll,
-  clearSelection: clearSelectionState,
-  closeContextMenu: () => closeContextMenu(),
-})
-
-function handleRowClick(row, column, event) {
-  if (shouldSuppressRowClick()) {
-    return
-  }
-
-  handleSelectionRowClick(row, column, event)
-}
-
-function captureSelectionPointerState(event) {
-  if (!isCheckboxClick(event.target)) {
-    return
-  }
-
-  // 复选框组件事件拿不到原始鼠标修饰键，先在捕获阶段缓存下来供选择管理器消费。
-  selectionPointerState.value = {
-    shiftKey: event.shiftKey,
-    ctrlKey: event.ctrlKey,
-    metaKey: event.metaKey,
-    anchorId: selectionAnchorId.value,
-  }
-}
 
 function crumbPath(idx) {
   return buildCrumbPath(idx)
@@ -451,18 +384,6 @@ function handleRowDblClick(row) {
   enterFolder(row)
 }
 
-function handleContextAction(payload) {
-  const targetItem = payload.targetItem || selectedRows.value[0] || null
-  emit('context-action', {
-    ...payload,
-    selectedItems: selectedRows.value,
-    targetItem,
-    anchorId: selectionAnchorId.value,
-    currentPath: currentPath.value,
-    targetPath: targetItem?.type === 0 ? buildFolderPath(targetItem) : currentPath.value,
-  })
-}
-
 defineExpose({
   refresh,
   forceRefresh,
@@ -474,7 +395,7 @@ defineExpose({
     return selectedRows.value
   },
   clearSelection() {
-    clearSelectionState()
+    clearSelection()
   },
 })
 </script>

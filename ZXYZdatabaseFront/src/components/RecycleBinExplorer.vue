@@ -56,13 +56,12 @@
     />
 
     <FileContextMenu
+      v-bind="contextMenuBindings"
       :visible="contextMenu.visible"
       :position="contextMenu.position"
-      mode="recycle"
       :context-type="contextMenu.contextType"
       :selected-items="contextMenu.contextType === 'blank' ? [] : selectedRows"
       :target-item="contextMenu.targetItem"
-      :can-write="canWrite"
       @action="handleContextAction"
       @close="closeContextMenu"
     />
@@ -73,11 +72,8 @@
 import { computed, ref, watch } from 'vue'
 
 import FileContextMenu from '@/components/FileContextMenu.vue'
-import { useDragSelection } from '@/composables/useDragSelection'
-import { useFileContextMenu } from '@/composables/useFileContextMenu'
-import { useFileExplorerHotkeys } from '@/composables/useFileExplorerHotkeys'
+import { useExplorerTableInteractions } from '@/composables/useExplorerTableInteractions'
 import { useRecycleBinList } from '@/composables/useRecycleBinList'
-import { useSelectionManager } from '@/composables/useSelectionManager'
 import { getFileIcon } from '@/models/file'
 import { isHandledByGlobalError } from '@/utils/error'
 import { fmtTime, formatSize } from '@/utils/format'
@@ -106,33 +102,10 @@ const emit = defineEmits(['selection-change', 'context-action', 'row-action'])
 const tableRef = ref(null)
 const tableWrapperRef = ref(null)
 const filePageRef = ref(null)
-let closeContextMenu = () => {}
 
 const currentTeamId = computed(() => props.teamId)
 const currentSpaceType = computed(() => props.spaceType)
 const currentProjectId = computed(() => props.projectId)
-
-function isCheckboxClick(target) {
-  return Boolean(target.closest('.el-checkbox'))
-}
-
-const selectionPointerState = ref({
-  shiftKey: false,
-  ctrlKey: false,
-  metaKey: false,
-  anchorId: null,
-})
-
-function getSelectionModifiers() {
-  const currentState = selectionPointerState.value
-  selectionPointerState.value = {
-    shiftKey: false,
-    ctrlKey: false,
-    metaKey: false,
-    anchorId: null,
-  }
-  return currentState
-}
 
 const recycleBinList = useRecycleBinList({
   teamId: currentTeamId,
@@ -149,78 +122,37 @@ async function refresh() {
   await recycleBinList.refresh()
 }
 
+// 复用表格通用交互（选择 / 框选 / 右键菜单 / 快捷键 / context-action），差异通过参数注入。
 const {
-  selectedIds,
   selectedRows,
-  selectionAnchorId,
-  setSelectedIds,
-  clearSelection: clearSelectionState,
-  selectAll,
-  handleRowClick: handleSelectionRowClick,
+  contextMenu,
+  handlePageContextMenu,
+  closeContextMenu,
+  handleContextAction,
+  dragState,
+  selectionBoxStyle,
+  handleRowClick,
   handleCheckboxSelect,
   handleCheckboxSelectAll,
+  captureSelectionPointerState,
+  clearSelection,
   pruneSelection,
-} = useSelectionManager({
-  list: filteredList,
-  filteredList,
+  contextMenuBindings,
+} = useExplorerTableInteractions({
   tableRef,
-  isCheckboxClick,
-  getSelectionModifiers,
-  onSelectionChange: (payload) => emit('selection-change', payload),
-  onBeforeSelect: () => closeContextMenu(),
+  tableWrapperRef,
+  filePageRef,
+  filteredList,
+  isRecycleBin: true,
+  emit,
+  getContextMenuProps: () => ({
+    canWrite: props.canWrite,
+  }),
+  buildContextExtra: () => ({
+    currentPath: '',
+    targetPath: '',
+  }),
 })
-
-const { dragState, selectionBoxStyle, getRowFromTarget, shouldSuppressRowClick } = useDragSelection(
-  {
-    dragContainerRef: filePageRef,
-    tableWrapperRef,
-    filteredList,
-    isCheckboxClick,
-    selectedIds,
-    setSelectedIds,
-    closeContextMenu: () => closeContextMenu(),
-  },
-)
-
-const fileContextMenu = useFileContextMenu({
-  containerRef: filePageRef,
-  selectedRows,
-  selectedIds,
-  setSelectedIds,
-  getRowFromTarget,
-  shouldSuppressRowClick,
-})
-const contextMenu = fileContextMenu.contextMenu
-const handlePageContextMenu = fileContextMenu.handlePageContextMenu
-closeContextMenu = fileContextMenu.closeContextMenu
-
-useFileExplorerHotkeys({
-  selectAll,
-  clearSelection: clearSelectionState,
-  closeContextMenu: () => closeContextMenu(),
-})
-
-function handleRowClick(row, column, event) {
-  if (shouldSuppressRowClick()) {
-    return
-  }
-
-  handleSelectionRowClick(row, column, event)
-}
-
-function captureSelectionPointerState(event) {
-  if (!isCheckboxClick(event.target)) {
-    return
-  }
-
-  // 复选框组件事件拿不到原始鼠标修饰键，先在捕获阶段缓存下来供选择管理器消费。
-  selectionPointerState.value = {
-    shiftKey: event.shiftKey,
-    ctrlKey: event.ctrlKey,
-    metaKey: event.metaKey,
-    anchorId: selectionAnchorId.value,
-  }
-}
 
 async function runRefreshSafely() {
   try {
@@ -247,18 +179,6 @@ watch(filteredList, async (rows) => {
   await pruneSelection(rows)
 })
 
-function handleContextAction(payload) {
-  const targetItem = payload.targetItem || selectedRows.value[0] || null
-  emit('context-action', {
-    ...payload,
-    selectedItems: selectedRows.value,
-    targetItem,
-    anchorId: selectionAnchorId.value,
-    currentPath: '',
-    targetPath: '',
-  })
-}
-
 defineExpose({
   refresh,
   getCurrentList() {
@@ -268,7 +188,7 @@ defineExpose({
     return selectedRows.value
   },
   clearSelection() {
-    clearSelectionState()
+    clearSelection()
   },
 })
 </script>
