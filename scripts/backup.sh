@@ -23,6 +23,17 @@
 
 set -euo pipefail
 
+# --- 参数解析 ---
+# 为什么：CI 预部署只需快速备 MySQL（状态核心），无需备 redis/rabbitmq 及异地推送；
+# 无参默认仍是全量，保持 crontab 现有行为不变（向后兼容）。
+MYSQL_ONLY=false
+for a in "$@"; do
+  case "$a" in
+    --mysql-only) MYSQL_ONLY=true ;;
+    *) echo "Unknown arg: $a" >&2; exit 1 ;;
+  esac
+done
+
 # 加载环境变量
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -59,6 +70,8 @@ fi
 # LASTSAVE 可能与变更前相等（同秒）。因此"前移判定"采用严格随大——只要某次
 # 读到的 LASTSAVE 已较基线前移即可判定完成；同秒未前移则继续轮询，靠 60s 总
 # 上限兜底超时（不因单次同秒而误判失败）。
+# --mysql-only 时跳过：预部署只需 MySQL 状态核心，redis 非必须且耗时。
+if [ "$MYSQL_ONLY" = false ]; then
 echo "备份 Redis..."
 PREV_SAVE=$(docker exec zxyz-redis redis-cli -a "$REDIS_PASSWORD" LASTSAVE) || { echo "ERROR: Redis LASTSAVE 失败" >&2; FAILED=1; exit 1; }
 docker exec zxyz-redis redis-cli -a "$REDIS_PASSWORD" BGSAVE >/dev/null
@@ -80,8 +93,11 @@ if [ "${BACKUP_READY:-0}" -ne 1 ]; then
 fi
 
 docker cp zxyz-redis:/data/dump.rdb "$BACKUP_DIR/redis_$DATE.rdb"
+fi
 
 # RabbitMQ 队列/交换器/绑定拓扑备份
+# --mysql-only 时跳过：预部署只需 MySQL 状态核心，拓扑非必须。
+if [ "$MYSQL_ONLY" = false ]; then
 echo "备份 RabbitMQ definitions..."
 if docker ps --format '{{.Names}}' | grep -q '^zxyz-rabbitmq$'; then
   if docker exec zxyz-rabbitmq rabbitmqadmin export \
@@ -98,11 +114,22 @@ if docker ps --format '{{.Names}}' | grep -q '^zxyz-rabbitmq$'; then
 else
   echo "WARN: zxyz-rabbitmq 容器未运行，跳过 RabbitMQ 拓扑备份" >&2
 fi
+fi
 
 # 备份完整性校验
 echo "校验备份文件..."
 MYSQL_SIZE=$(wc -c < "$BACKUP_DIR/mysql_$DATE.sql.gz")
+
+# --mysql-only 时只校验 MySQL；redis/rabbitmq 产物不存在，跳过其校验与汇总
+if [ "$MYSQL_ONLY" = false ]; then
 REDIS_SIZE=$(wc -c < "$BACKUP_DIR/redis_$DATE.rdb")
+
+if [ "$REDIS_SIZE" -lt 1024 ]; then
+  echo "ERROR: Redis 备份文件过小 ($REDIS_SIZE bytes)，可能备份失败" >&2
+  FAILED=1
+  exit 1
+fi
+fi
 
 if [ "$MYSQL_SIZE" -lt 1024 ]; then
   echo "ERROR: MySQL 备份文件过小 ($MYSQL_SIZE bytes)，可能备份失败" >&2
@@ -110,19 +137,19 @@ if [ "$MYSQL_SIZE" -lt 1024 ]; then
   exit 1
 fi
 
-if [ "$REDIS_SIZE" -lt 1024 ]; then
-  echo "ERROR: Redis 备份文件过小 ($REDIS_SIZE bytes)，可能备份失败" >&2
-  FAILED=1
-  exit 1
-fi
-
 echo "MySQL 备份: $BACKUP_DIR/mysql_$DATE.sql.gz ($MYSQL_SIZE bytes)"
+if [ "$MYSQL_ONLY" = false ]; then
 echo "Redis 备份: $BACKUP_DIR/redis_$DATE.rdb ($REDIS_SIZE bytes)"
 echo "RabbitMQ 拓扑: $BACKUP_DIR/rabbitmq_$DATE.json"
+fi
 
-# 组装本次产物列表
+# 组装本次产物列表（--mysql-only 时仅 MySQL，避免异地推送扫到不存在的文件）
+if [ "$MYSQL_ONLY" = false ]; then
 ARTIFACTS=( "$BACKUP_DIR/mysql_$DATE.sql.gz" "$BACKUP_DIR/redis_$DATE.rdb" )
 [ -f "$BACKUP_DIR/rabbitmq_$DATE.json" ] && ARTIFACTS+=( "$BACKUP_DIR/rabbitmq_$DATE.json" )
+else
+ARTIFACTS=( "$BACKUP_DIR/mysql_$DATE.sql.gz" )
+fi
 
 # ---------------------------------------------------------------------------
 # 异地化备份（优先 OSS，旧 ssh/scp 作为可选兼容）
@@ -144,6 +171,8 @@ if [ -z "$OSSUTIL" ] && command -v ossutil >/dev/null 2>&1; then
 fi
 
 # 优先尝试 OSS 推送
+# --mysql-only 时跳过：预部署只备本地 MySQL，异地推送由 crontab 全量备份完成
+if [ "$MYSQL_ONLY" = false ]; then
 if [ -z "$OSS_BUCKET" ] || [ -z "$OSS_ACCESS_KEY_ID" ] || [ -z "$OSS_ACCESS_KEY_SECRET" ]; then
   echo "WARN: 未配置完整 OSS 参数 (OSS_BUCKET/OSS_ACCESS_KEY_ID/OSS_ACCESS_KEY_SECRET)，跳过 OSS 异地推送" >&2
 elif [ -z "$OSSUTIL" ]; then
@@ -177,8 +206,10 @@ else
     echo "异地化备份完成: s3://$OSS_BUCKET/$OSS_PREFIX/"
   fi
 fi
+fi
 
-# 兼容旧 ssh/scp 异地同步（可选）
+# 兼容旧 ssh/scp 异地同步（可选，--mysql-only 同样跳过）
+if [ "$MYSQL_ONLY" = false ]; then
 BACKUP_REMOTE_HOST="${BACKUP_REMOTE_HOST:-}"
 BACKUP_REMOTE_DIR="${BACKUP_REMOTE_DIR:-/data/backups/zxyz}"
 
@@ -193,6 +224,7 @@ if [ -n "$BACKUP_REMOTE_HOST" ]; then
     echo "WARN: ssh/scp 异地化备份失败，本地备份仍有效" >&2
   }
   echo "ssh/scp 异地化备份完成: $BACKUP_REMOTE_HOST:$REMOTE_DIR/"
+fi
 fi
 
 # 清理过期备份（本地 + RabbitMQ 拓扑，均纳入清理周期）

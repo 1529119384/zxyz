@@ -559,12 +559,31 @@ jobs:
             set -euo pipefail
 
             DEPLOY_DIR="${{ secrets.DEPLOY_PATH || '/www/zxyz' }}"
-            IMAGE_TAG="${{ needs.detect-changes.outputs.tag }}"
+            # 为什么：部署必须消费「不可变」tag，否则回滚无效。
+            # build-and-push 已把镜像同时打了 dev/latest（可变）与 github.sha（不可变）两个 tag，
+            # 这里只用 40 位全量 commit sha，与 :409 已推送的 sha tag 精确匹配；
+            # .env.previous 复制出的旧 .env 也含旧 sha，rollback.sh 拉取 ...:<旧sha> 才能精确回滚。
+            IMAGE_TAG="${{ github.sha }}"
             IMAGE_PREFIX="${{ env.IMAGE_PREFIX }}"
             cd "$DEPLOY_DIR"
 
             echo "===== Deploying to ${{ steps.target.outputs.env }} ====="
             echo "Image tag: $IMAGE_TAG"
+
+            # --- 预部署备份（回滚前的最后一道防线：先备 MySQL，再覆盖）---
+            # 为什么：部署会覆盖旧镜像/旧 .env，若部署中途失败且无备份则无回退点。
+            # 此处只备 MySQL（状态核心，且快），全量/异地备份仍由 crontab 跑 backup.sh 完成。
+            # 在 set -euo pipefail 下，backup.sh 返回非 0 即中止部署——这正是想要的行为。
+            echo "===== Pre-deploy MySQL backup ====="
+            if [ -f "$DEPLOY_DIR/scripts/backup.sh" ]; then
+              if ! bash "$DEPLOY_DIR/scripts/backup.sh" --mysql-only; then
+                echo "::error::PRE_DEPLOY_BACKUP_FAILED: 预部署 MySQL 备份失败，已中止部署以防无回退点"
+                exit 1
+              fi
+              echo "::notice::PRE_DEPLOY_BACKUP_OK: 预部署 MySQL 备份完成"
+            else
+              echo "::warning::跳过预部署备份（backup.sh 不存在）"
+            fi
 
             # --- 记录当前版本用于回滚 ---
             echo "===== Recording current version for rollback ====="

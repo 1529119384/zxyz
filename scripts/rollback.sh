@@ -11,6 +11,16 @@
 # 前置条件:
 #   - 服务器上已部署 docker-compose.yml（/www/zxyz/）
 #   - CI/CD 部署时会自动生成 .env.previous
+#
+# 关于镜像 tag（重要，2026 修订）：
+#   - 现已改用「不可变」commit sha 作为 APP_IMAGE_TAG（部署 job 写 github.sha，
+#     与 build-and-push 推送的 sha tag 精确匹配），不再使用 dev/latest 等可变 tag。
+#   - 因此 .env.previous 记录的就是「上一个部署版本的旧 sha」，回滚可精确回到上一版本，
+#     不会被新构建覆盖（旧可变 tag 同名覆盖导致回滚失效的问题已修复）。
+#   - IMAGE_PREFIX 来源于同目录 .env（compose v2 自动加载），本脚本只改写 APP_IMAGE_TAG，
+#     回滚时 IMAGE_PREFIX 仍从 .env 读取，无需单独传入。
+#   - 风险提醒：若 IMAGE_PREFIX 指向私有 registry，须确保旧 sha 镜像未被 GC 清理，
+#     否则 docker compose pull ...:<旧sha> 会失败（依赖 build-and-push 推送并保留的 sha tag）。
 # =============================================================================
 
 set -euo pipefail
