@@ -63,6 +63,18 @@ export default defineConfig(({ mode }) => {
           branches: 57,
           functions: 67,
           lines: 70,
+          'src/store/im/**': {
+            statements: 75,
+            branches: 60,
+            functions: 70,
+            lines: 75,
+          },
+          'src/api/**': {
+            statements: 70,
+            branches: 57,
+            functions: 67,
+            lines: 70,
+          },
         },
       }
     }
