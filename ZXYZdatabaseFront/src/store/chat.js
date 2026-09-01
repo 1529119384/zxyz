@@ -155,6 +155,8 @@ export const useChatStore = defineStore('chat', () => {
     loadMyPresence: realtimeDomain.loadMyPresence,
     ensureConnected: realtimeDomain.ensureWebSocketConnected,
     disconnect: realtimeDomain.disconnectWebSocket,
+    // 透传给 UI 的『重新连接』入口（P1-E2）
+    reconnectWebSocket: realtimeDomain.reconnectWebSocket,
     clearReadSyncTimers: conversationDomain.clearReadSyncTimers,
     cleanup: conversationDomain.cleanup,
     _setTeamBridge,

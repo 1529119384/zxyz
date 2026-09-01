@@ -56,7 +56,17 @@
               >
                 <span>聊天会话</span>
               </el-badge>
-              <span class="ws-status" :class="{ connected: chatStore.connected }">{{
+              <!-- 断连时把状态文案换成可点击的『重新连接』入口，避免菜单项被撑破 -->
+              <el-button
+                v-if="showReconnectAction"
+                class="ws-status ws-reconnect"
+                link
+                type="primary"
+                @click.stop="handleReconnect"
+              >
+                重新连接
+              </el-button>
+              <span v-else class="ws-status" :class="{ connected: chatStore.connected }">{{
                 wsStatusText
               }}</span>
             </el-menu-item>
@@ -106,6 +116,7 @@ import { useCurrentUserStore } from '@/store/currentUser'
 import { useSessionStore } from '@/store/session'
 import { useTeamStore } from '@/store/team'
 import { logout as logoutApi } from '@/api/auth'
+import { IM_WS_STATUS } from '@/utils/imWebSocket'
 import { logger } from '@/utils/logger'
 import { getRouteQueryText, withRouteQueryText } from '@/utils/routeQuery'
 
@@ -126,6 +137,12 @@ const displayName = computed(
 )
 const searchPlaceholder = computed(() => '搜索文件')
 const wsStatusText = computed(() => formatWsStatus(chatStore.status))
+// 连接异常或正在退避重连时，给用户一个立即重连的入口（P1-E2）
+const showReconnectAction = computed(
+  () =>
+    chatStore.status === IM_WS_STATUS.CONNECTION_ERROR ||
+    chatStore.status === IM_WS_STATUS.RECONNECTING,
+)
 const chatMenuUnreadCount = computed(() => Number(chatStore.totalConversationUnreadCount || 0))
 const activeMenuIndex = computed(() => {
   if (route.name === 'joinTeam') {
@@ -185,6 +202,11 @@ onMounted(() => {
 onUnmounted(() => {
   chatStore.disconnect()
 })
+
+// 手动重连：跳过剩余退避等待，立即重建 WebSocket
+function handleReconnect() {
+  chatStore.reconnectWebSocket()
+}
 
 function handleDropdownCommand(command) {
   if (command === 'logout') {
@@ -303,5 +325,12 @@ function formatQueryKeyValue(value) {
 
 .ws-status.connected {
   color: #67c23a;
+}
+
+/* 复用 .ws-status 的定位与字号，仅覆盖按钮自带的高度/内边距 */
+.ws-reconnect {
+  height: auto;
+  padding: 0;
+  font-size: 11px;
 }
 </style>

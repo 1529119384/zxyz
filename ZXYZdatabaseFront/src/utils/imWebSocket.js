@@ -13,16 +13,20 @@ export const IM_WS_STATUS = {
 const HEARTBEAT_INTERVAL_MS = 25000
 const BASE_RECONNECT_DELAY_MS = 1000
 const MAX_RECONNECT_DELAY_MS = 30000
-const MAX_RECONNECT_ATTEMPTS = 20
 
 /**
  * 指数退避重连延迟：基线 1s，每多一次失败翻倍，封顶 MAX_RECONNECT_DELAY_MS。
- * 抽出为纯函数以便单测覆盖指数增长与封顶边界（P1-E4）。
+ * 叠加 ±30% 抖动（jitter），避免服务端重启后大量客户端在同一时刻齐步重连造成惊群（P1-E2）。
+ * 抽出为纯函数以便单测覆盖指数增长与封顶边界（P1-E4）；jitterFactor 可注入以便断言确定值。
  * @param {number} attempt 已失败/即将尝试的次数（从 0 起）
+ * @param {number} jitterFactor [0,1) 抖动因子，默认取随机数
  * @returns {number} 本轮应等待的毫秒数
  */
-function computeReconnectDelay(attempt) {
-  return Math.min(BASE_RECONNECT_DELAY_MS * 2 ** attempt, MAX_RECONNECT_DELAY_MS)
+function computeReconnectDelay(attempt, jitterFactor = Math.random()) {
+  return Math.min(
+    BASE_RECONNECT_DELAY_MS * 2 ** attempt * (0.7 + jitterFactor * 0.6),
+    MAX_RECONNECT_DELAY_MS,
+  )
 }
 
 function getImWebSocketUrl() {
@@ -96,17 +100,10 @@ export function createImWebSocketClient(options = {}) {
     }, HEARTBEAT_INTERVAL_MS)
   }
 
+  // 无限重连：不再设置尝试次数上限，长时间断网（如笔记本合盖过夜）后无需用户手动干预
+  // 也能自动恢复；延迟已被 MAX_RECONNECT_DELAY_MS 封顶（30s），空转成本可控（P1-E2）。
   function scheduleReconnect() {
     if (manualClose || reconnectTimer) {
-      return
-    }
-    if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
-      // 达到重连上限：停止自动重试，转为需要用户手动干预的终态。
-      // 用 CONNECTION_ERROR 而非 DISCONNECTED，以便 UI 区分「服务端/网络持续不可用
-      // 需点击『重新连接』」与「用户主动断开」，并提供 WebSocket.reconnect() 的手动恢复路径（P1-E2）。
-      manualClose = true
-      emitStatus(IM_WS_STATUS.CONNECTION_ERROR)
-      onError?.(new Error('WebSocket 重连次数已达上限，请手动重新连接'))
       return
     }
     emitStatus(IM_WS_STATUS.RECONNECTING)
@@ -122,6 +119,8 @@ export function createImWebSocketClient(options = {}) {
     if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) {
       return
     }
+    // 首次发起连接时绑定网络/可见性恢复监听，disconnect() 负责解绑
+    bindRecoveryListeners()
     let ticket
     try {
       ticket = await fetchWsTicket()
@@ -177,8 +176,50 @@ export function createImWebSocketClient(options = {}) {
     }
   }
 
+  /**
+   * 页面重新可见时补一次重连：后台标签页的定时器会被浏览器节流，
+   * 回到前台可能仍停在等待中，此处立即尝试恢复（P1-E2）。
+   */
+  function handleVisibility() {
+    if (document.visibilityState !== 'visible') {
+      return
+    }
+    // 用户主动断开、或已连接/正在连接时不打扰
+    if (manualClose) {
+      return
+    }
+    if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) {
+      return
+    }
+    reconnect()
+  }
+
+  // 保存绑定状态，避免重复 addEventListener；handler 用具名函数以便 disconnect() 精确解绑。
+  let recoveryListenersBound = false
+
+  function bindRecoveryListeners() {
+    if (recoveryListenersBound) {
+      return
+    }
+    recoveryListenersBound = true
+    // 网络恢复（online）与页面回到前台（visibilitychange）都是重连的好时机；
+    // reconnect() 内部会 clearReconnect() 并走 connect() 的 OPEN/CONNECTING 守卫，重复触发是安全的。
+    window.addEventListener('online', reconnect)
+    document.addEventListener('visibilitychange', handleVisibility)
+  }
+
+  function unbindRecoveryListeners() {
+    if (!recoveryListenersBound) {
+      return
+    }
+    recoveryListenersBound = false
+    window.removeEventListener('online', reconnect)
+    document.removeEventListener('visibilitychange', handleVisibility)
+  }
+
   function disconnect() {
     manualClose = true
+    unbindRecoveryListeners()
     clearHeartbeat()
     clearReconnect()
     if (socket) {
@@ -190,9 +231,9 @@ export function createImWebSocketClient(options = {}) {
   }
 
   /**
-   * 手动重新连接：从终态（重连次数达上限 / 主动断开）恢复。
-   * 清除 manualClose 并重置重连计数，让 UI 的『重新连接』按钮可以真正重新拉取
-   * 并建立连接，而不是停在 CONNECTION_ERROR 终态（P1-E2）。
+   * 手动/自动重新连接：从主动断开或退避等待中立即恢复。
+   * 清除 manualClose 并重置重连计数，让 UI 的『重新连接』按钮与 online/visibilitychange
+   * 事件都能跳过剩余退避时间直接重建连接（P1-E2）。
    */
   function reconnect() {
     manualClose = false
