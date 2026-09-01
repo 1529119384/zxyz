@@ -6,8 +6,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
-import uno.acloud.admin.client.EmailProviderClient;
-import uno.acloud.admin.client.StorageProviderClient;
 import uno.acloud.admin.domain.SysConfig;
 import uno.acloud.admin.mapper.SysConfigMapper;
 import uno.acloud.admin.service.ConfigService;
@@ -34,12 +32,6 @@ class ConfigServiceIntegrationTest extends AbstractIntegrationTest {
     }
 
     // ---- Mock 外部依赖 ----
-
-    @MockitoBean
-    private EmailProviderClient emailProviderClient;
-
-    @MockitoBean
-    private StorageProviderClient storageProviderClient;
 
     @MockitoBean
     private RabbitTemplate rabbitTemplate;

@@ -9,17 +9,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "app")
 public class AdminServiceProperties {
 
-    private final ServiceUrl emailService = new ServiceUrl();
-    private final ServiceUrl fileService = new ServiceUrl();
     private String internalServiceToken;
-
-    public ServiceUrl getEmailService() {
-        return emailService;
-    }
-
-    public ServiceUrl getFileService() {
-        return fileService;
-    }
 
     public String getInternalServiceToken() {
         return internalServiceToken;
