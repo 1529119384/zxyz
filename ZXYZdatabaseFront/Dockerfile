@@ -5,8 +5,9 @@
 # 构建阶段打包 Vite 静态资源，运行阶段用 Nginx 提供静态文件并反向代理后端。
 # -----------------------------------------------------------------------------
 
-# 前端构建阶段使用官方 node:22-alpine（版本钉住，非 :latest）。digest 锁定见后端 Dockerfile 顶部说明。
-FROM node:22-alpine AS builder
+# 前端构建阶段使用官方 node:22-alpine（版本 tag + 不可变 @sha256 digest 双重钉住，非 :latest）。
+# digest 刷新方式见后端 Dockerfile 顶部说明。
+FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS builder
 
 WORKDIR /workspace
 
@@ -16,8 +17,9 @@ RUN npm ci
 COPY ZXYZdatabaseFront/ ./
 RUN npm run build
 
-# 运行时基础镜像使用官方 nginx:1.27-alpine（minor 版本钉住，非 :latest）。digest 锁定见后端 Dockerfile 顶部说明。
-FROM nginx:1.27-alpine
+# 运行时基础镜像使用官方 nginx:1.27-alpine（minor 版本 tag + 不可变 @sha256 digest 双重钉住，非 :latest）。
+# digest 刷新方式见后端 Dockerfile 顶部说明。
+FROM nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
 
 ENV TZ=Asia/Shanghai
 

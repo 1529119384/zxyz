@@ -13,15 +13,18 @@
 #   - zxyz-admin-service
 # -----------------------------------------------------------------------------
 
-# 镜像钉定策略：所有基础镜像均使用官方版本并固定到确切版本 tag（非 :latest）。
-# 如需进一步锁定到不可变 digest（@sha256:），在有 docker 的环境执行：
-#   docker pull maven:3.9-eclipse-temurin-17
-#   docker inspect --format='{{index .RepoDigests 0}}' maven:3.9-eclipse-temurin-17
-# 取 RepoDigests 后写成 maven:3.9-eclipse-temurin-17@sha256:...，由 Dependabot 在 CI 维护。
+# 镜像钉定策略：所有基础镜像均使用官方版本，并固定为「确切版本 tag + 不可变 @sha256 digest」。
+# tag 保留供人阅读，digest 保证构建可复现（tag 可被上游覆盖，digest 不可变）。
+# 刷新 digest（在有 docker 且能访问 registry 的环境执行）：
+#   docker pull <image>:<tag>
+#   docker inspect --format='{{index .RepoDigests 0}}' <image>:<tag>
+# 取 RepoDigests 的值追加到 FROM 的 tag 之后，写成 <image>:<tag>@sha256:...
+# digest 取多架构 manifest list digest，各平台均可解析；
+# Dependabot（.github/dependabot.yml 的 docker ecosystem）会一并更新 tag 与 digest。
 
 # builder 直接使用官方 maven:3.9-eclipse-temurin-17，不再依赖个人私有镜像
 # （原 aclouda/zxyz-maven-base:latest 为可变 tag，构建不可复现，已移除）。
-FROM maven:3.9-eclipse-temurin-17 AS builder
+FROM maven:3.9-eclipse-temurin-17@sha256:a8746f15d5bb26b5b8bacb056cc76211553850f4c71d16aff845cfa004cbc197 AS builder
 
 WORKDIR /workspace
 
@@ -52,14 +55,11 @@ RUN mvn -B -T 1C -pl zxyz-common -am install -Dmaven.test.skip=false -DskipTests
 # Alpine 瘦身：eclipse-temurin:17-jre-alpine 体积更小。
 # 阻塞点检查：项目仅使用 Netty NIO（纯 Java），不依赖 netty-transport-native，
 # 因此 Alpine musl libc 不会影响 Netty 功能。
-# 运行时镜像已固化为确切 patch 版本 tag（immutable、可复现），
-# 不再使用会随上游滚动的裸 17-jre-alpine。tag 名经 Docker Hub 核对真实存在：
-#   eclipse-temurin:17.0.14_7-jre-alpine
-# 来源：https://hub.docker.com/_/eclipse-temurin 该 tag 的图层页（带真实 digest/layers）。
-# 为什么不直接写 sha256 digest：本 host 无法校验对应架构 digest，写错会令 build 失败；
-# 确切 patch tag 已可复现且无需校验，是少数可安全手动固化的官方 tag。
-# 后续如需进一步固化 digest，由 .github/dependabot.yml（docker）在 CI 环境维护。
-FROM eclipse-temurin:17.0.14_7-jre-alpine
+# 运行时镜像固定为「确切 patch 版本 tag + 不可变 digest」，
+# 不再使用会随上游滚动的裸 17-jre-alpine（tag 可被上游覆盖，digest 不可变）。
+# digest 取自 docker inspect 的 RepoDigests（多架构 manifest list digest），
+# 已用最小构建（FROM <image>:<tag>@<digest>）实测解析通过，不会因 digest 写错导致 build 失败。
+FROM eclipse-temurin:17.0.14_7-jre-alpine@sha256:865cca6d0b31f284a5fc4e8cbd8f9375f470fd07cf6e909cea62f2790d4187fe
 
 RUN apk add --no-cache curl
 

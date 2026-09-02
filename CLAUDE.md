@@ -174,7 +174,7 @@ WHEN 添加 setting 子路由, DO 确保 `route.name` 在 Setting 组件 watcher
 - **MySQL 8.4**: 10 个独立库（含 zxyz_config），表结构**仅由 Flyway 管理**（勿维护 `sql/schema_*.sql`）；DB init: `sql/00-init-zxyz.sh`
 - **Redis**: localhost:6379（Sa-Token sessions + Redisson 锁）；**Nacos**: localhost:8848 注册中心 + Config（`spring.config.import:nacos:`，10 服务接入，模板在 `nacos-config/`）；**RabbitMQ**: localhost:5672（Topic `zxyz.topic`）
 - **Auth**: Sa-Token 1.45.0（UUID token，Redis session，HttpOnly cookie）；API Docs: Knife4j 4.5.0 + springdoc 2.8.9
-- **Docker**: `docker-compose.yml` 编排 18 服务（5 基础设施 + 10 后端 + frontend-nginx + loki/promtail），统一 `Dockerfile` + `Dockerfile.base`（builder 缓存镜像）with `MODULE` build arg，镜像推 GHCR
+- **Docker**: `docker-compose.yml` 编排 18 服务（5 基础设施 + 10 后端 + frontend-nginx + loki/promtail），统一 `Dockerfile` with `MODULE` build arg，镜像推 GHCR
 - **Nginx CSP**: `deploy/nginx/default.conf` 用 `envsubst` 模板化，`OSS_PUBLIC_BASE_URL` 启动时注入，勿硬编码 OSS 域名
 
 **强制部署项**：
