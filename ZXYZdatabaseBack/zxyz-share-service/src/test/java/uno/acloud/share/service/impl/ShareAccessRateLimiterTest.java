@@ -1,45 +1,41 @@
 package uno.acloud.share.service.impl;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
-import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.exception.BusinessException;
 
-import java.time.Duration;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class ShareAccessRateLimiterTest {
 
+    /** 对应 @Value("${app.rate-limit.share.attempts-per-window:10}") 的注入值 */
+    private static final int MAX_ATTEMPTS = 10;
+    /** 对应 @Value("${app.rate-limit.share.window-minutes:5}") 的注入值 */
+    private static final int WINDOW_MINUTES = 5;
+
     @Mock
     private StringRedisTemplate stringRedisTemplate;
 
-    @Mock
-    private ConfigGetter configGetter;
-
-    @InjectMocks
     private ShareAccessRateLimiter rateLimiter;
 
-    private void stubConfigGetter() {
-        when(configGetter.getInt(eq("app.rate-limit.share.attempts-per-window"), anyInt())).thenReturn(10);
-        when(configGetter.getInt(eq("app.rate-limit.share.window-minutes"), anyInt())).thenReturn(5);
+    @BeforeEach
+    void setUp() {
+        rateLimiter = new ShareAccessRateLimiter(stringRedisTemplate, MAX_ATTEMPTS, WINDOW_MINUTES);
     }
 
     @SuppressWarnings("unchecked")
@@ -53,7 +49,6 @@ class ShareAccessRateLimiterTest {
 
     @Test
     void checkAndIncrement_allowsUnderLimit() {
-        stubConfigGetter();
         stubRedisExecute(5L);
 
         rateLimiter.checkAndIncrement("share1", "192.168.1.1");
@@ -67,7 +62,6 @@ class ShareAccessRateLimiterTest {
 
     @Test
     void checkAndIncrement_throwsWhenLimitExceeded() {
-        stubConfigGetter();
         stubRedisExecute(11L);
 
         BusinessException ex = assertThrows(BusinessException.class,
@@ -77,7 +71,6 @@ class ShareAccessRateLimiterTest {
 
     @Test
     void checkAndIncrement_usesUnknownWhenIpBlank() {
-        stubConfigGetter();
         stubRedisExecute(1L);
 
         rateLimiter.checkAndIncrement("share1", "");
@@ -94,7 +87,6 @@ class ShareAccessRateLimiterTest {
 
     @Test
     void checkAndIncrement_usesUnknownWhenIpNull() {
-        stubConfigGetter();
         stubRedisExecute(1L);
 
         rateLimiter.checkAndIncrement("share1", null);
@@ -111,7 +103,6 @@ class ShareAccessRateLimiterTest {
 
     @Test
     void checkAndIncrement_handlesNullRedisResult() {
-        stubConfigGetter();
         stubRedisExecute(null);
 
         rateLimiter.checkAndIncrement("share1", "10.0.0.1");

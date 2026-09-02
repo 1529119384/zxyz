@@ -1,5 +1,6 @@
 package uno.acloud.share.service.impl;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
@@ -9,29 +10,28 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 import java.util.List;
 import uno.acloud.common.ErrorCode;
-import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.exception.BusinessException;
 
 @Component
 public class ShareAccessRateLimiter {
 
     private static final String KEY_PREFIX = "zxyz:share:verify:";
-    /** 分享验证最大尝试次数 fallback */
-    private static final int FALLBACK_MAX_ATTEMPTS = 10;
-    /** 分享验证限流窗口 fallback */
-    private static final Duration FALLBACK_WINDOW = Duration.ofMinutes(5);
 
     private final StringRedisTemplate stringRedisTemplate;
-    private final ConfigGetter configGetter;
+    /** 分享验证最大尝试次数，默认 10 */
+    private final int maxAttempts;
+    /** 分享验证限流窗口，默认 5 分钟 */
+    private final Duration window;
 
-    public ShareAccessRateLimiter(StringRedisTemplate stringRedisTemplate, ConfigGetter configGetter) {
+    public ShareAccessRateLimiter(StringRedisTemplate stringRedisTemplate,
+                                  @Value("${app.rate-limit.share.attempts-per-window:10}") int maxAttempts,
+                                  @Value("${app.rate-limit.share.window-minutes:5}") int windowMinutes) {
         this.stringRedisTemplate = stringRedisTemplate;
-        this.configGetter = configGetter;
+        this.maxAttempts = maxAttempts;
+        this.window = Duration.ofMinutes(windowMinutes);
     }
 
     public void checkAndIncrement(String shareKey, String ip) {
-        int maxAttempts = configGetter.getInt("app.rate-limit.share.attempts-per-window", FALLBACK_MAX_ATTEMPTS);
-        Duration window = Duration.ofMinutes(configGetter.getInt("app.rate-limit.share.window-minutes", (int) FALLBACK_WINDOW.toMinutes()));
         String safeIp = (ip == null || ip.isBlank()) ? "unknown" : ip;
         String key = KEY_PREFIX + shareKey + ":" + safeIp;
         Long current = incrementWithTtl(key, window);

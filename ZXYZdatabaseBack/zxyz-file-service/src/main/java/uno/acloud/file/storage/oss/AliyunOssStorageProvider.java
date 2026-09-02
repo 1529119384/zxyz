@@ -4,7 +4,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import uno.acloud.common.ErrorCode;
-import uno.acloud.common.config.ConfigGetter;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Value;
 import uno.acloud.common.oss.GetSignUrl;
 import uno.acloud.common.oss.OssSignInfo;
 import uno.acloud.exception.BusinessException;
@@ -41,19 +43,45 @@ public class AliyunOssStorageProvider implements StorageProvider {
     private final GetSignUrl getSignUrl;
     private final OSSDeleter ossDeleter;
     private final OSSMetadataUpdater ossMetadataUpdater;
-    private final ConfigGetter configGetter;
     private final Set<String> blockedExtensions;
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     public AliyunOssStorageProvider(GetSignUrl getSignUrl,
                                     OSSDeleter ossDeleter,
                                     OSSMetadataUpdater ossMetadataUpdater,
-                                    ConfigGetter configGetter) {
+                                    @Value("${app.file.upload.blocked-extensions:}") String blockedExtensionsRaw) {
         this.getSignUrl = getSignUrl;
         this.ossDeleter = ossDeleter;
         this.ossMetadataUpdater = ossMetadataUpdater;
-        this.configGetter = configGetter;
-        this.blockedExtensions = new LinkedHashSet<>(configGetter.getJsonSet(
-                "app.file.upload.blocked-extensions", FALLBACK_BLOCKED_EXTENSIONS));
+        this.blockedExtensions = new LinkedHashSet<>(parseBlockedExtensions(blockedExtensionsRaw, FALLBACK_BLOCKED_EXTENSIONS));
+    }
+
+    /**
+     * 将 Nacos 注入的 JSON 数组字符串解析为扩展名集合，等价于 {@code ConfigGetter.getJsonSet}。
+     * 属性缺失/为空时回退到 fallback；解析失败或非数组同样回退。
+     */
+    private static Set<String> parseBlockedExtensions(String raw, Set<String> fallback) {
+        if (raw == null || raw.isBlank()) {
+            return fallback;
+        }
+        try {
+            JsonNode node = OBJECT_MAPPER.readTree(raw);
+            if (!node.isArray()) {
+                log.warn("配置值不是 JSON 数组，使用 fallback: value={}", raw);
+                return fallback;
+            }
+            Set<String> result = new LinkedHashSet<>();
+            node.forEach(item -> {
+                if (item.isTextual()) {
+                    result.add(item.asText());
+                }
+            });
+            return result;
+        } catch (Exception e) {
+            log.warn("配置值解析为 JSON 数组失败，使用 fallback: value={}", raw, e);
+            return fallback;
+        }
     }
 
     @Override

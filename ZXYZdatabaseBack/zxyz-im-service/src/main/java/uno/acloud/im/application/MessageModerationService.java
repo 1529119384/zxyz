@@ -1,11 +1,11 @@
 package uno.acloud.im.application;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.TeamErrorCode;
 import uno.acloud.common.TeamPermissionCodes;
-import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.domain.enums.ConversationType;
 import uno.acloud.im.infrastructure.persistence.entity.ImConversation;
@@ -38,13 +38,13 @@ public class MessageModerationService {
                                     TeamMapper teamMapper,
                                     ConversationService conversationService,
                                     TeamPermissionService teamPermissionService,
-                                    ConfigGetter configGetter) {
+                                    @Value("${app.im.message.recall-window-seconds:120}") int recallWindowSeconds) {
         this.imMessageMapper = imMessageMapper;
         this.conversationMapper = conversationMapper;
         this.teamMapper = teamMapper;
         this.conversationService = conversationService;
         this.teamPermissionService = teamPermissionService;
-        this.recallWindowSeconds = configGetter.getInt("app.im.message.recall-window-seconds", 120);
+        this.recallWindowSeconds = recallWindowSeconds;
     }
 
     @Transactional(rollbackFor = Exception.class)

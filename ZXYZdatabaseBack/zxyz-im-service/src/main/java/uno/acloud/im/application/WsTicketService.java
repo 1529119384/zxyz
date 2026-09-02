@@ -8,7 +8,7 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 import uno.acloud.common.ErrorCode;
-import uno.acloud.common.config.ConfigGetter;
+import org.springframework.beans.factory.annotation.Value;
 import uno.acloud.exception.BusinessException;
 
 import java.time.Duration;
@@ -29,16 +29,14 @@ public class WsTicketService {
 
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
-    private final ConfigGetter configGetter;
     private final Duration ticketTtl;
 
     public WsTicketService(StringRedisTemplate stringRedisTemplate,
                            ObjectMapper objectMapper,
-                           ConfigGetter configGetter) {
+                           @Value("${app.im.ws.ticket-ttl-seconds:30}") int ticketTtlSeconds) {
         this.stringRedisTemplate = stringRedisTemplate;
         this.objectMapper = objectMapper;
-        this.configGetter = configGetter;
-        this.ticketTtl = Duration.ofSeconds(configGetter.getInt("app.im.ws.ticket-ttl-seconds", FALLBACK_TICKET_TTL_SECONDS));
+        this.ticketTtl = Duration.ofSeconds(ticketTtlSeconds);
     }
 
     public String createTicket(Long userId, String saToken) {

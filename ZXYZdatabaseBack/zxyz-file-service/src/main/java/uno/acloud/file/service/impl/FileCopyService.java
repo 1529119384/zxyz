@@ -1,11 +1,11 @@
 package uno.acloud.file.service.impl;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.FileDeleteStatus;
-import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.file.infrastructure.entity.FileItem;
 import uno.acloud.file.infrastructure.entity.FileNode;
@@ -39,7 +39,6 @@ public class FileCopyService {
     private final FileObjectReferenceManager fileObjectReferenceService;
     private final FileOperationHelper helper;
     private final TransactionTemplate transactionTemplate;
-    private final ConfigGetter configGetter;
     private final ProjectStorageCheckClient projectStorageCheckClient;
     private final UsageLedgerMapper usageLedgerMapper;
     private final int maxCopyNodesPerTransaction;
@@ -51,7 +50,7 @@ public class FileCopyService {
                            FileObjectReferenceManager fileObjectReferenceService,
                            FileOperationHelper helper,
                            TransactionTemplate transactionTemplate,
-                           ConfigGetter configGetter,
+                           @Value("${app.file.copy.max-nodes-per-tx:500}") int maxCopyNodesPerTransaction,
                            ProjectStorageCheckClient projectStorageCheckClient,
                            UsageLedgerMapper usageLedgerMapper) {
         this.fileMapper = fileMapper;
@@ -61,10 +60,9 @@ public class FileCopyService {
         this.fileObjectReferenceService = fileObjectReferenceService;
         this.helper = helper;
         this.transactionTemplate = transactionTemplate;
-        this.configGetter = configGetter;
         this.projectStorageCheckClient = projectStorageCheckClient;
         this.usageLedgerMapper = usageLedgerMapper;
-        this.maxCopyNodesPerTransaction = configGetter.getInt("app.file.copy.max-nodes-per-tx", FALLBACK_MAX_COPY_NODES_PER_TRANSACTION);
+        this.maxCopyNodesPerTransaction = maxCopyNodesPerTransaction;
     }
 
     public BatchOperationDetailVO copyFiles(List<Long> fileIds, Long targetParentId, Long requestedTeamId, Long userId) {

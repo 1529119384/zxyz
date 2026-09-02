@@ -1,10 +1,10 @@
 package uno.acloud.common.oss;
 
 import com.aliyun.sdk.service.oss2.OSSClient;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.stereotype.Service;
 import uno.acloud.common.ErrorCode;
-import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.common.util.FileNameUtil;
 import uno.acloud.common.util.oss.OssContentDispositionUtil;
 import uno.acloud.exception.BusinessException;
@@ -19,8 +19,6 @@ import static uno.acloud.common.InputNormalizer.requireText;
 public class AvatarUploadSignService {
 
     private static final String AVATAR_OBJECT_PREFIX = "avatar/";
-    /** 头像最大文件大小 fallback（5MB） */
-    private static final long FALLBACK_MAX_AVATAR_SIZE = 5L * 1024L * 1024L;
     private static final int MAX_AVATAR_URL_LENGTH = 512;
     private static final Map<String, String> ALLOWED_TYPES_BY_EXTENSION = Map.of(
             "jpg", "image/jpeg",
@@ -37,14 +35,15 @@ public class AvatarUploadSignService {
 
     private final GetSignUrl getSignUrl;
     private final OSSProperties ossProperties;
-    private final ConfigGetter configGetter;
+    /** 头像最大文件大小（字节），默认 5MB */
+    private final long maxAvatarSize;
 
     public AvatarUploadSignService(GetSignUrl getSignUrl,
                                    OSSProperties ossProperties,
-                                   ConfigGetter configGetter) {
+                                   @Value("${app.avatar.max-size-bytes:5242880}") long maxAvatarSize) {
         this.getSignUrl = getSignUrl;
         this.ossProperties = ossProperties;
-        this.configGetter = configGetter;
+        this.maxAvatarSize = maxAvatarSize;
     }
 
     public OssSignInfo generateAvatarUploadSign(AvatarUploadSignRequest request) {
@@ -75,7 +74,6 @@ public class AvatarUploadSignService {
     }
 
     private void validateAvatarSize(Long fileSize) {
-        long maxAvatarSize = configGetter.getLong("app.avatar.max-size-bytes", FALLBACK_MAX_AVATAR_SIZE);
         if (fileSize == null || fileSize <= 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "头像文件大小非法");
         }

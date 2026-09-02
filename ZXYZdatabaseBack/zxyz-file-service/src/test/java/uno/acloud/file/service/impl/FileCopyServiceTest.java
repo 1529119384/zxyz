@@ -9,7 +9,6 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.support.TransactionTemplate;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.FileNodeType;
-import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.file.infrastructure.entity.FileItem;
 import uno.acloud.file.infrastructure.entity.FileNode;
@@ -51,9 +50,6 @@ class FileCopyServiceTest {
     private TransactionTemplate transactionTemplate;
 
     @Mock
-    private ConfigGetter configGetter;
-
-    @Mock
     private ProjectStorageCheckClient projectStorageCheckClient;
 
     @Mock
@@ -63,10 +59,9 @@ class FileCopyServiceTest {
 
     @BeforeEach
     void setUp() {
-        when(configGetter.getInt(eq("app.file.copy.max-nodes-per-tx"), anyInt())).thenReturn(500);
         fileCopyService = new FileCopyService(
                 fileMapper, fileDomainValidator, filePathResolver,
-                fileAccessGuardService, fileObjectReferenceService, helper, transactionTemplate, configGetter,
+                fileAccessGuardService, fileObjectReferenceService, helper, transactionTemplate, 500,
                 projectStorageCheckClient, usageLedgerMapper);
         // Mock TransactionTemplate to execute lambdas directly
         lenient().doAnswer(invocation -> {

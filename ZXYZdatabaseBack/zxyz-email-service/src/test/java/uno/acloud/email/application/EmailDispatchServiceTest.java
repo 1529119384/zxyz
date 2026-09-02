@@ -6,7 +6,6 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import uno.acloud.common.ErrorCode;
-import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.email.config.EmailProperties;
 import uno.acloud.email.domain.EmailRecord;
 import uno.acloud.email.domain.EmailRecordStatus;
@@ -33,6 +32,9 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class EmailDispatchServiceTest {
 
+    /** 对应 @Value("${app.email.max-retry-count:4}") 的注入值 */
+    private static final int MAX_RETRY_COUNT = 4;
+
     @Mock
     private EmailRecordMapper emailRecordMapper;
     @Mock
@@ -42,22 +44,19 @@ class EmailDispatchServiceTest {
     @Mock
     private EmailSendingAvailabilityService emailSendingAvailabilityService;
 
-    @Mock
-    private ConfigGetter configGetter;
-
     @Test
     void sendByTemplateShouldRenderAndInsertPendingRecord() {
         EmailTemplate template = new EmailTemplate();
         template.setTemplateCode("SYSTEM_MESSAGE");
         template.setSubjectTemplate("{{title}}");
         template.setContentHtml("<p>{{content}}</p>");
+        template.setStatus(0); // status=0 表示启用，isUsable() 才返回 true
         when(emailTemplateMapper.getActiveByCode("SYSTEM_MESSAGE")).thenReturn(template);
         when(emailRecordMapper.insert(any(EmailRecord.class))).thenAnswer(invocation -> {
             EmailRecord record = invocation.getArgument(0);
             record.setId(11L);
             return 1;
         });
-        when(configGetter.getInt("app.email.max-retry-count", 4)).thenReturn(4);
         EmailProperties properties = new EmailProperties();
         properties.setAsync(false);
         EmailDispatchService service = new EmailDispatchService(
@@ -68,7 +67,7 @@ class EmailDispatchServiceTest {
                 properties,
                 emailSendingAvailabilityService,
                 Runnable::run,
-                configGetter
+                MAX_RETRY_COUNT
         );
 
         Long recordId = service.sendByTemplate(
@@ -88,6 +87,8 @@ class EmailDispatchServiceTest {
         assertEquals("标题", record.getSubject());
         assertEquals("<p>&lt;通知&gt;</p>", record.getContentHtml());
         assertEquals(EmailRecordStatus.PENDING, record.getStatus());
+        // 最大重试次数来自 @Value 注入的 app.email.max-retry-count
+        assertEquals(MAX_RETRY_COUNT, record.getMaxAttempts());
         verify(emailSendingAvailabilityService).requireSendingAvailable();
     }
 
@@ -107,7 +108,7 @@ class EmailDispatchServiceTest {
                 properties,
                 emailSendingAvailabilityService,
                 Runnable::run,
-                configGetter
+                MAX_RETRY_COUNT
         );
 
         BusinessException exception = assertThrows(BusinessException.class,
@@ -139,7 +140,7 @@ class EmailDispatchServiceTest {
                 properties,
                 emailSendingAvailabilityService,
                 Runnable::run,
-                configGetter
+                MAX_RETRY_COUNT
         );
 
         assertFalse(service.dispatchRecord(12L));

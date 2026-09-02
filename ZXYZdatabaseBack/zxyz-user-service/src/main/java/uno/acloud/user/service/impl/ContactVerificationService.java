@@ -1,10 +1,10 @@
 package uno.acloud.user.service.impl;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import uno.acloud.common.ErrorCode;
-import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.user.config.ServiceProperties;
 import uno.acloud.user.dto.ContactVerifyRequest;
@@ -38,6 +38,7 @@ public class ContactVerificationService {
     private final EmailServiceMailClient emailServiceMailClient;
     private final UserQueryHelper userQueryHelper;
     private final boolean returnCodeInResponse;
+    /** 邮箱验证码发送冷却时长，默认 60 秒 */
     private final Duration emailVerifyCodeCooldown;
 
     public ContactVerificationService(UserMapper userMapper,
@@ -45,13 +46,13 @@ public class ContactVerificationService {
                                       EmailServiceMailClient emailServiceMailClient,
                                       UserQueryHelper userQueryHelper,
                                       ServiceProperties serviceProperties,
-                                      ConfigGetter configGetter) {
+                                      @Value("${app.email.verify-code.cooldown-seconds:60}") int emailVerifyCodeCooldownSeconds) {
         this.userMapper = userMapper;
         this.stringRedisTemplate = stringRedisTemplate;
         this.emailServiceMailClient = emailServiceMailClient;
         this.userQueryHelper = userQueryHelper;
         this.returnCodeInResponse = serviceProperties.getVerification().isReturnCodeInResponse();
-        this.emailVerifyCodeCooldown = Duration.ofSeconds(configGetter.getInt("app.email.verify-code.cooldown-seconds", 60));
+        this.emailVerifyCodeCooldown = Duration.ofSeconds(emailVerifyCodeCooldownSeconds);
     }
 
     public CurrentUserVO bindEmail(Long userId, EmailBindRequest request) {

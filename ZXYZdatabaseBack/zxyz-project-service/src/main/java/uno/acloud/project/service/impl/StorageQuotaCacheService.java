@@ -7,7 +7,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.stereotype.Service;
-import uno.acloud.common.config.ConfigGetter;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -38,7 +38,6 @@ public class StorageQuotaCacheService {
     private final ObjectMapper objectMapper;
     private final TeamServiceClient teamServiceClient;
     private final FileServiceClient fileServiceClient;
-    private final ConfigGetter configGetter;
 
     // TTL values loaded from hot config (fallback values match previous defaults)
     private final Duration teamStorageLimitTtl;
@@ -52,18 +51,18 @@ public class StorageQuotaCacheService {
                                     ObjectMapper objectMapper,
                                     TeamServiceClient teamServiceClient,
                                     FileServiceClient fileServiceClient,
-                                    ConfigGetter configGetter) {
+                                    @Value("${app.cache.storage-usage-ttl-seconds:10}") int storageUsageTtlSeconds,
+                                    @Value("${app.cache.team-permission-ttl-minutes:5}") int teamPermissionTtlMinutes) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.teamServiceClient = teamServiceClient;
         this.fileServiceClient = fileServiceClient;
-        this.configGetter = configGetter;
-        this.teamStorageLimitTtl = Duration.ofSeconds(configGetter.getInt("app.cache.storage-usage-ttl-seconds", 10));
-        this.teamMemberListTtl = Duration.ofMinutes(configGetter.getInt("app.cache.team-permission-ttl-minutes", 5));
-        this.systemAdminIdsTtl = Duration.ofMinutes(configGetter.getInt("app.cache.team-permission-ttl-minutes", 5));
-        this.usageTtl = Duration.ofSeconds(configGetter.getInt("app.cache.storage-usage-ttl-seconds", 10));
-        this.userTeamIdsTtl = Duration.ofMinutes(configGetter.getInt("app.cache.team-permission-ttl-minutes", 5));
-        this.systemRolesTtl = Duration.ofMinutes(configGetter.getInt("app.cache.team-permission-ttl-minutes", 5));
+        this.teamStorageLimitTtl = Duration.ofSeconds(storageUsageTtlSeconds);
+        this.teamMemberListTtl = Duration.ofMinutes(teamPermissionTtlMinutes);
+        this.systemAdminIdsTtl = Duration.ofMinutes(teamPermissionTtlMinutes);
+        this.usageTtl = Duration.ofSeconds(storageUsageTtlSeconds);
+        this.userTeamIdsTtl = Duration.ofMinutes(teamPermissionTtlMinutes);
+        this.systemRolesTtl = Duration.ofMinutes(teamPermissionTtlMinutes);
     }
 
     // ==================== Team storage limit ====================

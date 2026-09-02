@@ -1,5 +1,6 @@
 package uno.acloud.common.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.cache.annotation.EnableCaching;
@@ -46,10 +47,19 @@ import uno.acloud.common.config.ConfigGetter;
 @EnableCaching
 public class CacheConfig {
 
-    private final ConfigGetter configGetter;
+    /** 默认缓存 TTL（分钟） */
+    private final int defaultTtlMinutes;
+    /** team-permission 缓存 TTL（分钟） */
+    private final int teamPermissionTtlMinutes;
+    /** project-access 缓存 TTL（分钟） */
+    private final int projectAccessTtlMinutes;
 
-    public CacheConfig(ConfigGetter configGetter) {
-        this.configGetter = configGetter;
+    public CacheConfig(@Value("${app.cache.default-ttl-minutes:30}") int defaultTtlMinutes,
+                       @Value("${app.cache.team-permission-ttl-minutes:5}") int teamPermissionTtlMinutes,
+                       @Value("${app.cache.project-access-ttl-minutes:10}") int projectAccessTtlMinutes) {
+        this.defaultTtlMinutes = defaultTtlMinutes;
+        this.teamPermissionTtlMinutes = teamPermissionTtlMinutes;
+        this.projectAccessTtlMinutes = projectAccessTtlMinutes;
     }
 
     @Bean
@@ -64,12 +74,11 @@ public class CacheConfig {
 
         GenericJackson2JsonRedisSerializer jsonSerializer = new GenericJackson2JsonRedisSerializer(om);
 
-        int defaultTtlMinutes = configGetter.getInt("app.cache.default-ttl-minutes", 30);
         Duration defaultTtl = Duration.ofMinutes(defaultTtlMinutes);
 
         Map<String, Duration> customTtl = new HashMap<>();
-        customTtl.put("team-permission", Duration.ofMinutes(configGetter.getInt("app.cache.team-permission-ttl-minutes", 5)));
-        customTtl.put("project-access", Duration.ofMinutes(configGetter.getInt("app.cache.project-access-ttl-minutes", 10)));
+        customTtl.put("team-permission", Duration.ofMinutes(teamPermissionTtlMinutes));
+        customTtl.put("project-access", Duration.ofMinutes(projectAccessTtlMinutes));
 
         RedisCacheConfiguration defaultConfig = RedisCacheConfiguration.defaultCacheConfig()
                 .entryTtl(defaultTtl)

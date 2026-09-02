@@ -19,7 +19,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
-import uno.acloud.common.config.ConfigGetter;
+import org.springframework.beans.factory.annotation.Value;
 import uno.acloud.im.config.ImNettyProperties;
 
 @Slf4j
@@ -32,19 +32,19 @@ public class ImNettyServer {
     private final ImNettyProperties properties;
     private final ImWebSocketAuthHandler authHandler;
     private final ImWebSocketFrameHandler webSocketFrameHandler;
-    private final ConfigGetter configGetter;
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
     private Channel serverChannel;
+    private final int maxContentLength;
 
     public ImNettyServer(ImNettyProperties properties,
                          ImWebSocketAuthHandler authHandler,
                          ImWebSocketFrameHandler webSocketFrameHandler,
-                         ConfigGetter configGetter) {
+                         @Value("${app.im.ws.max-content-length:65536}") int maxContentLength) {
         this.properties = properties;
         this.authHandler = authHandler;
         this.webSocketFrameHandler = webSocketFrameHandler;
-        this.configGetter = configGetter;
+        this.maxContentLength = maxContentLength;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -52,7 +52,7 @@ public class ImNettyServer {
         bossGroup = new NioEventLoopGroup(1);
         workerGroup = new NioEventLoopGroup();
 
-        int maxContentLength = configGetter.getInt("app.im.ws.max-content-length", FALLBACK_MAX_CONTENT_LENGTH);
+        int maxContentLength = this.maxContentLength;
 
         ServerBootstrap bootstrap = new ServerBootstrap()
                 .group(bossGroup, workerGroup)

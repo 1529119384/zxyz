@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.common.ErrorCode;
-import uno.acloud.common.config.ConfigGetter;
+import org.springframework.beans.factory.annotation.Value;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.domain.event.ImDomainEventType;
 import uno.acloud.im.domain.enums.MessageType;
@@ -40,7 +40,6 @@ public class ImMessageService {
     private final TeamMapper teamMapper;
     private final SystemNotificationService notificationService;
     private final ImDomainEventPublisher domainEventPublisher;
-    private final ConfigGetter configGetter;
     private final int maxTextLength;
 
     public ImMessageService(ConversationService conversationService,
@@ -52,7 +51,7 @@ public class ImMessageService {
                             TeamMapper teamMapper,
                             SystemNotificationService notificationService,
                             ImDomainEventPublisher domainEventPublisher,
-                            ConfigGetter configGetter) {
+                            @Value("${app.im.message.max-text-length:5000}") int maxTextLength) {
         this.conversationService = conversationService;
         this.conversationMapper = conversationMapper;
         this.imMessageMapper = imMessageMapper;
@@ -62,8 +61,7 @@ public class ImMessageService {
         this.teamMapper = teamMapper;
         this.notificationService = notificationService;
         this.domainEventPublisher = domainEventPublisher;
-        this.configGetter = configGetter;
-        this.maxTextLength = configGetter.getInt("app.im.message.max-text-length", FALLBACK_MAX_TEXT_LENGTH);
+        this.maxTextLength = maxTextLength;
     }
 
     @Transactional(rollbackFor = Exception.class)

@@ -2,6 +2,7 @@ package uno.acloud.file.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
@@ -11,7 +12,6 @@ import uno.acloud.common.FileDeleteStatus;
 import uno.acloud.common.InternalServiceHeaders;
 import uno.acloud.common.FileNodeType;
 import uno.acloud.common.FileSpaceType;
-import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.file.config.ServiceProperties;
 import uno.acloud.file.dto.BatchConfirmUploadRequest;
 import uno.acloud.file.dto.ConfirmUploadRequest;
@@ -88,7 +88,12 @@ public class FileUploadService implements FileUploadPort {
     private String selfServiceKey;
     @org.springframework.beans.factory.annotation.Value("${spring.application.name:unknown}")
     private String sourceService;
-    private final ConfigGetter configGetter;
+    /** 允许上传的文件扩展名白名单（Nacos 注入的原始 JSON 数组字符串，缺省时回退到 FALLBACK_ALLOWED_EXTENSIONS） */
+    private final String allowedExtensionsRaw;
+    /** 危险文件扩展名黑名单（Nacos 注入的原始 JSON 数组字符串，缺省时回退到 FALLBACK_BLOCKED_EXTENSIONS） */
+    private final String blockedExtensionsRaw;
+    /** 单文件最大上传大小（Nacos 注入，缺省 500MB） */
+    private final long maxUploadFileSizeBytes;
     private final UsageLedgerMapper usageLedgerMapper;
 
     public FileUploadService(StorageProviderRegistry registry,
@@ -98,9 +103,11 @@ public class FileUploadService implements FileUploadPort {
                              FileAccessGuard fileAccessGuardService,
                              RestClient restClient,
                              ObjectMapper objectMapper,
-                             ConfigGetter configGetter,
                              ServiceProperties serviceProperties,
-                             UsageLedgerMapper usageLedgerMapper) {
+                             UsageLedgerMapper usageLedgerMapper,
+                             @Value("${app.file.upload.allowed-extensions:}") String allowedExtensionsRaw,
+                             @Value("${app.file.upload.blocked-extensions:}") String blockedExtensionsRaw,
+                             @Value("${app.file.upload.max-size-bytes:524288000}") long maxFileSizeBytes) {
         this.registry = registry;
         this.fileUploadPersistenceService = fileUploadPersistenceService;
         this.fileDomainValidator = fileDomainValidator;
@@ -110,20 +117,49 @@ public class FileUploadService implements FileUploadPort {
         this.objectMapper = objectMapper;
         this.projectServiceBaseUrl = serviceProperties.getProjectService().getBaseUrl();
         this.internalServiceToken = serviceProperties.getInternalServiceToken();
-        this.configGetter = configGetter;
+        this.allowedExtensionsRaw = allowedExtensionsRaw;
+        this.blockedExtensionsRaw = blockedExtensionsRaw;
+        this.maxUploadFileSizeBytes = maxFileSizeBytes;
         this.usageLedgerMapper = usageLedgerMapper;
     }
 
     private Set<String> allowedExtensions() {
-        return configGetter.getJsonSet("app.file.upload.allowed-extensions", FALLBACK_ALLOWED_EXTENSIONS);
+        return parseJsonSet(allowedExtensionsRaw, FALLBACK_ALLOWED_EXTENSIONS);
     }
 
     private Set<String> blockedExtensions() {
-        return configGetter.getJsonSet("app.file.upload.blocked-extensions", FALLBACK_BLOCKED_EXTENSIONS);
+        return parseJsonSet(blockedExtensionsRaw, FALLBACK_BLOCKED_EXTENSIONS);
     }
 
     private long maxFileSizeBytes() {
-        return configGetter.getLong("app.file.upload.max-size-bytes", FALLBACK_MAX_FILE_SIZE_BYTES);
+        return this.maxUploadFileSizeBytes;
+    }
+
+    /**
+     * 将 Nacos 注入的 JSON 数组字符串解析为扩展名集合，等价于 {@code ConfigGetter.getJsonSet}。
+     * 属性缺失/为空时回退到 fallback；解析失败或非数组同样回退。
+     */
+    private Set<String> parseJsonSet(String raw, Set<String> fallback) {
+        if (raw == null || raw.isBlank()) {
+            return fallback;
+        }
+        try {
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(raw);
+            if (!node.isArray()) {
+                log.warn("配置值不是 JSON 数组，使用 fallback: value={}", raw);
+                return fallback;
+            }
+            Set<String> result = new java.util.LinkedHashSet<>();
+            node.forEach(item -> {
+                if (item.isTextual()) {
+                    result.add(item.asText());
+                }
+            });
+            return result;
+        } catch (Exception e) {
+            log.warn("配置值解析为 JSON 数组失败，使用 fallback: value={}", raw, e);
+            return fallback;
+        }
     }
 
     public UploadInfo getUploadSign(String originalName) {

@@ -8,7 +8,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import uno.acloud.common.ErrorCode;
-import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.user.config.ServiceProperties;
 import uno.acloud.user.dto.ContactVerifyRequest;
@@ -28,6 +27,9 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class ContactVerificationServiceTest {
 
+    /** 对应 @Value("${app.email.verify-code.cooldown-seconds:60}") 的注入值 */
+    private static final int EMAIL_VERIFY_CODE_COOLDOWN_SECONDS = 60;
+
     @Mock
     private UserMapper userMapper;
 
@@ -43,9 +45,6 @@ class ContactVerificationServiceTest {
     @Mock
     private UserQueryHelper userQueryHelper;
 
-    @Mock
-    private ConfigGetter configGetter;
-
     private ContactVerificationService contactVerificationService;
 
     private ServiceProperties serviceProperties;
@@ -55,11 +54,9 @@ class ContactVerificationServiceTest {
         serviceProperties = new ServiceProperties();
         serviceProperties.getVerification().setReturnCodeInResponse(true);
 
-        org.mockito.Mockito.when(configGetter.getInt("app.email.verify-code.cooldown-seconds", 60)).thenReturn(60);
-
         contactVerificationService = new ContactVerificationService(
                 userMapper, stringRedisTemplate, emailServiceMailClient,
-                userQueryHelper, serviceProperties, configGetter);
+                userQueryHelper, serviceProperties, EMAIL_VERIFY_CODE_COOLDOWN_SECONDS);
     }
 
     private User userWithEmail(Long id, String email, boolean emailVerified) {
@@ -91,6 +88,9 @@ class ContactVerificationServiceTest {
         assertNotNull(result);
         assertEquals("email", result.getType());
         verify(emailServiceMailClient).sendVerifyCode(email, "EMAIL_BIND", "127.0.0.1");
+        // 冷却时长来自 @Value 注入的 app.email.verify-code.cooldown-seconds
+        verify(valueOperations).setIfAbsent(anyString(), eq("1"),
+                eq(Duration.ofSeconds(EMAIL_VERIFY_CODE_COOLDOWN_SECONDS)));
     }
 
     // ==================== Send verification code — already verified ====================

@@ -2,12 +2,12 @@ package uno.acloud.email.application;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uno.acloud.common.ErrorCode;
-import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.email.config.EmailProperties;
 import uno.acloud.email.domain.EmailRecord;
 import uno.acloud.email.domain.EmailSenderSnapshot;
@@ -33,8 +33,6 @@ public class EmailDispatchService {
 
     private static final int MAX_SUBJECT_LENGTH = 255;
     private static final int MAX_BUSINESS_LENGTH = 64;
-    /** 邮件最大重试次数 fallback */
-    private static final int FALLBACK_MAX_ATTEMPTS = 4;
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
 
     private final EmailRecordMapper emailRecordMapper;
@@ -44,7 +42,7 @@ public class EmailDispatchService {
     private final EmailProperties emailProperties;
     private final EmailSendingAvailabilityService emailSendingAvailabilityService;
     private final Executor emailTaskExecutor;
-    private final ConfigGetter configGetter;
+    /** 邮件最大重试次数，默认 4 次 */
     private final int maxAttempts;
 
     public EmailDispatchService(EmailRecordMapper emailRecordMapper,
@@ -54,7 +52,7 @@ public class EmailDispatchService {
                                 EmailProperties emailProperties,
                                 EmailSendingAvailabilityService emailSendingAvailabilityService,
                                 @Qualifier("emailTaskExecutor") Executor emailTaskExecutor,
-                                ConfigGetter configGetter) {
+                                @Value("${app.email.max-retry-count:4}") int maxAttempts) {
         this.emailRecordMapper = emailRecordMapper;
         this.emailTemplateMapper = emailTemplateMapper;
         this.templateRenderer = templateRenderer;
@@ -62,8 +60,7 @@ public class EmailDispatchService {
         this.emailProperties = emailProperties;
         this.emailSendingAvailabilityService = emailSendingAvailabilityService;
         this.emailTaskExecutor = emailTaskExecutor;
-        this.configGetter = configGetter;
-        this.maxAttempts = configGetter.getInt("app.email.max-retry-count", FALLBACK_MAX_ATTEMPTS);
+        this.maxAttempts = maxAttempts;
     }
 
     @Transactional(rollbackFor = Exception.class)

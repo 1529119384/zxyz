@@ -1,12 +1,12 @@
 package uno.acloud.user.service.impl;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 import uno.acloud.common.ErrorCode;
-import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.exception.BusinessException;
 
 import java.time.Duration;
@@ -14,24 +14,23 @@ import java.time.Duration;
 @Component
 public class LoginRateLimiter {
 
-    /** 每分钟每 IP 登录上限 fallback */
-    private static final int FALLBACK_IP_LIMIT_PER_MINUTE = 20;
-    /** 每分钟每用户名登录上限 fallback */
-    private static final int FALLBACK_USERNAME_LIMIT_PER_MINUTE = 5;
-
     private final StringRedisTemplate stringRedisTemplate;
-    private final ConfigGetter configGetter;
+    /** 每分钟每 IP 登录上限，默认 20 */
+    private final int ipLimitPerMinute;
+    /** 每分钟每用户名登录上限，默认 5 */
+    private final int usernameLimitPerMinute;
 
-    public LoginRateLimiter(StringRedisTemplate stringRedisTemplate, ConfigGetter configGetter) {
+    public LoginRateLimiter(StringRedisTemplate stringRedisTemplate,
+                            @Value("${app.rate-limit.login.ip-per-minute:20}") int ipLimitPerMinute,
+                            @Value("${app.rate-limit.login.username-per-minute:5}") int usernameLimitPerMinute) {
         this.stringRedisTemplate = stringRedisTemplate;
-        this.configGetter = configGetter;
+        this.ipLimitPerMinute = ipLimitPerMinute;
+        this.usernameLimitPerMinute = usernameLimitPerMinute;
     }
 
     public void checkAndIncrement(String ip, String username) {
-        int ipLimit = configGetter.getInt("app.rate-limit.login.ip-per-minute", FALLBACK_IP_LIMIT_PER_MINUTE);
-        int usernameLimit = configGetter.getInt("app.rate-limit.login.username-per-minute", FALLBACK_USERNAME_LIMIT_PER_MINUTE);
-        requireLimit("zxyz:user:login:ip:" + (ip == null || ip.isBlank() ? "unknown" : ip), ipLimit);
-        requireLimit("zxyz:user:login:username:" + username, usernameLimit);
+        requireLimit("zxyz:user:login:ip:" + (ip == null || ip.isBlank() ? "unknown" : ip), ipLimitPerMinute);
+        requireLimit("zxyz:user:login:username:" + username, usernameLimitPerMinute);
     }
 
     private void requireLimit(String key, int limit) {

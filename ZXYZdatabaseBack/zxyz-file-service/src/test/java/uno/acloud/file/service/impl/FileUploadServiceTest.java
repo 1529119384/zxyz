@@ -13,7 +13,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpHeaders;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.FileNodeType;
-import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.file.config.ServiceProperties;
 import uno.acloud.file.dto.BatchConfirmUploadRequest;
@@ -63,9 +62,6 @@ class FileUploadServiceTest {
     private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
     @Mock
-    private ConfigGetter configGetter;
-
-    @Mock
     private UsageLedgerMapper usageLedgerMapper;
 
     private ServiceProperties serviceProperties;
@@ -80,17 +76,11 @@ class FileUploadServiceTest {
         serviceProperties.setInternalServiceToken("test-token");
 
         when(registry.getDefaultProvider()).thenReturn(defaultProvider);
-        when(configGetter.getJsonSet(eq("app.file.upload.allowed-extensions"), any()))
-                .thenAnswer(invocation -> invocation.getArgument(1));
-        when(configGetter.getJsonSet(eq("app.file.upload.blocked-extensions"), any()))
-                .thenAnswer(invocation -> invocation.getArgument(1));
-        when(configGetter.getLong(eq("app.file.upload.max-size-bytes"), anyLong()))
-                .thenAnswer(invocation -> invocation.getArgument(1));
 
         fileUploadService = new FileUploadService(
                 registry, fileUploadPersistenceService, fileDomainValidator,
                 filePathResolver, fileAccessGuardService, restClient,
-                objectMapper, configGetter, serviceProperties, usageLedgerMapper);
+                objectMapper, serviceProperties, usageLedgerMapper, "", "", 524288000L);
     }
 
     // ==================== Upload with sufficient quota — should succeed ====================
@@ -169,12 +159,6 @@ class FileUploadServiceTest {
         quotaProps.getProjectService().setBaseUrl("http://project-service:18080");
         quotaProps.setInternalServiceToken("test-token");
 
-        ConfigGetter quotaConfigGetter = mock(ConfigGetter.class);
-        when(quotaConfigGetter.getJsonSet(eq("app.file.upload.allowed-extensions"), any()))
-                .thenAnswer(invocation -> invocation.getArgument(1));
-        when(quotaConfigGetter.getLong(eq("app.file.upload.max-size-bytes"), anyLong()))
-                .thenAnswer(invocation -> invocation.getArgument(1));
-
         // Throw 403 directly from post() — the catch block catches RestClientResponseException
         doThrow(HttpClientErrorException.create(
                 HttpStatus.FORBIDDEN, "Forbidden",
@@ -184,7 +168,7 @@ class FileUploadServiceTest {
         FileUploadService quotaService = new FileUploadService(
                 registry, fileUploadPersistenceService, fileDomainValidator,
                 filePathResolver, fileAccessGuardService, restClient,
-                objectMapper, quotaConfigGetter, quotaProps, usageLedgerMapper);
+                objectMapper, quotaProps, usageLedgerMapper, "", "", 524288000L);
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> quotaService.confirmUpload(request, userId));
@@ -469,12 +453,6 @@ class FileUploadServiceTest {
         quotaProps.getProjectService().setBaseUrl("http://project-service:18080");
         quotaProps.setInternalServiceToken("test-token");
 
-        ConfigGetter quotaConfigGetter = mock(ConfigGetter.class);
-        when(quotaConfigGetter.getJsonSet(eq("app.file.upload.allowed-extensions"), any()))
-                .thenAnswer(invocation -> invocation.getArgument(1));
-        when(quotaConfigGetter.getLong(eq("app.file.upload.max-size-bytes"), anyLong()))
-                .thenAnswer(invocation -> invocation.getArgument(1));
-
         doThrow(HttpClientErrorException.create(
                 HttpStatus.FORBIDDEN, "Forbidden",
                 HttpHeaders.EMPTY, new byte[0], StandardCharsets.UTF_8))
@@ -483,7 +461,7 @@ class FileUploadServiceTest {
         FileUploadService quotaService = new FileUploadService(
                 registry, fileUploadPersistenceService, fileDomainValidator,
                 filePathResolver, fileAccessGuardService, restClient,
-                objectMapper, quotaConfigGetter, quotaProps, usageLedgerMapper);
+                objectMapper, quotaProps, usageLedgerMapper, "", "", 524288000L);
 
         when(fileDomainValidator.validateInputName("quota-test.txt")).thenReturn("quota-test.txt");
         when(defaultProvider.supportsPresignedUpload()).thenReturn(false);
