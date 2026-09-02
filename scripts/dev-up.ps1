@@ -32,8 +32,13 @@ $ComposeBase = Join-Path $ProjectRoot "docker-compose.yml"
 # 检查 .env 是否存在
 $EnvFile = Join-Path $ProjectRoot ".env"
 if (-not (Test-Path $EnvFile)) {
-    Write-Host "ERROR: .env 不存在，请先复制 .env.example: Copy-Item .env.example .env" -ForegroundColor Red
-    exit 1
+    Write-Host "INFO: .env 不存在，自动从 .env.example 复制并生成内部机密（init-secrets.sh）..." -ForegroundColor Cyan
+    & bash "$ScriptDir/init-secrets.sh" "$EnvFile"
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $EnvFile)) {
+        Write-Host "ERROR: 自动生成 .env 失败，请手动执行: Copy-Item .env.example .env ; ./scripts/init-secrets.sh" -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "INFO: .env 已生成。外部凭证（OSS/邮箱/前端地址等 CHANGE_ME_*）仍需手动填写后再启动服务。" -ForegroundColor Yellow
 }
 
 # 检查 Docker 是否运行

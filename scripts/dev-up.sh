@@ -21,8 +21,12 @@ COMPOSE_BASE="$PROJECT_ROOT/docker-compose.yml"
 ACTION="${1:-up}"
 
 if [ ! -f "$PROJECT_ROOT/.env" ]; then
-    echo "ERROR: .env 不存在，请先复制 .env.example: cp .env.example .env"
-    exit 1
+    echo "INFO: .env 不存在，自动从 .env.example 复制并生成内部机密（init-secrets.sh）..."
+    if ! bash "$SCRIPT_DIR/init-secrets.sh" "$PROJECT_ROOT/.env"; then
+        echo "ERROR: 自动生成 .env 失败，请手动执行: cp .env.example .env && ./scripts/init-secrets.sh"
+        exit 1
+    fi
+    echo "INFO: .env 已生成。外部凭证（OSS/邮箱/前端地址等 CHANGE_ME_*）仍需手动填写后再启动服务。"
 fi
 
 # 检查 Docker 是否运行

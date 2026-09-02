@@ -51,6 +51,17 @@ done
 
 # --- 环境验证 ---
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# --- 若部署目录 .env 缺失，自动从 .env.example 生成（仅内部机密；外部凭证需手动填）---
+if [ ! -f "$DEPLOY_DIR/.env" ]; then
+  echo "INFO: $DEPLOY_DIR/.env 不存在，自动从 .env.example 复制并生成内部机密（init-secrets.sh）..."
+  if ! bash "$SCRIPT_DIR/init-secrets.sh" "$DEPLOY_DIR/.env"; then
+    echo "ERROR: 自动生成 .env 失败，请在 $DEPLOY_DIR 手动执行: cp .env.example .env && ./scripts/init-secrets.sh"
+    exit 1
+  fi
+  echo "INFO: .env 已生成，外部凭证（OSS/邮箱/前端地址等 CHANGE_ME_*）仍需手动填写。"
+fi
+
 if [ "$VALIDATE_ONLY" = true ]; then
   bash "$SCRIPT_DIR/validate-env.sh" "$DEPLOY_DIR/.env"
   exit $?
