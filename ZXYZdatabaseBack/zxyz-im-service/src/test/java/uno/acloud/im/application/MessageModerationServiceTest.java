@@ -238,11 +238,8 @@ class MessageModerationServiceTest {
     void recall_shouldSucceedWhenRecallingOwnMessageWithinWindow() {
         ImMessage message = buildMessage(1L, 10L, 100L, 0, LocalDateTime.now().minusSeconds(30));
 
-        // 撤回后重新查询
-        ImMessage recalledMessage = buildMessage(1L, 10L, 100L, 1, LocalDateTime.now().minusSeconds(30));
-        recalledMessage.setRecallTime(LocalDateTime.now());
-        // getById 被调用两次：第一次查原始消息，第二次查撤回后的消息
-        when(imMessageMapper.getById(1L)).thenReturn(message).thenReturn(recalledMessage);
+        // 只需查询一次：守卫 SQL 完成持久化后，VO 直接取内存实体的 recallTime，不再回读 DB
+        when(imMessageMapper.getById(1L)).thenReturn(message);
 
         ImConversation conversation = buildConversation(10L, ConversationType.DIRECT, null);
         when(conversationMapper.getConversationById(10L)).thenReturn(conversation);
@@ -256,17 +253,19 @@ class MessageModerationServiceTest {
         assertEquals(1L, result.recall().getMessageId());
         assertEquals(10L, result.recall().getConversationId());
         assertEquals(100L, result.recall().getRecallByUserId());
+        // recallTime 来自内存实体 markRecalled 的赋值，而非回读 DB
+        assertNotNull(result.recall().getRecallTime());
         assertEquals(List.of(100L, 200L), result.memberUserIds());
         verify(imMessageMapper).recallMessage(1L, 100L, null);
+        // 锁定「只查一次」，防止回退到多余的回读
+        verify(imMessageMapper, times(1)).getById(1L);
     }
 
     @Test
     void recall_shouldPassReasonWhenProvided() {
         ImMessage message = buildMessage(1L, 10L, 100L, 0, LocalDateTime.now().minusSeconds(10));
 
-        ImMessage recalledMessage = buildMessage(1L, 10L, 100L, 1, LocalDateTime.now().minusSeconds(10));
-        recalledMessage.setRecallTime(LocalDateTime.now());
-        when(imMessageMapper.getById(1L)).thenReturn(message).thenReturn(recalledMessage);
+        when(imMessageMapper.getById(1L)).thenReturn(message);
 
         ImConversation conversation = buildConversation(10L, ConversationType.DIRECT, null);
         when(conversationMapper.getConversationById(10L)).thenReturn(conversation);
@@ -280,6 +279,7 @@ class MessageModerationServiceTest {
 
         assertNotNull(result);
         assertEquals("发错了", result.recall().getRecallReason());
+        assertNotNull(result.recall().getRecallTime());
         verify(imMessageMapper).recallMessage(1L, 100L, "发错了");
     }
 
@@ -290,9 +290,7 @@ class MessageModerationServiceTest {
         // 消息发送者是 100，操作者是 200（团队管理员）
         ImMessage message = buildMessage(1L, 10L, 100L, 0, LocalDateTime.now().minusMinutes(10));
 
-        ImMessage recalledMessage = buildMessage(1L, 10L, 100L, 1, LocalDateTime.now().minusMinutes(10));
-        recalledMessage.setRecallTime(LocalDateTime.now());
-        when(imMessageMapper.getById(1L)).thenReturn(message).thenReturn(recalledMessage);
+        when(imMessageMapper.getById(1L)).thenReturn(message);
 
         // 团队会话
         ImConversation conversation = buildConversation(10L, ConversationType.TEAM, 5L);
@@ -312,6 +310,7 @@ class MessageModerationServiceTest {
 
         assertNotNull(result);
         assertEquals(200L, result.recall().getRecallByUserId());
+        assertNotNull(result.recall().getRecallTime());
         verify(teamPermissionService).hasPermission(5L, 200L, "team:mute:manage");
     }
 
