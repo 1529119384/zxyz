@@ -73,6 +73,11 @@ services:
 # 生产环境替换为: app.internal-service-token: ENC(encrypted_value)
 app:
   internal-service-token: ${INTERNAL_SERVICE_TOKEN}
+  # IM Netty 启动期绑定（绑定路径：ImNettyProperties.maxContentLength，prefix="app.im.ws"）
+  # 静态配置：Netty 通道初始化时一次性读取，热更新无效，故置于 static 配置。
+  im:
+    ws:
+      max-content-length: 65536
 
 # share-service 专用：TeamServiceProperties 绑定（@ConfigurationProperties(prefix="share.team-service")）
 # ShareUserQueryClient / ShareFileServiceClient 出站调用时使用此 token

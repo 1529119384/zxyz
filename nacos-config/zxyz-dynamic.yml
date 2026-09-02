@@ -26,6 +26,49 @@ app:
   email:
     verify-code:
       cooldown-seconds: ${EMAIL_VERIFY_COOLDOWN:60}
+    max-retry-count: 4
+  # 审计日志保留天数（绑定路径：AuditProperties.retentionDays，prefix="app.audit"）
+  audit:
+    retention-days: 90
+  # 头像上传大小上限（绑定路径：AvatarProperties.maxSizeBytes，prefix="app.avatar"）
+  avatar:
+    max-size-bytes: 5242880
+  # 缓存 TTL（绑定路径：CacheProperties.*，prefix="app.cache"）
+  cache:
+    default-ttl-minutes: 30
+    project-access-ttl-minutes: 10
+    storage-usage-ttl-seconds: 10
+    team-permission-ttl-minutes: 5
+  # 文件服务（绑定路径：FileProperties.*，prefix="app.file"）
+  file:
+    copy:
+      max-nodes-per-tx: 500
+    upload:
+      allowed-extensions: '["pdf","doc","docx","xls","xlsx","ppt","pptx","txt","csv","rtf","png","jpg","jpeg","gif","bmp","webp","ico","zip","rar","7z","tar","gz","mp3","mp4","avi","mov","wav","md","json","xml","yaml","yml","html","css","ts","vue","java","py","go","sql","sh","log","ini","conf","toml","odt","ods","odp","key","epub"]'
+      blocked-extensions: '[".exe",".bat",".cmd",".scr",".pif",".com",".js",".vbs",".vbe",".ps1",".psm1",".msi",".wsf",".wsh",".hta",".cpl",".msc",".reg"]'
+      max-size-bytes: 524288000
+  # IM 服务（绑定路径：ImProperties.*，prefix="app.im"）
+  im:
+    message:
+      max-text-length: 5000
+      recall-window-seconds: 120
+    ws:
+      ticket-ttl-seconds: 30
+  # 限流（绑定路径：RateLimitProperties.*，prefix="app.rate-limit"）
+  rate-limit:
+    login:
+      ip-per-minute: 20
+      username-per-minute: 5
+    register:
+      ip-per-hour: 3
+    share:
+      attempts-per-window: 10
+      window-minutes: 5
+  # 团队服务（绑定路径：TeamProperties.*，prefix="app.team"）
+  team:
+    default-max-members: 100
+    default-storage-limit-bytes: 107374182400
+    min-password-length: 6
   # share-service 专用（绑定路径：ShareProperties.frontendBaseUrl，prefix="app.share"）
   share:
     frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:5173}
