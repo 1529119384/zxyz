@@ -48,12 +48,7 @@ public class ImConversation implements Serializable {
 
     /** 是否处于活跃状态。 */
     public boolean isActive() {
-        return ImConversationStatus.ACTIVE == this.status;
-    }
-
-    /** 是否已被归档（以 readOnly 标记）。 */
-    public boolean isArchived() {
-        return Boolean.TRUE.equals(this.readOnly);
+        return Integer.valueOf(ImConversationStatus.ACTIVE).equals(this.status);
     }
 
     /** 是否只读。 */

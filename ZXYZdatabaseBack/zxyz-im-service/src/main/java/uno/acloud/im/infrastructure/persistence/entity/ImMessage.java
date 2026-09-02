@@ -61,11 +61,11 @@ public class ImMessage implements Serializable {
 
     /** 是否处于已存储（未撤回）状态。 */
     public boolean isStored() {
-        return ImMessageStatus.STORED == this.status;
+        return Integer.valueOf(ImMessageStatus.STORED).equals(this.status);
     }
 
     /** 是否已被撤回。 */
     public boolean isRecalled() {
-        return ImMessageStatus.RECALLED == this.status;
+        return Integer.valueOf(ImMessageStatus.RECALLED).equals(this.status);
     }
 }

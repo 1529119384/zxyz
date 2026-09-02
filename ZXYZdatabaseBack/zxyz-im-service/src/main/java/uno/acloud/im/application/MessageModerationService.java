@@ -3,7 +3,6 @@ package uno.acloud.im.application;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.common.ErrorCode;
-import uno.acloud.common.ErrorCode;
 import uno.acloud.common.TeamErrorCode;
 import uno.acloud.common.TeamPermissionCodes;
 import uno.acloud.common.config.ConfigGetter;
@@ -76,14 +75,13 @@ public class MessageModerationService {
         if (imMessageMapper.recallMessage(messageId, operatorUserId, reason) != 1) {
             throw new BusinessException(ErrorCode.CONCURRENT_OPERATION, "消息状态已变化");
         }
-        // 守卫 SQL 已成功将 DB 行置为撤回；此处同步内存实体状态（不含并发守卫，守卫在 mapper SQL 内）。
+        // 持久化由守卫 SQL 完成；此处同步内存实体状态后直接供 VO 使用，无需再回读一次 DB。
         message.markRecalled(operatorUserId, reason);
-        ImMessage recalled = imMessageMapper.getById(messageId);
         MessageRecallVO recall = new MessageRecallVO(
                 messageId,
                 message.getConversationId(),
                 operatorUserId,
-                recalled == null ? LocalDateTime.now() : recalled.getRecallTime(),
+                message.getRecallTime(),
                 reason
         );
         return new RecallResult(recall, conversationMapper.listActiveMemberUserIds(message.getConversationId()));
