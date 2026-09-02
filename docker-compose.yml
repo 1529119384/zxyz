@@ -119,7 +119,7 @@ services:
         max-file: "3"
 
   nacos-log-cleanup:
-    image: alpine:3.20
+    image: alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
     container_name: zxyz-nacos-log-cleanup
     restart: unless-stopped
     entrypoint: /bin/sh
@@ -133,7 +133,7 @@ services:
         max-file: "1"
 
   redis:
-    image: redis:7.4-alpine
+    image: redis:7.4-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
     container_name: zxyz-redis
     restart: unless-stopped
     deploy:
@@ -164,7 +164,7 @@ services:
         max-file: "3"
 
   rabbitmq:
-    image: rabbitmq:3.13-management-alpine
+    image: rabbitmq:3.13-management-alpine@sha256:606d8c0d6b3c18d1da9afc53bc7cdb2a8d5486df91b5a9830e9e07626c9ae281
     container_name: zxyz-rabbitmq
     restart: unless-stopped
     deploy:
