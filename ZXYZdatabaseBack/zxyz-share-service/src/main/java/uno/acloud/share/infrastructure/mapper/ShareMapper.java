@@ -75,4 +75,7 @@ public interface ShareMapper extends BaseMapper<Share> {
     @Update("UPDATE share SET current_access_count = current_access_count + 1 " +
             "WHERE id = #{shareId} AND max_access_count IS NOT NULL AND current_access_count < max_access_count")
     int tryIncrementAccessCountWhenUnderLimit(Long shareId);
+
+    @Update("UPDATE share SET username = #{username} WHERE user_id = #{userId}")
+    int updateUsernameByUserId(@Param("userId") Long userId, @Param("username") String username);
 }
