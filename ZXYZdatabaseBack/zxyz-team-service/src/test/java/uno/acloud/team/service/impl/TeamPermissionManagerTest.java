@@ -8,6 +8,7 @@ import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uno.acloud.common.ErrorCode;
@@ -31,12 +32,14 @@ class TeamPermissionManagerTest {
     private TeamPermissionCacheService teamPermissionCacheService;
     @Mock
     private UserServiceClient userServiceClient;
+    @Mock
+    private StringRedisTemplate stringRedisTemplate;
 
     private TeamPermissionManager manager;
 
     @BeforeEach
     void setUp() {
-        manager = new TeamPermissionManager(mapper, teamPermissionCacheService, userServiceClient);
+        manager = new TeamPermissionManager(mapper, teamPermissionCacheService, userServiceClient, stringRedisTemplate);
     }
 
     // ---- assignMemberRole tests ----
