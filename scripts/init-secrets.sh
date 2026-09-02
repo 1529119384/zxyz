@@ -87,9 +87,9 @@ gen_secret() {
   local key="$1" kind="${2:-default}"
   local cur="${!key:-}"
 
-  # 幂等：已有非占位符非空值且非 --force → 跳过（避免重启后换密码导致连接失败）
-  if [ "$FORCE" = false ] && [ -n "$cur" ] && ! echo "$cur" | grep -qE '^CHANGE_ME'; then
-    echo "  $key: 已存在，跳过（幂等）"
+  # 真实（非 CHANGE_ME）值始终跳过，--force 也不覆盖已部署的真实机密（防重部署误覆盖）
+  if [ -n "$cur" ] && ! echo "$cur" | grep -qE '^CHANGE_ME'; then
+    echo "  $key: 已存在真实值，跳过（--force 也不覆盖）"
     return 0
   fi
 
@@ -116,6 +116,22 @@ gen_secret() {
 
 echo "===== 生成/校验部署机密（幂等）====="
 gen_secret MYSQL_ROOT_PASSWORD
+# B1: 显式生成 CONFIG_DB_PASSWORD（config 库沿用 root 账号，故与 MYSQL_ROOT_PASSWORD 同值）
+# 注意：gen_secret 只写文件、不回写内存变量，故先从 .env 读回真实值
+MYSQL_ROOT_PASSWORD="$(grep -E '^MYSQL_ROOT_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)"
+cfg_cur="$(grep -E '^CONFIG_DB_PASSWORD=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-)"
+if [ -n "$cfg_cur" ] && ! echo "$cfg_cur" | grep -qE '^CHANGE_ME'; then
+  echo "  CONFIG_DB_PASSWORD: 已存在真实值，跳过（同 MYSQL_ROOT_PASSWORD）"
+elif [ "$DRY_RUN" = true ]; then
+  echo "  CONFIG_DB_PASSWORD: [dry-run] 将设为与 MYSQL_ROOT_PASSWORD 同值（不写文件）"
+else
+  if grep -qE '^CONFIG_DB_PASSWORD=' "$ENV_FILE"; then
+    sed -i "s|^CONFIG_DB_PASSWORD=.*|CONFIG_DB_PASSWORD=${MYSQL_ROOT_PASSWORD}|" "$ENV_FILE"
+  else
+    echo "CONFIG_DB_PASSWORD=${MYSQL_ROOT_PASSWORD}" >> "$ENV_FILE"
+  fi
+  echo "  CONFIG_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:0:4}**** (同 MYSQL_ROOT_PASSWORD)"
+fi
 gen_secret REDIS_PASSWORD
 gen_secret RABBITMQ_USER
 gen_secret RABBITMQ_PASSWORD
@@ -127,6 +143,17 @@ gen_secret NACOS_PASSWORD
 gen_secret JASYPT_PASSWORD
 gen_secret GRAFANA_ADMIN_PASSWORD
 gen_secret EMAIL_CONFIG_SECRET
+# P2-A2: 服务级白名单矩阵每服务独立密钥（互不相同，且与 INTERNAL_SERVICE_TOKEN 不同）
+gen_secret SVC_ADMIN_KEY token_32
+gen_secret SVC_AUDIT_KEY token_32
+gen_secret SVC_EMAIL_KEY token_32
+gen_secret SVC_FILE_KEY token_32
+gen_secret SVC_IM_KEY token_32
+gen_secret SVC_PROJECT_KEY token_32
+gen_secret SVC_SHARE_KEY token_32
+gen_secret SVC_TEAM_KEY token_32
+gen_secret SVC_USER_KEY token_32
+gen_secret SVC_GATEWAY_KEY token_32
 
 # --- 收尾：收紧权限 ---
 chmod 600 "$ENV_FILE" 2>/dev/null || true

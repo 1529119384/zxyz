@@ -6,14 +6,14 @@
 # 现有 dev/生产无需配置即可启动，行为与历史一致。
 #
 # 启用服务级白名单矩阵（生产安全隔离，阻止「持 token 服务伪造任意来源」）：
-#   1) 在 .env 取消 SVC_*_KEY 注释并改为高强度随机串（见 .env.example 顶部矩阵说明）
-#   2) 【必做】在每个服务 environment 加 `APP_INTERNAL_SERVICE_KEY: ${SVC_<SERVICE>_KEY}`
-#      （= 该服务自己向收方签发的密钥；缺此则矩阵启用后发方仍持 legacy token 会被收方拒）
-#   3) 在收方 app.internal.allowed-sources 声明「允许来源服务名 -> 该来源密钥」映射，
-#      收方只存允许调用自己的来源密钥；示例见各服务 application.yml 注释。
-#   4) 【易漏】在 gateway 服务 environment 补
-#      `SVC_GATEWAY_KEY: ${SVC_GATEWAY_KEY:?启用矩阵必须设置 SVC_GATEWAY_KEY}`
-#      （用 :? 硬失败；写成普通 ${SVC_GATEWAY_KEY} 时变量缺失会变成空串而非回退，桥接将带空 token 401）。
+#   1) SVC_*_KEY 已由 scripts/init-secrets.sh 自动生成（每服务独立、互不相同、≠ INTERNAL_SERVICE_TOKEN），
+#      .env.example 中已取消注释；运行 init-secrets.sh 即写入 .env，无需手填。
+#   2) 各服务 environment 已注入 `APP_INTERNAL_SERVICE_KEY: ${SVC_<SERVICE>_KEY}`
+#      （= 该服务自己向收方签发的密钥；缺此则矩阵启用后发方仍持 legacy token 会被收方拒）。
+#   3) 收方 app.internal.allowed-sources 由各服务 application.yml 声明「允许来源服务名 -> 该来源密钥」映射；
+#      email-service 已通过 SPRING_APPLICATION_JSON 预置 allowed-sources 试点。
+#   4) gateway 服务 environment 已注入 `SVC_GATEWAY_KEY: ${SVC_GATEWAY_KEY:?启用矩阵必须设置 SVC_GATEWAY_KEY}`
+#      （用 :? 硬失败；变量缺失则网关拒绝启动，桥接不会带空 token 401）。
 #      网关已用 StripInternalHeadersFilter 剥离外部伪造的 X-Internal-Service-Token / X-Internal-Caller-Service，
 #      并在 admin-email 桥接路由以 zxyz-gateway 身份自注入受信内部头：
 #      token 取 ${SVC_GATEWAY_KEY:${INTERNAL_SERVICE_TOKEN}}（矩阵优先、过渡回退）。
@@ -228,6 +228,7 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${PROJECT_SERVICE_PORT:-18080}
+      APP_INTERNAL_SERVICE_KEY: ${SVC_PROJECT_KEY}
       TZ: Asia/Shanghai
       PROJECT_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_project?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       PROJECT_DATASOURCE_USERNAME: root
@@ -303,6 +304,7 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${IM_SERVICE_PORT:-18081}
+      APP_INTERNAL_SERVICE_KEY: ${SVC_IM_KEY}
       TZ: Asia/Shanghai
       IM_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_im?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       IM_DATASOURCE_USERNAME: root
@@ -373,6 +375,9 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${EMAIL_SERVICE_PORT:-18082}
+      APP_INTERNAL_SERVICE_KEY: ${SVC_EMAIL_KEY}
+      # P2-A2 邮件试点：开放 allowed-sources（来源服务名 -> 该来源 SVC_*_KEY）
+      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":{"zxyz-user-service":"${SVC_USER_KEY}","zxyz-admin-service":"${SVC_ADMIN_KEY}","zxyz-project-service":"${SVC_PROJECT_KEY}","zxyz-im-service":"${SVC_IM_KEY}","zxyz-file-service":"${SVC_FILE_KEY}","zxyz-team-service":"${SVC_TEAM_KEY}","zxyz-gateway":"${SVC_GATEWAY_KEY}"}}}}'
       TZ: Asia/Shanghai
       EMAIL_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_email?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       EMAIL_DATASOURCE_USERNAME: root
@@ -446,6 +451,7 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${SHARE_SERVICE_PORT:-18084}
+      APP_INTERNAL_SERVICE_KEY: ${SVC_SHARE_KEY}
       TZ: Asia/Shanghai
       SHARE_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_share?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       SHARE_DATASOURCE_USERNAME: root
@@ -517,6 +523,7 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${FILE_SERVICE_PORT:-18085}
+      APP_INTERNAL_SERVICE_KEY: ${SVC_FILE_KEY}
       TZ: Asia/Shanghai
       FILE_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_file?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       FILE_DATASOURCE_USERNAME: root
@@ -599,6 +606,7 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${TEAM_SERVICE_PORT:-18086}
+      APP_INTERNAL_SERVICE_KEY: ${SVC_TEAM_KEY}
       TZ: Asia/Shanghai
       TEAM_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_team?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       TEAM_DATASOURCE_USERNAME: root
@@ -676,6 +684,7 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${AUDIT_SERVICE_PORT:-18087}
+      APP_INTERNAL_SERVICE_KEY: ${SVC_AUDIT_KEY}
       TZ: Asia/Shanghai
       AUDIT_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_audit?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       AUDIT_DATASOURCE_USERNAME: root
@@ -743,6 +752,7 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${ADMIN_SERVICE_PORT:-18088}
+      APP_INTERNAL_SERVICE_KEY: ${SVC_ADMIN_KEY}
       TZ: Asia/Shanghai
       CONFIG_DB_HOST: mysql
       CONFIG_DB_USERNAME: root
@@ -807,6 +817,7 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${USER_SERVICE_PORT:-18083}
+      APP_INTERNAL_SERVICE_KEY: ${SVC_USER_KEY}
       TZ: Asia/Shanghai
       USER_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_user?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       USER_DATASOURCE_USERNAME: root
@@ -884,6 +895,9 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${GATEWAY_PORT:-18000}
+      APP_INTERNAL_SERVICE_KEY: ${SVC_GATEWAY_KEY}
+      # 启用矩阵必须设置 SVC_GATEWAY_KEY（缺失则网关拒绝启动，fail-closed）
+      SVC_GATEWAY_KEY: ${SVC_GATEWAY_KEY:?启用矩阵必须设置 SVC_GATEWAY_KEY}
       TZ: Asia/Shanghai
       REDIS_HOST: redis
       REDIS_PORT: 6379
@@ -1086,11 +1100,11 @@ services:
         limits:
           memory: 512M
           cpus: '0.5'
-    # 为什么：安全红线——Grafana 默认 admin/admin，密码一律从 .env 注入，严禁硬编码。
-    # 若 .env 未设置则回退 admin/admin，但 validate-env.sh 会对 CHANGE_ME 占位符告警（WARNING，不阻断部署）。
+    # 为什么：安全红线——Grafana 默认 admin/admin 极危险；缺失 GRAFANA_ADMIN_PASSWORD 直接启动失败（:? 硬失败），
+    # 严禁回退弱默认。GRAFANA_ADMIN_PASSWORD 已由 init-secrets.sh 生成，validate-env 亦拦截 CHANGE_ME 占位符。
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD 必须设置，禁止弱默认 admin}
       GF_SERVER_HTTP_PORT: "3000"
     volumes:
       - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
