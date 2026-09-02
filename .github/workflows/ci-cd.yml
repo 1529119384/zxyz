@@ -221,6 +221,120 @@ jobs:
           fi
 
   # ============================================================
+  # Job 1.5: Flyway 迁移门禁
+  # 守卫两类会导致生产 Flyway 失败 / 非确定性的提交：
+  #   1) 重复版本号：两个迁移文件共享同一 V<num>__ 前缀（跨服务或同服务内）。
+  #   2) 篡改已发布迁移：修改已存在于基线分支的迁移文件（迁移必须只追加）。
+  # 另外拒绝不合规的文件名（缺 __ 或使用非法字符）。
+  # 在 PR 上基于 github.base_ref 做 diff；push 事件无 base_ref 时优雅降级。
+  # ============================================================
+  flyway-check:
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history so we can diff against the base branch
+
+      - name: Flyway version number dedup
+        run: |
+          # Collect all migration files, exclude any target/ build output paths
+          mapfile -t FILES < <(git ls-files 'ZXYZdatabaseBack/*/src/main/resources/db/migration/V*.sql' | grep -v '/target/' || true)
+          if [ "${#FILES[@]}" -eq 0 ]; then
+            echo "No Flyway migration files found; skipping dedup."
+            exit 0
+          fi
+
+          # version integer (after V, before __) -> space-separated list of files
+          declare -A VERSION_MAP
+          for f in "${FILES[@]}"; do
+            ver="$(basename "$f" | sed -nE 's/^V([0-9]+)__.*\.sql$/\1/p')"
+            [ -z "$ver" ] && continue
+            VERSION_MAP["$ver"]="${VERSION_MAP[$ver]:-} $f"
+          done
+
+          DUP_FOUND=0
+          for ver in "${!VERSION_MAP[@]}"; do
+            n=$(echo ${VERSION_MAP[$ver]} | wc -w)
+            if [ "$n" -gt 1 ]; then
+              DUP_FOUND=1
+              echo "::error::FLYWAY_DUP_VERSION: version V${ver} appears in:${VERSION_MAP[$ver]}"
+            fi
+          done
+
+          if [ "$DUP_FOUND" -ne 0 ]; then
+            exit 1
+          fi
+          echo "Flyway version dedup: no duplicates found."
+
+      - name: Flyway filename sanity
+        run: |
+          mapfile -t FILES < <(git ls-files 'ZXYZdatabaseBack/*/src/main/resources/db/migration/V*.sql' | grep -v '/target/' || true)
+          if [ "${#FILES[@]}" -eq 0 ]; then
+            echo "No Flyway migration files found; skipping filename check."
+            exit 0
+          fi
+
+          BAD=0
+          for f in "${FILES[@]}"; do
+            base="$(basename "$f")"
+            # Reject anything not matching ^V[0-9]+__[A-Za-z0-9_]+\.sql$
+            if ! printf '%s' "$base" | grep -qE '^V[0-9]+__[A-Za-z0-9_]+\.sql$'; then
+              BAD=1
+              echo "::error::FLYWAY_BAD_FILENAME: '$f' does not match ^V<num>__<name>.sql$"
+            fi
+          done
+
+          if [ "$BAD" -ne 0 ]; then
+            exit 1
+          fi
+          echo "Flyway filename sanity: all filenames valid."
+
+      - name: Reject modifying applied migrations (diff guard)
+        run: |
+          FAIL=0
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.base_ref }}"
+            git fetch origin "$BASE" --quiet 2>/dev/null || true
+            # diff guard: status 'M' on an existing db/migration/*.sql = modified applied migration
+            while IFS=$'\t' read -r status path; do
+              case "$path" in
+                *db/migration/*.sql)
+                  if [ "$status" = "M" ]; then
+                    echo "::error::FLYWAY_MODIFIED_APPLIED: ${path} modifies an already-released migration — migrations must be append-only"
+                    FAIL=1
+                  fi
+                  ;;
+              esac
+            done < <(git diff --name-status "origin/${BASE}...HEAD" 2>/dev/null || true)
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            # push: no base_ref. Fall back to origin/dev if it exists.
+            if git rev-parse --verify origin/dev >/dev/null 2>&1; then
+              echo "push event without base_ref; falling back to origin/dev for modify-guard."
+              while IFS=$'\t' read -r status path; do
+                case "$path" in
+                  *db/migration/*.sql)
+                    if [ "$status" = "M" ]; then
+                      echo "::error::FLYWAY_MODIFIED_APPLIED: ${path} modifies an already-released migration — migrations must be append-only"
+                      FAIL=1
+                    fi
+                    ;;
+                esac
+              done < <(git diff --name-status "origin/dev...HEAD" 2>/dev/null || true)
+            else
+              echo "::warning::push event without base_ref and origin/dev missing; skipping modify-guard (dedup + filename checks already ran)"
+            fi
+          else
+            echo "::warning::event ${{ github.event_name }} has no base_ref; skipping modify-guard"
+          fi
+
+          if [ "$FAIL" -ne 0 ]; then
+            exit 1
+          fi
+          echo "Flyway modify-guard: no already-released migrations were modified."
+
+  # ============================================================
   # Job 2: 后端质量检查
   # ============================================================
   quality-check-backend:
