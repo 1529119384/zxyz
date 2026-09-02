@@ -21,7 +21,8 @@ import java.util.Map;
  * 继承公共基类获取 listByIds / getUserById，保留团队服务特有的方法。
  *
  * <p>错误处理契约：createTeamUser 抛出异常（写入操作，失败不可忽略）；
- * 其余方法（updateDefaultTeam、getAllUserIds 等）静默降级。</p>
+ * getAllUserIds 等查询方法静默降级。updateDefaultTeam 不再静默降级——
+ * P2-A4 改由 DefaultTeamSyncRetryTask 感知失败并重试，故失败时直接抛出。</p>
  */
 @Slf4j
 @Component
@@ -54,13 +55,11 @@ public class UserServiceClient extends UserQueryClient {
 
     /**
      * 更新用户的 defaultTeamId。
+     * <p>P2-A4：本方法不再静默降级，失败直接抛出 {@code BusinessException}（user-service 不可用/业务错误），
+     * 由 {@code DefaultTeamSyncRetryTask} 捕获后推进重试。幂等写，重复调用安全。</p>
      */
     public void updateDefaultTeam(Long userId, Long teamId) {
-        try {
-            putJson("/api/internal/users/{id}/default-team", Map.of("teamId", teamId), userId);
-        } catch (Exception e) {
-            log.warn("更新用户默认团队失败: userId={}, teamId={}", userId, teamId, e);
-        }
+        putJson("/api/internal/users/{id}/default-team", Map.of("teamId", teamId), userId);
     }
 
     /**

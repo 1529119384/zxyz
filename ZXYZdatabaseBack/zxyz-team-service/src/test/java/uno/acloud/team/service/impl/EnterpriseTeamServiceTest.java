@@ -16,7 +16,6 @@ import static uno.acloud.common.TeamErrorCode.*;
 import uno.acloud.common.UserErrorCode;
 import uno.acloud.common.TeamPermissionCodes;
 import uno.acloud.common.TeamRoleCodes;
-import uno.acloud.common.config.ConfigGetter;
 import uno.acloud.common.util.TransactionHelper;
 import uno.acloud.common.oss.AvatarUploadSignService;
 import uno.acloud.dto.UserInfoDTO;
@@ -34,6 +33,7 @@ import uno.acloud.team.infrastructure.mapper.TeamEntityMapper;
 import uno.acloud.team.infrastructure.mq.TeamEventPublisher;
 import uno.acloud.team.mapper.TeamMapper;
 import uno.acloud.team.mapper.TeamQuotaMapper;
+import uno.acloud.team.mapper.TeamUserDefaultSyncMapper;
 import uno.acloud.team.service.TeamFileAccessPort;
 import uno.acloud.team.vo.team.TeamMemberVO;
 import uno.acloud.team.vo.team.TeamVO;
@@ -90,7 +90,7 @@ class EnterpriseTeamServiceTest {
     private TransactionHelper transactionHelper;
 
     @Mock
-    private ConfigGetter configGetter;
+    private TeamUserDefaultSyncMapper teamUserDefaultSyncMapper;
 
     @Mock
     private RLock rLock;
@@ -99,15 +99,11 @@ class EnterpriseTeamServiceTest {
 
     @BeforeEach
     void setUp() {
-        org.mockito.Mockito.when(configGetter.getInt("app.team.default-max-members", 100)).thenReturn(100);
-        org.mockito.Mockito.when(configGetter.getLong("app.team.default-storage-limit-bytes", 107374182400L)).thenReturn(107374182400L);
-        org.mockito.Mockito.when(configGetter.getInt("app.team.min-password-length", 6)).thenReturn(6);
-
         enterpriseTeamService = new EnterpriseTeamService(
                 teamMapper, quotaMapper, userServiceClient, projectServiceClient,
                 fileServiceClient, passwordEncoder, teamPermissionService,
                 teamFileAccessService, teamEventPublisher, avatarUploadSignService,
-                redissonClient, teamEntityMapper, transactionHelper, configGetter);
+                redissonClient, teamEntityMapper, transactionHelper, teamUserDefaultSyncMapper, 100, 107374182400L, 6);
         // Mock TransactionHelper to execute lambdas directly (simulates transactional behavior)
         lenient().when(transactionHelper.execute(any())).thenAnswer(invocation -> {
             TransactionHelper.TransactionCallback<?> callback = invocation.getArgument(0);

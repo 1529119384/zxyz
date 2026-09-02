@@ -42,3 +42,7 @@ app:
     base-url: ${FILE_SERVICE_BASE_URL:http://zxyz-file-service}
   project-service:
     base-url: ${PROJECT_SERVICE_BASE_URL:http://zxyz-project-service}
+  team:
+    default-team-sync:
+      initial-delay-ms: ${DEFAULT_TEAM_SYNC_INITIAL_DELAY_MS:30000}
+      fixed-delay-ms: ${DEFAULT_TEAM_SYNC_FIXED_DELAY_MS:30000}

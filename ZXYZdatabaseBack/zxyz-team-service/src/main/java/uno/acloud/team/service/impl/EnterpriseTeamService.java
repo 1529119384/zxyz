@@ -23,7 +23,7 @@ import uno.acloud.exception.NotFoundException;
 import uno.acloud.exception.ValidationException;
 import uno.acloud.common.oss.AvatarUploadSignRequest;
 import uno.acloud.common.oss.AvatarUploadSignService;
-import uno.acloud.common.config.ConfigGetter;
+import org.springframework.beans.factory.annotation.Value;
 import uno.acloud.team.dto.team.CreateTeamMemberRequest;
 import uno.acloud.team.dto.team.CreateTeamRequest;
 import uno.acloud.team.dto.team.UpdateTeamMemberStatusRequest;
@@ -35,6 +35,7 @@ import uno.acloud.team.infrastructure.client.FileServiceClient;
 import uno.acloud.team.infrastructure.client.ProjectServiceClient;
 import uno.acloud.team.infrastructure.client.UserServiceClient;
 import uno.acloud.team.infrastructure.mapper.TeamEntityMapper;
+import uno.acloud.team.mapper.TeamUserDefaultSyncMapper;
 import uno.acloud.team.infrastructure.mq.TeamEventPublisher;
 import uno.acloud.team.mapper.TeamMapper;
 import uno.acloud.team.mapper.TeamQuotaMapper;
@@ -84,7 +85,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
     private final RedissonClient redissonClient;
     private final TeamEntityMapper teamEntityMapper;
     private final TransactionHelper transactionHelper;
-    private final ConfigGetter configGetter;
+    private final TeamUserDefaultSyncMapper teamUserDefaultSyncMapper;
     private final int defaultMemberLimit;
     private final long defaultStorageLimit;
     private final int minPasswordLength;
@@ -102,7 +103,10 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
                                  RedissonClient redissonClient,
                                  TeamEntityMapper teamEntityMapper,
                                  TransactionHelper transactionHelper,
-                                 ConfigGetter configGetter) {
+                                 TeamUserDefaultSyncMapper teamUserDefaultSyncMapper,
+                                 @Value("${app.team.default-max-members:100}") int defaultMemberLimit,
+                                 @Value("${app.team.default-storage-limit-bytes:107374182400}") long defaultStorageLimit,
+                                 @Value("${app.team.min-password-length:6}") int minPasswordLength) {
         this.teamMapper = teamMapper;
         this.quotaMapper = quotaMapper;
         this.userServiceClient = userServiceClient;
@@ -116,10 +120,10 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
         this.redissonClient = redissonClient;
         this.teamEntityMapper = teamEntityMapper;
         this.transactionHelper = transactionHelper;
-        this.configGetter = configGetter;
-        this.defaultMemberLimit = configGetter.getInt("app.team.default-max-members", FALLBACK_DEFAULT_MEMBER_LIMIT);
-        this.defaultStorageLimit = configGetter.getLong("app.team.default-storage-limit-bytes", FALLBACK_DEFAULT_STORAGE_LIMIT);
-        this.minPasswordLength = configGetter.getInt("app.team.min-password-length", FALLBACK_MIN_PASSWORD_LENGTH);
+        this.teamUserDefaultSyncMapper = teamUserDefaultSyncMapper;
+        this.defaultMemberLimit = defaultMemberLimit;
+        this.defaultStorageLimit = defaultStorageLimit;
+        this.minPasswordLength = minPasswordLength;
     }
 
     @Override
@@ -184,13 +188,22 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
                 TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
                     @Override
                     public void afterCommit() {
-                        // 事务提交后更新用户默认团队（失败静默降级）
+                        // P2-A4：不再 fire-and-forget 调用 user-service。
+                        // 改为写入本地消息表 team_user_default_sync，由 DefaultTeamSyncRetryTask 定时重试，
+                        // 避免 user-service 瞬时不可用时默认团队永久丢失（数据不一致）。
+                        // 事务回滚时 afterCommit 不会执行，故不会插入脏行（回滚补偿见 afterCompletion）。
                         Team team = teamRef.get();
                         if (team == null) return;
                         try {
-                            userServiceClient.updateDefaultTeam(ownerId, team.getId());
+                            teamUserDefaultSyncMapper.upsertPending(
+                                    ownerId,
+                                    team.getId(),
+                                    "DEFAULT_TEAM:" + ownerId
+                            );
                         } catch (Exception e) {
-                            log.warn("更新用户默认团队失败，userId={}, teamId={}", ownerId, team.getId(), e);
+                            // 落库失败：本地无在途记录，默认团队将无法同步；记录错误待人工排查，
+                            // 不再直接调用 user-service（避免与原重试框架职责混淆）。
+                            log.error("插入默认团队同步记录失败，userId={}, teamId={}", ownerId, team.getId(), e);
                         }
                     }
 
