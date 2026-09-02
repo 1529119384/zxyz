@@ -367,7 +367,7 @@ MySQL 容器首次启动时（数据目录为空），Docker 入口脚本会自�
 
 1. **创建 10 个数据库**（9 个 `zxyz_*` 业务库 + `nacos`）：`zxyz_project`、`zxyz_im`、`zxyz_email`、`zxyz_share`、`zxyz_file`、`zxyz_team`、`zxyz_user`、`zxyz_audit`、`zxyz_config`、`nacos`
 
-表结构由各服务的 Flyway 迁移脚本在运行时自动管理（见 `docs/claude-infra.md`），无需手动导入 `schema_*.sql` 文件。
+表结构由各服务的 Flyway 迁移脚本在运行时自动管理（见 `docs/claude-infra.md`）。
 
 ### 5.3 重新初始化
 
