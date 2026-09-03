@@ -149,7 +149,7 @@ describe('conversationDomain', () => {
       expect(messageDomain.removeConversationBuckets).not.toHaveBeenCalled()
     })
 
-    it('仅 teamId：active 指向已被移除的会话时不会清空（真实行为，见风险说明）', () => {
+    it('仅 teamId：active 指向该团队被移除的会话时清空（防止停留在空白聊天窗）', () => {
       const { state, domain } = createDomain()
       state.conversations.value = [
         { id: 1, teamId: 10 },
@@ -157,9 +157,47 @@ describe('conversationDomain', () => {
       ]
       state.activeConversationId.value = 1
       domain.handleConversationAccessRevoked({ teamId: 10 })
-      // teamId 分支先过滤掉该团队会话，再 find 已找不到该会话，
-      // 因此 activeConversationId 会残留指向已被移除的会话（疑似设计缺陷）
-      expect(state.activeConversationId.value).toBe(1)
+      // 修复前：filter 先移除团队会话，再 find 已找不到，activeConversationId 残留
+      // 指向已被移除的会话。修复后改为过滤前判定，故会被正确清空。
+      expect(state.activeConversationId.value).toBeNull()
+      expect(state.conversations.value.map((c) => c.id)).toEqual([2])
+    })
+
+    it('仅 teamId：active 指向其他团队的会话时保持不变', () => {
+      const { state, domain } = createDomain()
+      state.conversations.value = [
+        { id: 1, teamId: 10 },
+        { id: 2, teamId: 20 },
+      ]
+      state.activeConversationId.value = 2
+      domain.handleConversationAccessRevoked({ teamId: 10 })
+      expect(state.conversations.value.map((c) => c.id)).toEqual([2])
+      expect(state.activeConversationId.value).toBe(2)
+    })
+
+    it('仅 teamId：id 数字/字符串类型不一致时仍能正确匹配并清空', () => {
+      const { state, domain } = createDomain()
+      state.conversations.value = [
+        { id: 1, teamId: 10 },
+        { id: 2, teamId: 20 },
+      ]
+      // activeConversationId 存字符串，会话 id 为数字（IM 路由参数常见）
+      state.activeConversationId.value = '1'
+      domain.handleConversationAccessRevoked({ teamId: 10 })
+      // 修复前用严格相等 ===，字符串 '1' 匹配不到数字 1，导致清空失效
+      expect(state.activeConversationId.value).toBeNull()
+    })
+
+    it('仅 teamId：active 为空时不清空且不影响过滤结果', () => {
+      const { state, domain } = createDomain()
+      state.conversations.value = [
+        { id: 1, teamId: 10 },
+        { id: 2, teamId: 20 },
+      ]
+      state.activeConversationId.value = null
+      domain.handleConversationAccessRevoked({ teamId: 10 })
+      expect(state.activeConversationId.value).toBeNull()
+      expect(state.conversations.value.map((c) => c.id)).toEqual([2])
     })
 
     it('conversationId 与 teamId 同时提供时两条路径都执行', () => {

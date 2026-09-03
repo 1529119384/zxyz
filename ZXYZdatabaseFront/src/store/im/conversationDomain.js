@@ -112,14 +112,21 @@ export function createConversationDomain(state, deps = {}) {
     }
     if (teamId) {
       handleTeamAccessRevoked(teamId)
+      // 必须先判断激活会话是否属于该团队，再过滤：过滤后数组已不含该团队会话，
+      // 若放到 filter 之后判断（旧实现），activeConversationId 会残留指向已被移除的会话，
+      // 导致 UI 停留在空白聊天窗。id 比较统一用 Number 转换，避免数字/字符串类型不一致。
+      const activeConversation = conversations.value.find(
+        (item) => Number(item.id) === Number(activeConversationId.value),
+      )
+      const shouldClearActive = Boolean(
+        activeConversation && Number(activeConversation.teamId) === Number(teamId),
+      )
       conversations.value = conversations.value.filter(
         (item) => Number(item.teamId) !== Number(teamId),
       )
       const allowedConversationIds = new Set(conversations.value.map((item) => Number(item.id)))
       messageDomain.removeTeamBuckets(allowedConversationIds)
-      const activeConversation =
-        conversations.value.find((item) => item.id === activeConversationId.value) || null
-      if (activeConversation?.teamId && Number(activeConversation.teamId) === Number(teamId)) {
+      if (shouldClearActive) {
         activeConversationId.value = null
       }
     }
