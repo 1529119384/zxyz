@@ -3,6 +3,7 @@ package uno.acloud.email.application;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -29,6 +30,7 @@ import static uno.acloud.common.InputNormalizer.requireText;
 
 @Slf4j
 @Service
+@RefreshScope
 public class EmailDispatchService {
 
     private static final int MAX_SUBJECT_LENGTH = 255;

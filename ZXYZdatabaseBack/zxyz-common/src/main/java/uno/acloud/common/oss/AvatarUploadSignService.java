@@ -16,6 +16,8 @@ import static uno.acloud.common.InputNormalizer.requireText;
 
 @Service
 @ConditionalOnClass(OSSClient.class)
+// 重启生效（无法加 @RefreshScope）：本类位于 zxyz-common，而 common 未引入 spring-cloud-context
+// （按项目约定不往 common 塞非通用依赖），故不可用 @RefreshScope；如需热更须改为由各服务注入配置。
 public class AvatarUploadSignService {
 
     private static final String AVATAR_OBJECT_PREFIX = "avatar/";

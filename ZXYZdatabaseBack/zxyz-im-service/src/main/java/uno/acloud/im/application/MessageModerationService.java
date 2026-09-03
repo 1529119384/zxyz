@@ -1,6 +1,7 @@
 package uno.acloud.im.application;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.common.ErrorCode;
@@ -24,6 +25,7 @@ import java.util.List;
 import static uno.acloud.common.InputNormalizer.optionalText;
 
 @Service
+@RefreshScope
 public class MessageModerationService {
 
     private final ImMessageMapper imMessageMapper;

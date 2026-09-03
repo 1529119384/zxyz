@@ -1,6 +1,7 @@
 package uno.acloud.share.service.impl;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
@@ -13,6 +14,7 @@ import uno.acloud.common.ErrorCode;
 import uno.acloud.exception.BusinessException;
 
 @Component
+@RefreshScope
 public class ShareAccessRateLimiter {
 
     private static final String KEY_PREFIX = "zxyz:share:verify:";

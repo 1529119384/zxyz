@@ -3,6 +3,7 @@ package uno.acloud.project.service.impl;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.ScanOptions;
@@ -22,6 +23,7 @@ import uno.acloud.project.vo.StorageUsageVO;
  */
 @Slf4j
 @Service
+@RefreshScope
 public class StorageQuotaCacheService {
 
     private static final String KEY_PREFIX = "zxyz:project:quota:";

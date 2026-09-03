@@ -20,6 +20,8 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Component
+// 重启生效（无需 @RefreshScope）：构造期一次性装配 provider 映射；且 app.email.default-provider 属静态配置，
+// 不在 zxyz-dynamic.yml 热更清单内。
 public class EmailProviderRegistry {
 
     private final Map<String, EmailProvider> providers;

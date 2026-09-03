@@ -1,6 +1,7 @@
 package uno.acloud.im.application;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.common.ErrorCode;
@@ -26,6 +27,7 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 @Service
+@RefreshScope
 public class ImMessageService {
 
     /** IM 消息最大文本长度 fallback */

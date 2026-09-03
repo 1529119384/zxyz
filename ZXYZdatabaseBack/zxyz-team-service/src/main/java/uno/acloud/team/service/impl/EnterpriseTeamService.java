@@ -3,6 +3,7 @@ package uno.acloud.team.service.impl;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -60,6 +61,7 @@ import static uno.acloud.common.InputNormalizer.optionalText;
 import static uno.acloud.common.InputNormalizer.requireText;
 
 @Service
+@RefreshScope
 @Slf4j
 public class EnterpriseTeamService implements EnterpriseTeamPort {
 

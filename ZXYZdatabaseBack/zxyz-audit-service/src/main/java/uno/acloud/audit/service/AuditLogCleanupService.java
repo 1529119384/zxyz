@@ -2,6 +2,7 @@ package uno.acloud.audit.service;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import uno.acloud.audit.mapper.OperateLogMapper;
@@ -18,6 +19,7 @@ import java.time.LocalDateTime;
  */
 @Slf4j
 @Service
+@RefreshScope
 public class AuditLogCleanupService {
 
     private final OperateLogMapper operateLogMapper;

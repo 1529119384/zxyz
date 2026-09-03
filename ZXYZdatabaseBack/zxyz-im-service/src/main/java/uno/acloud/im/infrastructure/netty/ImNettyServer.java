@@ -25,6 +25,8 @@ import uno.acloud.im.config.ImNettyProperties;
 @Slf4j
 @Component
 @ConditionalOnProperty(prefix = "im.netty", name = "enabled", havingValue = "true", matchIfMissing = true)
+// 重启生效（不可加 @RefreshScope）：本类持有运行中的 Netty boss/worker EventLoopGroup 与 serverChannel，
+// 刷新会重建 Bean 并中断所有 WebSocket 连接；且 app.im.ws.max-content-length 不在 zxyz-dynamic.yml 热更清单内。
 public class ImNettyServer {
 
     private static final int FALLBACK_MAX_CONTENT_LENGTH = 65536;

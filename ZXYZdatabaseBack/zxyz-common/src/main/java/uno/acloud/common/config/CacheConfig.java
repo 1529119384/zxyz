@@ -45,6 +45,8 @@ import uno.acloud.common.config.ConfigGetter;
 @ConditionalOnClass(RedisConnectionFactory.class)
 @ConditionalOnBean(ConfigGetter.class)
 @EnableCaching
+// 重启生效（不可加 @RefreshScope）：本类是构建 RedisCacheManager 的 @Configuration，刷新会重建缓存管理器实例；
+// 且缓存 TTL 需在建 Bean 时一次性写入 RedisCacheConfiguration，改为热更须重构为逐条 TTL 策略。
 public class CacheConfig {
 
     /** 默认缓存 TTL（分钟） */

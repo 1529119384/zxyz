@@ -1,6 +1,7 @@
 package uno.acloud.user.service.impl;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
@@ -12,6 +13,7 @@ import uno.acloud.common.ErrorCode;
 import uno.acloud.exception.BusinessException;
 
 @Component
+@RefreshScope
 public class RegisterRateLimiter {
 
     private final StringRedisTemplate stringRedisTemplate;

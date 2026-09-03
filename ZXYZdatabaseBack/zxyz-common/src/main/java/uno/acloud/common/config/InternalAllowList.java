@@ -26,6 +26,8 @@ import java.util.Map;
  * 保证 dev 本地与尚未迁移节点的平滑过渡。新旧密钥均禁止 YAML 默认值（CLAUDE.md 安全强制）。</p>
  */
 @Component
+// 重启生效（不可加 @RefreshScope）：内部服务鉴权白名单，刷新期间替换实例会打开鉴权空窗；
+// 且 app.internal-service-token / app.internal.allowed-sources 属静态配置，不在 zxyz-dynamic.yml 热更清单内。
 public class InternalAllowList {
 
     private static final Logger log = LoggerFactory.getLogger(InternalAllowList.class);

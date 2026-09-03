@@ -3,6 +3,7 @@ package uno.acloud.file.service.impl;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
@@ -41,6 +42,7 @@ import java.util.Set;
 
 @Slf4j
 @Service
+@RefreshScope
 public class FileUploadService implements FileUploadPort {
 
     private static final int MAX_NAME_RETRY_ATTEMPTS = 64;

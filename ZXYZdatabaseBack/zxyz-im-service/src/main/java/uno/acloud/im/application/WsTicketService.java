@@ -2,6 +2,7 @@ package uno.acloud.im.application;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.lang.Nullable;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
@@ -18,6 +19,7 @@ import java.util.UUID;
 
 @Slf4j
 @Service
+@RefreshScope
 public class WsTicketService {
 
     private static final String TICKET_PREFIX = "ws:ticket:";

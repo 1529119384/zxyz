@@ -2,6 +2,7 @@ package uno.acloud.user.service.impl;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import uno.acloud.common.ErrorCode;
@@ -26,6 +27,7 @@ import static uno.acloud.common.InputNormalizer.requireText;
 
 @Slf4j
 @Service
+@RefreshScope
 public class ContactVerificationService {
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
     private static final Pattern PHONE_PATTERN = Pattern.compile("^\\+?[0-9][0-9\\-\\s]{5,48}[0-9]$");
