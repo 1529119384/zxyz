@@ -15,8 +15,9 @@ import java.util.concurrent.ThreadLocalRandom;
 /**
  * P2-A4：用户默认团队同步定时重试任务。
  *
- * <p>团队创建事务提交后（{@code EnterpriseTeamService.afterCommit}）仅向本地表
- * {@code team_user_default_sync} 写入一条 PENDING 记录，不再直接调用 user-service。
+ * <p>团队创建时，{@code EnterpriseTeamService} 在<strong>本地事务内</strong>向本地表
+ * {@code team_user_default_sync} 写入一条 PENDING 记录（与团队数据同事务：回滚则补偿行
+ * 一并回滚，提交成功则补偿行必然存在），不再直接调用 user-service。
  * 本任务周期性扫描到点的 PENDING 记录，调用 {@code UserServiceClient.updateDefaultTeam}，
  * 成功置 DONE；失败按指数退避 + 抖动推进 next_retry_time，超过上限置 FAILED。</p>
  *

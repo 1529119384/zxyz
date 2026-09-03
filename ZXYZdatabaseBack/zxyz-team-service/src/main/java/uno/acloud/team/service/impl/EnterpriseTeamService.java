@@ -53,7 +53,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -183,36 +182,16 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
         Long teamId = transactionHelper.execute(status -> {
             // P2-A4: 跨服务写孤儿数据补偿框架
             // createTeamUser 在事务外已调用，若本地事务回滚，user-service 用户将成为孤儿。
+            // 这里只注册「回滚补偿」：回滚时删除已创建的 user-service 用户。
+            // 正向补偿（写 team_user_default_sync 待同步记录）不在此处，
+            // 而是与团队数据同事务写入，见 lambda 末尾的 upsertPending（N3 修复）。
             // registerSynchronization 需要活动事务；mock 测试中 TransactionTemplate 可能未创建事务，静默降级
             // 放在 lambda 开头，确保 DB 操作提前抛异常时补偿也已注册（全流程覆盖）
-            AtomicReference<Team> teamRef = new AtomicReference<>();
             try {
                 TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
                     @Override
-                    public void afterCommit() {
-                        // P2-A4：不再 fire-and-forget 调用 user-service。
-                        // 改为写入本地消息表 team_user_default_sync，由 DefaultTeamSyncRetryTask 定时重试，
-                        // 避免 user-service 瞬时不可用时默认团队永久丢失（数据不一致）。
-                        // 事务回滚时 afterCommit 不会执行，故不会插入脏行（回滚补偿见 afterCompletion）。
-                        Team team = teamRef.get();
-                        if (team == null) return;
-                        try {
-                            teamUserDefaultSyncMapper.upsertPending(
-                                    ownerId,
-                                    team.getId(),
-                                    "DEFAULT_TEAM:" + ownerId
-                            );
-                        } catch (Exception e) {
-                            // 落库失败：本地无在途记录，默认团队将无法同步；记录错误待人工排查，
-                            // 不再直接调用 user-service（避免与原重试框架职责混淆）。
-                            log.error("插入默认团队同步记录失败，userId={}, teamId={}", ownerId, team.getId(), e);
-                        }
-                    }
-
-                    @Override
                     public void afterCompletion(int status) {
                         if (status == TransactionSynchronization.STATUS_ROLLED_BACK) {
-                            // 事务回滚时补偿删除已创建的 user-service 用户，防止孤儿数据
                             log.warn("团队创建本地事务回滚，补偿删除用户 userId={}", ownerId);
                             userServiceClient.deleteUser(ownerId);
                         }
@@ -220,7 +199,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
                 });
             } catch (IllegalStateException e) {
                 // mock 测试或无事务环境，registerSynchronization 不可用，静默降级
-                log.debug("TransactionSynchronizationManager 无活动事务，跳过 afterCommit/afterCompletion 注册", e);
+                log.debug("TransactionSynchronizationManager 无活动事务，跳过 afterCompletion 注册", e);
             }
 
             Team team = new Team();
@@ -235,7 +214,6 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
             team.setCreateTime(now);
             team.setUpdateTime(now);
             teamMapper.insert(team);
-            teamRef.set(team);
 
             upsertMember(team.getId(), ownerId, TeamRoleCodes.OWNER, 0, now);
             teamPermissionService.initializeBuiltInRoles(team.getId(), ownerId);
@@ -247,6 +225,18 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
             quota.setCreateTime(now);
             quota.setUpdateTime(now);
             quotaMapper.upsertQuota(quota);
+
+            // P2-A4 本地消息表：正向补偿记录必须与团队数据同事务写入（N3 修复）。
+            // 旧实现放在 afterCommit —— 那是提交之后另开连接写库，一旦此刻 DB 抖动，
+            // PENDING 行写失败只会留一条 log.error，DefaultTeamSyncRetryTask 永远
+            // 看不到这条任务，默认团队永久不同步（静默数据不一致）。
+            // 改为事务内写入：本地事务回滚则补偿行一并回滚（不留脏数据），
+            // 提交成功则补偿行必然存在；写失败即整体回滚，由调用方重试。
+            teamUserDefaultSyncMapper.upsertPending(
+                    ownerId,
+                    team.getId(),
+                    "DEFAULT_TEAM:" + ownerId
+            );
 
             return team.getId();
         });

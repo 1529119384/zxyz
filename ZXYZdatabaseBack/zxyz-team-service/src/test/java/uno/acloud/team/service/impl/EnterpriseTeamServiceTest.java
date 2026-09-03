@@ -41,6 +41,7 @@ import uno.acloud.team.vo.team.TeamVO;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -181,6 +182,70 @@ class EnterpriseTeamServiceTest {
         // Verify user was created
         verify(userServiceClient).createTeamUser(eq("admin"), eq("encoded_password"),
                 isNull(), isNull(), isNull(), isNull());
+    }
+
+    // ============ createTeam — 补偿记录须与团队数据同事务写入（N3 回归锁） ============
+
+    @Test
+    void createTeam_shouldUpsertPendingSyncRecordInsideTransaction() throws Exception {
+        CreateTeamRequest request = new CreateTeamRequest();
+        request.setName("TestTeam");
+        request.setOwnerUsername("admin");
+        request.setOwnerPassword("password123");
+
+        when(redissonClient.getLock("zxyz:team:create:TestTeam")).thenReturn(rLock);
+        when(rLock.tryLock(5L, 30L, TimeUnit.SECONDS)).thenReturn(true);
+        when(rLock.isHeldByCurrentThread()).thenReturn(true);
+        RLock userLock = mock(RLock.class);
+        when(redissonClient.getLock("zxyz:team:member:user:1")).thenReturn(userLock);
+        when(userLock.tryLock(5L, 30L, TimeUnit.SECONDS)).thenReturn(true);
+        when(userLock.isHeldByCurrentThread()).thenReturn(true);
+
+        when(passwordEncoder.encode("password123")).thenReturn("encoded_password");
+        UserInfoDTO owner = new UserInfoDTO();
+        owner.setId(1L);
+        owner.setUsername("admin");
+        when(userServiceClient.createTeamUser(eq("admin"), eq("encoded_password"),
+                isNull(), isNull(), isNull(), isNull())).thenReturn(owner);
+
+        when(teamMapper.countCurrentMemberships(1L)).thenReturn(0);
+        doAnswer(invocation -> {
+            Team arg = invocation.getArgument(0);
+            arg.setId(10L);
+            return null;
+        }).when(teamMapper).insert(any(Team.class));
+        doNothing().when(teamPermissionService).initializeBuiltInRoles(eq(10L), eq(1L));
+        Team team = new Team();
+        team.setId(10L);
+        team.setName("TestTeam");
+        team.setOwnerUserId(1L);
+        team.setStatus(0);
+        when(teamMapper.selectById(10L)).thenReturn(team);
+        when(teamPermissionService.listRoleCodes(10L, 1L)).thenReturn(List.of(TeamRoleCodes.OWNER));
+        when(teamPermissionService.listPermissionCodes(10L, 1L)).thenReturn(List.of());
+        when(teamEntityMapper.toTeamVO(any(Team.class))).thenAnswer(invocation -> {
+            Team t = invocation.getArgument(0);
+            return new TeamVO(t.getId(), t.getName(), null, null, t.getOwnerUserId(), 0, "", List.of(), null, null);
+        });
+
+        // 关键断言：在事务 lambda 返回（尚未提交）时快照，确认补偿记录已经写入。
+        // 旧实现把 upsertPending 放在 afterCommit：那是提交之后另开连接写库，
+        // 一旦失败只留 log.error，重试任务永久丢失（N3）。
+        AtomicBoolean writtenBeforeCommit = new AtomicBoolean(false);
+        when(transactionHelper.execute(any())).thenAnswer(invocation -> {
+            TransactionHelper.TransactionCallback<?> callback = invocation.getArgument(0);
+            Object result = callback.doInTransaction(null);
+            writtenBeforeCommit.set(mockingDetails(teamUserDefaultSyncMapper).getInvocations().stream()
+                    .anyMatch(i -> "upsertPending".equals(i.getMethod().getName())));
+            return result;
+        });
+
+        enterpriseTeamService.createTeam(request);
+
+        assertTrue(writtenBeforeCommit.get(),
+                "team_user_default_sync 的 PENDING 记录必须在事务提交前随团队数据一同写入，" +
+                        "否则重试任务会在写库失败时静默永久丢失");
+        verify(teamUserDefaultSyncMapper).upsertPending(1L, 10L, "DEFAULT_TEAM:1");
     }
 
     // ==================== createTeam — duplicate name ====================
