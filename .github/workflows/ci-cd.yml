@@ -223,7 +223,8 @@ jobs:
   # ============================================================
   # Job 1.5: Flyway 迁移门禁
   # 守卫两类会导致生产 Flyway 失败 / 非确定性的提交：
-  #   1) 重复版本号：两个迁移文件共享同一 V<num>__ 前缀（跨服务或同服务内）。
+  #   1) 重复版本号：同一服务内两个迁移文件共享同一 V<num>__ 前缀（按「服务:版本」判重，
+  #      跨服务的同版本号各走独立 flyway_schema_history，属合法重复，不拦截）。
   #   2) 篡改已发布迁移：修改已存在于基线分支的迁移文件（迁移必须只追加）。
   # 另外拒绝不合规的文件名（缺 __ 或使用非法字符）。
   # 在 PR 上基于 github.base_ref 做 diff；push 事件无 base_ref 时优雅降级。
@@ -246,20 +247,23 @@ jobs:
             exit 0
           fi
 
-          # version integer (after V, before __) -> space-separated list of files
+          # key = "service:version" — each service owns an independent
+          # flyway_schema_history, so a version may legitimately repeat across
+          # services; only a duplicate *within the same service* is a real conflict.
           declare -A VERSION_MAP
           for f in "${FILES[@]}"; do
+            svc="$(echo "$f" | cut -d/ -f2)"   # ZXYZdatabaseBack/<svc>/...
             ver="$(basename "$f" | sed -nE 's/^V([0-9]+)__.*\.sql$/\1/p')"
             [ -z "$ver" ] && continue
-            VERSION_MAP["$ver"]="${VERSION_MAP[$ver]:-} $f"
+            VERSION_MAP["${svc}:${ver}"]="${VERSION_MAP[${svc}:${ver}]:-} $f"
           done
 
           DUP_FOUND=0
-          for ver in "${!VERSION_MAP[@]}"; do
-            n=$(echo ${VERSION_MAP[$ver]} | wc -w)
+          for key in "${!VERSION_MAP[@]}"; do
+            n=$(echo ${VERSION_MAP[$key]} | wc -w)
             if [ "$n" -gt 1 ]; then
               DUP_FOUND=1
-              echo "::error::FLYWAY_DUP_VERSION: version V${ver} appears in:${VERSION_MAP[$ver]}"
+              echo "::error::FLYWAY_DUP_VERSION: key '${key}' appears in:${VERSION_MAP[$key]}"
             fi
           done
 
@@ -301,10 +305,12 @@ jobs:
             while IFS=$'\t' read -r status path; do
               case "$path" in
                 *db/migration/*.sql)
-                  if [ "$status" = "M" ]; then
-                    echo "::error::FLYWAY_MODIFIED_APPLIED: ${path} modifies an already-released migration — migrations must be append-only"
-                    FAIL=1
-                  fi
+                  case "$status" in
+                    M|R*)
+                      echo "::error::FLYWAY_MODIFIED_APPLIED: ${path} modifies/renames an already-released migration — migrations must be append-only"
+                      FAIL=1
+                      ;;
+                  esac
                   ;;
               esac
             done < <(git diff --name-status "origin/${BASE}...HEAD" 2>/dev/null || true)
@@ -315,10 +321,12 @@ jobs:
               while IFS=$'\t' read -r status path; do
                 case "$path" in
                   *db/migration/*.sql)
-                    if [ "$status" = "M" ]; then
-                      echo "::error::FLYWAY_MODIFIED_APPLIED: ${path} modifies an already-released migration — migrations must be append-only"
-                      FAIL=1
-                    fi
+                    case "$status" in
+                      M|R*)
+                        echo "::error::FLYWAY_MODIFIED_APPLIED: ${path} modifies/renames an already-released migration — migrations must be append-only"
+                        FAIL=1
+                        ;;
+                    esac
                     ;;
                 esac
               done < <(git diff --name-status "origin/dev...HEAD" 2>/dev/null || true)
