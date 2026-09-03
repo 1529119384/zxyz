@@ -64,23 +64,25 @@ export default defineConfig(({ mode }) => {
         //   2026-09-03 首轮  全局 stmts 60.14 / branch 51.98 / funcs 55.08 / lines 60.52
         //                     src/store/im  stmts 37.60 / branch 47.87 / funcs 29.58 / lines 38.13
         //                     src/api stmts 72.50 / branch 35.29 / funcs 57.77 / lines 74.54
-        //   2026-09-03 二轮（补全 teamDomain/conversationDomain/messageDomain 用例后）
-        //                     全局 stmts 76.47 / branch 63.45 / funcs 76.05 / lines 76.67
-        //                     src/store/im  stmts 82.21 / branch 77.65 / funcs 87.57 / lines 82.23
+        //   2026-09-03 三轮（再补 permissionDomain/realtimeDomain 用例 + 新增 id.spec.js）
+        //                     全局 stmts 83.25 / branch 70.08 / funcs 81.14 / lines 83.58
+        //                     src/store/im  stmts 98.68 / branch 93.77 / funcs 99.40 / lines 99.08
         //                     src/api stmts 72.50 / branch 35.29 / funcs 57.77 / lines 74.54（未变）
-        // 阈值采用「棘轮」：仅上调已达标项（src/store/im 现已远超目标 75，上调至实测下方约 4 点，
-        // 既守住回归又不误报）；全局与 src/api 维持首轮棘轮值（仍高于实测）。
-        // 目标值：全局 70、src/store/im 75 已基本达成，后续对 notificationDomain/realtimeDomain 补用例可再上调。
+        //                     src/utils/id.js 100（原仅有 realtimeDomain 的附带覆盖 33%，
+        //                     已补 id.spec.js 做正经单测，不再依赖其它测试的顺带覆盖）
+        // 阈值采用「棘轮」：仅上调已达标项，取值在实测值下方约 4 点，既守住回归又不误报。
+        // 目标值（全局 70、src/store/im 75）均已达成并大幅超出，故本轮把两者一并上调。
+        // src/api 维持首轮棘轮值（branch/funcs 仍低于目标，待补 api 用例后再上调）。
         thresholds: {
-          statements: 58,
-          branches: 50,
-          functions: 53,
-          lines: 58,
+          statements: 78,
+          branches: 65,
+          functions: 76,
+          lines: 78,
           'src/store/im/**': {
-            statements: 78,
-            branches: 73,
-            functions: 84,
-            lines: 78,
+            statements: 94,
+            branches: 89,
+            functions: 95,
+            lines: 94,
           },
           'src/api/**': {
             statements: 70,
