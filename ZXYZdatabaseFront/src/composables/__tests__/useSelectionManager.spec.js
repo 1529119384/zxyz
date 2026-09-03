@@ -58,6 +58,10 @@ describe('useSelectionManager', () => {
     })
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   describe('setSelectedIds', () => {
     it('updates selectedIds with the given ids', () => {
       const { selectedIds, setSelectedIds } = createManager()
@@ -305,6 +309,40 @@ describe('useSelectionManager', () => {
       await pruneSelection()
 
       expect(selectedIds.value).toEqual([1, 2])
+    })
+  })
+
+  describe('debouncedPruneSelection', () => {
+    it('defers pruning until the debounce window elapses', () => {
+      vi.useFakeTimers()
+      const { selectedIds, setSelectedIds, debouncedPruneSelection } = createManager()
+
+      setSelectedIds([1, 2, 3, 4, 5], 3)
+      debouncedPruneSelection([items[0], items[2], items[4]]) // ids 1, 3, 5
+
+      // 窗口未到时选区保持不变
+      expect(selectedIds.value).toEqual([1, 2, 3, 4, 5])
+
+      vi.advanceTimersByTime(150)
+      // 窗口到期后按传入行裁剪
+      expect(selectedIds.value).toEqual([1, 3, 5])
+      vi.useRealTimers()
+    })
+
+    it('coalesces rapid calls and prunes once with the latest rows', () => {
+      vi.useFakeTimers()
+      const { selectedIds, setSelectedIds, debouncedPruneSelection } = createManager()
+
+      setSelectedIds([1, 2, 3, 4, 5], 3)
+      debouncedPruneSelection([items[0], items[1]]) // ids 1, 2
+      debouncedPruneSelection([items[0], items[2]]) // ids 1, 3
+      debouncedPruneSelection([items[0], items[4]]) // ids 1, 5（最新）
+
+      vi.advanceTimersByTime(150)
+
+      // 多次调用合并为一次，且取最后一次传入的行
+      expect(selectedIds.value).toEqual([1, 5])
+      vi.useRealTimers()
     })
   })
 })

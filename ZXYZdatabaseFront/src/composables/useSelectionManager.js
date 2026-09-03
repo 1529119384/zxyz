@@ -1,6 +1,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 const SELECTION_SYNC_DEBOUNCE_MS = 100
+const SELECTION_PRUNE_DEBOUNCE_MS = 150
 
 /**
  * @typedef {Object} UseSelectionManagerOptions
@@ -17,7 +18,7 @@ const SELECTION_SYNC_DEBOUNCE_MS = 100
  * 文件列表选择管理器，支持单选、多选、Shift 范围选、Ctrl/⌘ 切换选。
  *
  * @param {UseSelectionManagerOptions} options - 配置项。
- * @returns {{ selectedIds: import('vue').Ref<Array<string|number>>, selectedRows: import('vue').ComputedRef<Array>, selectionAnchorId: import('vue').Ref<string|number|null>, isSyncingSelection: import('vue').Ref<boolean>, setSelectedIds: Function, clearSelection: Function, selectAll: Function, handleRowClick: Function, handleCheckboxSelect: Function, handleCheckboxSelectAll: Function, pruneSelection: Function }} 选择管理状态与操作方法。
+ * @returns {{ selectedIds: import('vue').Ref<Array<string|number>>, selectedRows: import('vue').ComputedRef<Array>, selectionAnchorId: import('vue').Ref<string|number|null>, isSyncingSelection: import('vue').Ref<boolean>, setSelectedIds: Function, clearSelection: Function, selectAll: Function, handleRowClick: Function, handleCheckboxSelect: Function, handleCheckboxSelectAll: Function, pruneSelection: Function, debouncedPruneSelection: Function }} 选择管理状态与操作方法。
  */
 export function useSelectionManager(options) {
   const {
@@ -123,6 +124,19 @@ export function useSelectionManager(options) {
     syncTableSelection()
   }
 
+  // 列表高频变更（排序/筛选/翻页）时合并裁剪，避免每次 filteredList 变化都同步重算选区。
+  // 与 debouncedSync 同源时序，统一收口在组合函数内，避免各组件各自实现造成行为不一致。
+  let pruneTimer = null
+  function debouncedPruneSelection(rows) {
+    if (pruneTimer) {
+      clearTimeout(pruneTimer)
+    }
+    pruneTimer = setTimeout(() => {
+      pruneTimer = null
+      pruneSelection(rows)
+    }, SELECTION_PRUNE_DEBOUNCE_MS)
+  }
+
   function handleRowClick(row, column, event) {
     onBeforeSelect?.()
 
@@ -188,6 +202,10 @@ export function useSelectionManager(options) {
 
   onBeforeUnmount(() => {
     clearTimeout(syncTimer)
+    if (pruneTimer) {
+      clearTimeout(pruneTimer)
+      pruneTimer = null
+    }
   })
 
   return {
@@ -202,5 +220,6 @@ export function useSelectionManager(options) {
     handleCheckboxSelect,
     handleCheckboxSelectAll,
     pruneSelection,
+    debouncedPruneSelection,
   }
 }

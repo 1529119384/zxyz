@@ -79,6 +79,7 @@ export function useExplorerTableInteractions({
     handleCheckboxSelect,
     handleCheckboxSelectAll,
     pruneSelection,
+    debouncedPruneSelection,
   } = useSelectionManager({
     list: filteredList,
     filteredList,
@@ -185,7 +186,8 @@ export function useExplorerTableInteractions({
     captureSelectionPointerState, // 表格包裹 @mousedown.capture
     selectAll, // 全选（供快捷键 / 父组件）
     clearSelection, // 清除选择（defineExpose 复用）
-    pruneSelection, // 列表变化时的选区裁剪（组件 watch 调用）
+    pruneSelection, // 列表变化时的选区裁剪（即时，供测试/显式调用）
+    debouncedPruneSelection, // 列表变化时的选区裁剪（防抖，供组件 watch 调用，统一时序）
     contextMenuBindings, // v-bind 到 FileContextMenu 的额外属性（mode / canWrite / ...）
   }
 }

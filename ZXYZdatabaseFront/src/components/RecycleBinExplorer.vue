@@ -136,7 +136,7 @@ const {
   handleCheckboxSelectAll,
   captureSelectionPointerState,
   clearSelection,
-  pruneSelection,
+  debouncedPruneSelection,
   contextMenuBindings,
 } = useExplorerTableInteractions({
   tableRef,
@@ -175,8 +175,8 @@ watch(
   { immediate: true },
 )
 
-watch(filteredList, async (rows) => {
-  await pruneSelection(rows)
+watch(filteredList, (rows) => {
+  debouncedPruneSelection(rows)
 })
 
 defineExpose({

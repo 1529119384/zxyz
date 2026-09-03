@@ -264,7 +264,7 @@ const {
   handleCheckboxSelectAll,
   captureSelectionPointerState,
   clearSelection,
-  pruneSelection,
+  debouncedPruneSelection,
   contextMenuBindings,
 } = useExplorerTableInteractions({
   tableRef,
@@ -319,7 +319,6 @@ async function runRefreshSafely(options) {
 }
 
 let stopped = false
-let pruneSelectionTimer = null
 
 watch(currentParentId, () => {
   resetPage()
@@ -349,23 +348,11 @@ watch(
 )
 watch(filteredList, (rows) => {
   if (stopped) return
-  if (pruneSelectionTimer) {
-    clearTimeout(pruneSelectionTimer)
-  }
-  pruneSelectionTimer = setTimeout(() => {
-    pruneSelectionTimer = null
-    if (!stopped) {
-      pruneSelection(rows)
-    }
-  }, 150)
+  debouncedPruneSelection(rows)
 })
 
 onBeforeUnmount(() => {
   stopped = true
-  if (pruneSelectionTimer) {
-    clearTimeout(pruneSelectionTimer)
-    pruneSelectionTimer = null
-  }
 })
 
 function handleRowDblClick(row) {
