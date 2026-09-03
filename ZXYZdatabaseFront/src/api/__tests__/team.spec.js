@@ -9,10 +9,14 @@ import request from '@/utils/request'
 import {
   fetchMyTeams,
   updateTeam,
+  getTeamAvatarUploadSign,
   fetchTeamMembers,
   createTeamMember,
+  updateTeamMemberStatus,
   removeTeamMember,
   leaveTeam,
+  fetchTeamMembersStorage,
+  updateMemberStorageLimit,
 } from '@/api/team'
 
 describe('team API', () => {
@@ -54,5 +58,35 @@ describe('team API', () => {
     request.post.mockResolvedValue({})
     await leaveTeam(1)
     expect(request.post).toHaveBeenCalledWith('/api/teams/1/leave')
+  })
+
+  it('应调用 POST 获取团队头像上传签名（带上传超时）', async () => {
+    request.post.mockResolvedValue({ data: {} })
+    await getTeamAvatarUploadSign(1, { fileName: 'avatar.png' })
+    expect(request.post).toHaveBeenCalledWith(
+      '/api/teams/1/avatar/upload-sign',
+      { fileName: 'avatar.png' },
+      { timeout: 30000 },
+    )
+  })
+
+  it('应调用 PATCH 更新成员状态', async () => {
+    request.patch.mockResolvedValue({})
+    await updateTeamMemberStatus(1, 42, { status: 0 })
+    expect(request.patch).toHaveBeenCalledWith('/api/teams/1/members/42/status', { status: 0 })
+  })
+
+  it('应调用 GET 获取团队成员存储用量', async () => {
+    request.get.mockResolvedValue({ data: [] })
+    await fetchTeamMembersStorage(1)
+    expect(request.get).toHaveBeenCalledWith('/api/teams/1/members/storage')
+  })
+
+  it('应调用 PATCH 更新成员存储配额', async () => {
+    request.patch.mockResolvedValue({})
+    await updateMemberStorageLimit(1, 42, { storageLimit: 1024 })
+    expect(request.patch).toHaveBeenCalledWith('/api/teams/1/members/42/storage', {
+      storageLimit: 1024,
+    })
   })
 })

@@ -6,13 +6,21 @@ vi.mock('@/utils/imRequest', () => ({
 
 import imRequest from '@/utils/imRequest'
 import {
+  fetchImHealth,
   fetchMyConversations,
+  fetchConversation,
+  createDirectConversation,
+  fetchTeamConversation,
   fetchConversationMessages,
   searchConversationMessages,
+  resolveMessageFileCard,
   updateConversationRead,
   recallMessage,
   fetchSystemNotifications,
+  fetchSystemNotificationUnreadCount,
   fetchMyPresence,
+  fetchUserPresence,
+  markSystemNotificationRead,
 } from '@/api/im'
 
 describe('im API', () => {
@@ -68,5 +76,75 @@ describe('im API', () => {
     imRequest.get.mockResolvedValue({ data: {} })
     await fetchMyPresence()
     expect(imRequest.get).toHaveBeenCalledWith('/api/im/presence/me')
+  })
+
+  it('应调用 GET 检查 IM 服务健康状态', async () => {
+    imRequest.get.mockResolvedValue({ data: { status: 'UP' } })
+    await fetchImHealth()
+    expect(imRequest.get).toHaveBeenCalledWith('/api/im/health')
+  })
+
+  it('应调用 GET 获取单个会话详情', async () => {
+    imRequest.get.mockResolvedValue({ data: {} })
+    await fetchConversation(7)
+    expect(imRequest.get).toHaveBeenCalledWith('/api/im/conversations/7')
+  })
+
+  it('应调用 POST 创建单聊会话', async () => {
+    imRequest.post.mockResolvedValue({ data: {} })
+    await createDirectConversation({ targetUserId: 42 })
+    expect(imRequest.post).toHaveBeenCalledWith('/api/im/direct-conversations', {
+      targetUserId: 42,
+    })
+  })
+
+  it('应调用 GET 获取团队会话', async () => {
+    imRequest.get.mockResolvedValue({ data: {} })
+    await fetchTeamConversation(10)
+    expect(imRequest.get).toHaveBeenCalledWith('/api/im/teams/10/conversation')
+  })
+
+  it('应调用 POST 解析消息文件卡片', async () => {
+    imRequest.post.mockResolvedValue({ data: {} })
+    await resolveMessageFileCard(99, { messageId: 99 })
+    expect(imRequest.post).toHaveBeenCalledWith('/api/im/messages/99/file-card/resolve', {
+      messageId: 99,
+    })
+  })
+
+  it('resolveMessageFileCard 省略 payload 时传空对象', async () => {
+    imRequest.post.mockResolvedValue({ data: {} })
+    await resolveMessageFileCard(99)
+    expect(imRequest.post).toHaveBeenCalledWith('/api/im/messages/99/file-card/resolve', {})
+  })
+
+  it('应调用 GET 获取系统通知未读数', async () => {
+    imRequest.get.mockResolvedValue({ data: { unreadCount: 3 } })
+    await fetchSystemNotificationUnreadCount({ teamId: 5 })
+    expect(imRequest.get).toHaveBeenCalledWith('/api/im/system-notifications/unread-count', {
+      params: { teamId: 5 },
+    })
+  })
+
+  it('应调用 GET 批量查询用户在线状态（userIds 逗号拼接）', async () => {
+    imRequest.get.mockResolvedValue({ data: [] })
+    await fetchUserPresence([1, 2, 3])
+    expect(imRequest.get).toHaveBeenCalledWith('/api/im/presence/users', {
+      params: { userIds: '1,2,3' },
+    })
+  })
+
+  it('fetchUserPresence 默认空数组时拼接为空串', async () => {
+    imRequest.get.mockResolvedValue({ data: [] })
+    await fetchUserPresence()
+    expect(imRequest.get).toHaveBeenCalledWith('/api/im/presence/users', {
+      params: { userIds: '' },
+    })
+  })
+
+  it('应调用 PATCH 标记单条系统通知已读', async () => {
+    imRequest.patch.mockResolvedValue({})
+    await markSystemNotificationRead(11)
+    expect(imRequest.patch).toHaveBeenCalledWith('/api/im/system-notifications/11/read')
   })
 })
