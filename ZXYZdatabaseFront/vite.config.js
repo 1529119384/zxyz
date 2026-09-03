@@ -67,12 +67,14 @@ export default defineConfig(({ mode }) => {
         //   2026-09-03 三轮（再补 permissionDomain/realtimeDomain 用例 + 新增 id.spec.js）
         //                     全局 stmts 83.25 / branch 70.08 / funcs 81.14 / lines 83.58
         //                     src/store/im  stmts 98.68 / branch 93.77 / funcs 99.40 / lines 99.08
-        //                     src/api stmts 72.50 / branch 35.29 / funcs 57.77 / lines 74.54（未变）
+        //                     src/api stmts 72.50 / branch 35.29 / funcs 57.77 / lines 74.54
         //                     src/utils/id.js 100（原仅有 realtimeDomain 的附带覆盖 33%，
         //                     已补 id.spec.js 做正经单测，不再依赖其它测试的顺带覆盖）
+        //   2026-09-03 四轮（补 files/im/team 用例，api 已测文件覆盖率达 100%）
+        //                     全局 stmts 85.05 / branch 73.66 / funcs 85.38 / lines 85.19
+        //                     src/api stmts 100 / branch 97.64 / funcs 100 / lines 100
         // 阈值采用「棘轮」：仅上调已达标项，取值在实测值下方约 4 点，既守住回归又不误报。
-        // 目标值（全局 70、src/store/im 75）均已达成并大幅超出，故本轮把两者一并上调。
-        // src/api 维持首轮棘轮值（branch/funcs 仍低于目标，待补 api 用例后再上调）。
+        // 目标值（全局 70、src/store/im 75、src/api 首轮阈值）均已达成并大幅超出，故本轮一并上调。
         thresholds: {
           statements: 78,
           branches: 65,
@@ -85,10 +87,10 @@ export default defineConfig(({ mode }) => {
             lines: 94,
           },
           'src/api/**': {
-            statements: 70,
-            branches: 33,
-            functions: 55,
-            lines: 70,
+            statements: 96,
+            branches: 94,
+            functions: 95,
+            lines: 96,
           },
         },
       }
