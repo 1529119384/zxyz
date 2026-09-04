@@ -66,6 +66,7 @@ class ConfigServiceIntegrationTest extends AbstractIntegrationTest {
         SysConfig config = new SysConfig();
         config.setConfigKey("test.key.roundtrip.1");
         config.setConfigValue("ENC(abc)");
+        config.setConfigType("SYSTEM"); // config_type NOT NULL 无默认值（真实 MySQL 严格模式）
         sysConfigMapper.insert(config);
 
         // 2. Mock Jasypt 解密行为：ENC(abc) -> decrypted
@@ -94,6 +95,7 @@ class ConfigServiceIntegrationTest extends AbstractIntegrationTest {
         SysConfig config = new SysConfig();
         config.setConfigKey("test.key.notify.2");
         config.setConfigValue("value");
+        config.setConfigType("SYSTEM"); // config_type NOT NULL 无默认值（真实 MySQL 严格模式）
         sysConfigMapper.insert(config);
 
         // 2. Mock Jasypt：非 ENC 格式原样返回（模拟真实 decrypt 行为）
