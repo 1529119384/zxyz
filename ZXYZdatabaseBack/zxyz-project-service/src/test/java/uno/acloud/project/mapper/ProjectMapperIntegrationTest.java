@@ -100,7 +100,9 @@ class ProjectMapperIntegrationTest extends AbstractIntegrationTest {
         // Upsert same (projectId, userId) with role "member"
         ProjectMember updatedMember = buildMember(project.getId(), 200L, "member");
         int rows2 = projectMapper.upsertMember(updatedMember);
-        assertEquals(1, rows2, "Second upsert should update 1 row (ON DUPLICATE KEY)");
+        // MySQL 语义：ON DUPLICATE KEY UPDATE 走更新路径时 affected rows = 2
+        // （CLIENT_FOUND_ROWS 仅影响「值未变化」场景），这里断言旧行确被更新
+        assertEquals(2, rows2, "Second upsert (update path) affects 2 rows under MySQL ON DUPLICATE KEY semantics");
 
         // Verify role was updated to "member"
         List<ProjectMember> membersAfterSecond = projectMapper.listMembers(project.getId());

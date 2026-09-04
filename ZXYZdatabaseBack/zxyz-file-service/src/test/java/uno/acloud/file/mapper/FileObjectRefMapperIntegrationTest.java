@@ -39,7 +39,8 @@ class FileObjectRefMapperIntegrationTest extends AbstractIntegrationTest {
 
         // Second insert — ON DUPLICATE KEY UPDATE increments ref_count
         int rows2 = fileObjectRefMapper.incrementReference(objectKey, 1, "ACTIVE", "oss");
-        assertEquals(1, rows2, "Duplicate key update should affect 1 row");
+        // MySQL 语义：ON DUPLICATE KEY UPDATE 走更新路径时 affected rows = 2
+        assertEquals(2, rows2, "Duplicate key update (increment path) affects 2 rows under MySQL semantics");
 
         // Verify final state
         FileObjectRef ref = fileObjectRefMapper.selectByKey(objectKey);
