@@ -57,13 +57,6 @@ public interface ConversationMapper extends BaseMapper<ImConversation> {
             """)
     ImConversation getConversationById(@Param("conversationId") Long conversationId);
 
-    @Select("""
-            SELECT COUNT(*)
-            FROM im_conversation_member
-            WHERE conversation_id = #{conversationId} AND user_id = #{userId} AND status = 0
-            """)
-    int countActiveConversationMember(@Param("conversationId") Long conversationId, @Param("userId") Long userId);
-
     @Insert("""
             INSERT INTO im_conversation_member (conversation_id, user_id, last_read_message_id, unread_count, status, create_time, update_time)
             VALUES (#{conversationId}, #{userId}, 0, 0, 0, NOW(), NOW())

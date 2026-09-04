@@ -58,9 +58,6 @@ public interface ShareMapper extends BaseMapper<Share> {
     })
     int deleteShareItemsByFileIds(@Param("fileIds") List<Long> fileIds);
 
-    @Update("UPDATE share SET status = #{status} WHERE id = #{shareId}")
-    int updateStatusById(@Param("shareId") Long shareId, @Param("status") Integer status);
-
     @Update("UPDATE share SET status = #{nextStatus} WHERE id = #{shareId} AND status = #{currentStatus}")
     int updateStatusByIdAndCurrentStatus(@Param("shareId") Long shareId,
                                          @Param("currentStatus") Integer currentStatus,

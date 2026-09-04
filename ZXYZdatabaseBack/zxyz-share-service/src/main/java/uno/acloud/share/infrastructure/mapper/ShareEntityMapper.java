@@ -4,9 +4,6 @@ import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import uno.acloud.share.infrastructure.entity.Share;
 import uno.acloud.share.vo.ShareMyListItemVO;
-import uno.acloud.share.vo.SharePublicInfoVO;
-
-import java.util.List;
 
 /**
  * MapStruct 对象映射 — share-service 实体到 VO 的转换。
@@ -34,20 +31,4 @@ public interface ShareEntityMapper {
     @Mapping(target = "expireType", ignore = true)
     @Mapping(target = "statusText", ignore = true)
     ShareMyListItemVO toShareMyListItemVO(Share share);
-
-    List<ShareMyListItemVO> toShareMyListItemVOList(List<Share> shares);
-
-    // ==================== Share → SharePublicInfoVO ====================
-
-    /**
-     * Share 实体 → 公开分享信息 VO。
-     * showUsername、needPassword、passed、canViewContent、statusText
-     * 由调用方在映射后手动设置（依赖密码校验、访问令牌等运行时状态）。
-     */
-    @Mapping(target = "showUsername", ignore = true)
-    @Mapping(target = "needPassword", ignore = true)
-    @Mapping(target = "passed", ignore = true)
-    @Mapping(target = "canViewContent", ignore = true)
-    @Mapping(target = "statusText", ignore = true)
-    SharePublicInfoVO toSharePublicInfoVO(Share share);
 }

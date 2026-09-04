@@ -47,14 +47,4 @@ public interface UserProfileMapper extends BaseMapper<UserProfile> {
 
     @Delete("DELETE FROM im_user_profile WHERE user_id = #{userId}")
     int deleteByUserId(@Param("userId") Long userId);
-
-    @Insert("<script>" +
-            "INSERT INTO im_user_profile (user_id, username, name, avatar, create_time, update_time) VALUES " +
-            "<foreach collection='profiles' item='p' separator=','>" +
-            "(#{p.userId}, #{p.username}, #{p.name}, #{p.avatar}, NOW(), NOW())" +
-            "</foreach>" +
-            "ON DUPLICATE KEY UPDATE username=VALUES(username), name=VALUES(name), " +
-            "avatar=VALUES(avatar), update_time=NOW()" +
-            "</script>")
-    int batchUpsert(@Param("profiles") List<UserProfile> profiles);
 }
