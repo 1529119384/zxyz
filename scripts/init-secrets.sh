@@ -145,8 +145,9 @@ echo "===== 生成/校验部署机密（幂等）====="
 gen_secret MYSQL_ROOT_PASSWORD
 # B1: 显式生成 CONFIG_DB_PASSWORD（config 库沿用 root 账号，故与 MYSQL_ROOT_PASSWORD 同值）
 # 注意：gen_secret 只写文件、不回写内存变量，故先从 .env 读回真实值
-MYSQL_ROOT_PASSWORD="$(grep -E '^MYSQL_ROOT_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)"
-cfg_cur="$(grep -E '^CONFIG_DB_PASSWORD=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-)"
+# pipefail 下 grep 无匹配会返回 1 并杀死脚本（set -e），故 grep 无匹配时必须兜底为空串
+MYSQL_ROOT_PASSWORD="$(grep -E '^MYSQL_ROOT_PASSWORD=' "$ENV_FILE" | cut -d= -f2- || true)"
+cfg_cur="$(grep -E '^CONFIG_DB_PASSWORD=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)"
 if [ -n "$cfg_cur" ] && ! echo "$cfg_cur" | grep -qE '^CHANGE_ME'; then
   echo "  CONFIG_DB_PASSWORD: 已存在真实值，跳过（同 MYSQL_ROOT_PASSWORD）"
 elif [ "$DRY_RUN" = true ]; then
