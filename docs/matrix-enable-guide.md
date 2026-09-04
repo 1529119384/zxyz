@@ -1,7 +1,31 @@
-# 服务间鉴权白名单矩阵 — 启用操作手稿
+# 服务间鉴权白名单矩阵 — 现状文档与启用指南
 
-> 面向部署/运维。本手稿把 `docker-compose.yml` 顶部与 `.env.example` 的矩阵启用契约展开为**可执行步骤**。
+> 面向部署/运维。本文件兼具两份职责：**现状说明** + **逐收方启用操作手稿**。
+> 当前状态：**email 试点已启用**（矩阵已对 email-service 打开，见 §0）；其余收方仍处过渡模式。
+> 本手稿把 `docker-compose.yml` 顶部与 `.env.example` 的矩阵启用契约展开为**可执行步骤**。
 > 前提：已部署 `docs`/`docker-compose.yml`（`/www/zxyz/`）、服务器 `.env` 独立维护、`scripts/validate-env.sh` 可用。
+
+## 0. 当前状态与收尾计划
+
+| 项 | 状态 |
+|---|---|
+| 矩阵机制代码 | ✅ 已落地（独立 `SVC_*_KEY`、fail-closed 比对、`StripInternalHeadersFilter`） |
+| email 试点 | ✅ **已启用**：`docker-compose.yml` 为 email-service 注入 `APP_INTERNAL_SERVICE_KEY: ${SVC_EMAIL_KEY}`，并通过 `SPRING_APPLICATION_JSON` 预置 `app.internal.allowed-sources`（含 `zxyz-gateway`） |
+| 其余收方（team/project/share/file/user/admin） | 🟡 仍处过渡模式（`allowed-sources` 为空，走共享 `INTERNAL_SERVICE_TOKEN`） |
+| 网关 admin-email 桥接 | ✅ 已走矩阵：`${SVC_GATEWAY_KEY:${INTERNAL_SERVICE_TOKEN}}`（嵌套回退，过渡期兼容） |
+
+### 0.1 收尾计划（高风险，暂缓）
+
+issue 原定收尾顺序：**删除旧 token 注入 → 更新本指南为现状文档 → 网关 admin-email 回退值一并移除**。
+其中「更新本指南」即本文件当前状态，已完成；其余两步因**风险不对称**暂缓：
+
+- **删除 `INTERNAL_SERVICE_TOKEN` 注入**：`docker-compose.yml` 9 服务 + gateway 仍注入旧 token 作为过渡兼容。
+  一旦移除，若新 `SVC_*_KEY` 未完全铺开（仍有调用方容器没拿到独立密钥），会直接打断服务间调用。
+  → **前置条件**：确认矩阵连续运行一两个版本稳定、所有调用方容器均已拿到独立 `SVC_*_KEY` 后再删。
+- **移除网关回退值**：gateway `admin-email` 路由当前为 `${SVC_GATEWAY_KEY:${INTERNAL_SERVICE_TOKEN}}`，
+  旧 token 删除时此嵌套回退必须同步改为纯 `${SVC_GATEWAY_KEY}`，否则会出现「回退指向已不存在的变量」的静默陷阱。
+
+> 收尾窗口：观察 email 试点稳定后，按「先补其余收方密钥 → 逐个打开 allowed-sources → 验证 → 最后统一移除旧 token 与回退值」推进。删除前务必 `docker compose config` 复核，并保留回滚窗口。
 
 ## 1. 背景与两种模式
 
@@ -10,7 +34,7 @@
 | **过渡（默认）** | 所有收方 `app.internal.allowed-sources` 为空 map | `INTERNAL_SERVICE_TOKEN` 单 token 常量时间比对 | 持 token 服务可伪造任意来源标识（横向移动窗口） |
 | **矩阵** | 任意收方配置了非空 `allowed-sources` | 按 `X-Internal-Caller-Service` 查该来源独立密钥比对，未列来源**拒绝**（fail-closed） | 漏配某调用方 → 该调用 401/500 |
 
-启动矩阵 = **逐收方**切换。建议：**先只开 email → 验证 → 再逐个服务铺开**。
+启动矩阵 = **逐收方**切换。现状：**email 已试点启用**；其余收方（team/project/share/file/user/admin）仍处过渡模式。**建议：email 之外的收方按「先补密钥 → 逐个打开 allowed-sources → 验证」铺开**，路径见 §3.5。
 
 ## 2. 启用前置（必读，避免踩雷）
 
