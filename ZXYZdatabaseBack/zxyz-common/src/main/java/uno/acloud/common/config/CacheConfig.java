@@ -43,6 +43,11 @@ import uno.acloud.common.config.ConfigGetter;
  */
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnClass(RedisConnectionFactory.class)
+// ⚠️ 危险耦合（N7）：本类的激活条件依赖已废弃的 ConfigGetter Bean。
+// 一旦按 P2-A1 计划删除 ConfigGetter，本配置类会「静默不再创建」——
+// @EnableCaching 随之失效、全服务缓存被静默关闭，且不会有任何报错日志。
+// 删除 ConfigGetter 前必须先把此条件改为不依赖它（例如改用 @ConditionalOnClass
+// 或 RedisConnectionFactory 的 @ConditionalOnBean）。
 @ConditionalOnBean(ConfigGetter.class)
 @EnableCaching
 // 重启生效（不可加 @RefreshScope）：本类是构建 RedisCacheManager 的 @Configuration，刷新会重建缓存管理器实例；

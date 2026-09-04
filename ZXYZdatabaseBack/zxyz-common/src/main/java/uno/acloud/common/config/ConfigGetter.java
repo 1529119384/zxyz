@@ -22,7 +22,18 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>子类应添加 {@code @Component}，本类不注册为 Spring Bean。
  * 构造参数由子类从各自的 {@code ServiceProperties} 注入后传入。</p>
+ *
+ * @deprecated P2-A1 已将全部动态配置键迁移到 Nacos（{@code zxyz-dynamic.yml}），
+ *     各服务改为通过 {@code @Value} / {@code @ConfigurationProperties} 消费，
+ *     生产代码已无任何取值调用。本类仅因历史原因保留，将在下个版本连同
+ *     {@link ConfigClientAutoConfiguration} 的 Bean 定义、Redis Pub/Sub 监听，
+ *     以及 admin-service {@code V2__hot_config_keys.sql} 的种子 INSERT 一并删除。
+ *     <p><strong>删除前必须先解除的耦合</strong>：{@code CacheConfig} 上有
+ *     {@code @ConditionalOnBean(ConfigGetter.class)}，一旦移除本 Bean，
+ *     {@code CacheConfig} 会静默不再创建 —— {@code @EnableCaching} 随之失效、
+ *     全服务缓存被静默关闭，且不会有任何报错。务必先把该条件改为不依赖本类。
  */
+@Deprecated
 @Slf4j
 public class ConfigGetter extends AbstractServiceClient {
 
