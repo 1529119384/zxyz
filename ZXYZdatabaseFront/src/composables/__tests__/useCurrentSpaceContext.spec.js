@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ref } from 'vue'
+import { useRoute } from 'vue-router'
 
 vi.mock('vue-router', () => ({
   useRoute: vi.fn(),
@@ -19,8 +20,6 @@ vi.mock('@/store/team', () => ({
 vi.mock('@/utils/projectVirtualFolder', () => ({
   isProjectRootId: vi.fn(() => false),
 }))
-
-import { useRoute } from 'vue-router'
 
 import {
   useCurrentSpaceContext,

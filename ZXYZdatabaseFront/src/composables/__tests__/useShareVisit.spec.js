@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { useRoute } from 'vue-router'
+import { ElMessage } from 'element-plus'
 
 vi.mock('vue-router', () => ({
   useRoute: vi.fn(),
@@ -20,9 +22,6 @@ vi.mock('@/models/share', () => ({
 vi.mock('@/utils/error', () => ({
   getErrorMessage: vi.fn((_, fallback) => fallback),
 }))
-
-import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
 
 import { fetchPublicShareInfo, verifySharePassword } from '@/api/share'
 import { useShareVisit } from '@/composables/useShareVisit'

@@ -1,10 +1,10 @@
 import axios from 'axios'
+import { ElMessageBox } from 'element-plus'
 
 import { clearToken } from '@/utils/auth'
 import { useCurrentUserStore } from '@/store/currentUser'
 import { createBusinessError, markGlobalErrorHandled } from '@/utils/errorModel'
 import { sanitizeRedirectPath } from '@/utils/sanitizeRedirect'
-import { ElMessageBox } from 'element-plus'
 
 function normalizeErrorText(value) {
   return typeof value === 'string' ? value.trim().toLowerCase() : ''
