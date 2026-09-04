@@ -5,7 +5,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.annotation.Commit;
+import org.springframework.test.context.transaction.TestTransaction;
 import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.admin.domain.SysConfig;
 import uno.acloud.admin.mapper.SysConfigMapper;
@@ -91,10 +91,6 @@ class ConfigServiceIntegrationTest extends AbstractIntegrationTest {
      * </p>
      */
     @Test
-    @Commit
-    // 类级 @Transactional 的测试事务默认回滚，afterCommit 回调永不触发（被测逻辑
-    // 正是把 Redis 通知注册在 afterCommit）。@Commit 使测试事务真实提交，
-    // update() 加入该事务并在提交点触发通知。key 唯一 + Testcontainers 全新容器，残留数据无碍。
     void update_triggersRedisNotificationAfterCommit() {
         // 1. 插入测试数据，使 updateValue 有行可更新
         SysConfig config = new SysConfig();
@@ -107,10 +103,16 @@ class ConfigServiceIntegrationTest extends AbstractIntegrationTest {
         when(jasyptEncryptor.decrypt(anyString()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        // 3. 调用 update — @Transactional 方法，afterCommit 回调在事务提交后触发
+        // 3. 调用 update — @Transactional 方法加入测试事务，通知注册在 afterCommit
         configService.update("test.key.notify.2", "value", 2L);
 
-        // 4. 验证 Redis Pub/Sub 通知已发送
+        // 4. 在方法体内手动提交当前测试事务：类级 @Transactional 的提交/回滚发生在
+        //    测试方法返回之后，若不在此处提交，verify 将先于 afterCommit 执行，
+        //    永远测不到提交点回调（@Commit 也救不了——它提交得更晚）。
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
+
+        // 5. 验证 Redis Pub/Sub 通知已发送
         verify(stringRedisTemplate).convertAndSend("zxyz:config:changed", "test.key.notify.2");
     }
 }
