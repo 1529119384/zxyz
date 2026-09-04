@@ -5,6 +5,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.annotation.Commit;
 import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.admin.domain.SysConfig;
 import uno.acloud.admin.mapper.SysConfigMapper;
@@ -90,6 +91,10 @@ class ConfigServiceIntegrationTest extends AbstractIntegrationTest {
      * </p>
      */
     @Test
+    @Commit
+    // 类级 @Transactional 的测试事务默认回滚，afterCommit 回调永不触发（被测逻辑
+    // 正是把 Redis 通知注册在 afterCommit）。@Commit 使测试事务真实提交，
+    // update() 加入该事务并在提交点触发通知。key 唯一 + Testcontainers 全新容器，残留数据无碍。
     void update_triggersRedisNotificationAfterCommit() {
         // 1. 插入测试数据，使 updateValue 有行可更新
         SysConfig config = new SysConfig();
