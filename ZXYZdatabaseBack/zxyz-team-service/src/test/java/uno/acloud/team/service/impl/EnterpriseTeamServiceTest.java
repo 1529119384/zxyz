@@ -231,14 +231,16 @@ class EnterpriseTeamServiceTest {
         // 关键断言：在事务 lambda 返回（尚未提交）时快照，确认补偿记录已经写入。
         // 旧实现把 upsertPending 放在 afterCommit：那是提交之后另开连接写库，
         // 一旦失败只留 log.error，重试任务永久丢失（N3）。
+        // 注意必须用 doAnswer 风格重新 stub：when(mock.execute(any())) 会对 mock
+        // 发生真实调用（参数求值为 null），命中 setUp 里的旧 stub 并在其 answer 中 NPE。
         AtomicBoolean writtenBeforeCommit = new AtomicBoolean(false);
-        when(transactionHelper.execute(any())).thenAnswer(invocation -> {
+        doAnswer(invocation -> {
             TransactionHelper.TransactionCallback<?> callback = invocation.getArgument(0);
             Object result = callback.doInTransaction(null);
             writtenBeforeCommit.set(mockingDetails(teamUserDefaultSyncMapper).getInvocations().stream()
                     .anyMatch(i -> "upsertPending".equals(i.getMethod().getName())));
             return result;
-        });
+        }).when(transactionHelper).execute(any());
 
         enterpriseTeamService.createTeam(request);
 
