@@ -552,6 +552,8 @@ jobs:
       needs.build-and-push.result == 'success'
     runs-on: ubuntu-latest
     strategy:
+      # 一个服务检出漏洞不取消其他服务的扫描：一次看全全部服务的漏洞面
+      fail-fast: false
       matrix:
         include:
           - name: project-service
@@ -618,8 +620,20 @@ jobs:
           exit-code: '1'
           output: trivy-${{ matrix.name }}.txt
 
+      # Trivy 漏洞表写入 output 文件而非 stdout：job 因 exit-code 失败时
+      # 必须在日志里可见漏洞详情，否则无法评估修复
+      - name: Show Trivy report
+        if: always() && steps.was-built.outputs.built == 'true'
+        run: |
+          if [ -f "trivy-${{ matrix.name }}.txt" ]; then
+            echo "===== Trivy report: ${{ matrix.name }} ====="
+            cat "trivy-${{ matrix.name }}.txt"
+          else
+            echo "No trivy report file (scan may have failed before writing)"
+          fi
+
       - name: Upload Trivy report (SARIF output with HIGH/CRITICAL summary)
-        if: steps.was-built.outputs.built == 'true'
+        if: always() && steps.was-built.outputs.built == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: trivy-${{ matrix.name }}
