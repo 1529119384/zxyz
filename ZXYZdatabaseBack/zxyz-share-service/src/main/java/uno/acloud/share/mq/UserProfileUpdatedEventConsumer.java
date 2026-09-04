@@ -50,14 +50,26 @@ public class UserProfileUpdatedEventConsumer {
                 return;
             }
 
-            // 幂等性检查：以 userId 作为去重 key，防止重复消费
+            // 幂等性检查（N4 修复）：幂等标记的「值」= 最后一次成功应用的用户名。
+            // 旧实现只以 userId 建 key（值恒为 "1"），用户在 TTL 内二次改名会被
+            // 误判为重复投递而静默丢弃，share 库用户名停在旧值。
+            // 也不能简单把 username 拼进 key —— A→B→A 往返改名的第三次会因
+            // `...:A` 键仍在 TTL 内而被跳过，同样丢更新。故改为「比对已应用值」。
             long userId = event.userId();
             String idempotencyKey = IDEMPOTENCY_KEY_PREFIX + userId;
-            if (!redisTemplate.opsForValue().setIfAbsent(idempotencyKey, "1", IDEMPOTENCY_TTL_HOURS, TimeUnit.HOURS)) {
-                log.warn("MQ: 重复用户资料更新事件，跳过处理: key={}", idempotencyKey);
+            String targetUsername = event.username() == null ? "" : event.username();
+
+            String appliedUsername = redisTemplate.opsForValue().get(idempotencyKey);
+            if (targetUsername.equals(appliedUsername)) {
+                log.debug("MQ: 重复用户资料更新事件（目标用户名未变化），跳过: userId={}", userId);
                 return;
             }
 
+            // 首次处理或用户名发生变化：先把标记刷新为目标值，再落库。
+            // 用 set 而非 setIfAbsent —— 改名场景需要覆盖旧值；并发下的重复投递
+            // 仍会被上面的等值比对拦住，且 syncUsername 本身是幂等 UPDATE。
+            redisTemplate.opsForValue().set(idempotencyKey, targetUsername,
+                    IDEMPOTENCY_TTL_HOURS, TimeUnit.HOURS);
             try {
                 log.info("MQ: 开始同步用户分享用户名: userId={}, username={}", userId, event.username());
                 userProfileSyncService.syncUsername(userId, event.username());
