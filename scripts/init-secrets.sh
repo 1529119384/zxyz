@@ -114,6 +114,33 @@ gen_secret() {
   echo "  $key: ${val:0:4}**** (完整值见 $LOG_FILE)"
 }
 
+# 写入明文默认值（幂等，已有真实值不覆盖）——用于非机密的白名单/地址类配置。
+# 与 gen_secret 的区别：写入的是固定默认常量而非随机机密，因此不落 init-secrets.log
+# （该日志按机密处理、chmod 600，不适合放明文白名单），只在终端回显。
+# $1=key  $2=默认值
+set_default() {
+  local key="$1" val="$2"
+  local cur="${!key:-}"
+
+  # 与 gen_secret 同一套幂等判据：真实（非 CHANGE_ME）值始终跳过
+  if [ -n "$cur" ] && ! echo "$cur" | grep -qE '^CHANGE_ME'; then
+    echo "  $key: 已存在真实值，跳过"
+    return 0
+  fi
+
+  if [ "$DRY_RUN" = true ]; then
+    echo "  $key: [dry-run] 将写入默认值（不写文件）"
+    return 0
+  fi
+
+  if grep -qE "^${key}=" "$ENV_FILE"; then
+    sed -i "s|^${key}=.*|${key}=${val}|" "$ENV_FILE"
+  else
+    echo "${key}=${val}" >> "$ENV_FILE"
+  fi
+  echo "  $key: 已写入默认值 ${val}（生产部署请按实际域名修改）"
+}
+
 echo "===== 生成/校验部署机密（幂等）====="
 gen_secret MYSQL_ROOT_PASSWORD
 # B1: 显式生成 CONFIG_DB_PASSWORD（config 库沿用 root 账号，故与 MYSQL_ROOT_PASSWORD 同值）
@@ -154,6 +181,14 @@ gen_secret SVC_SHARE_KEY token_32
 gen_secret SVC_TEAM_KEY token_32
 gen_secret SVC_USER_KEY token_32
 gen_secret SVC_GATEWAY_KEY token_32
+
+# --- 非机密的明文默认值（N6）---
+# CORS_ALLOWED_ORIGINS 是明文白名单、不是机密，但 .env.example 里给的是
+# CHANGE_ME_CORS_ORIGIN，而 validate-env.sh 对它做的是 ERROR 级 check_not_placeholder。
+# 若此处不生成默认值，全新环境跑完 init-secrets 仍会被 validate-env 拦死。
+# 默认值与 nacos-config/zxyz-dynamic.yml 的回退值保持一致。
+echo "===== 写入明文默认值（非机密，幂等）====="
+set_default CORS_ALLOWED_ORIGINS "http://localhost:5173,http://localhost:4173"
 
 # --- 收尾：收紧权限 ---
 chmod 600 "$ENV_FILE" 2>/dev/null || true

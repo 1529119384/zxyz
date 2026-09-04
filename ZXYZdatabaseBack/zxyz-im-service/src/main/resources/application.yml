@@ -39,9 +39,10 @@ mybatis:
   configuration:
     map-underscore-to-camel-case: true
 
+# 注意：撤回窗口属于动态配置，正确键是 zxyz-dynamic.yml 的
+# app.im.message.recall-window-seconds（热更新）；此处的 im.message.* 前缀
+# 无代码消费（im-service 只绑定 im.netty / im.invite-link），已移除（N8）。
 im:
-  message:
-    recall-window-seconds: 120
   invite-link:
     default-expire-hours: 24
     default-max-uses: 0
