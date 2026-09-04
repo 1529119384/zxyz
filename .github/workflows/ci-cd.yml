@@ -607,7 +607,9 @@ jobs:
 
       - name: Scan image with Trivy
         if: steps.was-built.outputs.built == 'true'
-        uses: aquasecurity/trivy-action@0.29.0
+        # tag 必须带 v 前缀（aquasecurity/trivy-action 的 release tag 均为 vX.Y.Z，
+        # 无前缀的 0.29.0 从未存在，会导致 unable to resolve action）
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.IMAGE_PREFIX }}/zxyz-${{ matrix.name }}:${{ needs.detect-changes.outputs.tag }}
           severity: HIGH,CRITICAL
@@ -647,10 +649,20 @@ jobs:
       - name: Determine SSH key
         id: ssh-key
         run: |
+          # SSH 私钥是多行 PEM，GITHUB_ENV 单行 name=value 格式无法承载
+          # （会报 Invalid format），必须用 heredoc 定界符语法写入多行值。
           if [[ "${{ github.ref }}" == "refs/heads/main" ]] || [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            echo "ssh_key=${{ secrets.PROD_SSH_KEY }}" >> $GITHUB_ENV
+            {
+              echo "ssh_key<<GH_SSH_KEY_EOF"
+              echo "${{ secrets.PROD_SSH_KEY }}"
+              echo "GH_SSH_KEY_EOF"
+            } >> "$GITHUB_ENV"
           else
-            echo "ssh_key=${{ (secrets.DEV_SSH_KEY || secrets.DEPLOY_SSH_KEY) }}" >> $GITHUB_ENV
+            {
+              echo "ssh_key<<GH_SSH_KEY_EOF"
+              echo "${{ (secrets.DEV_SSH_KEY || secrets.DEPLOY_SSH_KEY) }}"
+              echo "GH_SSH_KEY_EOF"
+            } >> "$GITHUB_ENV"
           fi
 
       - name: Deploy via SSH
