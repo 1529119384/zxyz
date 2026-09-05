@@ -54,12 +54,14 @@ FAILED=0
 echo "=== ZXYZ 备份 $DATE ==="
 
 # MySQL 备份
+MYSQL_SKIPPED=false
 echo "备份 MySQL..."
 # 容器未运行时跳过：首次部署/灾后重建场景没有旧数据可备。
 # 不跳过会让 docker exec 直接失败 → backup.sh exit 1 → CI 部署中止，
 # 但全新服务器首次部署永远过不了这一步（先有部署才有容器）。
 if ! docker ps --format '{{.Names}}' | grep -qx 'zxyz-mysql'; then
   echo "WARN: zxyz-mysql 容器未运行，跳过 MySQL 备份（首次部署场景，无旧数据可备）"
+  MYSQL_SKIPPED=true
 else
 if docker exec zxyz-mysql mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" \
   --all-databases --single-transaction --quick | \
@@ -123,9 +125,13 @@ else
 fi
 fi
 
-# 备份完整性校验
+# 备份完整性校验（被跳过的组件不校验、不入产物清单）
 echo "校验备份文件..."
-MYSQL_SIZE=$(wc -c < "$BACKUP_DIR/mysql_$DATE.sql.gz")
+if [ "$MYSQL_SKIPPED" = true ]; then
+  MYSQL_SIZE=0
+else
+  MYSQL_SIZE=$(wc -c < "$BACKUP_DIR/mysql_$DATE.sql.gz")
+fi
 
 # --mysql-only 时只校验 MySQL；redis/rabbitmq 产物不存在，跳过其校验与汇总
 if [ "$MYSQL_ONLY" = false ]; then
@@ -138,20 +144,28 @@ if [ "$REDIS_SIZE" -lt 1024 ]; then
 fi
 fi
 
-if [ "$MYSQL_SIZE" -lt 1024 ]; then
+if [ "$MYSQL_SKIPPED" = true ]; then
+  echo "MySQL 备份: 已跳过（容器未运行，首次部署场景）"
+elif [ "$MYSQL_SIZE" -lt 1024 ]; then
   echo "ERROR: MySQL 备份文件过小 ($MYSQL_SIZE bytes)，可能备份失败" >&2
   FAILED=1
   exit 1
+else
+  echo "MySQL 备份: $BACKUP_DIR/mysql_$DATE.sql.gz ($MYSQL_SIZE bytes)"
 fi
-
-echo "MySQL 备份: $BACKUP_DIR/mysql_$DATE.sql.gz ($MYSQL_SIZE bytes)"
 if [ "$MYSQL_ONLY" = false ]; then
 echo "Redis 备份: $BACKUP_DIR/redis_$DATE.rdb ($REDIS_SIZE bytes)"
 echo "RabbitMQ 拓扑: $BACKUP_DIR/rabbitmq_$DATE.json"
 fi
 
 # 组装本次产物列表（--mysql-only 时仅 MySQL，避免异地推送扫到不存在的文件）
+if [ "$MYSQL_SKIPPED" = true ]; then
+ARTIFACTS=()
 if [ "$MYSQL_ONLY" = false ]; then
+ARTIFACTS=( "$BACKUP_DIR/redis_$DATE.rdb" )
+[ -f "$BACKUP_DIR/rabbitmq_$DATE.json" ] && ARTIFACTS+=( "$BACKUP_DIR/rabbitmq_$DATE.json" )
+fi
+elif [ "$MYSQL_ONLY" = false ]; then
 ARTIFACTS=( "$BACKUP_DIR/mysql_$DATE.sql.gz" "$BACKUP_DIR/redis_$DATE.rdb" )
 [ -f "$BACKUP_DIR/rabbitmq_$DATE.json" ] && ARTIFACTS+=( "$BACKUP_DIR/rabbitmq_$DATE.json" )
 else
@@ -247,4 +261,12 @@ fi
 
 echo "=== 备份完成 ==="
 echo "备份目录: $BACKUP_DIR"
-ls -lh "$BACKUP_DIR"/mysql_"$DATE".sql.gz "$BACKUP_DIR"/redis_"$DATE".rdb 2>/dev/null
+# 收尾展示按实际产物列出：被跳过的组件文件不存在，ls 非零退出码
+# 会成为脚本最终退出码（set -e 下即使 stderr 已静默），故逐项 || true
+if [ "$MYSQL_SKIPPED" = false ]; then
+  ls -lh "$BACKUP_DIR"/mysql_"$DATE".sql.gz 2>/dev/null || true
+fi
+if [ "$MYSQL_ONLY" = false ]; then
+  ls -lh "$BACKUP_DIR"/redis_"$DATE".rdb 2>/dev/null || true
+fi
+exit 0
