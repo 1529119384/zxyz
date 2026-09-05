@@ -27,18 +27,21 @@ spring:
         file-extension: yml
         group: ZXYZ
     gateway:
-      # 禁用 Spring 内置 ForwardedHeaderFilter：真实客户端 IP 由 ClientIpFilter 统一解析，
-      # 避免与内置 XFF 处理行为叠加导致解析不确定。
-      forwarded:
-        enabled: false
-      default-filters:
-        - name: RequestRateLimiter
-          args:
-            redis-rate-limiter.replenishRate: ${RATE_LIMIT_REPLENISH:50}
-            redis-rate-limiter.burstCapacity: ${RATE_LIMIT_BURST:100}
-            key-resolver: "#{@userKeyResolver}"
       server:
         webflux:
+          # 禁用 Spring 内置 ForwardedHeaderFilter：真实客户端 IP 由 ClientIpFilter 统一解析，
+          # 避免与内置 XFF 处理行为叠加导致解析不确定。
+          # 属性命名空间说明：Spring Cloud 2025.0 起 gateway 配置迁移至
+          # spring.cloud.gateway.server.webflux.*（旧 spring.cloud.gateway.* 会在启动时
+          # 由 PropertiesMigrationListener 报 WARN，且未来版本将失效）。
+          forwarded:
+            enabled: false
+          default-filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: ${RATE_LIMIT_REPLENISH:50}
+                redis-rate-limiter.burstCapacity: ${RATE_LIMIT_BURST:100}
+                key-resolver: "#{@userKeyResolver}"
           globalcors:
             add-to-simple-url-handler-mapping: true
             cors-configurations:
