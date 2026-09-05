@@ -45,8 +45,8 @@ spring:
     nacos:
       discovery:
         server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
-        username: ${NACOS_USERNAME:nacos}
-        password: ${NACOS_PASSWORD:CHANGE_ME_NACOS}
+        username: ${NACOS_USERNAME:}
+        password: ${NACOS_PASSWORD:}
         namespace: ${NACOS_NAMESPACE:}
         group: ${NACOS_GROUP:DEFAULT_GROUP}
   rabbitmq:

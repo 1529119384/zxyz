@@ -325,12 +325,25 @@ docker compose down -v
 |---|---|---|
 | `NACOS_PORT` | `8848` | Nacos API 端口（绑定 127.0.0.1） |
 | `NACOS_CONSOLE_PORT` | `8080` | Nacos 控制台端口（3.x React UI，绑定 127.0.0.1） |
-| `NACOS_USERNAME` | `nacos` | Nacos 登录用户名（各服务注册/配置拉取使用） |
-| `NACOS_PASSWORD` | `CHANGE_ME_NACOS_PASSWORD` | Nacos 登录密码（生产环境必须修改） |
+| `NACOS_USERNAME` | `nacos` | Nacos 登录用户名（仅 nacos server 控制台与 import.sh 使用；应用服务客户端已去凭证，见下方说明） |
+| `NACOS_PASSWORD` | `CHANGE_ME_NACOS_PASSWORD` | Nacos 控制台管理员密码（生产环境必须修改；应用服务客户端已去凭证） |
 | `NACOS_AUTH_TOKEN` | `CHANGE_ME_NACOS_AUTH_TOKEN` | Nacos JWT 签名密钥（Base64 编码，解码后 >= 32 字节） |
 | `NACOS_AUTH_IDENTITY_KEY` | `serverIdentity` | Nacos 身份验证 Key |
 | `NACOS_AUTH_IDENTITY_VALUE` | `CHANGE_ME_NACOS_IDENTITY` | Nacos 身份验证 Value（生产环境必须修改） |
 | `NACOS_NAMESPACE` | （空） | Nacos 命名空间 ID，多环境隔离时可设置为对应环境的命名空间 UUID |
+
+#### 未来启用 Nacos 鉴权（迁移 checklist）
+
+> ⚠️ **严禁在客户端为空凭证时开启 `nacos.core.auth.enabled=true`**：所有服务将无法注册/拉取配置，系统整体不可用。
+
+当前应用客户端以**空凭证**运行（各服务 yml 的 `${NACOS_USERNAME:}` 默认为空，nacos-client 在 username 为空时跳过 HTTP login）。这是因为 server 3.2.1 的 `/v1/auth/login` 与 `/v3/auth/user/login` 端点均被 Spring 层 403 拦截（与凭证对错无关），客户端带凭证反而每 5 秒刷 `login failed: 403`。未来若需开启鉴权，按以下顺序：
+
+1. **先解决 server login 端点 403**（升级 Nacos server 至修复版本，或排查 3.2.1 console 鉴权过滤器对 login 端点的拦截）——这是前置条件，升级客户端无法绕过（v3 login 同样被拦，且 403 不触发客户端的 v1 回退）。
+2. 回填 11 处 yml 凭证（10 个服务 `application.yml` + `zxyz-common` 的 `application-common.yml`：`${NACOS_USERNAME:}` → 恢复 env 引用与默认值）。
+3. 恢复 `docker-compose.yml` 中 10 个应用服务的 `NACOS_USERNAME`/`NACOS_PASSWORD` 注入。
+4. 重建镜像并滚动部署，验证日志无 403。
+5. 最后才设置 `nacos.core.auth.enabled=true` 并重启 nacos 容器。
+6. 同步修复 `nacos-config/import.sh`（其 `/v1/auth/login` 获取 token 的逻辑同样受 403 影响；建议增加「鉴权关闭时跳过登录、直连 v3 admin」的守卫逻辑）。
 
 ### 4.7 Knife4j API 文档
 
