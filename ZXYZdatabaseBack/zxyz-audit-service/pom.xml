@@ -34,6 +34,13 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
+        <!-- 引用 zxyz-common 的 PermissionCacheAutoConfiguration（RedisMessageListenerContainer/
+             ChannelTopic）与 sa-token redis 存储（token-storage-mode=redis），common 的
+             starter-data-redis 为 provided 不传递；compose 已注入 REDIS_HOST/PORT/PASSWORD -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>

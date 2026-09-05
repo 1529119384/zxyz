@@ -723,7 +723,7 @@ jobs:
           username: ${{ secrets.DEPLOY_USERNAME }}
           key: ${{ env.ssh_key }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
-          timeout: 600s
+          timeout: 1500s
           envs: BACKEND_COMMON,PROJECT_SVC,IM_SVC,EMAIL_SVC,USER_SVC,SHARE_SVC,FILE_SVC,TEAM_SVC,AUDIT_SVC,ADMIN_SVC,GATEWAY_SVC,FRONTEND,DOCKER_CFG,FAST_DEPLOY
           script: |
             #!/bin/bash
@@ -893,15 +893,15 @@ jobs:
               HEALTH_OK=true
 
               # --- 分层健康检查 ---
-              # 普通服务：6 次 × 5s = 30s
+              # 普通服务：30 次 × 10s = 300s（8G 机器 10 个 JVM 同启实测需 2-6 分钟，60s 窗口曾误判回滚）
               echo "===== Waiting for common services ====="
-              for i in $(seq 1 6); do
+              for i in $(seq 1 30); do
                 if ! docker compose ps 2>/dev/null | grep -qE "(im-service|email-service|user-service|share-service|file-service|team-service|audit-service|admin-service).*(unhealthy|starting)"; then
                   echo "Common services ready"
                   break
                 fi
-                if [ "$i" -eq 6 ]; then
-                  echo "ERROR: Common services not all healthy after 30s"
+                if [ "$i" -eq 30 ]; then
+                  echo "ERROR: Common services not all healthy after 300s"
                   echo "--- 诊断: 容器状态 ---"
                   docker compose ps 2>/dev/null || true
                   echo "--- 诊断: 最近日志 ---"
@@ -911,26 +911,26 @@ jobs:
                   done
                   HEALTH_OK=false
                 fi
-                sleep 5
+                sleep 10
               done
 
-              # Gateway：12 次 × 5s = 60s
+              # Gateway：30 次 × 10s = 300s
               if [ "$HEALTH_OK" = true ]; then
                 echo "===== Waiting for gateway ====="
-                for i in $(seq 1 12); do
+                for i in $(seq 1 30); do
                   if ! docker compose ps 2>/dev/null | grep -qE "gateway.*(unhealthy|starting)"; then
                     echo "Gateway ready"
                     break
                   fi
-                  if [ "$i" -eq 12 ]; then
-                    echo "ERROR: Gateway startup timeout after 60s"
+                  if [ "$i" -eq 30 ]; then
+                    echo "ERROR: Gateway startup timeout after 300s"
                     echo "--- 诊断: 容器状态 ---"
                     docker compose ps 2>/dev/null || true
                     echo "--- 诊断: gateway 最近日志 ---"
                     docker logs --tail 30 zxyz-gateway 2>&1 || true
                     HEALTH_OK=false
                   fi
-                  sleep 5
+                  sleep 10
                 done
               fi
 
@@ -959,10 +959,10 @@ jobs:
                     echo "===== Restarting with previous version ====="
                     docker compose up -d "${UPDATE_SVC[@]}"
 
-                    # 回滚后健康检查：6 次 × 10s = 60s
+                    # 回滚后健康检查：30 次 × 10s = 300s（同上，10 个 JVM 重建后需要数分钟）
                     echo "===== Verifying rollback health ====="
                     ROLLBACK_OK=false
-                    for i in $(seq 1 6); do
+                    for i in $(seq 1 30); do
                       if ! docker compose ps 2>/dev/null | grep -qE "(unhealthy|starting)"; then
                         ROLLBACK_OK=true
                         echo "Rollback health check passed (${i}0s)"
