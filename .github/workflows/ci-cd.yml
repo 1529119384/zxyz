@@ -824,9 +824,20 @@ jobs:
             fi
 
             # --- 更新 .env ---
-            sed -i "s|^APP_IMAGE_TAG=.*|APP_IMAGE_TAG=$IMAGE_TAG|" .env 2>/dev/null || echo "APP_IMAGE_TAG=$IMAGE_TAG" >> .env
+            # 为什么不用 `sed ... || echo 追加`：sed 对「行不存在」返回 0（不报错），
+            # || 兜底永远不触发。.env.example 若缺 IMAGE_PREFIX 行，前缀会静默丢失，
+            # compose 把 image 解析成无 registry 前缀的 zxyz-xxx → GHCR 私有镜像 pull 401。
+            if grep -qE "^APP_IMAGE_TAG=" .env; then
+              sed -i "s|^APP_IMAGE_TAG=.*|APP_IMAGE_TAG=$IMAGE_TAG|" .env
+            else
+              echo "APP_IMAGE_TAG=$IMAGE_TAG" >> .env
+            fi
             PREFIX="${IMAGE_PREFIX%/}/"
-            sed -i "s|^IMAGE_PREFIX=.*|IMAGE_PREFIX=$PREFIX|" .env 2>/dev/null || echo "IMAGE_PREFIX=$PREFIX" >> .env
+            if grep -qE "^IMAGE_PREFIX=" .env; then
+              sed -i "s|^IMAGE_PREFIX=.*|IMAGE_PREFIX=$PREFIX|" .env
+            else
+              echo "IMAGE_PREFIX=$PREFIX" >> .env
+            fi
 
             # --- 筛选需要更新的服务 ---
             UPDATE_SVC=()
