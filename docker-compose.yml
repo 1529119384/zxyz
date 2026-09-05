@@ -114,7 +114,9 @@ services:
       interval: 15s
       timeout: 5s
       retries: 20
-      start_period: 120s
+      # Nacos 3.x 首启要连 MySQL 建表/做 v2→v3 迁移（512m 堆），实测远超 120s；
+      # 窗口内判死会让 depends_on 的 10 个应用服务全部无法启动
+      start_period: 300s
     logging:
       driver: json-file
       options:
