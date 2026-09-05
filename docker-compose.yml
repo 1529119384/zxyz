@@ -54,7 +54,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 20
-      start_period: 30s
+      # 首次启动要初始化数据目录 + 临时 server + initdb 脚本（实测 46s+），
+      # 30s 窗口内 ready 不了 → compose 判 unhealthy → 依赖它的全部服务起不来。
+      # 120s 覆盖慢盘首启；后续重启数据目录已就绪，几秒即 healthy 不受影响。
+      start_period: 120s
     logging:
       driver: json-file
       options:
