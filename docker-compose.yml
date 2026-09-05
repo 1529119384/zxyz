@@ -46,6 +46,9 @@ services:
     volumes:
       - ${DATA_DIR:-./data}/mysql:/var/lib/mysql
       - ./sql/00-init-zxyz.sh:/docker-entrypoint-initdb.d/00-init-zxyz.sh:ro
+      # Nacos 3.x 的 MySQL 模式不会自动建表（数据源自检失败报 No DataSource set），
+      # schema 必须随 initdb 导入；文件取自 nacos-server:3.2.1 镜像内 conf/mysql-schema.sql
+      - ./sql/nacos-mysql-schema.sql:/docker-entrypoint-initdb.d/01-nacos-schema.sql:ro
     networks:
       - zxyz-net
     healthcheck:
