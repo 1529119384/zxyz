@@ -496,6 +496,12 @@ jobs:
             module: zxyz-gateway
             change: ${{ needs.detect-changes.outputs.gateway }}
             is_backend: true
+          # 前端入口容器（nginx + 静态资源）：用户访问系统的唯一入口
+          - name: frontend-nginx
+            context: .
+            dockerfile: ZXYZdatabaseFront/Dockerfile
+            change: ${{ needs.detect-changes.outputs.frontend }}
+            is_backend: false
     steps:
       - name: Check if needs build
         id: should-build
@@ -710,6 +716,7 @@ jobs:
           AUDIT_SVC: ${{ needs.detect-changes.outputs.audit-service }}
           ADMIN_SVC: ${{ needs.detect-changes.outputs.admin-service }}
           GATEWAY_SVC: ${{ needs.detect-changes.outputs.gateway }}
+          FRONTEND: ${{ needs.detect-changes.outputs.frontend }}
           DOCKER_CFG: ${{ needs.detect-changes.outputs.docker-config }}
         with:
           host: ${{ steps.target.outputs.host }}
@@ -717,7 +724,7 @@ jobs:
           key: ${{ env.ssh_key }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
           timeout: 600s
-          envs: BACKEND_COMMON,PROJECT_SVC,IM_SVC,EMAIL_SVC,USER_SVC,SHARE_SVC,FILE_SVC,TEAM_SVC,AUDIT_SVC,ADMIN_SVC,GATEWAY_SVC,DOCKER_CFG,FAST_DEPLOY
+          envs: BACKEND_COMMON,PROJECT_SVC,IM_SVC,EMAIL_SVC,USER_SVC,SHARE_SVC,FILE_SVC,TEAM_SVC,AUDIT_SVC,ADMIN_SVC,GATEWAY_SVC,FRONTEND,DOCKER_CFG,FAST_DEPLOY
           script: |
             #!/bin/bash
             set -euo pipefail
@@ -855,7 +862,10 @@ jobs:
               [ "$ADMIN_SVC" = "true" ] && UPDATE_SVC+=(admin-service)
               [ "$GATEWAY_SVC" = "true" ] && UPDATE_SVC+=(gateway)
             fi
-            [ "$DOCKER_CFG" = "true" ] && UPDATE_SVC=(project-service im-service email-service user-service share-service file-service team-service audit-service admin-service gateway)
+            # 前端入口容器独立于 backend-common：只要 frontend 有变更就更新
+            # （漏了它用户将没有任何 HTTP 入口——run 33963918081 教训）
+            [ "$FRONTEND" = "true" ] && UPDATE_SVC+=(frontend-nginx)
+            [ "$DOCKER_CFG" = "true" ] && UPDATE_SVC=(project-service im-service email-service user-service share-service file-service team-service audit-service admin-service gateway frontend-nginx)
 
             if [ ${#UPDATE_SVC[@]} -eq 0 ]; then
               echo "No service changed, skip deploy"
