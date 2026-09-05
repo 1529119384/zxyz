@@ -55,6 +55,12 @@ echo "=== ZXYZ 备份 $DATE ==="
 
 # MySQL 备份
 echo "备份 MySQL..."
+# 容器未运行时跳过：首次部署/灾后重建场景没有旧数据可备。
+# 不跳过会让 docker exec 直接失败 → backup.sh exit 1 → CI 部署中止，
+# 但全新服务器首次部署永远过不了这一步（先有部署才有容器）。
+if ! docker ps --format '{{.Names}}' | grep -qx 'zxyz-mysql'; then
+  echo "WARN: zxyz-mysql 容器未运行，跳过 MySQL 备份（首次部署场景，无旧数据可备）"
+else
 if docker exec zxyz-mysql mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" \
   --all-databases --single-transaction --quick | \
   gzip > "$BACKUP_DIR/mysql_$DATE.sql.gz"; then
@@ -63,6 +69,7 @@ else
   echo "ERROR: MySQL 备份失败" >&2
   FAILED=1
   exit 1
+fi
 fi
 
 # Redis 备份 — 轮询 LASTSAVE 确认 BGSAVE 完成

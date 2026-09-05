@@ -35,6 +35,11 @@ on:
         required: false
         type: boolean
         default: false
+      force_deploy:
+        description: '强制全量构建并部署（忽略变更检测；用于换服务器/灾后首次部署）'
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -54,24 +59,35 @@ jobs:
   detect-changes:
     runs-on: ubuntu-latest
     outputs:
-      backend-common: ${{ steps.filter.outputs.backend-common }}
-      project-service: ${{ steps.filter.outputs.project-service }}
-      im-service: ${{ steps.filter.outputs.im-service }}
-      email-service: ${{ steps.filter.outputs.email-service }}
-      user-service: ${{ steps.filter.outputs.user-service }}
-      share-service: ${{ steps.filter.outputs.share-service }}
-      file-service: ${{ steps.filter.outputs.file-service }}
-      team-service: ${{ steps.filter.outputs.team-service }}
-      audit-service: ${{ steps.filter.outputs.audit-service }}
-      admin-service: ${{ steps.filter.outputs.admin-service }}
-      gateway: ${{ steps.filter.outputs.gateway }}
-      docker-config: ${{ steps.filter.outputs.docker-config }}
-      frontend: ${{ steps.filter.outputs.frontend }}
-      backend-any: ${{ steps.backend-any.outputs.changed }}
+      # force_deploy=true（手动 dispatch）时忽略变更检测，全部按"有变更"处理——
+      # 用于换服务器/灾后首次部署：无代码变更也要全量构建并部署。
+      backend-common: ${{ steps.force.outputs.on == 'true' && 'true' || steps.filter.outputs.backend-common }}
+      project-service: ${{ steps.force.outputs.on == 'true' && 'true' || steps.filter.outputs.project-service }}
+      im-service: ${{ steps.force.outputs.on == 'true' && 'true' || steps.filter.outputs.im-service }}
+      email-service: ${{ steps.force.outputs.on == 'true' && 'true' || steps.filter.outputs.email-service }}
+      user-service: ${{ steps.force.outputs.on == 'true' && 'true' || steps.filter.outputs.user-service }}
+      share-service: ${{ steps.force.outputs.on == 'true' && 'true' || steps.filter.outputs.share-service }}
+      file-service: ${{ steps.force.outputs.on == 'true' && 'true' || steps.filter.outputs.file-service }}
+      team-service: ${{ steps.force.outputs.on == 'true' && 'true' || steps.filter.outputs.team-service }}
+      audit-service: ${{ steps.force.outputs.on == 'true' && 'true' || steps.filter.outputs.audit-service }}
+      admin-service: ${{ steps.force.outputs.on == 'true' && 'true' || steps.filter.outputs.admin-service }}
+      gateway: ${{ steps.force.outputs.on == 'true' && 'true' || steps.filter.outputs.gateway }}
+      docker-config: ${{ steps.force.outputs.on == 'true' && 'true' || steps.filter.outputs.docker-config }}
+      frontend: ${{ steps.force.outputs.on == 'true' && 'true' || steps.filter.outputs.frontend }}
+      backend-any: ${{ steps.force.outputs.on == 'true' && 'true' || steps.backend-any.outputs.changed }}
       tag: ${{ steps.tag.outputs.tag }}
       skip_quality: ${{ steps.skip-quality.outputs.skip_quality }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Resolve force_deploy flag
+        id: force
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.force_deploy }}" = "true" ]; then
+            echo "on=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "on=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Verify sub-repo sync consistency
         if: github.event_name == 'push'
