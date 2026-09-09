@@ -724,6 +724,9 @@ jobs:
           key: ${{ env.ssh_key }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
           timeout: 1500s
+          # command_timeout 是远端命令执行超时（默认 10m）：全量重建时 11 镜像拉取 +
+          # 10 个 JVM 同启远超 10 分钟，曾致 Run Command Timeout 假失败；连接超时是上面的 timeout
+          command_timeout: 40m
           envs: BACKEND_COMMON,PROJECT_SVC,IM_SVC,EMAIL_SVC,USER_SVC,SHARE_SVC,FILE_SVC,TEAM_SVC,AUDIT_SVC,ADMIN_SVC,GATEWAY_SVC,FRONTEND,DOCKER_CFG,FAST_DEPLOY
           script: |
             #!/bin/bash

@@ -52,7 +52,8 @@
         <mapstruct.version>1.6.3</mapstruct.version>
         <flyway.version>10.22.0</flyway.version>
         <testcontainers.version>1.20.4</testcontainers.version>
-        <spring-cloud.version>2025.0.0</spring-cloud.version>
+        <!-- 2025.0.0 -> 2025.0.3：gateway-server(-webflux) 4.3.0 -> 4.3.5，修复 CVE-2025-41253（HIGH，需 ≥4.3.2）与 CVE-2025-41243（CRITICAL，需 ≥4.3.1）；同 train patch 升级，SCA 2025.0.0.0 兼容 -->
+        <spring-cloud.version>2025.0.3</spring-cloud.version>
         <spring-cloud-alibaba.version>2025.0.0.0</spring-cloud-alibaba.version>
         <resilience4j.version>2.2.0</resilience4j.version>
         <jasypt.version>3.0.5</jasypt.version>
