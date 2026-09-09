@@ -61,7 +61,11 @@ RUN mvn -B -T 1C -pl zxyz-common -am install -Dmaven.test.skip=false -DskipTests
 # 已用最小构建（FROM <image>:<tag>@<digest>）实测解析通过，不会因 digest 写错导致 build 失败。
 FROM eclipse-temurin:17.0.14_7-jre-alpine@sha256:865cca6d0b31f284a5fc4e8cbd8f9375f470fd07cf6e909cea62f2790d4187fe
 
-RUN apk add --no-cache curl
+# 在构建期把运行时基础镜像（eclipse-temurin:17-jre-alpine）内已安装的 OS 包
+# 升级到最新安全修复版，以修复 Trivy 扫描会判定 FAIL 的 HIGH/CRITICAL 漏洞
+# （openssl/gnutls/sqlite-libs/gnupg 等）。仅升级已安装包、不引入新包，
+# 也不动 FROM 行的 @sha256 digest 钉定策略。
+RUN apk add --no-cache curl && apk upgrade --no-cache
 
 WORKDIR /app
 
