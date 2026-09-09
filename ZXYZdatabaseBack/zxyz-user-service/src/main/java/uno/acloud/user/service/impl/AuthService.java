@@ -92,6 +92,18 @@ public class AuthService {
         }
     }
 
+    /**
+     * 创建引导管理员账号（用于部署时自动初始化初始管理员）。
+     * 复用本地插入逻辑（含密码编码与用户名唯一性校验），返回新用户主键 id。
+     */
+    public Long createBootstrapAdmin(String username, String rawPassword) {
+        User user = new User();
+        user.setUsername(username);
+        user.setPassword(rawPassword);
+        insertUser(user);
+        return user.getId();
+    }
+
     private User buildRegisterUser(RegisterRequest request) {
         User user = new User();
         user.setUsername(request.getUsername());

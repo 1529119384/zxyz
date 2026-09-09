@@ -159,6 +159,29 @@ docker compose up -d --build
 3. 使用 Node 多阶段构建编译前端并打包为 Nginx 镜像
 4. 按依赖顺序启动容器（通过健康检查 + `depends_on` 控制）
 
+#### 3.3.1 初始管理员引导
+
+`zxyz-user-service` 每次启动都会幂等地确保存在一个**初始管理员账号**，用于首次登录与管理：
+
+- **是否创建**：若配置的用户名（`app.admin.bootstrap.username`，默认 `admin`）已存在，则直接跳过——可安全重复运行（重启/重新部署都不会重复创建）。否则在数据库创建该账号。
+- **密码来源**：
+  - 配置了 `app.admin.bootstrap.password`（部署变量 `ADMIN_INIT_PASSWORD`）→ 使用该密码。
+  - 未配置 → 自动生成 16 位字母数字随机密码，并在 `zxyz-user-service` 日志中以 **warn** 级别打印一次明文（含「请立即登录修改密码」提示）。获取方式：
+    ```bash
+    docker logs zxyz-user-service 2>&1 | grep "初始管理员"
+    ```
+- **角色分配**：账号创建成功后，通过内部调用 `team-service` 授予 `SYSTEM_ADMIN` 角色（唯一正确的管理员授权入口）。角色分配失败会被捕获并仅记日志，**不会阻止应用启动**。
+- **开关**：`app.admin.bootstrap.enabled`（默认 `true`）设为 `false` 可完全禁用引导。
+
+**环境变量**：
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `ADMIN_INIT_USERNAME` | `admin` | 初始管理员用户名。映射到 `app.admin.bootstrap.username` |
+| `ADMIN_INIT_PASSWORD` | 空 | 初始管理员密码；留空则首次启动随机生成并打印到日志。映射到 `app.admin.bootstrap.password` |
+
+**安全建议**：生产环境**务必**在部署前于 `.env` 中显式设置 `ADMIN_INIT_PASSWORD` 为高强度密码，避免依赖随机密码明文日志；无论何种方式创建，请登录后立即修改密码。
+
 ### 3.4 验证服务状态
 
 ```bash

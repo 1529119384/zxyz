@@ -12,6 +12,7 @@ public class ServiceProperties {
     private String internalServiceToken;
     private final AuthCookie auth = new AuthCookie();
     private final Verification verification = new Verification();
+    private final Admin admin = new Admin();
 
     public ServiceUrl getTeamService() {
         return teamService;
@@ -23,6 +24,10 @@ public class ServiceProperties {
 
     public ServiceUrl getEmailService() {
         return emailService;
+    }
+
+    public Admin getAdmin() {
+        return admin;
     }
 
     public String getInternalServiceToken() {
@@ -108,6 +113,47 @@ public class ServiceProperties {
 
         public void setReturnCodeInResponse(boolean returnCodeInResponse) {
             this.returnCodeInResponse = returnCodeInResponse;
+        }
+    }
+
+    /**
+     * 部署时初始管理员引导配置（app.admin.bootstrap.*）。
+     */
+    public static class Admin {
+        private final Bootstrap bootstrap = new Bootstrap();
+
+        public Bootstrap getBootstrap() {
+            return bootstrap;
+        }
+    }
+
+    public static class Bootstrap {
+        private boolean enabled = true;
+        private String username = "admin";
+        private String password = "";
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getUsername() {
+            return username;
+        }
+
+        public void setUsername(String username) {
+            this.username = username;
+        }
+
+        public String getPassword() {
+            return password;
+        }
+
+        public void setPassword(String password) {
+            this.password = password;
         }
     }
 }

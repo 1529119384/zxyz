@@ -7,6 +7,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.mockito.ArgumentCaptor;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.UserErrorCode;
 import uno.acloud.exception.BusinessException;
@@ -20,6 +21,7 @@ import uno.acloud.user.service.AuthSessionPort;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -211,5 +213,40 @@ class AuthServiceTest {
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> authService.register(request));
         assertEquals(ErrorCode.SYSTEM_ERROR, ex.getErrorCode());
+    }
+
+    // ---- createBootstrapAdmin tests ----
+
+    @Test
+    void createBootstrapAdmin_encodesPasswordAndReturnsGeneratedId() {
+        when(passwordEncoder.encode("rawAdminPass")).thenReturn("encodedAdmin");
+        when(userMapper.addByUsernameAndPassword(any(User.class))).thenAnswer(invocation -> {
+            User u = invocation.getArgument(0);
+            u.setId(7L);
+            return 1;
+        });
+
+        Long id = authService.createBootstrapAdmin("theadmin", "rawAdminPass");
+
+        assertEquals(7L, id);
+        verify(passwordEncoder).encode("rawAdminPass");
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userMapper).addByUsernameAndPassword(captor.capture());
+        User saved = captor.getValue();
+        assertEquals("theadmin", saved.getUsername());
+        assertEquals("encodedAdmin", saved.getPassword());
+        assertNotNull(saved.getCreateTime());
+    }
+
+    @Test
+    void createBootstrapAdmin_throwsWhenUsernameExists() {
+        when(passwordEncoder.encode("rawAdminPass")).thenReturn("encoded");
+        when(userMapper.addByUsernameAndPassword(any(User.class)))
+                .thenThrow(new DuplicateKeyException("Duplicate entry"));
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> authService.createBootstrapAdmin("alice", "rawAdminPass"));
+        assertEquals(UserErrorCode.USERNAME_EXISTS.getCode(), ex.getErrorCode());
     }
 }

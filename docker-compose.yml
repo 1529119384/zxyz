@@ -842,6 +842,8 @@ services:
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
       JASYPT_PASSWORD: ${JASYPT_PASSWORD}
       ADMIN_SERVICE_BASE_URL: ${ADMIN_SERVICE_BASE_URL:-http://zxyz-admin-service}
+      APP_ADMIN_BOOTSTRAP_USERNAME: ${ADMIN_INIT_USERNAME:-admin}
+      APP_ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_INIT_PASSWORD:-}
     networks:
       - zxyz-net
     healthcheck:
