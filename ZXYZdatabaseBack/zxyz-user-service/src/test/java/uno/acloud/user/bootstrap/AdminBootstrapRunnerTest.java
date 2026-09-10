@@ -85,7 +85,7 @@ class AdminBootstrapRunnerTest {
     @Test
     void run_skipsWhenDisabled() {
         ServiceProperties sp = buildProps(false, "admin", "");
-        when(userMapper.getByLoginIdentifier("admin")).thenReturn(null);
+        // enabled=false 时 runner 在查库前即返回，不得 stub getByLoginIdentifier（Mockito 严格模式会判 UnnecessaryStubbing）
 
         new AdminBootstrapRunner(userMapper, authService, teamServicePermissionClient, sp).run(null);
 
