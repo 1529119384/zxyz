@@ -1,0 +1,36 @@
+# =============================================================================
+# 可选覆盖层：容器内 nginx TLS 终止（opt-in）
+# -----------------------------------------------------------------------------
+# 仅当启用 HTTPS 时与本文件一起使用，默认 HTTP 部署完全不受影响：
+#
+#   docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d
+#
+# 本文件只改动 frontend-nginx 服务：
+#   1. 设 TLS_ENABLED=true，令 entrypoint 用镜像内置的 default-ssl.conf 模板渲染出
+#      443 + 80→443 重定向配置（配置内置，无需从宿主机挂载）；
+#   2. 挂载证书目录到 /etc/nginx/certs（只读）；
+#   3. 追加暴露 443（${HTTPS_PORT:-443}），80 由 base 文件保留用于重定向。
+#   4. 注入 TLS_ENABLED=true 供 entrypoint 选择 TLS 渲染路径。
+# 其余服务/配置一律不变。
+# =============================================================================
+
+services:
+  frontend-nginx:
+    environment:
+      # entrypoint.sh 据此渲染 default-ssl.conf 而非默认 HTTP 模板。
+      TLS_ENABLED: "true"
+    ports:
+      # 仅追加 443。80 由 base docker-compose.yml 保留（用于 301 重定向），
+      # 此处不得重复声明——compose 合并时 ports 会追加，重复 80:80 会触发端口冲突。
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      # 证书目录（只读）。放置 fullchain.pem 与 privkey.pem，详见 DEPLOYMENT.md。
+      # TLS 站点配置（default-ssl.conf）已内置进镜像，无需在此挂载。
+      - ./deploy/nginx/certs:/etc/nginx/certs:ro
+    healthcheck:
+      # 80 现已 301 重定向，改为校验 HTTPS 端点（自签证书用 -k）。
+      test: ["CMD-SHELL", "curl -sfk https://localhost/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 10s

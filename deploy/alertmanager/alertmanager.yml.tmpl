@@ -1,0 +1,23 @@
+# ZXYZ Alertmanager 配置模板
+# 由 scripts/render-alertmanager.sh 在部署时渲染为 deploy/alertmanager/alertmanager.yml。
+# 本文件为静态骨架（global / route / receivers 头），动态投递渠道（webhook / email）
+# 由渲染脚本根据 .env 注入，勿手写真实 webhook 地址或密码。
+# 保留现有 Prometheus 告警规则（deploy/prometheus/rules/zxyz.yml）与路由/分组设置不变。
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: 'default'
+  group_by: ['alertname', 'service']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  # 默认 receiver。下方配置块由渲染脚本注入：
+  #   - ALERT_WEBHOOK_URL 非空  -> webhook_configs
+  #   - ALERT_EMAIL_TO 非空且 EMAIL_ENABLED=true -> email_configs
+  # 两者皆未配置时，仅保留 name（空 *_configs），告警合法路由但静默丢弃，
+  # Alertmanager 仍正常启动，监控不中断（优雅降级）。
+  - name: 'default'

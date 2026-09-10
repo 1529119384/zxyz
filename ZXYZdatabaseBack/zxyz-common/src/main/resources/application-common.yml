@@ -108,9 +108,11 @@ app:
   # 默认空 = 过渡模式（仅校验 INTERNAL_SERVICE_TOKEN）；生产各服务覆盖此 map 以启用矩阵。
   internal:
     allowed-sources: {}
-  # auth timeout 默认值：zxyz-dynamic.yml（Nacos 热更新）会覆盖此处
+  # auth timeout 默认值：zxyz-dynamic.yml（Nacos 热更新）会覆盖此处。
+  # secure 默认 false：当前部署为 IP 直连 HTTP，Secure Cookie 在 HTTP 下不回传会致登录失效。
+  # 启用 HTTPS 后须设 AUTH_COOKIE_SECURE=true（三处默认值已统一，详见 nacos-config/zxyz-dynamic.yml）。
   auth:
-    secure: ${AUTH_COOKIE_SECURE:true}
+    secure: ${AUTH_COOKIE_SECURE:false}
     domain: ${AUTH_COOKIE_DOMAIN:}
     token-timeout-seconds: ${AUTH_TOKEN_TIMEOUT:43200}
     long-lived-timeout-seconds: ${AUTH_LONG_LIVED_TIMEOUT:604800}

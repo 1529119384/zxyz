@@ -111,7 +111,33 @@ check_required() {
 
 echo "--- 数据库 ---"
 check_not_placeholder "MYSQL_ROOT_PASSWORD"
-check_not_placeholder "CONFIG_DB_PASSWORD"
+
+echo ""
+echo "--- 数据库最小权限专用账户（可选；未启用则回退 root，不校验） ---"
+# U1 配套：仅当某库显式配置了专用账户用户名（非 root、非空）时，才要求对应的
+# *_DB_PASSWORD 是真实值；否则视为沿用 root，跳过校验，避免「未启用专用账户」被误判为错误。
+check_db_account() {
+  local prefix="$1"
+  local user_var="${prefix}_DB_USERNAME"
+  local pass_var="${prefix}_DB_PASSWORD"
+  local user_val="${!user_var:-}"
+  # 未配置用户名，或显式回退 root → 不校验密码（沿用 root）
+  if [ -z "$user_val" ] || [ "$user_val" = "root" ]; then
+    echo "  SKIP: ${prefix} 未启用专用账户（回退 root），跳过 ${pass_var} 校验"
+    return 0
+  fi
+  check_not_placeholder "$pass_var"
+}
+check_db_account PROJECT
+check_db_account IM
+check_db_account EMAIL
+check_db_account SHARE
+check_db_account FILE
+check_db_account TEAM
+check_db_account AUDIT
+check_db_account USER
+check_db_account CONFIG
+check_db_account NACOS
 
 echo ""
 echo "--- Redis ---"
@@ -142,6 +168,23 @@ echo ""
 echo "--- 认证 ---"
 check_not_placeholder "INTERNAL_SERVICE_TOKEN"
 check_not_placeholder "SHARE_COOKIE_SECRET"
+
+# U3：Cookie Secure 与 TLS 的一致性校验。
+# 当前部署为 IP 直连 HTTP，故默认 false（置 true 会因浏览器不回传 Secure Cookie 直接导致登录失效）。
+# 一旦启用容器内 nginx TLS（TLS_ENABLED=true + 证书挂载），必须同步置 true，否则安全收益归零。
+if [ "${TLS_ENABLED:-false}" = "true" ]; then
+  if [ "${AUTH_COOKIE_SECURE:-false}" != "true" ]; then
+    echo "  ERROR: TLS_ENABLED=true 但 AUTH_COOKIE_SECURE != true：HTTPS 已启用却仍签发非 Secure Cookie，必须改为 true"
+    ERRORS=$((ERRORS + 1))
+  else
+    echo "  OK: TLS 已启用且 Cookie Secure 已开启"
+  fi
+elif [ "${AUTH_COOKIE_SECURE:-false}" != "true" ]; then
+  echo "  WARN: AUTH_COOKIE_SECURE=false（站点走 HTTP，Cookie 无 Secure 属性，可被嗅探）。启用 TLS 后请置 true（不阻断部署）"
+  WARNINGS=$((WARNINGS + 1))
+else
+  echo "  OK: AUTH_COOKIE_SECURE=true"
+fi
 
 echo ""
 echo "--- OSS ---"

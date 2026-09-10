@@ -64,13 +64,90 @@ if ! docker ps --format '{{.Names}}' | grep -qx 'zxyz-mysql'; then
   MYSQL_SKIPPED=true
 else
 if docker exec zxyz-mysql mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" \
-  --all-databases --single-transaction --quick | \
+  --all-databases --single-transaction --quick --source-data=2 | \
   gzip > "$BACKUP_DIR/mysql_$DATE.sql.gz"; then
   :
 else
   echo "ERROR: MySQL 备份失败" >&2
   FAILED=1
   exit 1
+fi
+fi
+
+# ---------------------------------------------------------------------------
+# MySQL binlog 增量备份（PITR 时间点恢复的前置条件）
+# ---------------------------------------------------------------------------
+# 为什么：仅有每日全量 dump，RPO 最长 24h。全量 dump 用 --source-data=2 在文件头
+# 写入了 CHANGE REPLICATION SOURCE TO 位点注释作为恢复锚点；配合这里按位点续传的
+# binlog 文件，即可把库恢复到两次全量之间的任意时间点。
+# 前提：mysql 已开启 log-bin（compose 已固化 --log-bin/--binlog-format=ROW；
+# MySQL 8 默认亦开启），否则本步 WARN 跳过。
+# 一致性：先 FLUSH BINARY LOGS 轮转，使「当前写入文件」封口；只拷贝其之前的文件
+# （状态文件记录下次应从哪个文件起拷），避免拷到半截文件。
+# --mysql-only（预部署快速备份）时跳过，保持部署前备份轻快。
+BINLOG_ARTIFACT=""
+if [ "$MYSQL_ONLY" = false ]; then
+echo "备份 MySQL binlog（增量，PITR 用）..."
+MYSQL_BINLOG_OK=false
+if [ "$MYSQL_SKIPPED" = true ]; then
+  echo "WARN: MySQL 未运行，跳过 binlog 备份"
+elif ! docker exec zxyz-mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -N -e \
+       "SHOW VARIABLES LIKE 'log_bin'" 2>/dev/null | grep -qi "ON"; then
+  echo "WARN: MySQL 未开启 log_bin，无 binlog 可备，跳过（PITR 不可用）" >&2
+else
+  if docker exec zxyz-mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "FLUSH BINARY LOGS" >/dev/null 2>&1; then
+    MYSQL_BINLOG_OK=true
+  else
+    echo "WARN: FLUSH BINARY LOGS 失败，仍尝试拷贝现有 binlog" >&2
+  fi
+  # 记录当前位点（人工 PITR 时的参考锚点；权威锚点在 dump 头注释里）
+  docker exec zxyz-mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -N -e "SHOW MASTER STATUS" \
+    > "$BACKUP_DIR/binlog_pos_$DATE.txt" 2>/dev/null || true
+  CURRENT_BINLOG=$(docker exec zxyz-mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -N -e \
+      "SHOW MASTER STATUS" 2>/dev/null | awk 'NR==1{print $1}')
+  BINLOG_STATE_FILE="$BACKUP_DIR/.last_binlog"
+
+  if [ -z "$CURRENT_BINLOG" ]; then
+    echo "WARN: 无法获取当前 binlog 文件名，跳过 binlog 备份" >&2
+    [ "$MYSQL_BINLOG_OK" = true ] && FAILED=1
+  else
+    LAST_COPIED=""
+    [ -f "$BINLOG_STATE_FILE" ] && LAST_COPIED=$(cat "$BINLOG_STATE_FILE" 2>/dev/null || true)
+    BINLOG_TMP=$(mktemp -d)
+    BINLOG_COPIED=0
+    # 定义域：所有 < 当前文件 的日志（当前文件可能仍在写入，留到下次轮转后再拷）
+    # 下界：状态文件记录的「上次已拷到的当前文件」，本次从它开始（含）续传
+    while IFS= read -r BLOG; do
+      [ -z "$BLOG" ] && continue
+      [[ "$BLOG" < "$CURRENT_BINLOG" ]] || continue
+      if [ -n "$LAST_COPIED" ] && [[ "$BLOG" < "$LAST_COPIED" ]]; then
+        continue
+      fi
+      if docker cp "zxyz-mysql:/var/lib/mysql/$BLOG" "$BINLOG_TMP/" >/dev/null 2>&1; then
+        BINLOG_COPIED=$((BINLOG_COPIED + 1))
+      else
+        echo "WARN: 拷贝 binlog $BLOG 失败" >&2
+      fi
+    done < <(docker exec zxyz-mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -N -e \
+               "SHOW BINARY LOGS" 2>/dev/null | awk '{print $1}')
+
+    if [ "$BINLOG_COPIED" -gt 0 ]; then
+      if tar -czf "$BACKUP_DIR/binlog_$DATE.tar.gz" -C "$BINLOG_TMP" . ; then
+        BINLOG_ARTIFACT="$BACKUP_DIR/binlog_$DATE.tar.gz"
+        echo "binlog 增量备份: $BINLOG_ARTIFACT ($BINLOG_COPIED 个文件)"
+      else
+        echo "ERROR: binlog 打包失败" >&2
+        FAILED=1
+      fi
+    else
+      echo "本次无新增 binlog 文件可备份"
+    fi
+    rm -rf "$BINLOG_TMP"
+    # 状态推进到当前文件：下次先轮转，当前文件即封口，再从其起拷贝
+    if [ "$MYSQL_BINLOG_OK" = true ]; then
+      echo "$CURRENT_BINLOG" > "$BINLOG_STATE_FILE"
+    fi
+  fi
 fi
 fi
 
@@ -253,6 +330,7 @@ echo "清理 ${KEEP_DAYS} 天前的备份..."
 find "$BACKUP_DIR" -name "mysql_*.sql.gz" -mtime +$KEEP_DAYS -delete
 find "$BACKUP_DIR" -name "redis_*.rdb"     -mtime +$KEEP_DAYS -delete
 find "$BACKUP_DIR" -name "rabbitmq_*.json" -mtime +$KEEP_DAYS -delete
+find "$BACKUP_DIR" -name "binlog_*.tar.gz" -mtime +$KEEP_DAYS -delete
 
 if [ "$FAILED" -ne 0 ]; then
   echo "ERROR: 备份流程中存在失败步骤，请检查上方 WARN/ERROR。本地备份可能不完整。" >&2
@@ -268,5 +346,6 @@ if [ "$MYSQL_SKIPPED" = false ]; then
 fi
 if [ "$MYSQL_ONLY" = false ]; then
   ls -lh "$BACKUP_DIR"/redis_"$DATE".rdb 2>/dev/null || true
+  ls -lh "$BACKUP_DIR"/binlog_"$DATE".tar.gz 2>/dev/null || true
 fi
 exit 0

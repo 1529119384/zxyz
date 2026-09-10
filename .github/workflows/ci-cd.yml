@@ -408,6 +408,12 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # 类型检查门禁（U14）：此前 CI 只跑 lint + test，JS 项目里 vue-tsc --noEmit
+      # 是最能拦住「类型级回归」的一环（如 props 契约变更、stores 类型漂移）。
+      # 实测 `npm run typecheck`（vue-tsc --noEmit）当前 exit 0，可安全设为必过门禁。
+      - name: Typecheck
+        run: npm run typecheck
+
       - name: Test
         run: npm run test
 
@@ -849,6 +855,26 @@ jobs:
               echo "IMAGE_PREFIX=$PREFIX" >> .env
             fi
 
+            # --- 最小权限数据库账号（U1）---
+            # 为什么：此前所有服务用 MySQL root 连接，任一服务被攻破即等于拿到全库 DDL 权限。
+            # init-secrets.sh（上方）已为每个服务生成独立 zxyz_* 账号密码并写入 .env，
+            # 此处把这些账号/授权真正落进 MySQL（CREATE USER IF NOT EXISTS + 单库 GRANT）。
+            # 幂等：重复执行只补授权，不重置已有密码——密码由 init-secrets 幂等生成，
+            # 跨部署稳定，改密会导致运行中的服务断连，故此处绝不 ALTER USER。
+            # 前提：MySQL 已运行（与上方 backup.sh --mysql-only 完全同一前提；首次部署
+            # 需先手动起基础设施，本脚本不负责起 mysql 容器）。
+            if [ -f "$DEPLOY_DIR/scripts/grant-least-privilege.sh" ]; then
+              echo "===== Applying least-privilege DB accounts ====="
+              if ! bash "$DEPLOY_DIR/scripts/grant-least-privilege.sh" \
+                     --env "$DEPLOY_DIR/.env" --compose "$DEPLOY_DIR/docker-compose.yml"; then
+                echo "::error::GRANT_LEAST_PRIVILEGE_FAILED: 最小权限数据库账号授权失败，已中止部署"
+                exit 1
+              fi
+              echo "::notice::GRANT_LEAST_PRIVILEGE_OK: 最小权限数据库账号已就绪"
+            else
+              echo "::warning::跳过最小权限账号授权（grant-least-privilege.sh 不存在）"
+            fi
+
             # --- 筛选需要更新的服务 ---
             UPDATE_SVC=()
             if [ "$BACKEND_COMMON" = "true" ]; then
@@ -876,6 +902,21 @@ jobs:
             fi
             echo "Will update: ${UPDATE_SVC[*]}"
 
+            # --- TLS 覆盖层（U2）：TLS_ENABLED=true 时叠加 docker-compose.tls.yml ---
+            # 用 COMPOSE_FILE 环境变量统一生效，而非在每个 docker compose 命令后追加 -f：
+            # 后者要改多处，漏一处就会造成「pull 带 TLS、up 不带」之类的不一致。
+            # 分隔符在 Linux 上为 ':'。未启用 TLS 时行为与历史完全一致。
+            export COMPOSE_FILE="docker-compose.yml"
+            if grep -qE '^TLS_ENABLED=true' "$DEPLOY_DIR/.env" 2>/dev/null; then
+              if [ -f "$DEPLOY_DIR/docker-compose.tls.yml" ]; then
+                export COMPOSE_FILE="docker-compose.yml:docker-compose.tls.yml"
+                echo "::notice::TLS_ENABLED=true，已叠加 docker-compose.tls.yml"
+              else
+                echo "::error::TLS_ENABLED=true 但 $DEPLOY_DIR/docker-compose.tls.yml 不存在，已中止部署"
+                exit 1
+              fi
+            fi
+
             # --- 并行拉取镜像 ---
             echo "===== Pulling images ====="
             for svc in "${UPDATE_SVC[@]}"; do
@@ -883,6 +924,38 @@ jobs:
             done
             wait
             echo "Pull finished"
+
+            # --- 渲染 Alertmanager 告警投递配置（缺陷 U8）---
+            # 为什么：Alertmanager 自身不展开环境变量，且 deploy 流水线只同步 docker-compose.yml，
+            # 不会同步任意 deploy/ 文件；故渲染逻辑直接读取 .env，把结果写到
+            # $DEPLOY_DIR/deploy/alertmanager/alertmanager.yml（容器挂载点），
+            # 不触碰 $REPO_DIR（git clone 工作区），因此不会触发仓库漂移检测。
+            # 渲染脚本取自 $REPO_DIR（每次部署都会 git pull，必为最新版本）。
+            # 优雅降级：ALERT_WEBHOOK_URL 与 ALERT_EMAIL_TO 皆未配置时，渲染为
+            # 静默丢弃的合法 no-op receiver，Alertmanager 仍正常启动，监控不中断。
+            if [ -f "$REPO_DIR/scripts/render-alertmanager.sh" ]; then
+              echo "===== Rendering Alertmanager config ====="
+              if ! bash "$REPO_DIR/scripts/render-alertmanager.sh" \
+                     "$DEPLOY_DIR/.env" \
+                     "$DEPLOY_DIR/deploy/alertmanager/alertmanager.yml" \
+                     "$REPO_DIR/deploy/alertmanager/alertmanager.yml.tmpl"; then
+                echo "::error::RENDER_ALERTMANAGER_FAILED: 渲染 Alertmanager 配置失败，已中止部署"
+                exit 1
+              fi
+              echo "::notice::ALERTMANAGER_RENDERED: 告警投递配置已渲染"
+            else
+              echo "::warning::跳过 Alertmanager 渲染（render-alertmanager.sh 不存在，将沿用仓库内置占位配置）"
+            fi
+
+            # 渲染后热重载：Alertmanager 支持 SIGHUP 重载配置，否则新告警渠道要等容器重启才生效。
+            # 首次部署时容器尚未创建，此处失败属正常，故仅告警不阻断。
+            if docker ps --format '{{.Names}}' | grep -qx 'zxyz-alertmanager'; then
+              if docker kill -s HUP zxyz-alertmanager >/dev/null 2>&1; then
+                echo "::notice::ALERTMANAGER_RELOADED: 已热重载 Alertmanager 配置"
+              else
+                echo "::warning::Alertmanager 热重载失败（配置将在下次容器重启后生效）"
+              fi
+            fi
 
             # --- 重启变更服务 ---
             echo "===== Restarting services ====="

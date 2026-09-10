@@ -43,6 +43,13 @@ services:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
       - --default-time-zone=+08:00
+      # PITR（时间点恢复）：显式开启 ROW 格式 binlog（MySQL 8 默认已开，此处固化名称
+      # 便于 backup.sh 增量拷贝）。RPO 从每日全量的 24h 降到分钟级。
+      # 注意：保留期必须用 --binlog-expire-logs-seconds —— --expire-logs-days 已在
+      # MySQL 8.2 移除，8.4 下使用会导致 mysqld 启动直接报错（容器起不来）。
+      - --log-bin=mysql-bin
+      - --binlog-format=ROW
+      - --binlog-expire-logs-seconds=604800
     volumes:
       - ${DATA_DIR:-./data}/mysql:/var/lib/mysql
       - ./sql/00-init-zxyz.sh:/docker-entrypoint-initdb.d/00-init-zxyz.sh:ro
@@ -85,8 +92,8 @@ services:
       MYSQL_SERVICE_HOST: mysql
       MYSQL_SERVICE_PORT: 3306
       MYSQL_SERVICE_DB_NAME: nacos
-      MYSQL_SERVICE_USER: root
-      MYSQL_SERVICE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_SERVICE_USER: ${NACOS_DB_USERNAME:?缺少 NACOS_DB_USERNAME，请先运行 scripts/init-secrets.sh}
+      MYSQL_SERVICE_PASSWORD: ${NACOS_DB_PASSWORD:?缺少 NACOS_DB_PASSWORD，请先运行 scripts/init-secrets.sh}
       MYSQL_SERVICE_DB_PARAM: "useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true"
       JVM_XMS: 512m
       JVM_XMX: 512m
@@ -239,8 +246,8 @@ services:
       APP_INTERNAL_SERVICE_KEY: ${SVC_PROJECT_KEY}
       TZ: Asia/Shanghai
       PROJECT_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_project?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-      PROJECT_DATASOURCE_USERNAME: root
-      PROJECT_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      PROJECT_DATASOURCE_USERNAME: ${PROJECT_DB_USERNAME:?缺少 PROJECT_DB_USERNAME，请先运行 scripts/init-secrets.sh}
+      PROJECT_DATASOURCE_PASSWORD: ${PROJECT_DB_PASSWORD:?缺少 PROJECT_DB_PASSWORD，请先运行 scripts/init-secrets.sh}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
@@ -259,7 +266,7 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:4173}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?缺少 CORS_ALLOWED_ORIGINS，请先运行 scripts/init-secrets.sh 或手工填写真实域名}
       NACOS_SERVER_ADDR: nacos:8848
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
       JASYPT_PASSWORD: ${JASYPT_PASSWORD}
@@ -314,8 +321,8 @@ services:
       APP_INTERNAL_SERVICE_KEY: ${SVC_IM_KEY}
       TZ: Asia/Shanghai
       IM_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_im?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-      IM_DATASOURCE_USERNAME: root
-      IM_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      IM_DATASOURCE_USERNAME: ${IM_DB_USERNAME:?缺少 IM_DB_USERNAME，请先运行 scripts/init-secrets.sh}
+      IM_DATASOURCE_PASSWORD: ${IM_DB_PASSWORD:?缺少 IM_DB_PASSWORD，请先运行 scripts/init-secrets.sh}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
@@ -330,7 +337,7 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:4173}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?缺少 CORS_ALLOWED_ORIGINS，请先运行 scripts/init-secrets.sh 或手工填写真实域名}
       NACOS_SERVER_ADDR: nacos:8848
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
       JASYPT_PASSWORD: ${JASYPT_PASSWORD}
@@ -386,8 +393,8 @@ services:
       SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":"{''zxyz-user-service'':''${SVC_USER_KEY}'',''zxyz-admin-service'':''${SVC_ADMIN_KEY}'',''zxyz-project-service'':''${SVC_PROJECT_KEY}'',''zxyz-im-service'':''${SVC_IM_KEY}'',''zxyz-file-service'':''${SVC_FILE_KEY}'',''zxyz-team-service'':''${SVC_TEAM_KEY}'',''zxyz-gateway'':''${SVC_GATEWAY_KEY}'',''zxyz-email-service'':''${SVC_EMAIL_KEY}'',''zxyz-share-service'':''${SVC_SHARE_KEY}'',''zxyz-audit-service'':''${SVC_AUDIT_KEY}''}"}}}'
       TZ: Asia/Shanghai
       EMAIL_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_email?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-      EMAIL_DATASOURCE_USERNAME: root
-      EMAIL_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      EMAIL_DATASOURCE_USERNAME: ${EMAIL_DB_USERNAME:?缺少 EMAIL_DB_USERNAME，请先运行 scripts/init-secrets.sh}
+      EMAIL_DATASOURCE_PASSWORD: ${EMAIL_DB_PASSWORD:?缺少 EMAIL_DB_PASSWORD，请先运行 scripts/init-secrets.sh}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
@@ -458,8 +465,8 @@ services:
       APP_INTERNAL_SERVICE_KEY: ${SVC_SHARE_KEY}
       TZ: Asia/Shanghai
       SHARE_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_share?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-      SHARE_DATASOURCE_USERNAME: root
-      SHARE_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      SHARE_DATASOURCE_USERNAME: ${SHARE_DB_USERNAME:?缺少 SHARE_DB_USERNAME，请先运行 scripts/init-secrets.sh}
+      SHARE_DATASOURCE_PASSWORD: ${SHARE_DB_PASSWORD:?缺少 SHARE_DB_PASSWORD，请先运行 scripts/init-secrets.sh}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
@@ -529,8 +536,8 @@ services:
       APP_INTERNAL_SERVICE_KEY: ${SVC_FILE_KEY}
       TZ: Asia/Shanghai
       FILE_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_file?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-      FILE_DATASOURCE_USERNAME: root
-      FILE_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      FILE_DATASOURCE_USERNAME: ${FILE_DB_USERNAME:?缺少 FILE_DB_USERNAME，请先运行 scripts/init-secrets.sh}
+      FILE_DATASOURCE_PASSWORD: ${FILE_DB_PASSWORD:?缺少 FILE_DB_PASSWORD，请先运行 scripts/init-secrets.sh}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
@@ -550,7 +557,7 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:4173}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?缺少 CORS_ALLOWED_ORIGINS，请先运行 scripts/init-secrets.sh 或手工填写真实域名}
       NACOS_SERVER_ADDR: nacos:8848
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
       JASYPT_PASSWORD: ${JASYPT_PASSWORD}
@@ -611,8 +618,8 @@ services:
       APP_INTERNAL_SERVICE_KEY: ${SVC_TEAM_KEY}
       TZ: Asia/Shanghai
       TEAM_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_team?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-      TEAM_DATASOURCE_USERNAME: root
-      TEAM_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      TEAM_DATASOURCE_USERNAME: ${TEAM_DB_USERNAME:?缺少 TEAM_DB_USERNAME，请先运行 scripts/init-secrets.sh}
+      TEAM_DATASOURCE_PASSWORD: ${TEAM_DB_PASSWORD:?缺少 TEAM_DB_PASSWORD，请先运行 scripts/init-secrets.sh}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
@@ -633,7 +640,7 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:4173}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?缺少 CORS_ALLOWED_ORIGINS，请先运行 scripts/init-secrets.sh 或手工填写真实域名}
       NACOS_SERVER_ADDR: nacos:8848
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
       JASYPT_PASSWORD: ${JASYPT_PASSWORD}
@@ -688,8 +695,8 @@ services:
       APP_INTERNAL_SERVICE_KEY: ${SVC_AUDIT_KEY}
       TZ: Asia/Shanghai
       AUDIT_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_audit?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-      AUDIT_DATASOURCE_USERNAME: root
-      AUDIT_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      AUDIT_DATASOURCE_USERNAME: ${AUDIT_DB_USERNAME:?缺少 AUDIT_DB_USERNAME，请先运行 scripts/init-secrets.sh}
+      AUDIT_DATASOURCE_PASSWORD: ${AUDIT_DB_PASSWORD:?缺少 AUDIT_DB_PASSWORD，请先运行 scripts/init-secrets.sh}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
@@ -698,7 +705,7 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:4173}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?缺少 CORS_ALLOWED_ORIGINS，请先运行 scripts/init-secrets.sh 或手工填写真实域名}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
       SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":"{''zxyz-user-service'':''${SVC_USER_KEY}'',''zxyz-admin-service'':''${SVC_ADMIN_KEY}'',''zxyz-project-service'':''${SVC_PROJECT_KEY}'',''zxyz-im-service'':''${SVC_IM_KEY}'',''zxyz-file-service'':''${SVC_FILE_KEY}'',''zxyz-team-service'':''${SVC_TEAM_KEY}'',''zxyz-gateway'':''${SVC_GATEWAY_KEY}'',''zxyz-email-service'':''${SVC_EMAIL_KEY}'',''zxyz-share-service'':''${SVC_SHARE_KEY}'',''zxyz-audit-service'':''${SVC_AUDIT_KEY}''}"}}}'
       NACOS_SERVER_ADDR: nacos:8848
@@ -755,8 +762,8 @@ services:
       APP_INTERNAL_SERVICE_KEY: ${SVC_ADMIN_KEY}
       TZ: Asia/Shanghai
       CONFIG_DB_HOST: mysql
-      CONFIG_DB_USERNAME: root
-      CONFIG_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      CONFIG_DB_USERNAME: ${CONFIG_DB_USERNAME:?缺少 CONFIG_DB_USERNAME，请先运行 scripts/init-secrets.sh}
+      CONFIG_DB_PASSWORD: ${CONFIG_DB_PASSWORD:?缺少 CONFIG_DB_PASSWORD，请先运行 scripts/init-secrets.sh}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
@@ -819,8 +826,8 @@ services:
       APP_INTERNAL_SERVICE_KEY: ${SVC_USER_KEY}
       TZ: Asia/Shanghai
       USER_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_user?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-      USER_DATASOURCE_USERNAME: root
-      USER_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      USER_DATASOURCE_USERNAME: ${USER_DB_USERNAME:?缺少 USER_DB_USERNAME，请先运行 scripts/init-secrets.sh}
+      USER_DATASOURCE_PASSWORD: ${USER_DB_PASSWORD:?缺少 USER_DB_PASSWORD，请先运行 scripts/init-secrets.sh}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
@@ -841,7 +848,7 @@ services:
       RABBITMQ_USERNAME: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       VERIFICATION_RETURN_CODE: ${VERIFICATION_RETURN_CODE:-true}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:4173}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?缺少 CORS_ALLOWED_ORIGINS，请先运行 scripts/init-secrets.sh 或手工填写真实域名}
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
       AUTH_COOKIE_DOMAIN: ${AUTH_COOKIE_DOMAIN:-}
       AUTH_TOKEN_TIMEOUT: ${AUTH_TOKEN_TIMEOUT:-43200}
@@ -910,7 +917,7 @@ services:
       IM_WEBSOCKET_URI: ${IM_WEBSOCKET_URI:-ws://im-service:${IM_NETTY_PORT:-19090}}
       MAX_REQUEST_SIZE: ${MAX_REQUEST_SIZE:-512MB}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:4173}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?缺少 CORS_ALLOWED_ORIGINS，请先运行 scripts/init-secrets.sh 或手工填写真实域名}
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
       RABBITMQ_USERNAME: ${RABBITMQ_USER}

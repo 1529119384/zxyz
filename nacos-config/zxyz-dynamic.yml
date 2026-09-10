@@ -13,7 +13,12 @@
 app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:4173}
-  # Cookie + Token 超时配置（secure 默认 false，兼容本地 HTTP 开发；生产环境通过环境变量设为 true）
+  # Cookie + Token 超时配置（secure 默认 false —— 当前站点为 IP 直连 HTTP，Secure Cookie
+  # 在 HTTP 下不会被浏览器回传，置 true 会直接导致登录失效）。
+  # ⚠️ 一旦启用 HTTPS（见 DEPLOYMENT.md「TLS 终止」章节：容器内 nginx 443 + 证书挂载），
+  #    必须在 .env 设 AUTH_COOKIE_SECURE=true，否则会话 Cookie 缺失 Secure 属性可被嗅探。
+  # 三处默认值（本文件 / docker-compose.yml / application-common.yml）已统一为 false，
+  # 消除此前 app=true 与 nacos/compose=false 的「双源冲突」。
   # 绑定路径：ServiceProperties.auth.*（secure/domain 由本文件控制；timeout 由本文件 + 环境变量控制）
   # 注意：token-timeout-seconds / long-lived-timeout-seconds 在 Nacos 热更新清单内，
   #       运维可在 Nacos 控制台直接修改，无需重建容器（下次登录用户的新会话拿到新 timeout）。

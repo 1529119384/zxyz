@@ -61,6 +61,16 @@ ZXYZdatabaseFront/coverage/
 git-scratch-*
 old/
 
+# ===== TLS 证书 / 私钥（禁止提交；由 docker-compose.tls.yml 挂载到容器）=====
+deploy/nginx/certs/*.pem
+deploy/nginx/certs/*.crt
+deploy/nginx/certs/*.key
+deploy/nginx/certs/*.key.pem
+deploy/nginx/certs/*.pfx
+deploy/nginx/certs/*.cer
+# 保留目录结构（.gitkeep 不受上述规则影响）
+!deploy/nginx/certs/.gitkeep
+
 # ===== Monorepo 安全网（防止子目录 .git/ 被误提交） =====
 ZXYZdatabaseBack/.git/
 ZXYZdatabaseFront/.git/

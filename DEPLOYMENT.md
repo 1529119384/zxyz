@@ -15,6 +15,7 @@
 - [6. Dockerfile 解析](#6-dockerfile-解析)
 - [7. docker-compose.yml 详解](#7-docker-composeyml-详解)
 - [8. Nginx 反向代理配置说明](#8-nginx-反向代理配置说明)
+  - [8.5 TLS 终止（容器内 nginx，opt-in）](#85-tls-终止容器内-nginxopt-in)
 - [9. 常见问题排查](#9-常见问题排查)
 - [10. 生产环境部署建议](#10-生产环境部署建议)
 - [11. 维护与更新操作](#11-维护与更新操作)
@@ -389,6 +390,19 @@ docker compose down -v
 | `ADMIN_SERVICE_PORT` | `18088` | Admin 管理服务端口 |
 | `IMAGE_PREFIX` | （空） | 镜像前缀。本地构建留空；生产环境设为 registry 前缀（如 `registry.cn-shenzhen.aliyuncs.com/zxyz/`），必须以 `/` 结尾 |
 
+### 4.9 告警投递（Alertmanager）
+
+监控栈已内置 Prometheus 告警规则（`deploy/prometheus/rules/zxyz.yml`：实例不可达 / JVM 堆过高 / 进程重启 / 5xx 错误率），但默认 `receivers` 为无 `*_configs` 的占位 receiver，**告警不会真正送达**。通过 `.env` 配置投递渠道即可启用，二者至少配置其一：
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `ALERT_WEBHOOK_URL` | （空） | 通用 Webhook 地址，直接接收 Alertmanager JSON 的端点。企业微信/钉钉自定义机器人需经适配网关转发。非空即启用 `webhook_configs` |
+| `ALERT_EMAIL_TO` | （空） | 邮件告警收件人。需 `EMAIL_ENABLED=true` 且 `EMAIL_*` SMTP 已配置，非空即启用 `email_configs`（复用 4.4 邮件配置） |
+
+- **渲染机制**：部署时由 `scripts/render-alertmanager.sh` 读取 `.env`，把 `deploy/alertmanager/alertmanager.yml.tmpl` 渲染为 `deploy/alertmanager/alertmanager.yml`（容器挂载点）。该脚本在 CI 的 `deploy` 作业中于 `docker compose up` 前自动执行（`$REPO_DIR` 每次部署都会 `git pull`，渲染逻辑始终为最新）；本地手动部署可运行 `bash scripts/render-alertmanager.sh` 自行渲染。
+- **优雅降级**：两个渠道变量皆为空时，渲染为「静默丢弃」的合法 no-op receiver，Alertmanager 仍正常启动，**监控不中断**。
+- **不触碰密钥**：渲染结果写到部署目录（`$DEPLOY_DIR/deploy/...`），不写入 git 工作区，故不会触发仓库漂移检测；webhook 地址/密码只来自 `.env`，不进仓库。
+
 ---
 
 ## 5. 数据库初始化说明
@@ -580,6 +594,57 @@ Nginx 默认添加以下安全响应头：
 ### 8.4 请求体限制
 
 `client_max_body_size 512m` — 允许最大 512 MB 的请求体，用于文件上传和数据库导入。
+
+### 8.5 TLS 终止（容器内 nginx，opt-in）
+
+默认部署仍是**纯 HTTP（IP 直连 80）**，本小节为可选项：让前端容器内的 nginx 直接监听 `443` 并终止 TLS，证书以挂载方式注入。**未启用时，默认 HTTP 路径与今天完全一致，不受影响。**
+
+实现要点：
+
+- HTTP 与 HTTPS 两套配置共用同一个 shared snippet（`deploy/nginx/snippets/proxy-locations.conf` 与 `http-common.conf`），通过 `include` 引入，避免两套 location/限流配置漂移。
+- 启用时 `docker-compose.tls.yml` 覆盖挂载 `deploy/nginx/default-ssl.conf` 到 `/etc/nginx/conf.d/default.conf`，并把 `./deploy/nginx/certs` 只读挂载到 `/etc/nginx/certs`；`entrypoint.sh` 据此把 `default-ssl.conf` 就地 `envsubst`（解析 `${OSS_PUBLIC_BASE_URL}`）。
+- `default-ssl.conf` 包含 **443（ssl）+ 80→443 重定向** 两个 server 块，均携带与 HTTP 一致的安全响应头（X-Frame-Options / X-Content-Type-Options / Referrer-Policy / CSP）。
+
+#### 步骤 1：获取证书
+
+申请与你的域名匹配的证书（任选其一）：
+
+- **Let's Encrypt / certbot**：`certbot certonly --webroot -w /path/to/webroot -d your.domain.com`，证书位于 `/etc/letsencrypt/live/your.domain.com/`。
+- **云厂商（阿里云/腾讯云等）** 或 **自有 CA** 签发。
+
+把证书链与私钥放到**部署目录**的 `deploy/nginx/certs/`（即 `$DEPLOY_DIR/deploy/nginx/certs/`，`docker-compose.tls.yml` 相对当前目录挂载）——本地开发则在仓库根 `deploy/nginx/certs/`。**必须使用以下文件名**（与 `default-ssl.conf` 中的路径对应）：
+
+| 文件 | 含义 |
+|---|---|
+| `fullchain.pem` | 证书链（含中间证书） |
+| `privkey.pem`   | 私钥 |
+
+> ⚠️ 证书/私钥**严禁提交进 git**：已在 `.gitignore` 中忽略 `deploy/nginx/certs/*.pem` `*.key` 等，仅保留 `.gitkeep` 占位。
+
+#### 步骤 2：修改 `.env`
+
+```dotenv
+TLS_ENABLED=true            # 启用容器内 TLS（默认 false；false 时保持 HTTP-only）
+AUTH_COOKIE_SECURE=true     # 配合 HTTPS 下发 Secure Cookie（见下方重要提醒）
+```
+
+> ⚠️ **重要**：`AUTH_COOKIE_SECURE` **在纯 HTTP（IP 直连）时必须保持 `false`**。若在没有 HTTPS 的情况下置 `true`，浏览器不会回传 Secure Cookie，导致登录失效。只有在真正启用 TLS（即 `TLS_ENABLED=true` 且证书已挂载）时才改为 `true`。`validate-env` 会校验二者一致性。
+
+#### 步骤 3：启动（叠加 overlay）
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d
+```
+
+该命令在默认编排之上叠加 TLS 覆盖层：暴露 `443`（`${HTTPS_PORT:-443}:443`）并将 80 仅用于 301 重定向到 443；**其它服务/配置一律不变**。访问 `https://your.domain.com` 即可；访问 `http://your.domain.com` 会被自动跳转至 HTTPS。
+
+#### 证书轮换
+
+直接替换 `deploy/nginx/certs/` 下的 `fullchain.pem` / `privkey.pem` 后，重载 nginx：
+
+```bash
+docker compose exec frontend-nginx nginx -s reload
+```
 
 ---
 

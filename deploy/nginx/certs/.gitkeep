@@ -1,0 +1,2 @@
+# 占位文件：保留目录结构。
+# 实际证书请勿提交（见 .gitignore）：fullchain.pem / privkey.pem 等由 docker-compose.tls.yml 挂载。

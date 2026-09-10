@@ -19,6 +19,11 @@
 
 set -euo pipefail
 
+# U15: 在写任何机密之前收紧新建文件权限，消除 init-secrets.log 明文窗口。
+# 日志在 :112 才首次写入明文，而原结尾 chmod 600 之前依赖 umask（常 022→644）。
+# 这里显式 umask 077，使之后 touch/>> 创建的文件默认为 600（仅属主可读）。
+umask 077
+
 DRY_RUN=false
 FORCE=false
 ENV_FILE=".env"
@@ -143,23 +148,11 @@ set_default() {
 
 echo "===== 生成/校验部署机密（幂等）====="
 gen_secret MYSQL_ROOT_PASSWORD
-# B1: 显式生成 CONFIG_DB_PASSWORD（config 库沿用 root 账号，故与 MYSQL_ROOT_PASSWORD 同值）
-# 注意：gen_secret 只写文件、不回写内存变量，故先从 .env 读回真实值
-# pipefail 下 grep 无匹配会返回 1 并杀死脚本（set -e），故 grep 无匹配时必须兜底为空串
-MYSQL_ROOT_PASSWORD="$(grep -E '^MYSQL_ROOT_PASSWORD=' "$ENV_FILE" | cut -d= -f2- || true)"
-cfg_cur="$(grep -E '^CONFIG_DB_PASSWORD=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)"
-if [ -n "$cfg_cur" ] && ! echo "$cfg_cur" | grep -qE '^CHANGE_ME'; then
-  echo "  CONFIG_DB_PASSWORD: 已存在真实值，跳过（同 MYSQL_ROOT_PASSWORD）"
-elif [ "$DRY_RUN" = true ]; then
-  echo "  CONFIG_DB_PASSWORD: [dry-run] 将设为与 MYSQL_ROOT_PASSWORD 同值（不写文件）"
-else
-  if grep -qE '^CONFIG_DB_PASSWORD=' "$ENV_FILE"; then
-    sed -i "s|^CONFIG_DB_PASSWORD=.*|CONFIG_DB_PASSWORD=${MYSQL_ROOT_PASSWORD}|" "$ENV_FILE"
-  else
-    echo "CONFIG_DB_PASSWORD=${MYSQL_ROOT_PASSWORD}" >> "$ENV_FILE"
-  fi
-  echo "  CONFIG_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:0:4}**** (同 MYSQL_ROOT_PASSWORD)"
-fi
+# 说明：CONFIG_DB_PASSWORD 不再与 MYSQL_ROOT_PASSWORD 同值（原 B1 逻辑已废弃）。
+# U1 之后 config 库由专用账户 zxyz_config 连接，密码在下方「数据库最小权限专用
+# 账户凭据」段由 gen_secret CONFIG_DB_PASSWORD 独立生成（幂等，已有真实值跳过）。
+# 若运维仍沿用 root 连 config 库（.env 中 CONFIG_DB_USERNAME=root），则该密码保持
+# 原值不变（gen_secret 见真实值即跳过），行为与旧版一致。
 gen_secret REDIS_PASSWORD
 gen_secret RABBITMQ_USER
 gen_secret RABBITMQ_PASSWORD
@@ -182,6 +175,33 @@ gen_secret SVC_SHARE_KEY token_32
 gen_secret SVC_TEAM_KEY token_32
 gen_secret SVC_USER_KEY token_32
 gen_secret SVC_GATEWAY_KEY token_32
+
+# --- U1: 数据库最小权限专用账户凭据（幂等）---
+# 为 10 个业务库各写入用户名默认值（明文，非机密）与随机密码（机密）。
+# 若运维选择继续用 root（不启用专用账户），可保留这些密码为 CHANGE_ME_* 占位符，
+# docker-compose 回退 root 即可，不影响现网；grant-least-privilege.sh 会在变量缺失时报错。
+echo "===== 生成数据库最小权限账户凭据（幂等）====="
+set_default PROJECT_DB_USERNAME "zxyz_project"
+set_default IM_DB_USERNAME "zxyz_im"
+set_default EMAIL_DB_USERNAME "zxyz_email"
+set_default SHARE_DB_USERNAME "zxyz_share"
+set_default FILE_DB_USERNAME "zxyz_file"
+set_default TEAM_DB_USERNAME "zxyz_team"
+set_default AUDIT_DB_USERNAME "zxyz_audit"
+set_default USER_DB_USERNAME "zxyz_user"
+set_default CONFIG_DB_USERNAME "zxyz_config"
+set_default NACOS_DB_USERNAME "zxyz_nacos"
+
+gen_secret PROJECT_DB_PASSWORD
+gen_secret IM_DB_PASSWORD
+gen_secret EMAIL_DB_PASSWORD
+gen_secret SHARE_DB_PASSWORD
+gen_secret FILE_DB_PASSWORD
+gen_secret TEAM_DB_PASSWORD
+gen_secret AUDIT_DB_PASSWORD
+gen_secret USER_DB_PASSWORD
+gen_secret CONFIG_DB_PASSWORD
+gen_secret NACOS_DB_PASSWORD
 
 # --- 非机密的明文默认值（N6）---
 # CORS_ALLOWED_ORIGINS 是明文白名单、不是机密，但 .env.example 里给的是

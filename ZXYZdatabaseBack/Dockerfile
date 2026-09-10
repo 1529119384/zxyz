@@ -46,10 +46,12 @@ COPY ZXYZdatabaseBack/zxyz-admin-service/pom.xml ./zxyz-admin-service/pom.xml
 
 # 复制源码后执行目标模块打包。
 # 分两步：先构建 zxyz-common 的 test-jar（部分服务依赖其测试工具类），
-# 再用 -Dmaven.test.skip=true 打包目标模块（跳过测试编译和执行）。
+# 再用 -DskipTests 打包目标模块（仍【编译】测试源码但不执行——测试执行由 CI 的
+# quality-check-backend `mvn -B test` 兜底）。用 -DskipTests 而非 -Dmaven.test.skip=true：
+# 后者连测试源码都不编译，测试类腐化（如删了类但测试仍引用）在镜像构建阶段也被掩盖。
 COPY ZXYZdatabaseBack/ ./
 RUN mvn -B -T 1C -pl zxyz-common -am install -Dmaven.test.skip=false -DskipTests \
-    && mvn -B -T 1C -pl "${MODULE}" -am package -Dmaven.test.skip=true \
+    && mvn -B -T 1C -pl "${MODULE}" -am package -DskipTests \
     && find "${MODULE}/target" -maxdepth 1 -type f -name "${MODULE}-*.jar" ! -name "original-*.jar" -exec cp {} /tmp/app.jar \;
 
 # Alpine 瘦身：eclipse-temurin:17-jre-alpine 体积更小。
