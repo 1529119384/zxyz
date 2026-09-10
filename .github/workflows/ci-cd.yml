@@ -1026,6 +1026,21 @@ jobs:
             echo "===== Restarting services ====="
             docker compose up -d $UP_FLAGS "${UPDATE_SVC[@]}"
 
+            # --- 热重载 nginx：重新解析后端 upstream 容器 IP ---
+            # nginx 的 proxy_pass http://<service>:<port> 依赖 Docker 内置 DNS，
+            # 该解析在 nginx 启动时完成并缓存；若后端容器被重建（IP 变化）而 nginx 未重载，
+            # 会一直转发到旧 IP → 持续 502（曾实测：重建后端后前端 502，force-recreate nginx 才恢复）。
+            # 此处后端重建后主动 reload，避免该隐性故障。
+            # 首次部署 / nginx 未运行时跳过（不阻断）。
+            if docker ps --format '{{.Names}}' | grep -qx 'zxyz-frontend-nginx'; then
+              if docker exec zxyz-frontend-nginx nginx -t >/dev/null 2>&1 \
+                 && docker exec zxyz-frontend-nginx nginx -s reload >/dev/null 2>&1; then
+                echo "::notice::NGINX_RELOADED: 已热重载 frontend-nginx，重新解析后端 upstream"
+              else
+                echo "::warning::NGINX_RELOAD_FAILED: frontend-nginx 重载失败，502 风险未消除，请检查 nginx 配置"
+              fi
+            fi
+
             # --- 健康检查（fast_deploy 时跳过） ---
             if [ "$FAST_DEPLOY" = "true" ]; then
               echo "===== Fast deploy: skipping health checks, sleep 10s ====="
@@ -1099,6 +1114,16 @@ jobs:
                     # 重启服务
                     echo "===== Restarting with previous version ====="
                     docker compose up -d "${UPDATE_SVC[@]}"
+
+                    # 回滚同样重建了容器（IP 变化），需再次热重载 nginx，否则前端仍 502
+                    if docker ps --format '{{.Names}}' | grep -qx 'zxyz-frontend-nginx'; then
+                      if docker exec zxyz-frontend-nginx nginx -t >/dev/null 2>&1 \
+                         && docker exec zxyz-frontend-nginx nginx -s reload >/dev/null 2>&1; then
+                        echo "::notice::NGINX_RELOADED: 回滚后已热重载 frontend-nginx"
+                      else
+                        echo "::warning::NGINX_RELOAD_FAILED: 回滚后 frontend-nginx 重载失败"
+                      fi
+                    fi
 
                     # 回滚后健康检查：30 次 × 10s = 300s（同上，10 个 JVM 重建后需要数分钟）
                     echo "===== Verifying rollback health ====="

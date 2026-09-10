@@ -238,6 +238,59 @@ else
 fi
 
 echo ""
+echo "--- CORS × 前端地址 一致性（防登录 403 回归） ---"
+# 背景（实测事故）：nginx 用 `proxy_set_header Host $host`（丢失端口），后端据此把请求视为
+# 80 端口，于是浏览器访问 http://<ip>:HTTP_PORT 时 Origin 被判为跨域；若该 Origin 不在
+# CORS_ALLOWED_ORIGINS 中，Spring 会直接 403 掉登录等所有 /api 请求 → 全站无法登录。
+# 这里在部署前做静态一致性校验，把该故障拦在部署之前（而非上线后才发现）。
+_cors_frontend_check() {
+  local fe="${FRONTEND_BASE_URL:-}"
+  local port="${HTTP_PORT:-80}"
+  # 空值/占位符上文已单独处理，这里跳过以免重复报错
+  if [ -z "$fe" ] || echo "$fe" | grep -qE "YOUR_SERVER_IP|CHANGE_ME"; then
+    echo "  SKIP: FRONTEND_BASE_URL 未配置或为占位符，跳过 CORS 一致性校验"
+    return 0
+  fi
+  fe="${fe%/}"
+  local scheme="http"
+  local rest="$fe"
+  if echo "$fe" | grep -q '://'; then
+    scheme="${fe%%://*}"
+    rest="${fe#*://}"
+  fi
+  local host="${rest%%/*}"
+  local origin
+  if echo "$host" | grep -qE ':[0-9]+$'; then
+    # 地址已显式带端口，直接采用
+    origin="${scheme}://${host}"
+  elif { [ "$port" = "80" ] && [ "$scheme" = "http" ]; } \
+    || { [ "$port" = "443" ] && [ "$scheme" = "https" ]; }; then
+    # 默认端口可省略
+    origin="${scheme}://${host}"
+  else
+    # 前端地址未带端口，按入口发布端口 HTTP_PORT 补齐
+    origin="${scheme}://${host}:${port}"
+  fi
+  local cors_norm="${CORS_ALLOWED_ORIGINS:-}"
+  # 归一化：去空白、去全部斜杠，保证 `http://h:1` 与 `http://h:1/` 视为相同
+  cors_norm="$(echo "$cors_norm" | tr -d '[:space:]')"
+  cors_norm="${cors_norm//\//}"
+  local origin_norm="${origin//\//}"
+  if [ "$cors_norm" = "*" ] || echo ",$cors_norm," | grep -qF ",$origin_norm,"; then
+    echo "  OK: 前端 Origin ($origin) 已在 CORS_ALLOWED_ORIGINS 中"
+  elif echo "$cors_norm" | grep -q '\*'; then
+    echo "  WARN: CORS_ALLOWED_ORIGINS 含通配符，无法静态确认是否覆盖前端 Origin ($origin)，请人工核对"
+    WARNINGS=$((WARNINGS + 1))
+  else
+    echo "  ERROR: 前端 Origin ($origin) 不在 CORS_ALLOWED_ORIGINS 中"
+    echo "         浏览器访问该地址时，登录等 /api 请求会被 Spring CORS 直接 403。"
+    echo "         请把 $origin 加入 CORS_ALLOWED_ORIGINS（当前值: ${CORS_ALLOWED_ORIGINS:-<空>}）"
+    ERRORS=$((ERRORS + 1))
+  fi
+}
+_cors_frontend_check
+
+echo ""
 echo "===== 结果 ====="
 if [ $ERRORS -gt 0 ]; then
   echo "ERROR: $ERRORS 个错误，$WARNINGS 个警告"

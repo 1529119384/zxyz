@@ -79,3 +79,7 @@ ZXYZdatabaseFront/.git/
 # ===== 不纳入版本控制的目录 =====
 ISSUE/
 sql/schema_*.sql
+
+# 本地 CI 轮询产物（记录上次 run id）；未忽略会令 pre-push 的子仓库同步检查
+# 把工作区视为"脏"从而拒推。
+.last_ci_run
