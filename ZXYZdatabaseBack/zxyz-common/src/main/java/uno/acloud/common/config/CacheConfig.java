@@ -1,7 +1,6 @@
 package uno.acloud.common.config;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
@@ -23,7 +22,6 @@ import java.util.Map;
 
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
 import org.springframework.data.redis.cache.RedisCacheManager;
-import uno.acloud.common.config.ConfigGetter;
 
 /**
  * Spring Cache 抽象层配置，使用 Redis 作为缓存后端。
@@ -43,12 +41,10 @@ import uno.acloud.common.config.ConfigGetter;
  */
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnClass(RedisConnectionFactory.class)
-// ⚠️ 危险耦合（N7）：本类的激活条件依赖已废弃的 ConfigGetter Bean。
-// 一旦按 P2-A1 计划删除 ConfigGetter，本配置类会「静默不再创建」——
-// @EnableCaching 随之失效、全服务缓存被静默关闭，且不会有任何报错日志。
-// 删除 ConfigGetter 前必须先把此条件改为不依赖它（例如改用 @ConditionalOnClass
-// 或 RedisConnectionFactory 的 @ConditionalOnBean）。
-@ConditionalOnBean(ConfigGetter.class)
+// 缓存激活仅依赖 Redis 是否在 classpath（所有业务服务均依赖 redis starter）。
+// 刻意不依赖已废弃的 ConfigGetter Bean：原 @ConditionalOnBean(ConfigGetter.class)
+// 会在未来删除 ConfigGetter 时导致本配置类静默失效、@EnableCaching 关闭、全服务缓存
+// 被静默关闭且无报错（N7 地雷）。现已解耦，删除 ConfigGetter 不会再影响缓存。
 @EnableCaching
 // 重启生效（不可加 @RefreshScope）：本类是构建 RedisCacheManager 的 @Configuration，刷新会重建缓存管理器实例；
 // 且缓存 TTL 需在建 Bean 时一次性写入 RedisCacheConfiguration，改为热更须重构为逐条 TTL 策略。

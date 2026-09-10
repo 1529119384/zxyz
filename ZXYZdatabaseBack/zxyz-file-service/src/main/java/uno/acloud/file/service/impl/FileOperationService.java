@@ -1,7 +1,6 @@
 package uno.acloud.file.service.impl;
 
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.file.dto.FileUpdateRequest;
@@ -42,7 +41,6 @@ public class FileOperationService implements FileOperationPort {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public FileResourceVO patchFile(Long fileId, FileUpdateRequest request, Long userId) {
         boolean hasNewName = request != null && request.getNewName() != null && !request.getNewName().isBlank();
         boolean hasTargetParentId = request != null && request.getTargetParentId() != null;

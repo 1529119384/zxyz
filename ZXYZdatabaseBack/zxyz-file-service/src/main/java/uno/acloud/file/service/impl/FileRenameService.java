@@ -2,7 +2,7 @@ package uno.acloud.file.service.impl;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.file.dto.RenameFileRequest;
@@ -31,6 +31,7 @@ public class FileRenameService {
     private final FilePathResolver filePathResolver;
     private final FileAccessGuard fileAccessGuardService;
     private final FileOperationHelper helper;
+    private final TransactionTemplate transactionTemplate;
     private final FileResourceChangedPublisher fileResourceChangedPublisher;
 
     public FileRenameService(FileMapper fileMapper,
@@ -39,6 +40,7 @@ public class FileRenameService {
                              FilePathResolver filePathResolver,
                              FileAccessGuard fileAccessGuardService,
                              FileOperationHelper helper,
+                             TransactionTemplate transactionTemplate,
                              Optional<FileResourceChangedPublisher> fileResourceChangedPublisher) {
         this.fileMapper = fileMapper;
         this.registry = registry;
@@ -46,15 +48,14 @@ public class FileRenameService {
         this.filePathResolver = filePathResolver;
         this.fileAccessGuardService = fileAccessGuardService;
         this.helper = helper;
+        this.transactionTemplate = transactionTemplate;
         this.fileResourceChangedPublisher = fileResourceChangedPublisher.orElse(null);
     }
 
-    @Transactional(rollbackFor = Exception.class)
     public RenameFileVO renameFile(RenameFileRequest request) {
         return renameFile(request, null);
     }
 
-    @Transactional(rollbackFor = Exception.class)
     public RenameFileVO renameFile(RenameFileRequest request, Long userId) {
         if (request == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "请求不能为空");
@@ -63,30 +64,37 @@ public class FileRenameService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "fileId 不能为空");
         }
 
+        // 事务外：参数校验 + 加载节点 + 远程权限校验（team-service HTTP 调用），
+        // 避免在 DB 事务内发起远程调用导致连接池被长时间占用、高并发雪崩。
         String normalizedNewName = validateRenameName(request.getNewName());
         FileNode fileNode = fileDomainValidator.requireNodeForRename(request.getFileId());
         fileAccessGuardService.requireWriteAccess(fileNode, userId);
-        String finalOriginalName = buildRenamedOriginalName(fileNode, normalizedNewName);
-        validateFinalOriginalName(finalOriginalName);
-        String newStorePath = filePathResolver.buildStorePath(fileNode.getParentId(), finalOriginalName);
 
-        if (fileNode instanceof FileItem fileItem) {
-            renameFileNode(fileItem, finalOriginalName, newStorePath);
-        } else if (fileNode instanceof Folder folder) {
-            renameFolderTree(folder, finalOriginalName, newStorePath);
-        } else {
-            throw new BusinessException(ErrorCode.FILE_STATE_INVALID, "非法的文件节点类型");
-        }
+        // 事务内：仅本地 DB 写操作。renameFileNode 内部会在事务提交后（afterCommit）更新 content-disposition，
+        // helper.publishByIdsAfterCommit 同样依赖事务内的 afterCommit 注册，因此写入动作必须包裹在此事务中。
+        return transactionTemplate.execute(status -> {
+            String finalOriginalName = buildRenamedOriginalName(fileNode, normalizedNewName);
+            validateFinalOriginalName(finalOriginalName);
+            String newStorePath = filePathResolver.buildStorePath(fileNode.getParentId(), finalOriginalName);
 
-        RenameFileVO response = new RenameFileVO(
-                fileNode.getId(),
-                finalOriginalName,
-                fileNode.getFileType(),
-                fileNode.getParentId(),
-                LocalDateTime.now()
-        );
-        helper.publishByIdsAfterCommit("RENAMED", List.of(fileNode.getId()));
-        return response;
+            if (fileNode instanceof FileItem fileItem) {
+                renameFileNode(fileItem, finalOriginalName, newStorePath);
+            } else if (fileNode instanceof Folder folder) {
+                renameFolderTree(folder, finalOriginalName, newStorePath);
+            } else {
+                throw new BusinessException(ErrorCode.FILE_STATE_INVALID, "非法的文件节点类型");
+            }
+
+            RenameFileVO response = new RenameFileVO(
+                    fileNode.getId(),
+                    finalOriginalName,
+                    fileNode.getFileType(),
+                    fileNode.getParentId(),
+                    LocalDateTime.now()
+            );
+            helper.publishByIdsAfterCommit("RENAMED", List.of(fileNode.getId()));
+            return response;
+        });
     }
 
     private String validateRenameName(String newName) {
