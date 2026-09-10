@@ -24,7 +24,7 @@ export default defineConfig(({ mode }) => {
       include: ['element-plus/es/components/virtual-list/index.mjs'],
     },
     plugins: [
-      VueDevTools(),
+      mode !== 'production' && VueDevTools(),
       vue(),
       AutoImport({
         resolvers: [ElementPlusResolver()],
@@ -32,7 +32,7 @@ export default defineConfig(({ mode }) => {
       Components({
         resolvers: [ElementPlusResolver()],
       }),
-    ],
+    ].filter(Boolean),
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url))
@@ -57,7 +57,7 @@ export default defineConfig(({ mode }) => {
       coverage: {
         provider: 'v8',
         reporter: ['text', 'html'],
-        exclude: ['node_modules/', 'src/main.js'],
+        exclude: ['node_modules/', 'src/main.js', 'src/bootstrap.js'],
         // 阈值采用「棘轮」策略：仅下调当前未达标的项，取值在实测值下方约 2 个点，
         // 使门禁可用并防回归；已达标的项（如 api 的 statements/lines 70）保持不动。
         // 实测（npx vitest run --coverage --coverage.clean=false）：
