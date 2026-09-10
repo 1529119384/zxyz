@@ -747,6 +747,21 @@ jobs:
             IMAGE_PREFIX="${{ env.IMAGE_PREFIX }}"
             cd "$DEPLOY_DIR"
 
+            # $DEPLOY_DIR 是长期部署目录（存 .env / data / backups），$DEPLOY_DIR-repo 才是
+            # 每次部署 git pull 的克隆。提前定义 REPO_DIR 并提供 pick_script：
+            # 优先取克隆里的最新脚本（含本次修复），回退长期目录的旧副本。
+            # 背景：$DEPLOY_DIR 下的 scripts/ 不会自动更新，新增的 grant-least-privilege.sh
+            # 在旧服务器上根本不存在；若直接跳过授权，compose 又会用 fail-fast 专用账号起服务，
+            # 结果是「部署看似成功、所有服务连库失败」。
+            REPO_DIR="${DEPLOY_DIR}-repo"
+            pick_script() {
+              local name="$1" cand=""
+              for cand in "$REPO_DIR/scripts/$name" "$DEPLOY_DIR/scripts/$name"; do
+                [ -f "$cand" ] && { printf '%s' "$cand"; return 0; }
+              done
+              return 1
+            }
+
             echo "===== Deploying to ${{ steps.target.outputs.env }} ====="
             echo "Image tag: $IMAGE_TAG"
 
@@ -777,8 +792,11 @@ jobs:
             # 自动从 .env.example 复制（N5）。此前要求「脚本与 .env 同时存在」，
             # 导致全新服务器直接跳过初始化，随后 compose 解析 ${SVC_GATEWAY_KEY:?...}
             # 硬失败（报错信息与真实原因相距很远，极难定位）。
-            if [ -f "$DEPLOY_DIR/scripts/init-secrets.sh" ]; then
-              if ! bash "$DEPLOY_DIR/scripts/init-secrets.sh" "$DEPLOY_DIR/.env"; then
+            # 脚本优先取 $REPO_DIR（最新；本步只写 $DEPLOY_DIR/.env 与 $DEPLOY_DIR/init-secrets.log，
+            # 不会污染克隆工作区，故可安全使用克隆内副本）。
+            SECRETS_SCRIPT="$(pick_script init-secrets.sh || true)"
+            if [ -n "$SECRETS_SCRIPT" ]; then
+              if ! bash "$SECRETS_SCRIPT" "$DEPLOY_DIR/.env"; then
                 echo "::error::INIT_SECRETS_FAILED: 首次部署机密初始化失败，已中止部署"
                 exit 1
               fi
@@ -798,7 +816,6 @@ jobs:
             fi
 
             # --- 配置同步 ---
-            REPO_DIR="${DEPLOY_DIR}-repo"
             UP_FLAGS=""
             if [ -d "$REPO_DIR" ]; then
               # --- 验签 .env（生产门禁）——在拉取/部署之前执行，失败即中止部署 ---
@@ -807,9 +824,10 @@ jobs:
               # 也不吞掉失败；校验失败即硬失败中止部署。
               # --prod 门禁已是脚本默认行为（Nacos/RabbitMQ/OSS 等生产敏感项只在
               # 校验通过时放行）；此脚本当前不识别 --prod 参数，故直接用完整校验。
-              if [ -f "$DEPLOY_DIR/scripts/validate-env.sh" ] && [ -f "$DEPLOY_DIR/.env" ]; then
+              VALIDATE_SCRIPT="$(pick_script validate-env.sh || true)"
+              if [ -n "$VALIDATE_SCRIPT" ] && [ -f "$DEPLOY_DIR/.env" ]; then
                 echo "===== Validating .env (prod gate) ====="
-                if ! bash "$DEPLOY_DIR/scripts/validate-env.sh" "$DEPLOY_DIR/.env"; then
+                if ! bash "$VALIDATE_SCRIPT" "$DEPLOY_DIR/.env"; then
                   echo "::error::VALIDATE_ENV_FAILED: .env 校验未通过（必需变量缺失或仍为占位符），已中止部署"
                   exit 1
                 fi
@@ -819,7 +837,17 @@ jobs:
                 echo "::warning::跳过 .env 校验（validate-env.sh 或 .env 不存在）"
               fi
 
-              OLD_HASH=$(md5sum "$DEPLOY_DIR/docker-compose.yml" 2>/dev/null | cut -d' ' -f1)
+              # 组合 hash：把 TLS 覆盖层一并纳入「定义是否变更」判定，
+              # 否则只改 docker-compose.tls.yml 时不会触发 --force-recreate。
+              _compose_hash() {
+                local h
+                h="$(md5sum "$DEPLOY_DIR/docker-compose.yml" 2>/dev/null | cut -d' ' -f1 || true)"
+                if [ -f "$DEPLOY_DIR/docker-compose.tls.yml" ]; then
+                  h="${h}$(md5sum "$DEPLOY_DIR/docker-compose.tls.yml" | cut -d' ' -f1)"
+                fi
+                printf '%s' "$h"
+              }
+              OLD_HASH="$(_compose_hash)"
               cd "$REPO_DIR" && git pull --ff-only -q
 
               # --- 漂移检测：拉取后若工作区非空即中止并要求人工确认 ---
@@ -834,9 +862,22 @@ jobs:
               echo "工作区清洁，无漂移"
 
               cp "$REPO_DIR/docker-compose.yml" "$DEPLOY_DIR/docker-compose.yml"
+              # U2：TLS 覆盖层此前从未同步到 $DEPLOY_DIR，导致 TLS_ENABLED=true 时
+              # 下方「覆盖层不存在即中止」必然触发、TLS 部署根本无法上线。
+              if [ -f "$REPO_DIR/docker-compose.tls.yml" ]; then
+                cp "$REPO_DIR/docker-compose.tls.yml" "$DEPLOY_DIR/docker-compose.tls.yml"
+              fi
+              # 同步 scripts/：$DEPLOY_DIR 是长期目录、不会自动更新，而 backup / init-secrets /
+              # validate-env / grant 都从这里调用（backup 还按其所在目录写 backups/）。
+              # 本步在 pull 之后执行，故当次部署的 init-secrets/validate-env/grant 用上面
+              # pick_script 取克隆内最新副本，backup 保持 DEPLOY_DIR 侧（避免写入克隆触发漂移）。
+              if [ -d "$REPO_DIR/scripts" ]; then
+                mkdir -p "$DEPLOY_DIR/scripts"
+                cp -f "$REPO_DIR/scripts/"*.sh "$DEPLOY_DIR/scripts/" 2>/dev/null || true
+              fi
               cd "$DEPLOY_DIR"
-              NEW_HASH=$(md5sum "$DEPLOY_DIR/docker-compose.yml" | cut -d' ' -f1)
-              [ "$OLD_HASH" != "$NEW_HASH" ] && UP_FLAGS="--force-recreate" && echo "docker-compose.yml changed, will force-recreate"
+              NEW_HASH="$(_compose_hash)"
+              [ "$OLD_HASH" != "$NEW_HASH" ] && UP_FLAGS="--force-recreate" && echo "compose 定义（含 TLS 覆盖层）已变更，将 --force-recreate"
             fi
 
             # --- 更新 .env ---
@@ -863,16 +904,20 @@ jobs:
             # 跨部署稳定，改密会导致运行中的服务断连，故此处绝不 ALTER USER。
             # 前提：MySQL 已运行（与上方 backup.sh --mysql-only 完全同一前提；首次部署
             # 需先手动起基础设施，本脚本不负责起 mysql 容器）。
-            if [ -f "$DEPLOY_DIR/scripts/grant-least-privilege.sh" ]; then
+            GRANT_SCRIPT="$(pick_script grant-least-privilege.sh || true)"
+            if [ -n "$GRANT_SCRIPT" ]; then
               echo "===== Applying least-privilege DB accounts ====="
-              if ! bash "$DEPLOY_DIR/scripts/grant-least-privilege.sh" \
-                     --env "$DEPLOY_DIR/.env" --compose "$DEPLOY_DIR/docker-compose.yml"; then
+              if ! bash "$GRANT_SCRIPT" \
+                     --env="$DEPLOY_DIR/.env" --compose="$DEPLOY_DIR/docker-compose.yml"; then
                 echo "::error::GRANT_LEAST_PRIVILEGE_FAILED: 最小权限数据库账号授权失败，已中止部署"
                 exit 1
               fi
               echo "::notice::GRANT_LEAST_PRIVILEGE_OK: 最小权限数据库账号已就绪"
             else
-              echo "::warning::跳过最小权限账号授权（grant-least-privilege.sh 不存在）"
+              # 不再仅告警：compose 已 fail-fast 引用专用账号，缺授权必然导致所有服务连库失败，
+              # 与其「部署成功但服务全挂」不如就地中止并给出可执行指引。
+              echo "::error::GRANT_LEAST_PRIVILEGE_MISSING: 未找到 grant-least-privilege.sh（$REPO_DIR/scripts 与 $DEPLOY_DIR/scripts 皆无）。compose 已要求专用账号，请先同步脚本再部署"
+              exit 1
             fi
 
             # --- 筛选需要更新的服务 ---
@@ -909,8 +954,15 @@ jobs:
             export COMPOSE_FILE="docker-compose.yml"
             if grep -qE '^TLS_ENABLED=true' "$DEPLOY_DIR/.env" 2>/dev/null; then
               if [ -f "$DEPLOY_DIR/docker-compose.tls.yml" ]; then
+                # 证书预检：镜像内 default-ssl.conf 固定引用 fullchain.pem / privkey.pem；
+                # 缺证书时 nginx 会启动即崩并入 restart 循环，此处提前给出可操作报错。
+                if [ ! -f "$DEPLOY_DIR/deploy/nginx/certs/fullchain.pem" ] \
+                   || [ ! -f "$DEPLOY_DIR/deploy/nginx/certs/privkey.pem" ]; then
+                  echo "::error::TLS_CERT_MISSING: TLS_ENABLED=true 但缺少 $DEPLOY_DIR/deploy/nginx/certs/{fullchain.pem,privkey.pem}，nginx 将无法启动"
+                  exit 1
+                fi
                 export COMPOSE_FILE="docker-compose.yml:docker-compose.tls.yml"
-                echo "::notice::TLS_ENABLED=true，已叠加 docker-compose.tls.yml"
+                echo "::notice::TLS_ENABLED=true，已叠加 docker-compose.tls.yml（证书预检通过）"
               else
                 echo "::error::TLS_ENABLED=true 但 $DEPLOY_DIR/docker-compose.tls.yml 不存在，已中止部署"
                 exit 1

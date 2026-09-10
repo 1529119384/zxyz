@@ -19,6 +19,7 @@
 #     --env=PATH      指定 .env 路径（默认 ./.env，回退到脚本上级目录的 .env）
 #     --compose=PATH  指定 compose 文件（默认脚本上级目录的 docker-compose.yml）
 #     --dry-run       只打印将执行的 SQL 与 docker 命令，不连接数据库、不写库
+#   注：--env/--compose 也接受空格写法（--env PATH），两种写法等价。
 #
 # 幂等性：重复执行安全（CREATE USER IF NOT EXISTS + 重复 GRANT 均幂等）。
 # 回退语义：本脚本只「创建并授权」专用账户，绝不删除 root（root 的去留由 DBA 手动处置）。
@@ -33,16 +34,24 @@ ENV_FILE=""
 COMPOSE_PATH=""
 DRY_RUN=false
 
-for a in "$@"; do
-  case "$a" in
-    --env=*)     ENV_FILE="${a#--env=}" ;;
-    --compose=*) COMPOSE_PATH="${a#--compose=}" ;;
+# 同时支持 `--env=PATH`（文档写法）与 `--env PATH`（CI 调用写法）。
+# 曾只认等号形式，导致 CI 传空格形式时 `--env` 落入 `-*` 分支直接 exit 1，
+# 每次部署都在「最小权限账号授权」步骤硬失败中止。
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --env=*)     ENV_FILE="${1#--env=}" ;;
+    --env)       [ $# -ge 2 ] || { echo "ERROR: --env 需要一个参数" >&2; exit 1; }
+                 ENV_FILE="$2"; shift ;;
+    --compose=*) COMPOSE_PATH="${1#--compose=}" ;;
+    --compose)   [ $# -ge 2 ] || { echo "ERROR: --compose 需要一个参数" >&2; exit 1; }
+                 COMPOSE_PATH="$2"; shift ;;
     --dry-run)   DRY_RUN=true ;;
     --help|-h)   sed -n '2,40p' "${BASH_SOURCE[0]}"; exit 0 ;;
-    -*)          echo "ERROR: 未知参数: $a" >&2; exit 1 ;;
+    -*)          echo "ERROR: 未知参数: $1" >&2; exit 1 ;;
     *)           # 位置参数视为 .env 路径（兼容旧调用习惯）
-                 ENV_FILE="$a" ;;
+                 ENV_FILE="$1" ;;
   esac
+  shift
 done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
