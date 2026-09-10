@@ -762,6 +762,24 @@ jobs:
               return 1
             }
 
+            # --- 提前刷新克隆 + 同步 scripts/（必须在 init-secrets 之前！）---
+            # 为什么：pick_script 会优先用 $REPO_DIR/scripts 的副本，而 pull 原本排在
+            # init-secrets/validate-env 之后 —— 于是这两步拿到的是「上次部署的旧克隆」。
+            # 后果实证（run #104）：旧 init-secrets 不认识本次新增的 *_DB_USERNAME/*_DB_PASSWORD
+            # 键，不会补空值 → 后续 grant 读到空用户名 → 报「未设置」→ 部署中止。
+            # 提前 pull 后，后续 pull 已是最新（无副作用），init-secrets/validate-env/grant 才是本次代码。
+            if [ -d "$REPO_DIR" ]; then
+              if ! git -C "$REPO_DIR" pull --ff-only -q; then
+                echo "::error::REPO_PULL_FAILED: 无法更新 $REPO_DIR（常见原因：工作区有漂移改动）。已中止，后续脚本需最新版本"
+                git -C "$REPO_DIR" status --porcelain 2>/dev/null || true
+                exit 1
+              fi
+              if [ -d "$REPO_DIR/scripts" ]; then
+                mkdir -p "$DEPLOY_DIR/scripts"
+                cp -f "$REPO_DIR/scripts/"*.sh "$DEPLOY_DIR/scripts/" 2>/dev/null || true
+              fi
+            fi
+
             echo "===== Deploying to ${{ steps.target.outputs.env }} ====="
             echo "Image tag: $IMAGE_TAG"
 
@@ -867,14 +885,9 @@ jobs:
               if [ -f "$REPO_DIR/docker-compose.tls.yml" ]; then
                 cp "$REPO_DIR/docker-compose.tls.yml" "$DEPLOY_DIR/docker-compose.tls.yml"
               fi
-              # 同步 scripts/：$DEPLOY_DIR 是长期目录、不会自动更新，而 backup / init-secrets /
-              # validate-env / grant 都从这里调用（backup 还按其所在目录写 backups/）。
-              # 本步在 pull 之后执行，故当次部署的 init-secrets/validate-env/grant 用上面
-              # pick_script 取克隆内最新副本，backup 保持 DEPLOY_DIR 侧（避免写入克隆触发漂移）。
-              if [ -d "$REPO_DIR/scripts" ]; then
-                mkdir -p "$DEPLOY_DIR/scripts"
-                cp -f "$REPO_DIR/scripts/"*.sh "$DEPLOY_DIR/scripts/" 2>/dev/null || true
-              fi
+              # scripts/ 已在流程最前面（init-secrets 之前）同步过，此处不再重复。
+              # backup.sh 仍从 $DEPLOY_DIR 侧执行：它按自身位置写 ../backups，
+              # 若改从 $REPO_DIR 调用会污染克隆工作区、触发下一轮漂移检测。
               cd "$DEPLOY_DIR"
               NEW_HASH="$(_compose_hash)"
               [ "$OLD_HASH" != "$NEW_HASH" ] && UP_FLAGS="--force-recreate" && echo "compose 定义（含 TLS 覆盖层）已变更，将 --force-recreate"
