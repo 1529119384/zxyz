@@ -62,6 +62,19 @@ if [ ! -f "$DEPLOY_DIR/.env" ]; then
   echo "INFO: .env 已生成，外部凭证（OSS/邮箱/前端地址等 CHANGE_ME_*）仍需手动填写。"
 fi
 
+# --- 叠加 TLS 覆盖层（U2）：与 CI 部署保持一致 ---
+# 若外部已显式指定 COMPOSE_FILE 则沿用；否则依据 .env 的 TLS_ENABLED 推导。
+# 缺了这段，TLS 部署走本脚本热更服务会拿纯 HTTP 的 compose 定义，导致 443 入口丢失。
+if [ -z "${COMPOSE_FILE:-}" ]; then
+  if grep -qE '^[[:space:]]*TLS_ENABLED[[:space:]]*=[[:space:]]*true' "$DEPLOY_DIR/.env" 2>/dev/null \
+     && [ -f "$DEPLOY_DIR/docker-compose.tls.yml" ]; then
+    export COMPOSE_FILE="docker-compose.yml:docker-compose.tls.yml"
+    echo "INFO: 检测到 TLS_ENABLED=true，部署将叠加 docker-compose.tls.yml"
+  else
+    export COMPOSE_FILE="docker-compose.yml"
+  fi
+fi
+
 if [ "$VALIDATE_ONLY" = true ]; then
   bash "$SCRIPT_DIR/validate-env.sh" "$DEPLOY_DIR/.env"
   exit $?

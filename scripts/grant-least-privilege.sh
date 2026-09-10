@@ -21,21 +21,22 @@
 #     --dry-run       只打印将执行的 SQL 与 docker 命令，不连接数据库、不写库
 #
 # 幂等性：重复执行安全（CREATE USER IF NOT EXISTS + 重复 GRANT 均幂等）。
-# 回退语义：本脚本只「创建并授权」专用账户，绝不删除 root；是否真正切到专用账户
-#   由 docker-compose.yml 决定是否引用这些变量，未引用即继续用 root（root 回退保证）。
+# 回退语义：本脚本只「创建并授权」专用账户，绝不删除 root（root 的去留由 DBA 手动处置）。
+#   是否真正切到专用账户由 docker-compose.yml 是否引用 *_DB_* 变量决定；compose 现已写成
+#   fail-fast 形式（缺变量即启动前硬失败），因此不存在「静默回退 root」的路径。
 # =============================================================================
 
 set -euo pipefail
 
 # --- 参数解析 ---
 ENV_FILE=""
-COMPOSE_FILE=""
+COMPOSE_PATH=""
 DRY_RUN=false
 
 for a in "$@"; do
   case "$a" in
     --env=*)     ENV_FILE="${a#--env=}" ;;
-    --compose=*) COMPOSE_FILE="${a#--compose=}" ;;
+    --compose=*) COMPOSE_PATH="${a#--compose=}" ;;
     --dry-run)   DRY_RUN=true ;;
     --help|-h)   sed -n '2,40p' "${BASH_SOURCE[0]}"; exit 0 ;;
     -*)          echo "ERROR: 未知参数: $a" >&2; exit 1 ;;
@@ -56,16 +57,16 @@ if [ -z "$ENV_FILE" ]; then
   fi
 fi
 # compose 路径解析
-if [ -z "$COMPOSE_FILE" ]; then
-  COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
+if [ -z "$COMPOSE_PATH" ]; then
+  COMPOSE_PATH="$PROJECT_DIR/docker-compose.yml"
 fi
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "ERROR: .env 文件不存在: $ENV_FILE（请先 cp .env.example .env 并填写）" >&2
   exit 1
 fi
-if [ ! -f "$COMPOSE_FILE" ]; then
-  echo "ERROR: docker-compose.yml 不存在: $COMPOSE_FILE（无法解析 mysql 容器名）" >&2
+if [ ! -f "$COMPOSE_PATH" ]; then
+  echo "ERROR: docker-compose.yml 不存在: $COMPOSE_PATH（无法解析 mysql 容器名）" >&2
   exit 1
 fi
 
@@ -90,10 +91,10 @@ MYSQL_CONTAINER="$(awk '
     gsub(/["'"'"' ]/, "");
     print; exit
   }
-' "$COMPOSE_FILE")"
+' "$COMPOSE_PATH")"
 
 if [ -z "$MYSQL_CONTAINER" ]; then
-  echo "ERROR: 无法从 $COMPOSE_FILE 解析 mysql 服务的 container_name" >&2
+  echo "ERROR: 无法从 $COMPOSE_PATH 解析 mysql 服务的 container_name" >&2
   exit 1
 fi
 

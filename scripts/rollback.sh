@@ -43,6 +43,19 @@ done
 
 cd "$DEPLOY_DIR"
 
+# --- 叠加 TLS 覆盖层（U2）：与 CI 部署保持一致 ---
+# 若外部已显式指定 COMPOSE_FILE 则沿用；否则依据 .env 的 TLS_ENABLED 推导。
+# 缺了这段，TLS 部署走本脚本回滚会把 443 入口静默降级为纯 HTTP。
+if [ -z "${COMPOSE_FILE:-}" ]; then
+  if grep -qE '^[[:space:]]*TLS_ENABLED[[:space:]]*=[[:space:]]*true' .env 2>/dev/null \
+     && [ -f docker-compose.tls.yml ]; then
+    export COMPOSE_FILE="docker-compose.yml:docker-compose.tls.yml"
+    echo "INFO: 检测到 TLS_ENABLED=true，回滚将叠加 docker-compose.tls.yml"
+  else
+    export COMPOSE_FILE="docker-compose.yml"
+  fi
+fi
+
 # --- 验证 .env.previous ---
 if [ ! -f ".env.previous" ]; then
   echo "ERROR: .env.previous 不存在，无法回滚"
