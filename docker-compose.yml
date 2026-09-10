@@ -248,6 +248,7 @@ services:
       IM_SERVICE_BASE_URL: http://zxyz-im-service
       EMAIL_SERVICE_BASE_URL: http://zxyz-email-service
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":{"zxyz-user-service":"${SVC_USER_KEY}","zxyz-admin-service":"${SVC_ADMIN_KEY}","zxyz-project-service":"${SVC_PROJECT_KEY}","zxyz-im-service":"${SVC_IM_KEY}","zxyz-file-service":"${SVC_FILE_KEY}","zxyz-team-service":"${SVC_TEAM_KEY}","zxyz-gateway":"${SVC_GATEWAY_KEY}","zxyz-email-service":"${SVC_EMAIL_KEY}","zxyz-share-service":"${SVC_SHARE_KEY}","zxyz-audit-service":"${SVC_AUDIT_KEY}"}}}}'
       SHARE_COOKIE_SECRET: ${SHARE_COOKIE_SECRET}
       FRONTEND_BASE_URL: ${FRONTEND_BASE_URL}
       FILE_SERVICE_BASE_URL: http://zxyz-file-service
@@ -323,6 +324,7 @@ services:
       FILE_SERVICE_BASE_URL: http://zxyz-file-service
       TEAM_SERVICE_BASE_URL: http://zxyz-team-service
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":{"zxyz-user-service":"${SVC_USER_KEY}","zxyz-admin-service":"${SVC_ADMIN_KEY}","zxyz-project-service":"${SVC_PROJECT_KEY}","zxyz-im-service":"${SVC_IM_KEY}","zxyz-file-service":"${SVC_FILE_KEY}","zxyz-team-service":"${SVC_TEAM_KEY}","zxyz-gateway":"${SVC_GATEWAY_KEY}","zxyz-email-service":"${SVC_EMAIL_KEY}","zxyz-share-service":"${SVC_SHARE_KEY}","zxyz-audit-service":"${SVC_AUDIT_KEY}"}}}}'
       IM_NETTY_PORT: 19090
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
@@ -381,7 +383,7 @@ services:
       SERVER_PORT: ${EMAIL_SERVICE_PORT:-18082}
       APP_INTERNAL_SERVICE_KEY: ${SVC_EMAIL_KEY}
       # P2-A2 邮件试点：开放 allowed-sources（来源服务名 -> 该来源 SVC_*_KEY）
-      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":{"zxyz-user-service":"${SVC_USER_KEY}","zxyz-admin-service":"${SVC_ADMIN_KEY}","zxyz-project-service":"${SVC_PROJECT_KEY}","zxyz-im-service":"${SVC_IM_KEY}","zxyz-file-service":"${SVC_FILE_KEY}","zxyz-team-service":"${SVC_TEAM_KEY}","zxyz-gateway":"${SVC_GATEWAY_KEY}"}}}}'
+      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":{"zxyz-user-service":"${SVC_USER_KEY}","zxyz-admin-service":"${SVC_ADMIN_KEY}","zxyz-project-service":"${SVC_PROJECT_KEY}","zxyz-im-service":"${SVC_IM_KEY}","zxyz-file-service":"${SVC_FILE_KEY}","zxyz-team-service":"${SVC_TEAM_KEY}","zxyz-gateway":"${SVC_GATEWAY_KEY}","zxyz-email-service":"${SVC_EMAIL_KEY}","zxyz-share-service":"${SVC_SHARE_KEY}","zxyz-audit-service":"${SVC_AUDIT_KEY}"}}}}'
       TZ: Asia/Shanghai
       EMAIL_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_email?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       EMAIL_DATASOURCE_USERNAME: root
@@ -466,6 +468,7 @@ services:
       USER_SERVICE_BASE_URL: http://zxyz-user-service
       TEAM_SERVICE_BASE_URL: http://zxyz-team-service
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":{"zxyz-user-service":"${SVC_USER_KEY}","zxyz-admin-service":"${SVC_ADMIN_KEY}","zxyz-project-service":"${SVC_PROJECT_KEY}","zxyz-im-service":"${SVC_IM_KEY}","zxyz-file-service":"${SVC_FILE_KEY}","zxyz-team-service":"${SVC_TEAM_KEY}","zxyz-gateway":"${SVC_GATEWAY_KEY}","zxyz-email-service":"${SVC_EMAIL_KEY}","zxyz-share-service":"${SVC_SHARE_KEY}","zxyz-audit-service":"${SVC_AUDIT_KEY}"}}}}'
       SHARE_COOKIE_SECRET: ${SHARE_COOKIE_SECRET}
       FRONTEND_BASE_URL: ${FRONTEND_BASE_URL}
       RABBITMQ_HOST: rabbitmq
@@ -542,6 +545,7 @@ services:
       PROJECT_SERVICE_BASE_URL: http://zxyz-project-service
       SHARE_SERVICE_BASE_URL: http://zxyz-share-service
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":{"zxyz-user-service":"${SVC_USER_KEY}","zxyz-admin-service":"${SVC_ADMIN_KEY}","zxyz-project-service":"${SVC_PROJECT_KEY}","zxyz-im-service":"${SVC_IM_KEY}","zxyz-file-service":"${SVC_FILE_KEY}","zxyz-team-service":"${SVC_TEAM_KEY}","zxyz-gateway":"${SVC_GATEWAY_KEY}","zxyz-email-service":"${SVC_EMAIL_KEY}","zxyz-share-service":"${SVC_SHARE_KEY}","zxyz-audit-service":"${SVC_AUDIT_KEY}"}}}}'
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USER}
@@ -618,6 +622,7 @@ services:
       EMAIL_SERVICE_BASE_URL: http://zxyz-email-service
       FILE_SERVICE_BASE_URL: http://zxyz-file-service
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":{"zxyz-user-service":"${SVC_USER_KEY}","zxyz-admin-service":"${SVC_ADMIN_KEY}","zxyz-project-service":"${SVC_PROJECT_KEY}","zxyz-im-service":"${SVC_IM_KEY}","zxyz-file-service":"${SVC_FILE_KEY}","zxyz-team-service":"${SVC_TEAM_KEY}","zxyz-gateway":"${SVC_GATEWAY_KEY}","zxyz-email-service":"${SVC_EMAIL_KEY}","zxyz-share-service":"${SVC_SHARE_KEY}","zxyz-audit-service":"${SVC_AUDIT_KEY}"}}}}'
       OSS_REGION: ${OSS_REGION}
       OSS_BUCKET: ${OSS_BUCKET}
       OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID}
@@ -695,6 +700,7 @@ services:
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:4173}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":{"zxyz-user-service":"${SVC_USER_KEY}","zxyz-admin-service":"${SVC_ADMIN_KEY}","zxyz-project-service":"${SVC_PROJECT_KEY}","zxyz-im-service":"${SVC_IM_KEY}","zxyz-file-service":"${SVC_FILE_KEY}","zxyz-team-service":"${SVC_TEAM_KEY}","zxyz-gateway":"${SVC_GATEWAY_KEY}","zxyz-email-service":"${SVC_EMAIL_KEY}","zxyz-share-service":"${SVC_SHARE_KEY}","zxyz-audit-service":"${SVC_AUDIT_KEY}"}}}}'
       NACOS_SERVER_ADDR: nacos:8848
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
       JASYPT_PASSWORD: ${JASYPT_PASSWORD}
@@ -758,6 +764,7 @@ services:
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
       JASYPT_PASSWORD: ${JASYPT_PASSWORD}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":{"zxyz-user-service":"${SVC_USER_KEY}","zxyz-admin-service":"${SVC_ADMIN_KEY}","zxyz-project-service":"${SVC_PROJECT_KEY}","zxyz-im-service":"${SVC_IM_KEY}","zxyz-file-service":"${SVC_FILE_KEY}","zxyz-team-service":"${SVC_TEAM_KEY}","zxyz-gateway":"${SVC_GATEWAY_KEY}","zxyz-email-service":"${SVC_EMAIL_KEY}","zxyz-share-service":"${SVC_SHARE_KEY}","zxyz-audit-service":"${SVC_AUDIT_KEY}"}}}}'
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
       RABBITMQ_USERNAME: ${RABBITMQ_USER}
@@ -822,6 +829,7 @@ services:
       IM_SERVICE_BASE_URL: http://zxyz-im-service
       EMAIL_SERVICE_BASE_URL: http://zxyz-email-service
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":{"zxyz-user-service":"${SVC_USER_KEY}","zxyz-admin-service":"${SVC_ADMIN_KEY}","zxyz-project-service":"${SVC_PROJECT_KEY}","zxyz-im-service":"${SVC_IM_KEY}","zxyz-file-service":"${SVC_FILE_KEY}","zxyz-team-service":"${SVC_TEAM_KEY}","zxyz-gateway":"${SVC_GATEWAY_KEY}","zxyz-email-service":"${SVC_EMAIL_KEY}","zxyz-share-service":"${SVC_SHARE_KEY}","zxyz-audit-service":"${SVC_AUDIT_KEY}"}}}}'
       OSS_REGION: ${OSS_REGION}
       OSS_BUCKET: ${OSS_BUCKET}
       OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID}
