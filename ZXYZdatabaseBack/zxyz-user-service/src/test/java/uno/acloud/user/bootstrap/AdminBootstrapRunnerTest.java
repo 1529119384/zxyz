@@ -16,6 +16,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -51,6 +52,8 @@ class AdminBootstrapRunnerTest {
 
         verify(authService, never()).createBootstrapAdmin(anyString(), anyString());
         verify(teamServicePermissionClient, never()).assignBootstrapAdminRoleStrict(any());
+        // 已存在用户走幂等自愈路径（后台线程异步执行）
+        verify(teamServicePermissionClient, timeout(3000)).ensureDefaultRole(1L, "admin");
     }
 
     @Test
@@ -67,7 +70,8 @@ class AdminBootstrapRunnerTest {
         assertEquals("admin", userCaptor.getValue());
         assertEquals(16, passCaptor.getValue().length());
 
-        verify(teamServicePermissionClient).assignBootstrapAdminRoleStrict(42L);
+        // 角色分配为后台线程异步执行
+        verify(teamServicePermissionClient, timeout(3000)).assignBootstrapAdminRoleStrict(42L);
     }
 
     @Test
@@ -79,7 +83,7 @@ class AdminBootstrapRunnerTest {
         new AdminBootstrapRunner(userMapper, authService, teamServicePermissionClient, sp).run(null);
 
         verify(authService).createBootstrapAdmin("admin", "fixedpass123");
-        verify(teamServicePermissionClient).assignBootstrapAdminRoleStrict(7L);
+        verify(teamServicePermissionClient, timeout(3000)).assignBootstrapAdminRoleStrict(7L);
     }
 
     @Test
@@ -100,9 +104,9 @@ class AdminBootstrapRunnerTest {
         doThrow(new RuntimeException("team-service down"))
                 .when(teamServicePermissionClient).assignBootstrapAdminRoleStrict(any());
 
-        // 不应抛异常，应用继续启动
+        // 不应抛异常，应用继续启动（角色分配失败由后台线程重试）
         new AdminBootstrapRunner(userMapper, authService, teamServicePermissionClient, sp).run(null);
 
-        verify(teamServicePermissionClient).assignBootstrapAdminRoleStrict(7L);
+        verify(teamServicePermissionClient, timeout(3000)).assignBootstrapAdminRoleStrict(7L);
     }
 }
