@@ -1187,18 +1187,33 @@ jobs:
             docker compose ps
             echo "===== Deploy complete ====="
 
-            # --- 清理历次部署残留的旧镜像 ---
-            # 为什么必须有：每次部署都会为 11 个服务各推一个新 sha tag，而旧 tag 从不回收。
-            # 实测（2026-09-11）11 个仓库各积压 11 个 tag、共 131 个镜像，/var/lib/containerd
-            # 达 33G、根分区使用率 93%；且 dangling=0，普通 `docker image prune` 毫无回收力。
-            # 脚本内部会保护「容器在用」与「.env/.env.previous 的 APP_IMAGE_TAG（回滚锚点）」，
-            # 只按仓库保留最近 N 个 tag，然后清悬空层与陈旧构建缓存。
-            # 放在部署最后且失败只告警：清理是维护动作，绝不能把一次成功部署拖红。
-            if PRUNE_SCRIPT="$(pick_script prune-old-images.sh)"; then
-              echo "===== Pruning old images ====="
-              if ! bash "$PRUNE_SCRIPT"; then
-                echo "::warning::PRUNE_OLD_IMAGES_FAILED: 旧镜像清理失败（不影响本次部署，可手动跑 scripts/prune-old-images.sh）"
-              fi
-            else
-              echo "::warning::prune-old-images.sh 不存在（\$REPO_DIR/scripts 与 \$DEPLOY_DIR/scripts 皆无），跳过旧镜像清理"
+      # ⚠️ 内嵌脚本有 21000 字节的硬上限，加内容前务必先看这段：
+      # GitHub 对 workflow 中单个标量的长度上限是 21000 —— 单位是**UTF-8 字节**，不是字符
+      # （中文注释每字 3 字节，特别吃额度）。上面 `Deploy via SSH` 的 script 实测已达
+      # 20860 字节，只剩约 140 字节余量。一旦超限，整个 workflow 会被判为
+      # "Invalid workflow file"，表现为 run 以文件路径为名、**0 个 job** 直接失败
+      # （提交 aee98bb 就是这样挂掉的：报错 "(Line: 762, Col: 19): Exceeded max expression length 21000"）。
+      # 因此：往部署流程加逻辑请抽成 scripts/*.sh，或像下面这样做成**独立步骤**，
+      # 不要再往那个 script 里塞东西。核对方式见 scripts/prune-old-images.sh 顶部注释。
+      - name: Prune old images on server
+        # 仅当部署成功后才清理：部署失败时可能需要靠旧镜像回滚，不能删
+        if: success()
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ steps.target.outputs.host }}
+          username: ${{ secrets.DEPLOY_USERNAME }}
+          key: ${{ env.ssh_key }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          timeout: 120s
+          command_timeout: 15m
+          script: |
+            set -uo pipefail
+            DEPLOY_DIR="${{ secrets.DEPLOY_PATH || '/www/zxyz' }}"
+            PRUNE_SCRIPT="$DEPLOY_DIR/scripts/prune-old-images.sh"
+            if [ ! -f "$PRUNE_SCRIPT" ]; then
+              echo "::warning::prune-old-images.sh 未找到（$PRUNE_SCRIPT），跳过旧镜像清理"
+              exit 0
             fi
+            # 该脚本按仓库保留最近 N 个 tag，并保护容器在用镜像与 .env/.env.previous 的回滚锚点；
+            # 它自身退出码恒为 0，这里再加一层保险——清理绝不能影响部署结果。
+            bash "$PRUNE_SCRIPT" || echo "::warning::PRUNE_OLD_IMAGES_FAILED: 旧镜像清理失败（不影响本次部署）"

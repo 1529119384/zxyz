@@ -28,6 +28,18 @@
 #
 # 退出码：**恒为 0**。清理是维护动作，失败不应让一次成功的部署变红；
 #         所有异常只打 WARN，由调用方决定是否上报。
+#
+# 为什么是「独立步骤」而不是塞进 deploy 脚本：
+#   GitHub 对 workflow 中单个标量的长度上限是 21000 —— 单位是 **UTF-8 字节**。
+#   ci-cd.yml 里 `Deploy via SSH` 的 script 实测已达 20860 字节（中文注释每字 3 字节），
+#   只剩约 140 字节余量；超限会让整个 workflow 变成 "Invalid workflow file"
+#   （run 以文件路径为名、0 个 job 直接失败，报错 "Exceeded max expression length 21000"）。
+#   所以清理逻辑做成独立步骤，只在此脚本里演进。
+#
+# 核对字节预算（改完 ci-cd.yml 后务必跑一次，本地无需联网）:
+#   python -c "import yaml;d=yaml.safe_load(open('.github/workflows/ci-cd.yml',encoding='utf-8'));\
+#   s=[x for x in d['jobs']['deploy']['steps'] if x.get('name')=='Deploy via SSH'][0]['with']['script'];\
+#   print(len(s.encode('utf-8')),'/21000')"
 # =============================================================================
 
 # 故意不用 `set -e`：单个镜像删不掉不应中断整轮清理。
