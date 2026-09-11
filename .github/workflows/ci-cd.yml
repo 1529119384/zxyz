@@ -75,6 +75,9 @@ jobs:
       docker-config: ${{ steps.force.outputs.on == 'true' && 'true' || steps.filter.outputs.docker-config }}
       frontend: ${{ steps.force.outputs.on == 'true' && 'true' || steps.filter.outputs.frontend }}
       backend-any: ${{ steps.force.outputs.on == 'true' && 'true' || steps.backend-any.outputs.changed }}
+      # any-change：后端 / 前端 / compose+env 任一有变更。
+      # 构建与部署门禁用它，而 quality-check-backend 仍用 backend-any。
+      any-change: ${{ steps.force.outputs.on == 'true' && 'true' || steps.backend-any.outputs.any }}
       tag: ${{ steps.tag.outputs.tag }}
       skip_quality: ${{ steps.skip-quality.outputs.skip_quality }}
     steps:
@@ -142,6 +145,15 @@ jobs:
       - uses: dorny/paths-filter@v3
         id: filter
         with:
+          # 关键：显式指定 diff 基线为「本次推送之前的那个提交」。
+          # 不设 base 时，dorny/paths-filter 默认拿「默认分支(master) 与本分支(dev) 的
+          # merge-base」做 diff。master 长期停滞 → merge-base 停在很早的提交 →
+          # diff 范围覆盖整条 dev 历史 → 所有 filter 全 true → 11 个镜像全量重建
+          # （实测 run #108：日志打印 "Changes will be detected between master and dev"，
+          #   merge-base=5b99fa9，13 个 Filter 全 true）。设了 base 才是真·选择性构建。
+          # 新分支首推 / force-push 时 github.event.before 为全零，此时回退空串让 action
+          # 走默认逻辑（宁可全量，不可漏建）；pull_request 事件无 before，同样回退默认。
+          base: ${{ github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000' && github.event.before || '' }}
           filters: |
             backend-common:
               - 'ZXYZdatabaseBack/pom.xml'
@@ -176,6 +188,7 @@ jobs:
       - name: Check if any backend changed
         id: backend-any
         run: |
+          BACKEND=false
           if [ "${{ steps.filter.outputs.backend-common }}" = "true" ] || \
              [ "${{ steps.filter.outputs.project-service }}" = "true" ] || \
              [ "${{ steps.filter.outputs.im-service }}" = "true" ] || \
@@ -187,10 +200,21 @@ jobs:
              [ "${{ steps.filter.outputs.audit-service }}" = "true" ] || \
              [ "${{ steps.filter.outputs.admin-service }}" = "true" ] || \
              [ "${{ steps.filter.outputs.gateway }}" = "true" ]; then
-            echo "changed=true" >> $GITHUB_OUTPUT
-          else
-            echo "changed=false" >> $GITHUB_OUTPUT
+            BACKEND=true
           fi
+          echo "changed=$BACKEND" >> $GITHUB_OUTPUT
+
+          # any-change：后端 / 前端 / compose+.env 任一变更。
+          # 为什么单列一个输出：此前 build-and-push 的门禁只看 backend-any，于是
+          # 「仅前端变更」或「仅 docker-compose.yml / .env.example 变更」时构建 job 被整体
+          # 跳过 → 镜像不重建、部署不执行（前端改了却永远不上线的静默故障）。
+          ANY=false
+          if [ "$BACKEND" = "true" ] || \
+             [ "${{ steps.filter.outputs.frontend }}" = "true" ] || \
+             [ "${{ steps.filter.outputs.docker-config }}" = "true" ]; then
+            ANY=true
+          fi
+          echo "any=$ANY" >> $GITHUB_OUTPUT
 
       - name: Determine image tag
         id: tag
@@ -427,10 +451,11 @@ jobs:
     if: |
       always() &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
-      needs.detect-changes.outputs.backend-any == 'true' &&
+      needs.detect-changes.outputs.any-change == 'true' &&
       (
         needs.quality-check-backend.result == 'success' ||
-        (needs.quality-check-backend.result == 'skipped' && needs.detect-changes.outputs.skip_quality == 'true')
+        (needs.quality-check-backend.result == 'skipped' &&
+          (needs.detect-changes.outputs.backend-any != 'true' || needs.detect-changes.outputs.skip_quality == 'true'))
       ) &&
       (
         needs.quality-check-frontend.result == 'success' ||
@@ -576,7 +601,7 @@ jobs:
     if: |
       always() &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
-      needs.detect-changes.outputs.backend-any == 'true' &&
+      needs.detect-changes.outputs.any-change == 'true' &&
       needs.build-and-push.result == 'success'
     runs-on: ubuntu-latest
     strategy:
