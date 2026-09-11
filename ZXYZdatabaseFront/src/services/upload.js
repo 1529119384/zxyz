@@ -1,4 +1,4 @@
-import { confirmUpload, createFolder, getUploadSign, directUpload } from '@/api/files'
+import { confirmUpload, createFolder, getUploadSign } from '@/api/files'
 import {
   createUploadFailResult,
   normalizeFolderCreateResult,
@@ -20,6 +20,9 @@ export async function uploadFileWithPresign(file, parentId, onProgress, options 
   let objectKey = ''
   let contentType = ''
   let contentDisposition = ''
+  // 注意：这是「本次上传是否走后端直传」的布尔标志，与 @/api/files 里同名的
+  // directUpload() 接口无关 —— 真正的后端直传由 utils/oss 的 uploadToBackend 承担。
+  // （此处曾有 `import { directUpload }`，被这个同名局部变量遮蔽成死导入，已移除。）
   let directUpload = false
 
   try {

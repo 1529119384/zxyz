@@ -73,13 +73,21 @@ export default defineConfig(({ mode }) => {
         //   2026-09-03 四轮（补 files/im/team 用例，api 已测文件覆盖率达 100%）
         //                     全局 stmts 85.05 / branch 73.66 / funcs 85.38 / lines 85.19
         //                     src/api stmts 100 / branch 97.64 / funcs 100 / lines 100
+        //   2026-09-11 五轮（补 utils/oss.js、services/upload.js、models/upload.js 用例，
+        //                    共 52 条。三者此前均为 0% —— 正是 doc 10 P0-4 点名的高风险
+        //                    零测试区，且 OSS 直传是线上真出过故障的一环）
+        //                     全局 stmts 86.28 / branch 79.70 / funcs 85.17 / lines 86.56
+        //                     src/utils/oss.js 100、src/services/upload.js 98.52
+        //                     src/models/upload.js 100 / branch 95.41（models 整体 10.71 → 78.57）
         // 阈值采用「棘轮」：仅上调已达标项，取值在实测值下方约 4 点，既守住回归又不误报。
         // 目标值（全局 70、src/store/im 75、src/api 首轮阈值）均已达成并大幅超出，故本轮一并上调。
+        // 五轮按同一规则上调全局（实测 − 4）：86.28/79.70/85.17/86.56 → 82/75/81/82。
+        // src/store/im 与 src/api 本轮未变动，保持原值（api 实测已达 100，无回归空间）。
         thresholds: {
-          statements: 78,
-          branches: 65,
-          functions: 76,
-          lines: 78,
+          statements: 82,
+          branches: 75,
+          functions: 81,
+          lines: 82,
           'src/store/im/**': {
             statements: 94,
             branches: 89,
