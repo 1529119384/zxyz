@@ -15,7 +15,9 @@
 # 调用契约（必需的环境变量，缺失即 fail-fast，由 ci-cd.yml 的 envs 注入）：
 #   DEPLOY_PATH    部署目录（默认 /www/zxyz）
 #   IMAGE_TAG      本次部署的不可变镜像 tag（= github.sha）
-#   IMAGE_PREFIX   镜像前缀（= ghcr.io/<owner>）
+#   IMAGE_PREFIX   镜像前缀。compose 里是裸拼接 ${IMAGE_PREFIX:-}zxyz-<svc>:<tag>，
+#                  故**语义上要求以 / 结尾**（CI 注入的 ghcr.io/<owner> 无尾斜杠，
+#                  本脚本会就地归一化，见下方「归一化 IMAGE_PREFIX」）。
 #   DEPLOY_ENV     环境名（production / development），仅用于日志
 #   另有一组变更开关：BACKEND_COMMON / {PROJECT,IM,EMAIL,USER,SHARE,FILE,TEAM,AUDIT,ADMIN,GATEWAY}_SVC
 #   / FRONTEND / DOCKER_CFG / FAST_DEPLOY —— 同样由 CI 注入，脚本内以 "$VAR" 直接读取。
@@ -25,7 +27,7 @@
 #   git pull 的克隆；脚本优先使用克隆内的最新脚本，回退长期目录的副本（见 pick_script）。
 #
 # 排障时可以手工执行（跳过 CI，直接在本机/服务器上跑）：
-#   DEPLOY_PATH=/www/zxyz IMAGE_TAG=<sha> IMAGE_PREFIX=ghcr.io/<owner> DEPLOY_ENV=manual \
+#   DEPLOY_PATH=/www/zxyz IMAGE_TAG=<sha> IMAGE_PREFIX=ghcr.io/<owner>/ DEPLOY_ENV=manual \
 #     bash scripts/deploy-on-server.sh
 # =============================================================================
 
@@ -38,6 +40,25 @@ DEPLOY_DIR="${DEPLOY_PATH:-/www/zxyz}"
 # .env.previous 复制出的旧 .env 也含旧 sha，rollback.sh 拉取 ...:<旧sha> 才能精确回滚。
 : "${IMAGE_TAG:?CI 必须通过 envs 注入 IMAGE_TAG（=github.sha）}"
 : "${IMAGE_PREFIX:?CI 必须通过 envs 注入 IMAGE_PREFIX}"
+
+# --- 归一化 IMAGE_PREFIX 并 export（必须在任何 compose 调用之前）---
+# 为什么必须在这里做、而不是只写进 .env：
+#   docker-compose.yml 里是「裸拼接」—— ${IMAGE_PREFIX:-}zxyz-frontend-nginx:${APP_IMAGE_TAG:-latest}
+#   没有中间斜杠，因此前缀**必须以 / 结尾**，否则 image 会解析成
+#   ghcr.io/1529119384zxyz-frontend-nginx（owner 与仓库名黏在一起）→ GHCR 400/401。
+#   而 ci-cd.yml 注入的是 `ghcr.io/${{ github.repository_owner }}`（无尾斜杠）。
+#   两者过去只靠「写进 .env 时补斜杠」这一步调和 —— 但 compose 的插值优先级是
+#   **shell 环境 > .env**，所以只要 IMAGE_PREFIX 出现在 shell 环境里（CI 的 envs
+#   就会把它带上去），.env 里那个补好斜杠的值就会被静默覆盖，compose 拿到裸前缀。
+#   实证：run 34609677202（3b4e7a0）部署失败
+#         Image ghcr.io/1529119384zxyz-frontend-nginx:3b4e7a0… Pulling
+#         unexpected status from HEAD … https://ghcr.io/v2/1529119384zxyz-frontend-nginx/…: 400 Bad Request
+#   故这里就地归一化 + export：让 compose 无论从哪个来源取值都拿到已知正确的形式。
+#   归一化幂等（有则不动、无则补一个），export 后下方所有 `docker compose` 与
+#   .env 写入共用同一个值，不会再出现「.env 正确但实际生效的是另一个」。
+IMAGE_PREFIX="${IMAGE_PREFIX%/}/"
+export IMAGE_PREFIX
+
 cd "$DEPLOY_DIR"
 
 # $DEPLOY_DIR 是长期部署目录（存 .env / data / backups），$DEPLOY_DIR-repo 才是
@@ -195,11 +216,14 @@ if grep -qE "^APP_IMAGE_TAG=" .env; then
 else
   echo "APP_IMAGE_TAG=$IMAGE_TAG" >> .env
 fi
-PREFIX="${IMAGE_PREFIX%/}/"
+# 这里的 IMAGE_PREFIX 已在文件顶部归一化（保证恰好一个尾斜杠）并 export，
+# 直接落盘即可 —— 不要再在此处重新拼斜杠，否则又会出现「两处各算一次」的分叉。
+# 注意：写对 .env 只是让「非 CI 手工执行」和「后续 rollback.sh 复用 .env」正确；
+# CI 路径下真正生效的是 export 出去的那个值（shell 环境优先于 .env）。
 if grep -qE "^IMAGE_PREFIX=" .env; then
-  sed -i "s|^IMAGE_PREFIX=.*|IMAGE_PREFIX=$PREFIX|" .env
+  sed -i "s|^IMAGE_PREFIX=.*|IMAGE_PREFIX=$IMAGE_PREFIX|" .env
 else
-  echo "IMAGE_PREFIX=$PREFIX" >> .env
+  echo "IMAGE_PREFIX=$IMAGE_PREFIX" >> .env
 fi
 
 # --- 最小权限数据库账号（U1）---
@@ -275,12 +299,50 @@ if grep -qE '^TLS_ENABLED=true' "$DEPLOY_DIR/.env" 2>/dev/null; then
   fi
 fi
 
-# --- 并行拉取镜像 ---
+# --- 并行拉取镜像（失败必须显式暴露，不能静默降级为源码构建）---
+# 为什么不能只写 `cmd &` + 无参 `wait`：无参 wait 只等所有子进程结束，
+# **不会把任一子进程的非零退出码透传出来**，于是 pull 失败被静默吞掉、脚本继续往下，
+# 最终 `docker compose up -d` 因本地无镜像而退化去执行 compose 里的 build: 段，
+# 报出与真实原因毫无关系的错误。实证（run 34609677202）：
+#   Image ghcr.io/1529119384zxyz-frontend-nginx:3b4e7a0… Pulling
+#   unexpected status from HEAD … /v2/1529119384zxyz-frontend-nginx/manifests/…: 400 Bad Request
+#   然而日志下一行是 "Pull finished"（看似成功），真正的报错在其后很远：
+#   resolve : lstat ***/ZXYZdatabaseBack: no such file or directory（服务器上确实没有该目录）
+# 判据选择：不直接拿 pull 的退出码当结论，而是检查「compose up 时该镜像在不在本地」——
+# 这才是决定它会不会退化成源码构建的真正前提；退出码非零但镜像已在本地不算故障。
 echo "===== Pulling images ====="
+PULL_PIDS=()
 for svc in "${UPDATE_SVC[@]}"; do
   docker compose pull "$svc" &
+  PULL_PIDS+=("$!:$svc")
 done
-wait
+pull_failed=()
+for entry in "${PULL_PIDS[@]}"; do
+  pid="${entry%%:*}"; svc="${entry#*:}"
+  if ! wait "$pid"; then
+    pull_failed+=("$svc")
+  fi
+done
+
+# 镜像名与 compose 保持同一套契约：${IMAGE_PREFIX}zxyz-<service>:${APP_IMAGE_TAG}
+# （IMAGE_PREFIX 已在文件顶部补好尾斜杠；APP_IMAGE_TAG 由上方写入 .env）
+missing=()
+for svc in "${UPDATE_SVC[@]}"; do
+  docker image inspect "${IMAGE_PREFIX}zxyz-$svc:$IMAGE_TAG" >/dev/null 2>&1 || missing+=("$svc")
+done
+
+if [ ${#missing[@]} -gt 0 ]; then
+  echo "::error::IMAGE_MISSING: 以下镜像既未成功拉取、本地也不存在：${missing[*]}"
+  echo "::error::  拉取失败的服务：${pull_failed[*]:-（无，可能是本地 tag 缺失）}"
+  echo "::error::  若 compose up 继续执行，它会退化成源码构建并报与真实原因无关的 lstat 错误。"
+  echo "::error::  排查方向：① IMAGE_PREFIX 是否形如 ghcr.io/<owner>/（必需尾斜杠，CI 注入值无尾斜杠，本脚本已归一化）"
+  echo "::error::            ② tag $IMAGE_TAG 是否已由 build-and-push 推送成功"
+  echo "::error::            ③ 服务器能否访问 ghcr.io（网络 / 凭据 docker login）"
+  exit 1
+fi
+if [ ${#pull_failed[@]} -gt 0 ]; then
+  echo "::warning::以下服务 pull 返回非零，但目标镜像已在本地，继续部署：${pull_failed[*]}"
+fi
 echo "Pull finished"
 
 # --- 渲染 Alertmanager 告警投递配置（缺陷 U8）---
