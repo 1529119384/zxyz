@@ -379,7 +379,28 @@ fi
 
 # --- 重启变更服务 ---
 echo "===== Restarting services ====="
-docker compose up -d $UP_FLAGS "${UPDATE_SVC[@]}"
+# 必须加 --no-deps：不加时 compose 会连带「确保被依赖服务也在运行」，
+# 而本流水线是**选择性构建**——没变更的服务根本不会构建该 sha 的镜像。
+# 于是 `up -d frontend-nginx`（其 depends_on 含 gateway）会去拉
+# zxyz-gateway:$IMAGE_TAG → GHCR「not found」→ 回退到 compose 里 build: 段
+# → 服务器上只有 docker-compose.yml、没有 ZXYZdatabaseBack 源码
+# → 报与真实原因毫无关系的 lstat .../ZXYZdatabaseBack 错误，部署失败。
+# 实证（run 34609677202 attempt 2，前置的 IMAGE_PREFIX 修复已生效、frontend 镜像已成功 pull）：
+#   Will update: frontend-nginx
+#   ===== Restarting services =====
+#   Image ghcr.io/1529119384/zxyz-gateway:3b4e7a0… failed to resolve reference "…": not found
+#   Image ghcr.io/1529119384/zxyz-gateway:3b4e7a0… Building
+#   resolve : lstat ***/ZXYZdatabaseBack: no such file or directory
+# 不加 --no-deps 的影响面不止前端：任何 UPDATE_SVC 里含 gateway 的场景
+# （gateway 依赖 9 个业务服务）同样会踩中，即「只改 gateway」也永远部署不上去。
+# 语义上这也才是对的：UPDATE_SVC 的定义就是「本次要更新的服务」，其依赖服务
+# 本轮并未更新，容器本就在跑，不该被重建；重建反而会拿一个不存在的 sha tag 去拉。
+# 注：基础设施（mysql/redis/nacos/rabbitmq）因此不会被本步骤顺带拉起 —— 这与
+# 本脚本既有前提一致（上方 grant-least-privilege 已明确要求 MySQL 先处于运行状态）。
+# --no-build：服务器上只有 docker-compose.yml，没有 ZXYZdatabaseBack/Front 源码，
+# 所以「构建」在这里永远不可能成功，只会把真实错误替换成 lstat 之类的噪声。
+# 直接禁止构建，让缺镜像以明确报错暴露（配合上方 pull 后的镜像存在性预检，双保险）。
+docker compose up -d --no-deps --no-build $UP_FLAGS "${UPDATE_SVC[@]}"
 
 # --- 热重载 nginx：重新解析后端 upstream 容器 IP ---
 # nginx 的 proxy_pass http://<service>:<port> 依赖 Docker 内置 DNS，
