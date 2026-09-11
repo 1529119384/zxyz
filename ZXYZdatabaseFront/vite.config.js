@@ -16,6 +16,14 @@ function parseAllowedHosts(value) {
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
+  // ElementPlusResolver 默认（'css'）会为模板里每个 el-* 注入一条副作用导入
+  // `element-plus/es/components/<name>/style/css`，该模块内部再 import
+  // theme-chalk/*.css。vitest 默认把 node_modules 依赖外部化、交给原生 Node 加载，
+  // 于是组件测试（首个：src/components/__tests__/TeamSwitcher.spec.js）会在收集阶段就
+  // `TypeError: Unknown file extension ".css"` 挂掉 —— 这是本仓库长期没有组件测试的
+  // 隐性原因之一。测试里 el-* 一律 stub，不渲染真实组件、也不需要样式，
+  // 因此仅在生产/开发保留 'css'，测试环境关掉注入（对 dev/prod 零影响）。
+  const elementPlusImportStyle = mode === 'test' ? false : 'css'
   return {
     server: {
       allowedHosts: parseAllowedHosts(env.VITE_DEV_ALLOWED_HOSTS),
@@ -27,10 +35,10 @@ export default defineConfig(({ mode }) => {
       mode !== 'production' && VueDevTools(),
       vue(),
       AutoImport({
-        resolvers: [ElementPlusResolver()],
+        resolvers: [ElementPlusResolver({ importStyle: elementPlusImportStyle })],
       }),
       Components({
-        resolvers: [ElementPlusResolver()],
+        resolvers: [ElementPlusResolver({ importStyle: elementPlusImportStyle })],
       }),
     ].filter(Boolean),
     resolve: {
@@ -54,6 +62,17 @@ export default defineConfig(({ mode }) => {
       globals: true,
       environment: 'happy-dom',
       setupFiles: ['./src/test/setup.js'],
+      // 组件测试（首个：src/components/__tests__/TeamSwitcher.spec.js）必需：
+      // unplugin-vue-components 的 ElementPlusResolver 在编译 SFC 时会注入
+      // `element-plus/es/components/<name>/style/css`，其内部再 import theme-chalk/*.css。
+      // element-plus 若仍被外部化，就会交给原生 Node 加载 ⇒
+      // `TypeError: Unknown file extension ".css"`。内联后由 Vite 处理，
+      // 配合默认 css:false 把样式兜成空操作（测试里 el-* 一律 stub，本就不需要样式）。
+      server: {
+        deps: {
+          inline: ['element-plus'],
+        },
+      },
       coverage: {
         provider: 'v8',
         reporter: ['text', 'html'],

@@ -13,8 +13,14 @@ vi.mock('@/composables/useCurrentSpaceContext', () => ({
   resolveSpaceRequestParams: vi.fn((_ctx, params) => params || { spaceType: 1 }),
 }))
 
+// logger 是 Object.freeze 的，无法 spyOn，只能整模块 mock。
+vi.mock('@/utils/logger', () => ({
+  logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}))
+
 import { fetchStorageUsage } from '@/api/files'
 import { useStorageUsage } from '@/composables/useStorageUsage'
+import { logger } from '@/utils/logger'
 
 describe('useStorageUsage', () => {
   beforeEach(() => {
@@ -78,6 +84,20 @@ describe('useStorageUsage', () => {
     fetchStorageUsage.mockRejectedValue(new Error('Network error'))
     await refreshStorageUsage()
     expect(storageUsage.value).toBeNull()
+  })
+
+  it('刷新失败时回退为 null 且留下告警日志（07-P0-3：不再静默吞异常）', async () => {
+    const { storageUsage, refreshStorageUsage } = useStorageUsage()
+    const error = new Error('Network error')
+    fetchStorageUsage.mockRejectedValue(error)
+
+    await refreshStorageUsage()
+
+    // 回退语义保持不变……
+    expect(storageUsage.value).toBeNull()
+    // ……但失败必须可被观测，否则配额条空白无从归因。
+    expect(logger.warn).toHaveBeenCalledTimes(1)
+    expect(logger.warn).toHaveBeenCalledWith('加载存储用量失败，已回退为不展示:', error)
   })
 
   it('should show storage usage only at root folder', async () => {
