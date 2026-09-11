@@ -1186,3 +1186,19 @@ jobs:
             echo "===== Container status ====="
             docker compose ps
             echo "===== Deploy complete ====="
+
+            # --- 清理历次部署残留的旧镜像 ---
+            # 为什么必须有：每次部署都会为 11 个服务各推一个新 sha tag，而旧 tag 从不回收。
+            # 实测（2026-09-11）11 个仓库各积压 11 个 tag、共 131 个镜像，/var/lib/containerd
+            # 达 33G、根分区使用率 93%；且 dangling=0，普通 `docker image prune` 毫无回收力。
+            # 脚本内部会保护「容器在用」与「.env/.env.previous 的 APP_IMAGE_TAG（回滚锚点）」，
+            # 只按仓库保留最近 N 个 tag，然后清悬空层与陈旧构建缓存。
+            # 放在部署最后且失败只告警：清理是维护动作，绝不能把一次成功部署拖红。
+            if PRUNE_SCRIPT="$(pick_script prune-old-images.sh)"; then
+              echo "===== Pruning old images ====="
+              if ! bash "$PRUNE_SCRIPT"; then
+                echo "::warning::PRUNE_OLD_IMAGES_FAILED: 旧镜像清理失败（不影响本次部署，可手动跑 scripts/prune-old-images.sh）"
+              fi
+            else
+              echo "::warning::prune-old-images.sh 不存在（\$REPO_DIR/scripts 与 \$DEPLOY_DIR/scripts 皆无），跳过旧镜像清理"
+            fi

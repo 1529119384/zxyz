@@ -1,0 +1,73 @@
+name: GHCR 旧镜像清理
+
+# 为什么需要这个 workflow：
+#   ci-cd.yml 每次构建都会给 11 个服务各推两个 tag（:dev 可变 + :<40位 sha> 不可变），
+#   而 GHCR 侧从不回收旧版本 —— 实测 11 个包各积压 11 个版本（共 121 个版本）。
+#   本 workflow 周期性按“每包保留最近 N 个版本”裁剪，防止镜像仓库无限膨胀。
+#
+# 与服务器侧的配合：
+#   - 服务器侧由 scripts/prune-old-images.sh 在每次部署后清理本地镜像；
+#   - 本文件负责镜像仓库（GHCR）侧的版本保留。
+#   两侧默认都保留约 10 个版本，且线上机器已 pull 的镜像不受仓库删除影响，
+#   因此最近若干次部署的回滚能力不受影响。
+#
+# 关闭方式：删除本文件，或在仓库 Settings → Actions 里禁用本 workflow。
+
+on:
+  schedule:
+    # 每周日 03:17 UTC（避开整点，减少排队）
+    - cron: '17 3 * * 0'
+  workflow_dispatch:
+    inputs:
+      min_versions_to_keep:
+        description: '每个包保留的最近版本数'
+        required: false
+        default: '10'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - zxyz-project-service
+          - zxyz-im-service
+          - zxyz-email-service
+          - zxyz-user-service
+          - zxyz-share-service
+          - zxyz-file-service
+          - zxyz-team-service
+          - zxyz-audit-service
+          - zxyz-admin-service
+          - zxyz-gateway
+          - zxyz-frontend-nginx
+    steps:
+      # min-versions-to-keep 是“保底数量”：即使版本都很新，也不会删到低于这个数。
+      # ignore-versions 保护可变 tag（dev/latest）—— 它们指向最新镜像，
+      # 删掉会让 `docker compose pull <svc>` 找不到 tag。
+      - name: 裁剪 ${{ matrix.package }} 的历史版本
+        id: cleanup
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: ${{ matrix.package }}
+          package-type: container
+          min-versions-to-keep: ${{ github.event.inputs.min_versions_to_keep || '10' }}
+          ignore-versions: '^(dev|latest)$'
+          delete-only-untagged-versions: false
+        # 单个包失败（例如从未推送过、或权限不足）不应让整轮变红；
+        # 结果由下一步显式上报，避免“静默跳过”。
+        continue-on-error: true
+
+      - name: 上报本包结果
+        if: always()
+        run: |
+          if [ "${{ steps.cleanup.outcome }}" = "success" ]; then
+            echo "::notice::GHCR 清理 OK: ${{ matrix.package }}（保留最近 ${{ github.event.inputs.min_versions_to_keep || '10' }} 个版本，忽略 dev/latest）"
+          else
+            echo "::warning::GHCR 清理未成功: ${{ matrix.package }}（outcome=${{ steps.cleanup.outcome }}）—— 若为权限问题请确认 workflow 具备 packages: write"
+          fi
