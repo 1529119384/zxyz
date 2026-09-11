@@ -48,6 +48,7 @@ export const useCurrentUserStore = defineStore('currentUser', () => {
         try {
           return JSON.parse(raw)
         } catch {
+          // localStorage 里的值被外部写坏时按“无存储”处理，属有意兜底，非静默吞异常。
           return null
         }
       },

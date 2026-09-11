@@ -20,6 +20,7 @@ export const useTeamStore = defineStore('team', () => {
         try {
           return normalizePositiveId(JSON.parse(raw))
         } catch {
+          // localStorage 里的值被外部写坏时按“未选择团队”处理，属有意兜底，非静默吞异常。
           return null
         }
       },

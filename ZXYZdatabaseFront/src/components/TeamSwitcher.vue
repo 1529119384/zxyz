@@ -64,6 +64,7 @@ import { useCurrentUserStore } from '@/store/currentUser'
 import { useSessionStore } from '@/store/session'
 import { useTeamStore } from '@/store/team'
 import { handleBusinessError } from '@/utils/error'
+import { logger } from '@/utils/logger'
 
 const router = useRouter()
 const teamManagement = useTeamStore()
@@ -92,7 +93,12 @@ async function loadLinkedAccounts() {
   try {
     const response = await fetchLinkedAccounts()
     linkedAccounts.value = Array.isArray(response?.data) ? response.data : []
-  } catch {
+  } catch (error) {
+    // 回退为空列表是对的行为（下拉里只剩团队项），但必须留痕：
+    // 否则“该账号下没有可切换的关联账号”与“请求失败”在界面上完全无法区分，
+    // 而前者是正常态、后者是需要排查的故障。此处只记录，不弹提示 ——
+    // 本组件在布局侧栏常驻，加载失败弹 toast 会在每次进入页面时打扰用户。
+    logger.warn('加载可切换账号失败，已回退为空列表:', error)
     linkedAccounts.value = []
   }
 }

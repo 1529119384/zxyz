@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { fetchStorageUsage } from '@/api/files'
 import { getSpaceUsageTitle } from '@/models/space'
 import { resolveSpaceRequestParams } from '@/composables/useCurrentSpaceContext'
+import { logger } from '@/utils/logger'
 
 function resolveValue(getter) {
   return typeof getter === 'function' ? getter() : null
@@ -70,7 +71,11 @@ export function useStorageUsage({
         }),
       )
       storageUsage.value = response?.data || null
-    } catch {
+    } catch (error) {
+      // 存储用量只是侧栏的辅助展示（配额条），失败时回退为“不展示”而不是弹错；
+      // 但必须留痕，否则配额条消失时无从判断是“该空间无配额”还是“请求失败”。
+      // 注意这是**网络调用**的失败，不是 JSON 解析兜底，不该被静默掉。
+      logger.warn('加载存储用量失败，已回退为不展示:', error)
       storageUsage.value = null
     }
   }
