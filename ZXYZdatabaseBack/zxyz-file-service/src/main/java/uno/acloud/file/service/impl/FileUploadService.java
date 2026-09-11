@@ -372,7 +372,10 @@ public class FileUploadService implements FileUploadPort {
             }
             // 400: 参数校验失败
             if (statusCode == 400) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "上传参数异常：" + responseBody);
+                // 注意：responseBody 是**下游内部服务**的原始响应体，可能含类名 / SQL 片段 /
+                // 内网地址 / 堆栈等实现细节，只允许写日志（见方法入口的 log.error），
+                // 绝不拼进对外消息。此处曾写成 "上传参数异常：" + responseBody。
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "上传参数异常，请检查文件名或类型后重试");
             }
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "存储配额校验服务异常，请稍后重试");
         } catch (Exception e) {
@@ -474,6 +477,11 @@ public class FileUploadService implements FileUploadPort {
         } catch (BusinessException e) {
             log.warn("确认上传失败 objectKey={}, originalName={}, reason={}",
                     request == null ? null : request.getObjectKey(), clientOriginalName, e.getMessage());
+            // e.getMessage() 可以安全地按项回传给前端：本分支能捕获到的 BusinessException
+            // 要么来自本文件的校验文案，要么来自 storage / GetSignUrl 层 —— 经核对，那些位置
+            // 抛出的文案全是硬编码中文常量（如"文件上传失败"、"不支持的文件类型"，
+            // GetSignUrl 在捕获 SDK 异常后也是 log 详情 + 抛通用文案）。
+            // 因此这里**不含**下游原始响应体，不需要"脱敏"；去掉它会白白丢掉每个文件的失败原因。
             return new UploadConfirmItemResultVO(
                     clientOriginalName,
                     null,
