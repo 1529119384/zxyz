@@ -9,6 +9,7 @@
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write src/",
     "typecheck": "vue-tsc --noEmit",
+    "typecheck:scope": "node scripts/check-typecheck-scope.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

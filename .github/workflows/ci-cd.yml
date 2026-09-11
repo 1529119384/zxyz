@@ -404,6 +404,44 @@ jobs:
       - name: Backend compile and test
         run: cd ZXYZdatabaseBack && mvn -B test
 
+      # 覆盖率汇总：把各模块 jacoco 报告里的 LINE 覆盖率打印到 CI 日志，并上传报告。
+      # 动机：后端覆盖率阈值将采用与前端一致的「棘轮」做法（实测基线 → 阈值取基线下方约 4 点
+      # → 达标后上调），而棘轮的前提是**能随时看到当前真实数字**。此前 jacoco 只生成报告、
+      # 从不打印，也就无法在 CI 里观察到覆盖率变化。
+      # 注：jacoco 的 report 绑在 test phase（pom.xml），所以 `mvn test` 后即有报告。
+      - name: Backend coverage summary
+        if: always()
+        run: |
+          cd ZXYZdatabaseBack
+          printf '%-24s %8s %8s %8s\n' MODULE LINES MISSED RATIO
+          total_cov=0; total_miss=0; found=0
+          for csv in $(find . -path '*/target/site/jacoco/jacoco.csv' | sort); do
+            mod=$(echo "$csv" | sed 's|^\./||; s|/target/site/jacoco/jacoco.csv$||')
+            # jacoco.csv 列序：1 GROUP,2 PACKAGE,3 CLASS,4 INSTR_MISSED,5 INSTR_COVERED,
+            #                6 BRANCH_MISSED,7 BRANCH_COVERED,8 LINE_MISSED,9 LINE_COVERED
+            read -r cov miss < <(awk -F, 'NR>1{c+=$9; m+=$8} END{print c+0, m+0}' "$csv")
+            tot=$((cov + miss))
+            if [ "$tot" -gt 0 ]; then ratio=$(awk -v c="$cov" -v t="$tot" 'BEGIN{printf "%.2f%%", c*100/t}'); else ratio='n/a'; fi
+            printf '%-24s %8d %8d %8s\n' "$mod" "$cov" "$miss" "$ratio"
+            total_cov=$((total_cov + cov)); total_miss=$((total_miss + miss)); found=$((found + 1))
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "::warning::未找到任何 jacoco 报告（target/site/jacoco/jacoco.csv）"
+          else
+            awk -v c="$total_cov" -v m="$total_miss" 'BEGIN{
+              t=c+m; if(t>0) printf "%-24s %8d %8d %7.2f%%\n", "TOTAL(含集成测试)", c, m, c*100/t
+            }'
+          fi
+
+      - name: Upload backend coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-jacoco-report
+          path: ZXYZdatabaseBack/**/target/site/jacoco/
+          if-no-files-found: warn
+          retention-days: 14
+
   # ============================================================
   # Job 2.5: 前端质量检查
   # ============================================================
@@ -434,12 +472,23 @@ jobs:
 
       # 类型检查门禁（U14）：此前 CI 只跑 lint + test，JS 项目里 vue-tsc --noEmit
       # 是最能拦住「类型级回归」的一环（如 props 契约变更、stores 类型漂移）。
-      # 实测 `npm run typecheck`（vue-tsc --noEmit）当前 exit 0，可安全设为必过门禁。
+      #
+      # ⚠️ 不要误以为它覆盖了全部 JS：tsconfig.json 是 allowJs:true + checkJs:false，
+      #    JS 文件只被解析、不被检查。真实覆盖 = 全部 .ts + 首行写了 // @ts-check 的 .js。
+      #    已点亮范围由下一步 `typecheck:scope` 校验（棘轮：只增不减）。
       - name: Typecheck
         run: npm run typecheck
 
+      # typecheck 覆盖范围校验：防止有人为了让 CI 变绿而悄悄删掉某文件的 // @ts-check，
+      # 导致覆盖面无声缩小 —— 那是「假绿灯」的另一种形态。
+      - name: Typecheck scope
+        run: npm run typecheck:scope
+
+      # 覆盖率门禁：必须带 --coverage，否则 vite.config.js 里配的 thresholds 根本不会被评估。
+      # 此前 CI 跑的是 `npm run test`（= vitest run，无 --coverage）⇒ 4 组精心调过的棘轮
+      # 阈值从未被执行过一次。阈值同样遵循棘轮：先测真实基线，取值在基线下方约 4 点，达标后上调。
       - name: Test
-        run: npm run test
+        run: npm run test:coverage
 
   # ============================================================
   # Job 3: 构建并推送镜像（只构建有变更的服务，仅 push 触发）

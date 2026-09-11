@@ -1,3 +1,4 @@
+// @ts-check
 import request from '@/utils/request'
 
 const DATABASE_MAINTENANCE_TIMEOUT = 30 * 60 * 1000
@@ -12,6 +13,10 @@ export const exportDatabaseArchive = () =>
     timeout: DATABASE_MAINTENANCE_TIMEOUT,
   })
 
+/**
+ * @param {Blob} file - 归档文件
+ * @param {string} confirmationText - 确认文案
+ */
 export const importDatabaseArchive = (file, confirmationText) => {
   const formData = new FormData()
   formData.append('file', file)

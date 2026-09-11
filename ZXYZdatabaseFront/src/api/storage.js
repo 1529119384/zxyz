@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * @typedef {Object} StorageProviderVO
  * @property {string}  providerId              - 提供者标识（如 "oss", "local"）

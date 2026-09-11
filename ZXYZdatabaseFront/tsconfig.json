@@ -1,4 +1,11 @@
 {
+  // ⚠️ 关于 typecheck 的真实覆盖面（别被下面 include 里的 src/**/*.js 误导）：
+  //   `allowJs: true` + `checkJs: false` 的组合意味着 —— JS 文件会进入编译程序，
+  //   但**默认不做类型检查**。所以 `vue-tsc --noEmit` 实际只校验：
+  //     1) 全部 .ts 文件；
+  //     2) 首行显式写了 `// @ts-check` 的 .js 文件。
+  //   已点亮范围由 scripts/check-typecheck-scope.mjs 声明并校验（棘轮：只增不减），
+  //   路由见 ISSUE/08-TECHNOLOGY-OPTIMIZATION-REVIEW.md 4.1（路线 A：逐文件点亮）。
   "compilerOptions": {
     "target": "ESNext",
     "module": "ESNext",
@@ -11,6 +18,8 @@
     "isolatedModules": true,
     "noEmit": true,
     "allowJs": true,
+    // 刻意保持 false：改成 true 会一次性冒出数百条错误（ISSUE/08 4.1 方案 B）。
+    // 需要纳入检查的文件，在其首行加 `// @ts-check` 即可（方案 A）。
     "checkJs": false,
     "baseUrl": ".",
     "paths": {

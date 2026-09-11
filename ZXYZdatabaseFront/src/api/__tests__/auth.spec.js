@@ -1,3 +1,4 @@
+// @ts-check
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@/utils/request', () => ({
@@ -26,7 +27,7 @@ describe('auth API', () => {
 
     it('returns the response from the server', async () => {
       const mockResponse = { code: 1, data: { token: 'abc' } }
-      request.post.mockResolvedValue(mockResponse)
+      vi.mocked(request.post).mockResolvedValue(mockResponse)
 
       const result = await login({ username: 'u', password: 'p' })
 
@@ -45,7 +46,7 @@ describe('auth API', () => {
 
     it('returns the response from the server', async () => {
       const mockResponse = { code: 1, data: { id: 1 } }
-      request.post.mockResolvedValue(mockResponse)
+      vi.mocked(request.post).mockResolvedValue(mockResponse)
 
       const result = await register({ username: 'u', password: 'p' })
 
@@ -62,7 +63,7 @@ describe('auth API', () => {
 
     it('returns the response from the server', async () => {
       const mockResponse = { code: 1, data: { id: 1, username: 'test' } }
-      request.get.mockResolvedValue(mockResponse)
+      vi.mocked(request.get).mockResolvedValue(mockResponse)
 
       const result = await fetchCurrentUser()
 
@@ -79,7 +80,7 @@ describe('auth API', () => {
 
     it('returns the response from the server', async () => {
       const mockResponse = { code: 1, data: null }
-      request.post.mockResolvedValue(mockResponse)
+      vi.mocked(request.post).mockResolvedValue(mockResponse)
 
       const result = await logout()
 
@@ -89,7 +90,7 @@ describe('auth API', () => {
 
   it('propagates errors from the request module', async () => {
     const error = new Error('network error')
-    request.post.mockRejectedValue(error)
+    vi.mocked(request.post).mockRejectedValue(error)
 
     await expect(login({ username: 'u', password: 'p' })).rejects.toThrow('network error')
   })

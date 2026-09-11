@@ -30,6 +30,25 @@
 
 `createApiClient.js` 的响应拦截器统一判断 `payload?.code === 1`，成功时返回整个 payload（含 `code`/`msg`/`data`），调用方按需取 `response.data`。错误时抛出 `BusinessError`，由 `handleBusinessError` 处理。
 
+## 类型检查（`// @ts-check` 约定）
+
+本目录下的 `.js` 文件**首行必须写 `// @ts-check`**，且不得删除。
+
+原因：仓库 `tsconfig.json` 是 `allowJs: true` + `checkJs: false` —— JS 文件会进入编译程序，但**默认不被类型检查**。因此 `vue-tsc --noEmit` 只会校验「全部 `.ts` 文件」和「首行显式写了 `// @ts-check` 的 `.js` 文件」。api 层已整体纳入类型检查（路线 A，见 `ISSUE/08-TECHNOLOGY-OPTIMIZATION-REVIEW.md` 4.1）。
+
+该约定由两条规则守住，本地与 CI 均会执行（`npm run typecheck:scope`）：
+
+1. **声明式**：`src/api/` 下的 `.js` 若缺少 `// @ts-check`，直接失败；
+2. **棘轮**：全仓已点亮文件数不得低于基线（只能增加，不能减少）——防止有人为了让 CI 变绿而悄悄摘掉某个 `// @ts-check`，使覆盖面无声缩小（那正是「假绿灯」的另一种形态）。
+
+### 写新增接口时的类型约定
+
+- **标量标识符**（`teamId` / `fileId` / `roleId` …）标注为 `{string|number}`：路由参数给的是 string、后端 VO 给的是 number，两者都真实存在。
+- **请求体**（`payload` / `data`）标注为 `{Record<string, unknown>}`：api 层是**透传**，它在类型层面诚实地表示「一个交给后端的对象」，不臆造字段。
+  > 真正的请求/响应契约类型应由 **OpenAPI 生成** 提供（`ISSUE/08` 4.1 Step 1：后端已有 132 个文件带 SpringDoc 注解，规范是现成的），届时再把 `Record<string, unknown>` 收窄为生成类型 —— 那才是把「契约」变成 CI 资产的做法。
+- **查询参数对象**（`params`）同为 `{Record<string, unknown>}`。
+- axios 的自定义配置键（如 `rawBlob`）在 `src/types/axios-augment.d.ts` 里通过模块增强声明，不要在业务文件里用 `@ts-ignore` 绕。
+
 ## HTTP 客户端
 
 | 客户端 | 文件 | 用途 | withCredentials |
