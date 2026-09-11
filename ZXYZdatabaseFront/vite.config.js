@@ -79,15 +79,22 @@ export default defineConfig(({ mode }) => {
         //                     全局 stmts 86.28 / branch 79.70 / funcs 85.17 / lines 86.56
         //                     src/utils/oss.js 100、src/services/upload.js 98.52
         //                     src/models/upload.js 100 / branch 95.41（models 整体 10.71 → 78.57）
+        //   2026-09-11 六轮（补 10-P0-4 剩余高风险零测试模块，共 6 个文件 + 扩写 1 个：
+        //                    store/chat.js 0→92.98、composables/team/useTeamManagement.js 0→100、
+        //                    composables/useDragSelection.js 0→94.69、composables/useCorePathNavigation.js 0→100、
+        //                    utils/errorModel.js 35.48→100、utils/logger.js 44.44→100、
+        //                    composables/useFileUpload.js 20.38→100）
+        //                     全局 stmts 92.58 / branch 85.81 / funcs 92.34 / lines 92.92
+        //                     （测试文件 44 个 / 用例 970 条）
         // 阈值采用「棘轮」：仅上调已达标项，取值在实测值下方约 4 点，既守住回归又不误报。
         // 目标值（全局 70、src/store/im 75、src/api 首轮阈值）均已达成并大幅超出，故本轮一并上调。
-        // 五轮按同一规则上调全局（实测 − 4）：86.28/79.70/85.17/86.56 → 82/75/81/82。
+        // 六轮按同一规则上调全局（实测 − 4）：92.58/85.81/92.34/92.92 → 88/81/88/88。
         // src/store/im 与 src/api 本轮未变动，保持原值（api 实测已达 100，无回归空间）。
         thresholds: {
-          statements: 82,
-          branches: 75,
-          functions: 81,
-          lines: 82,
+          statements: 88,
+          branches: 81,
+          functions: 88,
+          lines: 88,
           'src/store/im/**': {
             statements: 94,
             branches: 89,
