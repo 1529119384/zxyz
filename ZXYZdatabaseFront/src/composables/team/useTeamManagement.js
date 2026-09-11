@@ -55,20 +55,33 @@ export function useTeamManagement({
   const canManageTeamSettings = computed(() =>
     hasAnyTeamPermission(TEAM_MANAGEMENT_PERMISSION_CODES),
   )
-  const canUpdateTeam = computed(() => hasTeamPermission(TEAM_PERMISSION_CODES.updateTeam))
-  const canCreateMember = computed(() => hasTeamPermission(TEAM_PERMISSION_CODES.createMember))
-  const canInviteMember = computed(() => hasTeamPermission(TEAM_PERMISSION_CODES.inviteMember))
-  const canAssignRole = computed(() => hasTeamPermission(TEAM_PERMISSION_CODES.assignRole))
-  const canRemoveMember = computed(() => hasTeamPermission(TEAM_PERMISSION_CODES.removeMember))
-  const canPublishAnnouncement = computed(() =>
-    hasTeamPermission(TEAM_PERMISSION_CODES.publishAnnouncement),
+  // 注意：hasTeamPermission 的签名是 ({ teamId, code })，必须传对象。
+  // 这里曾直接传 code 字符串，解构后 code 为 undefined → 恒返回 false，
+  // 导致团队设置抽屉里 9 个权限位控（保存资料/建成员/邀请/分配角色/移除/
+  // 发公告/禁言/邀请链接/审核入队）对所有人（含团队所有者）永久置灰。
+  // 团队 ID 有意省略 → 由 hasTeamPermission 内部回退到 selectedTeamId。
+  const canUpdateTeam = computed(() =>
+    hasTeamPermission({ code: TEAM_PERMISSION_CODES.updateTeam }),
   )
-  const canManageMute = computed(() => hasTeamPermission(TEAM_PERMISSION_CODES.manageMute))
+  const canCreateMember = computed(() =>
+    hasTeamPermission({ code: TEAM_PERMISSION_CODES.createMember }),
+  )
+  const canInviteMember = computed(() =>
+    hasTeamPermission({ code: TEAM_PERMISSION_CODES.inviteMember }),
+  )
+  const canAssignRole = computed(() => hasTeamPermission({ code: TEAM_PERMISSION_CODES.assignRole }))
+  const canRemoveMember = computed(() =>
+    hasTeamPermission({ code: TEAM_PERMISSION_CODES.removeMember }),
+  )
+  const canPublishAnnouncement = computed(() =>
+    hasTeamPermission({ code: TEAM_PERMISSION_CODES.publishAnnouncement }),
+  )
+  const canManageMute = computed(() => hasTeamPermission({ code: TEAM_PERMISSION_CODES.manageMute }))
   const canManageInviteLink = computed(() =>
-    hasTeamPermission(TEAM_PERMISSION_CODES.manageInviteLink),
+    hasTeamPermission({ code: TEAM_PERMISSION_CODES.manageInviteLink }),
   )
   const canReviewJoinRequests = computed(() =>
-    hasTeamPermission(TEAM_PERMISSION_CODES.reviewJoinRequest),
+    hasTeamPermission({ code: TEAM_PERMISSION_CODES.reviewJoinRequest }),
   )
   const joinLinkText = computed(() => {
     const joinUrl = teamManagement.inviteLink?.joinUrl
