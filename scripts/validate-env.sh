@@ -291,6 +291,57 @@ _cors_frontend_check() {
 _cors_frontend_check
 
 echo ""
+echo "--- OSS × CSP 一致性（防上传被 CSP 拦截） ---"
+# 背景（实测事故）：nginx 的 CSP `connect-src` 只放行 ${OSS_PUBLIC_BASE_URL}，
+# 而前端是「直传」到 <OSS_BUCKET>.<OSS_ENDPOINT 主机>。两者不一致时浏览器 PUT
+# 会被 CSP 直接拦截，前端只报 “OSS upload failed: network error”，极难排查。
+# 真实案例：OSS_BUCKET=your-bucket-name 但 OSS_PUBLIC_BASE_URL 写成 your-bucket.*，
+# 于是放行域名与上传域名不同 → 头像/logo/文件上传全部失败。
+_oss_csp_check() {
+  if [ "${STORAGE_OSS_ENABLED:-true}" != "true" ]; then
+    echo "  SKIP: STORAGE_OSS_ENABLED != true，跳过 OSS/CSP 一致性校验"
+    return 0
+  fi
+
+  local bucket="${OSS_BUCKET:-}"
+  local endpoint="${OSS_ENDPOINT:-}"
+  local public_base="${OSS_PUBLIC_BASE_URL:-}"
+  local placeholder_re='your-bucket|CHANGE_ME|YOUR_|example\.com'
+
+  # 占位符/空值：当前形态下上传必然失败，但不阻断部署（部署可能只为修其它问题）。
+  if [ -z "$bucket" ] || echo "$bucket" | grep -qE "$placeholder_re" \
+    || [ -z "$public_base" ] || echo "$public_base" | grep -qE "$placeholder_re"; then
+    echo "  WARN: OSS 未配置完整（OSS_BUCKET/OSS_PUBLIC_BASE_URL 缺失或仍是占位符）"
+    echo "        头像/logo/文件上传会失败，请填入真实 bucket 与一致的公开域名"
+    WARNINGS=$((WARNINGS + 1))
+    return 0
+  fi
+
+  local endpoint_host="${endpoint#*://}"
+  endpoint_host="${endpoint_host%%/*}"
+  if [ -z "$endpoint_host" ]; then
+    echo "  WARN: OSS_ENDPOINT 未配置，无法推导上传域名，请人工核对 CSP connect-src"
+    WARNINGS=$((WARNINGS + 1))
+    return 0
+  fi
+
+  local public_host="${public_base#*://}"
+  public_host="${public_host%%/*}"
+  local expected_host="${bucket}.${endpoint_host}"
+
+  if [ "$public_host" = "$expected_host" ]; then
+    echo "  OK: CSP 放行域名与实际上传域名一致 ($public_host)"
+  else
+    echo "  ERROR: CSP 放行域名与实际上传域名不一致，上传会被浏览器 CSP 拦截"
+    echo "         CSP 放行 (OSS_PUBLIC_BASE_URL 主机): $public_host"
+    echo "         实际上传 (<OSS_BUCKET>.<OSS_ENDPOINT 主机>): $expected_host"
+    echo "         请将 OSS_PUBLIC_BASE_URL 设为 https://$expected_host"
+    ERRORS=$((ERRORS + 1))
+  fi
+}
+_oss_csp_check
+
+echo ""
 echo "===== 结果 ====="
 if [ $ERRORS -gt 0 ]; then
   echo "ERROR: $ERRORS 个错误，$WARNINGS 个警告"
