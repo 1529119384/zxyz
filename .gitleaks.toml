@@ -1,0 +1,28 @@
+# Gitleaks 配置
+#
+# 策略：**在 gitleaks 默认规则集之上，只增加"已人工核实过的误报"豁免**，
+# 不放宽任何规则、不整体跳过扫描。新增豁免必须写明理由与核实方式。
+#
+# 核实记录（2026-09-11，gitleaks 8.30.1）：
+#   对全历史（238 commit）执行 `gitleaks git .`，命中 5 处，全部为 generic-api-key，
+#   命中值长度均为 8 字符且低熵 —— 与真实凭证的形态（AK/SK 20~40 字符、高熵）不符，
+#   逐一定位后确认为「文档示例 / 模板占位符 / 脚本占位字符串」，均非凭证。
+#
+# 注意：下列路径因此成为「扫描盲区」——若真有人在其中写入真实密钥，不会被本门禁拦下。
+# 这是有意识接受的代价（比放宽规则或整体关闭扫描小得多）；请定期复核。
+
+[extend]
+# 保留默认全部规则，仅在其上叠加豁免
+useDefault = true
+
+[[allowlists]]
+description = "env 模板文件：值全是 CHANGE_ME_* 之类占位符，本就不该含真实凭证"
+paths = ['''(^|/)\.env\.example$''']
+
+[[allowlists]]
+description = "生成的 API 文档：正文含 curl 请求示例，示例里的鉴权串不是凭证"
+paths = ['''^\.qoder/repowiki/''']
+
+[[allowlists]]
+description = "一次性运维脚本：第 3 行的占位字符串（8 字符低熵，已人工核实）"
+paths = ['''^scripts/import_nacos_configs\.py$''']
