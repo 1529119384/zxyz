@@ -199,7 +199,7 @@ const buildFileListParams = (
 export const fetchFileList = async (
   parentId: string | number,
   sortOptions: FileListSortOptions = {},
-): Promise<ApiResult<ApiFileItem[]>> => {
+): Promise<ApiResult<ApiFileItem[]> & { total?: number }> => {
   const { page, pageSize, signal, ...restSortOptions } = sortOptions
   const response = await request.get<Record<string, unknown>>('/api/files', {
     params: {
@@ -210,10 +210,22 @@ export const fetchFileList = async (
     signal,
   })
 
+  // 后端可能返回分页信封 { list, total } 或裸数组；这里统一拍平为 data 数组，
+  // 并把分页 total 提升到信封同级 —— 因为 data 被替换成数组后，调用方无法再从
+  // data.total 取到总数（useSpaceFileList 的分页器需要它）。
+  const rawData = response?.data
+  const rawList = Array.isArray(rawData)
+    ? rawData
+    : Array.isArray((rawData as { list?: unknown } | null)?.list)
+      ? (rawData as { list: unknown[] }).list
+      : []
+  const rawTotal = Array.isArray(rawData) ? null : ((rawData as { total?: unknown } | null)?.total ?? null)
+  const total = rawTotal == null ? undefined : Number(rawTotal)
+
   return {
     ...response,
-    // 后端可能返回 { list: [...] } 或直接的列表，原始 data 用宽松类型承载 map* 映射
-    data: mapSpaceFileEntries((response?.data?.list ?? response?.data) as unknown[]) as ApiFileItem[],
+    data: mapSpaceFileEntries(rawList as unknown[]) as ApiFileItem[],
+    ...(total === undefined ? {} : { total }),
   }
 }
 

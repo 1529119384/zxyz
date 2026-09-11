@@ -84,14 +84,21 @@ export function useSpaceFileList(options) {
         pageSize: pageSize.value,
       })
       if (refreshToken !== latestRefreshToken && refreshToken !== forcedRefreshToken) return
-      const paged = fileList.data && typeof fileList.data === 'object'
-      const entries = Array.isArray(paged ? fileList.data.list : fileList.data)
-        ? paged
-          ? fileList.data.list
-          : fileList.data
-        : []
-      if (paged && fileList.data.total != null) {
-        total.value = fileList.data.total
+      // fetchFileList 已把后端信封统一拍平成 data 数组（裸数组或 { list, total } 皆然），
+      // 所以这里必须「数组优先」解析。旧实现用 `typeof data === 'object'` 判断分页信封，
+      // 但数组的 typeof 同样是 'object' → 误把数组当成 { list } 信封 → 取到 data.list
+      // (= undefined) → entries 恒为 [] → 列表被清空。
+      // 这正是「新建文件夹/重命名/删除成功后提示成功但列表不更新」的根因。
+      const payload = fileList?.data
+      const entries = Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload?.list)
+          ? payload.list
+          : []
+      // total 可能来自 fetchFileList 提升的信封同级字段，或旧式 { list, total } 信封内部。
+      const rawTotal = fileList?.total ?? (Array.isArray(payload) ? undefined : payload?.total)
+      if (rawTotal != null) {
+        total.value = Number(rawTotal)
       }
 
       if (
