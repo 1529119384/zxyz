@@ -84,8 +84,19 @@ mkdir -p "$(dirname "$OUT_FILE")"
 # 先写静态骨架，再追加动态配置块（避免多行 sed 替换的脆弱性）
 cat "$TMPL_FILE" > "$OUT_FILE"
 printf '%s\n' "$CFG" >> "$OUT_FILE"
-# 审计 2.3.3：渲染产物含 SMTP 明文口令，收紧到仅属主可读（默认 umask 下会是 0644）
-chmod 600 "$OUT_FILE"
+# 审计 2.3.3：渲染产物含 SMTP 明文口令，必须收紧权限（默认 umask 下是 0644）。
+# ⚠️ 不能简单 chmod 600：Alertmanager 官方镜像（prom/alertmanager）以 nobody(65534) 运行，
+#    而该文件是 bind-mount（:ro）进容器读的 —— 0600 root 会让容器起不来。
+#    故「属主 root + 属组 = 容器运行 gid + 0640」：容器以 nobody 跑则走属组读，
+#    将来若以 root 跑则走属主读，两种身份都能读，同时杜绝其他本机用户读取。
+#    若改用 docker secret 或给容器显式 `user:`，把 ALERTMANAGER_FILE_MODE 设回 0600。
+if chown "0:${ALERTMANAGER_FILE_GROUP:-65534}" "$OUT_FILE" 2>/dev/null; then
+  chmod "${ALERTMANAGER_FILE_MODE:-0640}" "$OUT_FILE"
+else
+  # 改属组失败（非常规文件系统）⇒ 退回世界可读，宁可弱一点也不让监控容器起不来
+  chmod 0644 "$OUT_FILE"
+  echo "WARN: 无法设置 $(basename "$OUT_FILE") 属组，已退回 0644（监控可用性优先）" >&2
+fi
 
 echo "RENDER_ALERTMANAGER_OK: 已渲染 -> $OUT_FILE" >&2
 exit 0
