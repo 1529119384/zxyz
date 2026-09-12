@@ -222,21 +222,42 @@ public interface FileMapper {
             "  <otherwise>AND f.team_id = #{teamId}</otherwise>",
             "</choose>",
             "ORDER BY modify_time DESC",
+            "LIMIT #{limit} OFFSET #{offset}",
             "</script>"
     })
     @ResultMap("fileNodeResultMap")
-    List<FileNode> getFileNodesInRecycleBin(@Param("teamId") Long teamId,
-                                            @Param("spaceType") Integer spaceType,
-                                            @Param("projectId") Long projectId,
-                                            @Param("userId") Long userId);
+    List<FileNode> getFileNodesInRecycleBinPaged(@Param("teamId") Long teamId,
+                                                 @Param("spaceType") Integer spaceType,
+                                                 @Param("projectId") Long projectId,
+                                                 @Param("userId") Long userId,
+                                                 @Param("limit") int limit,
+                                                 @Param("offset") int offset);
 
-    default List<FileNode> getFileNodesInRecycleBin(Long teamId, Long userId) {
-        return getFileNodesInRecycleBin(teamId, null, null, userId);
-    }
-
-    default List<FileNode> getFileNodesInRecycleBin() {
-        return getFileNodesInRecycleBin(null, null);
-    }
+    /**
+     * 回收站可见节点总数。
+     *
+     * <p>WHERE 条件必须与 {@link #getFileNodesInRecycleBinPaged} 逐字保持一致：
+     * 两处一旦不同步，分页器就会出现"总条数与实际翻页结果对不上"的静默错位。
+     */
+    @Select({
+            "<script>",
+            "SELECT COUNT(*) FROM file_node f",
+            "WHERE f.deleted = 1",
+            "  AND NOT EXISTS (",
+            "      SELECT 1 FROM file_node p",
+            "      WHERE p.id = f.parent_id AND p.deleted = 1",
+            "  )",
+            "<choose>",
+            "  <when test='spaceType != null and spaceType == 3'>AND f.space_type = 3 AND f.project_id = #{projectId}</when>",
+            "  <when test='teamId == null'>AND (f.space_type IS NULL OR f.space_type = 1) AND f.team_id IS NULL AND f.upload_user_id = #{userId}</when>",
+            "  <otherwise>AND f.team_id = #{teamId}</otherwise>",
+            "</choose>",
+            "</script>"
+    })
+    int countFileNodesInRecycleBin(@Param("teamId") Long teamId,
+                                   @Param("spaceType") Integer spaceType,
+                                   @Param("projectId") Long projectId,
+                                   @Param("userId") Long userId);
 
     @Select({
             "<script>",

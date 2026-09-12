@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.FileDeleteStatus;
 import uno.acloud.common.FileSpaceType;
+import uno.acloud.common.PageResult;
 import uno.acloud.dto.FileInfoDTO;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.file.infrastructure.entity.FileItem;
@@ -143,23 +144,37 @@ public class FileQueryService implements FileQueryPort {
     }
 
     @Override
-    public List<FileListItemVO> getRecycleList(Long teamId, Long userId) {
-        return getRecycleList(teamId, null, null, userId);
+    public PageResult<FileListItemVO> getRecycleList(Long teamId, Long userId, Integer page, Integer pageSize) {
+        return getRecycleList(teamId, null, null, userId, page, pageSize);
     }
 
     @Override
-    public List<FileListItemVO> getRecycleList(Long teamId, Integer spaceType, Long projectId, Long userId) {
+    public PageResult<FileListItemVO> getRecycleList(Long teamId, Integer spaceType, Long projectId, Long userId, Integer page, Integer pageSize) {
         SpaceTarget target = SpaceTarget.fromRequest(teamId, spaceType, projectId);
         requireReadAccess(target, userId);
-        List<FileNode> recycleNodes = projectId == null
-                ? fileMapper.getFileNodesInRecycleBin(target.teamId(), userId)
-                : fileMapper.getFileNodesInRecycleBin(target.teamId(), target.spaceType(), target.projectId(), userId);
+        int finalPage = PageResult.normalizePage(page);
+        int finalPageSize = PageResult.normalizePageSize(pageSize);
+        int offset = PageResult.offsetOf(finalPage, finalPageSize);
+
+        // 保持原有语义：projectId 为空时不把 spaceType/projectId 带进查询，让 FileMapper
+        // 里两段 SQL 的 <choose> 走 <when teamId == null> / <otherwise> 分支。
+        Integer querySpaceType = projectId == null ? null : target.spaceType();
+        Long queryProjectId = projectId == null ? null : target.projectId();
+
+        long total = fileMapper.countFileNodesInRecycleBin(
+                target.teamId(), querySpaceType, queryProjectId, userId);
+        // total 为 0 时不再发一次注定为空的查询。
+        List<FileNode> recycleNodes = total == 0
+                ? new ArrayList<>()
+                : fileMapper.getFileNodesInRecycleBinPaged(
+                        target.teamId(), querySpaceType, queryProjectId, userId, finalPageSize, offset);
         recycleNodes.forEach(node ->
                 node.setOriginalName(FilePathUtil.stripTombstonePrefix(node.getOriginalName())));
-        return recycleNodes
+        List<FileListItemVO> list = recycleNodes
                 .stream()
                 .map(fileConverter::toFileListItemVO)
                 .collect(Collectors.toList());
+        return PageResult.of(finalPage, finalPageSize, total, list);
     }
 
     @Override

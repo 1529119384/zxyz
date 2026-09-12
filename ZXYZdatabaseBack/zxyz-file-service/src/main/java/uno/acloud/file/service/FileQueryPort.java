@@ -1,5 +1,6 @@
 package uno.acloud.file.service;
 
+import uno.acloud.common.PageResult;
 import uno.acloud.dto.FileInfoDTO;
 import uno.acloud.file.vo.FileListItemVO;
 import uno.acloud.file.vo.FileListPagedResultVO;
@@ -56,9 +57,16 @@ public interface FileQueryPort {
      */
     uno.acloud.file.infrastructure.entity.FileNode getFileNodeForStream(Long fileId, Long userId);
 
-    List<FileListItemVO> getRecycleList(Long teamId, Long userId);
+    /**
+     * 回收站文件列表（分页）。
+     *
+     * <p>此前该接口是无上限的全量返回（07-CODE-QUALITY-REVIEW.md 的 P0-2），
+     * 回收站随删除操作持续增长，返回体不可控。改为返回 {@link PageResult} 后
+     * {@code pageSize} 由 {@code PageResult.normalizePageSize} 统一钳制到上限。
+     */
+    PageResult<FileListItemVO> getRecycleList(Long teamId, Long userId, Integer page, Integer pageSize);
 
-    List<FileListItemVO> getRecycleList(Long teamId, Integer spaceType, Long projectId, Long userId);
+    PageResult<FileListItemVO> getRecycleList(Long teamId, Integer spaceType, Long projectId, Long userId, Integer page, Integer pageSize);
 
     FileResourceVO getFileResourceById(Long fileId);
 

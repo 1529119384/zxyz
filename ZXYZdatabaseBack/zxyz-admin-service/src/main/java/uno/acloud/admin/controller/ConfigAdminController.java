@@ -10,15 +10,18 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import uno.acloud.admin.domain.SysConfig;
 import uno.acloud.admin.domain.SysConfigAudit;
 import uno.acloud.admin.service.ConfigService;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.PageResult;
 import uno.acloud.common.Result;
 import uno.acloud.common.SystemRoleCodes;
 import uno.acloud.common.web.CurrentUser;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import uno.acloud.admin.mapper.SysConfigAuditMapper;
 import uno.acloud.admin.mapper.SysConfigMapper;
 
@@ -73,13 +76,27 @@ public class ConfigAdminController {
         return Result.success();
     }
 
+    /**
+     * 配置变更审计日志。
+     *
+     * <p>该表随每次配置变更持续增长，此前是 {@code selectList} 全表返回（无分页、无上限，
+     * 见 07-CODE-QUALITY-REVIEW.md 的 P0-2）。改为分页后 {@code pageSize} 会被
+     * {@link PageResult#normalizePageSize} 钳制到 {@link PageResult#MAX_PAGE_SIZE}，
+     * 调用方无法再用一个超大值把接口退化成全表查询。
+     */
     @Operation(summary = "获取配置变更审计日志")
     @GetMapping("/audit")
-    public Result<List<SysConfigAudit>> listAuditLogs() {
-        List<SysConfigAudit> list = auditMapper.selectList(
+    public Result<PageResult<SysConfigAudit>> listAuditLogs(
+            @Parameter(description = "页码，从 1 起") @RequestParam(defaultValue = "1") Integer page,
+            @Parameter(description = "每页条数，上限 " + PageResult.MAX_PAGE_SIZE
+                    + "，默认 " + PageResult.DEFAULT_PAGE_SIZE) @RequestParam(defaultValue = "20") Integer pageSize) {
+        int finalPage = PageResult.normalizePage(page);
+        int finalPageSize = PageResult.normalizePageSize(pageSize);
+        Page<SysConfigAudit> result = auditMapper.selectPage(
+                new Page<>(finalPage, finalPageSize),
                 new LambdaQueryWrapper<SysConfigAudit>()
                         .orderByDesc(SysConfigAudit::getChangedAt));
-        return Result.of(list);
+        return Result.of(PageResult.of(finalPage, finalPageSize, result.getTotal(), result.getRecords()));
     }
 
     /**
