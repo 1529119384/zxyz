@@ -49,6 +49,19 @@
       </el-table>
     </div>
 
+    <div class="pagination-wrapper">
+      <el-pagination
+        background
+        layout="total, sizes, prev, pager, next"
+        :current-page="page"
+        :page-size="pageSize"
+        :page-sizes="[10, 20, 50]"
+        :total="total"
+        @current-change="handleCurrentChange"
+        @size-change="handleSizeChange"
+      />
+    </div>
+
     <div
       v-if="dragState.active || dragState.visible"
       class="selection-box"
@@ -117,6 +130,11 @@ const list = recycleBinList.list
 const filteredList = list
 const emptyText = recycleBinList.emptyText
 const loading = recycleBinList.loading
+// 07-P0-2：回收站列表改为服务端分页，这三个状态直接驱动下方 el-pagination。
+const total = recycleBinList.total
+const page = recycleBinList.page
+const pageSize = recycleBinList.pageSize
+const { handleCurrentChange, handleSizeChange } = recycleBinList
 
 async function refresh() {
   await recycleBinList.refresh()
@@ -170,6 +188,8 @@ async function runRefreshSafely() {
 watch(
   [() => props.teamId, () => props.spaceType, () => props.projectId],
   async () => {
+    // 切换空间后旧页码很可能越界（新空间没有那么多页），先回到第 1 页再拉取。
+    page.value = 1
     await runRefreshSafely()
   },
   { immediate: true },
@@ -214,6 +234,12 @@ defineExpose({
   position: relative;
   flex: 1;
   min-height: 0;
+}
+
+.pagination-wrapper {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 12px;
 }
 
 .name-cell {

@@ -435,24 +435,49 @@ export const logicalDeleteFiles = (fileIds: Array<string | number>): Promise<Api
   return request.patch<LogicalDeleteResult>('/api/files/trash', { fileIds })
 }
 
+/**
+ * 回收站列表（分页）。
+ *
+ * 后端自 07-P0-2 起改为返回分页信封 `{ page, pageSize, total, list }`
+ * （此前是无分页、无上限的裸数组）。这里沿用 `fetchFileList` 的处理方式：
+ * 把 `list` 拍平成 `data` 数组、把 `total` 提升到信封同级 —— 因为 `data` 被替换成
+ * 数组后，调用方无法再从 `data.total` 取到总数（`useRecycleBinList` 的分页器需要它）。
+ *
+ * 仍兼容裸数组返回：万一后端版本回退，前端不会整页空白。
+ */
 export const fetchRecycleList = async (
   options: {
     teamId?: string | number
     spaceType?: number | string
     projectId?: string | number
+    page?: number
+    pageSize?: number
   } = {},
-): Promise<ApiResult<RecycleFileItem[]>> => {
-  const response = await request.get('/api/trash/files', {
+): Promise<ApiResult<RecycleFileItem[]> & { total?: number }> => {
+  const { page, pageSize, ...spaceOptions } = options
+  const response = await request.get<Record<string, unknown>>('/api/trash/files', {
     params: {
-      ...(options.teamId ? { teamId: options.teamId } : {}),
-      ...(options.spaceType ? { spaceType: options.spaceType } : {}),
-      ...(options.projectId ? { projectId: options.projectId } : {}),
+      ...(spaceOptions.teamId ? { teamId: spaceOptions.teamId } : {}),
+      ...(spaceOptions.spaceType ? { spaceType: spaceOptions.spaceType } : {}),
+      ...(spaceOptions.projectId ? { projectId: spaceOptions.projectId } : {}),
+      ...(page ? { page } : {}),
+      ...(pageSize ? { pageSize } : {}),
     },
   })
 
+  const rawData = response?.data
+  const rawList = Array.isArray(rawData)
+    ? rawData
+    : Array.isArray((rawData as { list?: unknown } | null)?.list)
+      ? (rawData as { list: unknown[] }).list
+      : []
+  const rawTotal = Array.isArray(rawData) ? null : ((rawData as { total?: unknown } | null)?.total ?? null)
+  const total = rawTotal == null ? undefined : Number(rawTotal)
+
   return {
     ...response,
-    data: mapRecycleFileEntries(response.data as unknown[]) as RecycleFileItem[],
+    data: mapRecycleFileEntries(rawList as unknown[]) as RecycleFileItem[],
+    ...(total === undefined ? {} : { total }),
   }
 }
 

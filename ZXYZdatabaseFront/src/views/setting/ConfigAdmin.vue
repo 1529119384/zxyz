@@ -67,6 +67,19 @@
           <el-table-column prop="changedBy" label="操作人" width="120" />
           <el-table-column prop="changedAt" label="变更时间" width="180" />
         </el-table>
+
+        <div class="audit-pagination">
+          <el-pagination
+            background
+            layout="total, sizes, prev, pager, next"
+            :current-page="auditPage"
+            :page-size="auditPageSize"
+            :page-sizes="[10, 20, 50]"
+            :total="auditTotal"
+            @current-change="handleAuditCurrentChange"
+            @size-change="handleAuditSizeChange"
+          />
+        </div>
       </el-tab-pane>
     </el-tabs>
   </section>
@@ -116,6 +129,11 @@ const isCreateMode = ref(false)
 const activeTab = ref('config')
 const auditLogs = ref([])
 const auditLoading = ref(false)
+// 07-P0-2：审计日志改为服务端分页（此前是 selectList 全表返回），
+// 这三个状态直接驱动下方 el-pagination。
+const auditTotal = ref(0)
+const auditPage = ref(1)
+const auditPageSize = ref(20)
 
 const form = reactive({
   configKey: '',
@@ -140,13 +158,31 @@ watch(activeTab, (tab) => {
 async function loadAuditLogs() {
   auditLoading.value = true
   try {
-    const response = await fetchAuditLogs()
+    const response = await fetchAuditLogs({
+      page: auditPage.value,
+      pageSize: auditPageSize.value,
+    })
     auditLogs.value = Array.isArray(response?.data) ? response.data : []
+    auditTotal.value = Number(response?.total) || 0
   } catch (error) {
+    auditLogs.value = []
+    auditTotal.value = 0
     handleBusinessError(error, '加载变更历史失败')
   } finally {
     auditLoading.value = false
   }
+}
+
+async function handleAuditCurrentChange(nextPage) {
+  auditPage.value = nextPage
+  await loadAuditLogs()
+}
+
+async function handleAuditSizeChange(nextPageSize) {
+  auditPageSize.value = nextPageSize
+  // 换页长后原页码很可能越界（第 5 页 10 条/页 → 50 条/页可能只剩 1 页），回到第 1 页。
+  auditPage.value = 1
+  await loadAuditLogs()
 }
 
 async function loadConfigs() {
@@ -222,5 +258,11 @@ async function submitForm() {
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: bottom;
+}
+
+.audit-pagination {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 12px;
 }
 </style>

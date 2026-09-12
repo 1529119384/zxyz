@@ -366,6 +366,44 @@ describe('files API', () => {
       expect(result.data).toEqual([{ id: 3, deleteTime: 't' }])
     })
 
+    // 07-P0-2：后端由「裸数组全量返回」改为分页信封 { page, pageSize, total, list }。
+    it('fetchRecycleList 解析分页信封 {list,total} 并提升 total', async () => {
+      vi.mocked(request.get).mockResolvedValue({
+        code: 1,
+        msg: 'ok',
+        data: { page: 2, pageSize: 10, total: 41, list: [{ id: 3, deleteTime: 't' }] },
+      })
+      const result = await fetchRecycleList({ page: 2, pageSize: 10 })
+      expect(request.get).toHaveBeenCalledWith('/api/trash/files', {
+        params: { page: 2, pageSize: 10 },
+      })
+      // data 被拍平成数组，total 被提升到信封同级（分页器需要它）。
+      expect(result.data).toEqual([{ id: 3, deleteTime: 't' }])
+      expect(result.total).toBe(41)
+    })
+
+    it('fetchRecycleList 遇到裸数组时不带 total（向后兼容）', async () => {
+      vi.mocked(request.get).mockResolvedValue({
+        code: 1,
+        msg: 'ok',
+        data: [{ id: 4, deleteTime: 't' }],
+      })
+      const result = await fetchRecycleList()
+      expect(result.data).toEqual([{ id: 4, deleteTime: 't' }])
+      expect(result.total).toBeUndefined()
+    })
+
+    it('fetchRecycleList 遇到空信封时返回空数组而非整页空白', async () => {
+      vi.mocked(request.get).mockResolvedValue({
+        code: 1,
+        msg: 'ok',
+        data: { page: 1, pageSize: 20, total: 0, list: [] },
+      })
+      const result = await fetchRecycleList({ page: 1, pageSize: 20 })
+      expect(result.data).toEqual([])
+      expect(result.total).toBe(0)
+    })
+
     it('restoreFiles 用 DELETE 且请求体放在 data 中', async () => {
       vi.mocked(request.delete).mockResolvedValue({ code: 1, msg: 'ok', data: null })
       await restoreFiles([1, 2])
