@@ -5,6 +5,7 @@ import com.aliyun.sdk.service.oss2.PresignOptions;
 import com.aliyun.sdk.service.oss2.models.GetObjectRequest;
 import com.aliyun.sdk.service.oss2.models.GetObjectResult;
 import com.aliyun.sdk.service.oss2.models.HeadObjectRequest;
+import com.aliyun.sdk.service.oss2.exceptions.ServiceException;
 import com.aliyun.sdk.service.oss2.models.PresignResult;
 import com.aliyun.sdk.service.oss2.models.PutObjectRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -105,6 +106,17 @@ public class GetSignUrl {
         return buildFileUrl(ossProperties.getBucket(), ossProperties.getRegion(), objectKey);
     }
 
+    /**
+     * 判断 OSS 对象是否存在。
+     *
+     * <p><b>只有「确定不存在」才返回 false</b>（HTTP 404 或 OSS 错误码 NoSuchKey）；
+     * 网络抖动、鉴权失败、服务端 5xx 等「无法判定存在性」的错误一律上抛。
+     * 旧实现把一切异常都吞成 false，于是 OSS 抖一下，用户就会看到
+     * 「文件资源已丢失，请联系管理员」，存储健康检查也会跟着误报。</p>
+     *
+     * @return true=存在；false=确定不存在
+     * @throws BusinessException 存储不可用，无法判定
+     */
     public boolean objectExists(String objectKey) {
         try {
             HeadObjectRequest request = HeadObjectRequest.newBuilder()
@@ -114,8 +126,27 @@ public class GetSignUrl {
             ossClient.headObject(request);
             return true;
         } catch (Exception e) {
-            return false;
+            if (isObjectNotFound(e)) {
+                return false;
+            }
+            log.error("探测 OSS 对象失败（非 404，按存储不可用处理）, objectKey: {}", objectKey, e);
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "存储服务暂时不可用，请稍后重试");
         }
+    }
+
+    /**
+     * 判定异常链上是否出现「对象不存在」：HTTP 404 或 OSS 错误码 NoSuchKey。
+     * SDK 可能把 ServiceException 包在 OperationException 里，故沿 cause 链查找。
+     */
+    private static boolean isObjectNotFound(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof ServiceException se) {
+                return se.statusCode() == 404 || "NoSuchKey".equals(se.errorCode());
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     /**

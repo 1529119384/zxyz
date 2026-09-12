@@ -51,9 +51,9 @@ class AdminBootstrapRunnerTest {
         new AdminBootstrapRunner(userMapper, authService, teamServicePermissionClient, sp).run(null);
 
         verify(authService, never()).createBootstrapAdmin(anyString(), anyString());
-        verify(teamServicePermissionClient, never()).assignBootstrapAdminRoleStrict(any());
-        // 已存在用户走幂等自愈路径（后台线程异步执行）
-        verify(teamServicePermissionClient, timeout(3000)).ensureDefaultRole(1L, "admin");
+        // 已存在用户走幂等自愈路径（后台线程异步执行），与新建账号共用同一条 strict 授权路径：
+        // 提权能力只留在部署引导链路，不再经 ensureDefaultRole 暴露给公网注册/登录（审计 2.1.1）
+        verify(teamServicePermissionClient, timeout(3000)).assignBootstrapAdminRoleStrict(1L);
     }
 
     @Test

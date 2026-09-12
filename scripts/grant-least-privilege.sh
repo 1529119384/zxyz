@@ -91,6 +91,10 @@ if [ -z "${MYSQL_ROOT_PASSWORD:-}" ]; then
   exit 1
 fi
 
+# 审计 2.3.3：口令改走环境变量（MYSQL_PWD）传递，不再展开进宿主机 docker 客户端进程的 argv
+# （`docker exec ... mysql -uroot -p"$PW"` 会让同机任意进程从 /proc/<pid>/cmdline 读到口令）。
+export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"
+
 # --- 从 compose 解析 mysql 服务的 container_name ---
 MYSQL_CONTAINER="$(awk '
   /^  mysql:[[:space:]]*$/   { capture=1; next }
@@ -210,7 +214,7 @@ trap 'rm -f "$TMP_SQL"' EXIT
 printf '%s\n' "${RENDERED[@]}" > "$TMP_SQL"
 
 echo "===== 在容器 $MYSQL_CONTAINER 中创建最小权限账户（幂等）====="
-if docker exec -i "$MYSQL_CONTAINER" mysql -uroot -p"$MYSQL_ROOT_PASSWORD" < "$TMP_SQL"; then
+if docker exec -i -e MYSQL_PWD "$MYSQL_CONTAINER" mysql -uroot < "$TMP_SQL"; then
   echo "OK: 专用账户授权完成。请由总指挥将 docker-compose.yml 改为引用 *_DB_* 变量以启用。"
 else
   echo "ERROR: 执行 GRANT 失败（详见上方 mysql 报错）" >&2

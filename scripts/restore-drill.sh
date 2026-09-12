@@ -25,6 +25,10 @@ set -a
 source "$PROJECT_DIR/.env" 2>/dev/null || { echo "ERROR: 缺少 .env" >&2; exit 1; }
 set +a
 
+# 审计 2.3.3：口令经环境变量传递（配合 docker exec -e MYSQL_PWD / docker run -e MYSQL_ROOT_PASSWORD），
+# 不再展开进宿主机 docker 客户端进程的 argv。
+export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"
+
 BACKUP_DIR="${BACKUP_DIR:-$PROJECT_DIR/backups}"
 
 # 找最近一个 MySQL 备份
@@ -60,7 +64,7 @@ trap cleanup EXIT
 echo "启动临时 MySQL 容器: $CONTAINER_NAME (端口 $DRILL_PORT)"
 docker run -d \
   --name "$CONTAINER_NAME" \
-  -e MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" \
+  -e MYSQL_ROOT_PASSWORD \
   -p "127.0.0.1:${DRILL_PORT}:3306" \
   mysql:8.4 >/dev/null
 
@@ -68,8 +72,8 @@ docker run -d \
 echo "等待 MySQL 就绪..."
 READY=0
 for i in $(seq 1 120); do
-  if docker exec "$CONTAINER_NAME" mysqladmin ping \
-      -uroot -p"$MYSQL_ROOT_PASSWORD" --silent 2>/dev/null; then
+  if docker exec -e MYSQL_PWD "$CONTAINER_NAME" mysqladmin ping \
+      -uroot --silent 2>/dev/null; then
     READY=1
     break
   fi
@@ -83,8 +87,8 @@ echo "MySQL 就绪 (${i}s)"
 
 # 解压并灌入备份（含建库建表语句，来自 --all-databases mysqldump）
 echo "恢复备份数据..."
-if gunzip -c "$LATEST" | docker exec -i "$CONTAINER_NAME" \
-   mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --max-allowed-packet=512M; then
+if gunzip -c "$LATEST" | docker exec -i -e MYSQL_PWD "$CONTAINER_NAME" \
+   mysql -uroot --max-allowed-packet=512M; then
   echo "数据加载完成"
 else
   echo "FAIL: 数据恢复执行失败" >&2
@@ -107,8 +111,8 @@ PASSED=1
 for CHECK in "${CHECKS[@]}"; do
   DB="${CHECK%%.*}"
   TBL="${CHECK#*.}"
-  ROW_COUNT=$(docker exec "$CONTAINER_NAME" \
-    mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -N -e \
+  ROW_COUNT=$(docker exec -e MYSQL_PWD "$CONTAINER_NAME" \
+    mysql -uroot -N -e \
     "SELECT COUNT(*) FROM \`${DB}\`.\`${TBL}\`;" 2>/dev/null || true)
   if [ -n "$ROW_COUNT" ] && [ "$ROW_COUNT" -ge 1 ] 2>/dev/null; then
     echo "  PASS: ${DB}.${TBL} 行数 = $ROW_COUNT"

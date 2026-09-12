@@ -12,9 +12,12 @@ vi.mock('element-plus', () => ({
   ElMessageBox: { alert: vi.fn().mockResolvedValue('confirm') },
 }))
 
+// 用 hoisted 共享 spy，才能断言 clearProfile 是否被调用（vi.mock 工厂会被提升）
+const { clearProfileMock } = vi.hoisted(() => ({ clearProfileMock: vi.fn() }))
+
 vi.mock('@/store/currentUser', () => ({
   useCurrentUserStore: vi.fn(() => ({
-    clearProfile: vi.fn(),
+    clearProfile: clearProfileMock,
   })),
 }))
 
@@ -61,6 +64,14 @@ describe('createApiClient', () => {
         } else if (url === '/client-error') {
           res.writeHead(400, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ code: 4000, msg: '参数校验失败' }))
+        } else if (url === '/contains-not-login') {
+          // 业务文案恰好包含「未登录」子串，但不是认证失败
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ code: 4000, msg: '对方未登录，消息发送失败' }))
+        } else if (url === '/auth-failure-text') {
+          // 无 401/4010，仅靠精确文本兜底判定
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ code: 4000, msg: 'Token expired' }))
         } else {
           res.writeHead(404)
           res.end('Not Found')
@@ -109,6 +120,7 @@ describe('createApiClient', () => {
     const replaceMock = vi.fn()
     vi.stubGlobal('location', { pathname: '/index', replace: replaceMock })
     await expect(redirectClient.get('/auth-failure-code')).rejects.toThrow()
+    expect(clearProfileMock).toHaveBeenCalled()
     expect(ElMessageBox.alert).toHaveBeenCalledWith(
       '登录状态已过期，请重新登录',
       '会话过期',
@@ -131,5 +143,39 @@ describe('createApiClient', () => {
 
   it('should handle 4xx with object payload', async () => {
     await expect(client.get('/client-error')).rejects.toThrow('参数校验失败')
+  })
+
+  it('silent 实例的认证失败不清空主应用登录态（审计 12-第三节中危项）', async () => {
+    await expect(client.get('/auth-failure-code')).rejects.toThrow()
+    expect(clearProfileMock).not.toHaveBeenCalled()
+  })
+
+  it('redirect 实例仅在精确文本兜底命中时清空登录态', async () => {
+    const { ElMessageBox } = await import('element-plus')
+    const redirectClient = createApiClient({
+      baseURL: `http://localhost:${port}`,
+      timeout: 5000,
+      onTokenExpired: 'redirect',
+    })
+    const replaceMock = vi.fn()
+    vi.stubGlobal('location', { pathname: '/index', replace: replaceMock })
+    await expect(redirectClient.get('/auth-failure-text')).rejects.toThrow()
+    expect(clearProfileMock).toHaveBeenCalled()
+    expect(ElMessageBox.alert).toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it('业务文案仅包含「未登录」子串时不得误判为认证失败', async () => {
+    const { ElMessageBox } = await import('element-plus')
+    const redirectClient = createApiClient({
+      baseURL: `http://localhost:${port}`,
+      timeout: 5000,
+      onTokenExpired: 'redirect',
+    })
+    await expect(redirectClient.get('/contains-not-login')).rejects.toThrow(
+      '对方未登录，消息发送失败',
+    )
+    expect(clearProfileMock).not.toHaveBeenCalled()
+    expect(ElMessageBox.alert).not.toHaveBeenCalled()
   })
 })

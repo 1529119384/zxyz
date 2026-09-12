@@ -1,7 +1,9 @@
 package uno.acloud.im.application;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.context.config.annotation.RefreshScope;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.common.ErrorCode;
@@ -26,6 +28,7 @@ import java.util.List;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
+@Slf4j
 @Service
 @RefreshScope
 public class ImMessageService {
@@ -93,7 +96,29 @@ public class ImMessageService {
                 ImMessageVO existingMessage = getMessageVOById(existing.getId());
                 return new StoreMessageResult(existing.getId(), existingMessage, conversationMapper.listActiveMemberUserIds(conversationId));
             }
-            return doStoreTextMessage(senderUserId, conversationId, normalizedClientMessageId, normalizedContent, normalizedMentions);
+            try {
+                return doStoreTextMessage(senderUserId, conversationId, normalizedClientMessageId, normalizedContent, normalizedMentions);
+            } catch (DuplicateKeyException e) {
+                // 审计 L5：串行锁（executeMessageWrite）在事务提交前就释放了，并发的同 clientMessageId
+                // 请求仍可能一个先提交、一个撞唯一键（uk_im_client）。撞键不代表业务失败——
+                // 恰恰说明另一路已写入成功，回查询并返回既有消息，保持「同 clientMessageId 幂等」的语义，
+                // 而不是把 500 抛给客户端并诱发重试风暴。
+                // 注意：doStoreTextMessage 无独立事务边界（不在 @Transactional 代理上），
+                // 因此这里的 catch 不会把外层事务标记为 rollback-only。
+                ImMessage duplicated = imMessageMapper.getByClientMessageId(
+                        conversationId, senderUserId, normalizedClientMessageId);
+                if (duplicated == null) {
+                    // 极端情况下（RR 隔离级别的快照早于对方提交）回查不到，维持原有失败语义
+                    log.warn("IM 消息唯一键冲突但回查不到既有消息: conversationId={}, senderUserId={}, clientMessageId={}",
+                            conversationId, senderUserId, normalizedClientMessageId, e);
+                    throw e;
+                }
+                log.info("IM 消息重复提交，返回既有消息: conversationId={}, messageId={}, clientMessageId={}",
+                        conversationId, duplicated.getId(), normalizedClientMessageId);
+                ImMessageVO duplicatedMessage = getMessageVOById(duplicated.getId());
+                return new StoreMessageResult(duplicated.getId(), duplicatedMessage,
+                        conversationMapper.listActiveMemberUserIds(conversationId));
+            }
         });
     }
 

@@ -1,6 +1,7 @@
 package uno.acloud.share.service.impl;
 
 import org.apache.commons.lang3.StringUtils;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -23,6 +24,7 @@ import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.Objects;
 
+@Slf4j
 @Component
 public class ShareAccessManager {
 
@@ -148,12 +150,21 @@ public class ShareAccessManager {
             return;
         }
         int affectedRows;
-        if (share.getMaxAccessCount() == null) {
-            affectedRows = shareMapper.incrementAccessCount(share.getId());
-        } else {
-            affectedRows = shareMapper.tryIncrementAccessCountWhenUnderLimit(share.getId());
+        try {
+            if (share.getMaxAccessCount() == null) {
+                affectedRows = shareMapper.incrementAccessCount(share.getId());
+            } else {
+                affectedRows = shareMapper.tryIncrementAccessCountWhenUnderLimit(share.getId());
+            }
+        } catch (RuntimeException e) {
+            // 审计 L6：扣减抛异常时必须释放当日去重键，否则该令牌 24h 内都不再扣减（免计费）
+            releaseBurnKey(share.getId(), tokenHash);
+            throw e;
         }
         if (affectedRows != 1) {
+            // 审计 L6：占位成功但扣减未生效（已超限/写失败）同样要释放，
+            // 否则下一次访问会被去重直接跳过，额度永久漏记
+            releaseBurnKey(share.getId(), tokenHash);
             if (share.getMaxAccessCount() != null) {
                 share.setCurrentAccessCount(share.getMaxAccessCount());
                 throw shareStatusCalculator.invalidShareException(ShareStatus.ACCESS_LIMIT_REACHED);
@@ -172,6 +183,23 @@ public class ShareAccessManager {
         Boolean firstTime = stringRedisTemplate.opsForValue()
                 .setIfAbsent(key, "1", BURN_DEDUP_TTL);
         return Boolean.TRUE.equals(firstTime);
+    }
+
+    /**
+     * 释放当日去重占位键（审计 L6）。
+     * 占位与扣减是两步非原子操作，扣减失败时若不回滚占位，
+     * 该访问令牌在 {@link #BURN_DEDUP_TTL} 内会被当成「已扣减」而跳过，额度被漏记。
+     */
+    private void releaseBurnKey(Long shareId, String tokenHash) {
+        if (StringUtils.isBlank(tokenHash)) {
+            return;
+        }
+        try {
+            stringRedisTemplate.delete(BURN_KEY_PREFIX + shareId + ":" + tokenHash);
+        } catch (Exception e) {
+            // 释放失败不影响本次结果；最坏情况是该令牌 24h 内少计一次
+            log.warn("释放分享访问去重键失败: shareId={}", shareId, e);
+        }
     }
 
     /**

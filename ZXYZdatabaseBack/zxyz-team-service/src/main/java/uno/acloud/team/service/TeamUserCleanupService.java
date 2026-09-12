@@ -2,7 +2,9 @@ package uno.acloud.team.service;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 import uno.acloud.common.TeamRoleCodes;
 import uno.acloud.team.entity.Team;
 import uno.acloud.team.mapper.TeamMapper;
@@ -24,15 +26,20 @@ public class TeamUserCleanupService {
     private final TeamPermissionManager teamPermissionManager;
     private final TeamPermissionMapper teamPermissionMapper;
     private final org.springframework.data.redis.core.StringRedisTemplate redisTemplate;
+    /** 每个团队一个独立事务，避免单个团队失败连坐整个清理批次 */
+    private final TransactionTemplate teamTx;
 
     public TeamUserCleanupService(TeamMapper teamMapper,
                                   TeamPermissionManager teamPermissionManager,
                                   TeamPermissionMapper teamPermissionMapper,
-                                  org.springframework.data.redis.core.StringRedisTemplate redisTemplate) {
+                                  org.springframework.data.redis.core.StringRedisTemplate redisTemplate,
+                                  PlatformTransactionManager transactionManager) {
         this.teamMapper = teamMapper;
         this.teamPermissionManager = teamPermissionManager;
         this.teamPermissionMapper = teamPermissionMapper;
         this.redisTemplate = redisTemplate;
+        this.teamTx = new TransactionTemplate(transactionManager);
+        this.teamTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     /**
@@ -40,11 +47,12 @@ public class TeamUserCleanupService {
      * 有继任者则把所有权转让给继任者，无继任者则解散团队（team.status = 2），
      * 避免留下「列表里看起来正常、但没有任何活人能管理」的无主僵尸团队。
      * <p>
-     * 事务取舍：方法级事务保证单个团队内「改 owner + 改角色 + 移除成员」的多表更新是原子的；
-     * 但循环内 catch 会吞掉异常并计入 failed，所以单个团队失败既不会回滚其它团队，
-     * 也不会让 MQ 整体重试 —— 清理是尽力而为，个别失败由汇总日志与告警暴露。
+     * 事务取舍：<b>每个团队一个独立事务</b>（REQUIRES_NEW）。若共用一个方法级大事务，
+     * 循环内的 catch 根本兜不住——任意一次失败都会把外层事务标记为 rollback-only，
+     * 提交时抛 UnexpectedRollbackException，反而把所有团队的清理一起回滚并被 MQ 反复重投。
+     * 拆成独立事务后，单个团队失败只影响它自己，循环内 catch 才能真的做到「不阻断其它团队」。
+     * 清理整体仍是尽力而为，个别失败由汇总日志与告警暴露。
      */
-    @Transactional(rollbackFor = Exception.class)
     public void removeUserFromTeams(long userId) {
         List<Long> teamIds = teamMapper.listMyTeams(userId).stream()
                 .map(Team::getId)
@@ -56,40 +64,60 @@ public class TeamUserCleanupService {
         int failed = 0;
         for (Long teamId : teamIds) {
             try {
-                Team team = teamMapper.selectById(teamId);
-                if (!isOwner(team, userId)) {
-                    // 普通成员：置为已移除即可，团队归属不受影响
-                    if (teamMapper.removeMember(teamId, userId) > 0) {
-                        removed++;
-                    }
+                TeamOutcome outcome = teamTx.execute(status -> cleanupOneTeam(teamId, userId));
+                if (outcome == null) {
                     continue;
                 }
-
-                LocalDateTime now = LocalDateTime.now();
-                Long successor = teamMapper.selectSuccessorOwner(teamId, userId);
-                if (successor != null) {
-                    // 有继任者：先改 team.owner_user_id，再把继任者的角色提升为 owner，最后摘掉注销用户
-                    teamMapper.transferOwner(teamId, userId, successor, now);
-                    teamMapper.updateMemberRoleLabel(teamId, successor, TeamRoleCodes.OWNER);
-                    syncOwnerRoleToRbac(teamId, successor);
-                    teamMapper.removeMember(teamId, userId);
-                    transferred++;
-                    log.info("团队所有者已注销，所有权自动转让: teamId={}, fromUserId={}, toUserId={}",
-                            teamId, userId, successor);
-                } else {
-                    // 无继任者：团队已无人可接手，只能解散，否则会成为无主僵尸团队
-                    teamMapper.dissolveTeam(teamId, userId, now);
-                    teamMapper.removeMember(teamId, userId);
-                    dissolved++;
-                    log.info("团队所有者已注销且无继任者，团队已解散: teamId={}, userId={}", teamId, userId);
+                switch (outcome) {
+                    case REMOVED -> removed++;
+                    case TRANSFERRED -> transferred++;
+                    case DISSOLVED -> dissolved++;
                 }
             } catch (Exception e) {
-                log.error("清理用户团队关系失败: userId={}, teamId={}", userId, teamId, e);
                 failed++;
+                log.error("清理用户团队关系失败（已隔离到该团队，其它团队继续处理）: userId={}, teamId={}", userId, teamId, e);
             }
         }
         log.info("移除用户团队成员关系完成: userId={}, removed={}, transferred={}, dissolved={}, failed={}",
                 userId, removed, transferred, dissolved, failed);
+    }
+
+    /** 单个团队的清理结果；null（不返回该枚举）表示无需变更。 */
+    private enum TeamOutcome {
+        /** 普通成员：仅摘除成员关系 */
+        REMOVED,
+        /** 所有者注销且存在继任者：所有权已转让 */
+        TRANSFERRED,
+        /** 所有者注销且无继任者：团队已解散 */
+        DISSOLVED
+    }
+
+    /** 单个团队的清理动作；由调用方包在独立事务中执行，异常向上抛。 */
+    private TeamOutcome cleanupOneTeam(Long teamId, long userId) {
+        Team team = teamMapper.selectById(teamId);
+        if (!isOwner(team, userId)) {
+            // 普通成员：置为已移除即可，团队归属不受影响
+            return teamMapper.removeMember(teamId, userId) > 0 ? TeamOutcome.REMOVED : null;
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        Long successor = teamMapper.selectSuccessorOwner(teamId, userId);
+        if (successor != null) {
+            // 有继任者：先改 team.owner_user_id，再把继任者的角色提升为 owner，最后摘掉注销用户
+            teamMapper.transferOwner(teamId, userId, successor, now);
+            teamMapper.updateMemberRoleLabel(teamId, successor, TeamRoleCodes.OWNER);
+            syncOwnerRoleToRbac(teamId, successor);
+            teamMapper.removeMember(teamId, userId);
+            log.info("团队所有者已注销，所有权自动转让: teamId={}, fromUserId={}, toUserId={}",
+                    teamId, userId, successor);
+            return TeamOutcome.TRANSFERRED;
+        }
+
+        // 无继任者：团队已无人可接手，只能解散，否则会成为无主僵尸团队
+        teamMapper.dissolveTeam(teamId, userId, now);
+        teamMapper.removeMember(teamId, userId);
+        log.info("团队所有者已注销且无继任者，团队已解散: teamId={}, userId={}", teamId, userId);
+        return TeamOutcome.DISSOLVED;
     }
 
     private static boolean isOwner(Team team, long userId) {
@@ -105,8 +133,9 @@ public class TeamUserCleanupService {
      * 把本团队所有内置角色的权限绑定重置一遍，可能抹掉管理员对内置角色的自定义授权。
      * TeamPermissionManager#assignMemberRole 只增删成员的角色绑定，副作用最小。
      * <p>
-     * 该方法参与外层事务，一旦抛异常会把外层事务标记成 rollback-only，
-     * 导致整个清理在提交时失败并被 MQ 无限重试，所以先做前置校验再 try/catch 兜底：
+     * 这里刻意走 {@link TeamPermissionManager#assignMemberRoleIndependent}（REQUIRES_NEW）：
+     * 它跑在独立事务里，一旦抛异常只会回滚自己的事务，<b>不会</b>把外层事务标记成
+     * rollback-only（否则 catch 也救不回，提交时仍抛 UnexpectedRollbackException）。
      * 角色同步失败只记日志，不阻断已经完成的所有权转让。
      */
     private void syncOwnerRoleToRbac(Long teamId, Long successorUserId) {
@@ -116,7 +145,7 @@ public class TeamUserCleanupService {
                         teamId, successorUserId);
                 return;
             }
-            teamPermissionManager.assignMemberRole(teamId, successorUserId, TeamRoleCodes.OWNER);
+            teamPermissionManager.assignMemberRoleIndependent(teamId, successorUserId, TeamRoleCodes.OWNER);
         } catch (Exception e) {
             log.error("同步继任者 owner 角色到 team_member_role 失败（所有权已转让，需人工核对）: teamId={}, userId={}",
                     teamId, successorUserId, e);

@@ -22,6 +22,8 @@
 # 但主异地路径已改为 OSS。
 
 set -euo pipefail
+# 审计 2.3.3：备份产物含 mysql.user 口令哈希与业务数据，禁止组/其他用户读取
+umask 077
 
 # --- 参数解析 ---
 # 为什么：CI 预部署只需快速备 MySQL（状态核心），无需备 redis/rabbitmq 及异地推送；
@@ -40,6 +42,10 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 set -a
 source "$PROJECT_DIR/.env"
 set +a
+# 审计 2.3.3：DB/Redis 口令改走环境变量（MYSQL_PWD / REDISCLI_AUTH，配合 docker exec -e），
+# 不再展开进宿主机 docker 客户端进程的 argv（原来同机任意进程都能从 /proc/<pid>/cmdline 读到）。
+export MYSQL_PWD="${MYSQL_ROOT_PASSWORD:?缺少 MYSQL_ROOT_PASSWORD，请检查 .env}"
+export REDISCLI_AUTH="${REDIS_PASSWORD:-}"
 
 BACKUP_DIR="${BACKUP_DIR:-$PROJECT_DIR/backups}"
 DATE=$(date +%Y%m%d_%H%M%S)
@@ -63,7 +69,7 @@ if ! docker ps --format '{{.Names}}' | grep -qx 'zxyz-mysql'; then
   echo "WARN: zxyz-mysql 容器未运行，跳过 MySQL 备份（首次部署场景，无旧数据可备）"
   MYSQL_SKIPPED=true
 else
-if docker exec zxyz-mysql mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" \
+if docker exec -e MYSQL_PWD zxyz-mysql mysqldump -uroot \
   --all-databases --single-transaction --quick --source-data=2 | \
   gzip > "$BACKUP_DIR/mysql_$DATE.sql.gz"; then
   :
@@ -91,19 +97,19 @@ echo "备份 MySQL binlog（增量，PITR 用）..."
 MYSQL_BINLOG_OK=false
 if [ "$MYSQL_SKIPPED" = true ]; then
   echo "WARN: MySQL 未运行，跳过 binlog 备份"
-elif ! docker exec zxyz-mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -N -e \
+elif ! docker exec -e MYSQL_PWD zxyz-mysql mysql -uroot -N -e \
        "SHOW VARIABLES LIKE 'log_bin'" 2>/dev/null | grep -qi "ON"; then
   echo "WARN: MySQL 未开启 log_bin，无 binlog 可备，跳过（PITR 不可用）" >&2
 else
-  if docker exec zxyz-mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "FLUSH BINARY LOGS" >/dev/null 2>&1; then
+  if docker exec -e MYSQL_PWD zxyz-mysql mysql -uroot -e "FLUSH BINARY LOGS" >/dev/null 2>&1; then
     MYSQL_BINLOG_OK=true
   else
     echo "WARN: FLUSH BINARY LOGS 失败，仍尝试拷贝现有 binlog" >&2
   fi
   # 记录当前位点（人工 PITR 时的参考锚点；权威锚点在 dump 头注释里）
-  docker exec zxyz-mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -N -e "SHOW MASTER STATUS" \
+  docker exec -e MYSQL_PWD zxyz-mysql mysql -uroot -N -e "SHOW MASTER STATUS" \
     > "$BACKUP_DIR/binlog_pos_$DATE.txt" 2>/dev/null || true
-  CURRENT_BINLOG=$(docker exec zxyz-mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -N -e \
+  CURRENT_BINLOG=$(docker exec -e MYSQL_PWD zxyz-mysql mysql -uroot -N -e \
       "SHOW MASTER STATUS" 2>/dev/null | awk 'NR==1{print $1}')
   BINLOG_STATE_FILE="$BACKUP_DIR/.last_binlog"
 
@@ -128,7 +134,7 @@ else
       else
         echo "WARN: 拷贝 binlog $BLOG 失败" >&2
       fi
-    done < <(docker exec zxyz-mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -N -e \
+    done < <(docker exec -e MYSQL_PWD zxyz-mysql mysql -uroot -N -e \
                "SHOW BINARY LOGS" 2>/dev/null | awk '{print $1}')
 
     if [ "$BINLOG_COPIED" -gt 0 ]; then
@@ -159,13 +165,13 @@ fi
 # --mysql-only 时跳过：预部署只需 MySQL 状态核心，redis 非必须且耗时。
 if [ "$MYSQL_ONLY" = false ]; then
 echo "备份 Redis..."
-PREV_SAVE=$(docker exec zxyz-redis redis-cli -a "$REDIS_PASSWORD" LASTSAVE) || { echo "ERROR: Redis LASTSAVE 失败" >&2; FAILED=1; exit 1; }
-docker exec zxyz-redis redis-cli -a "$REDIS_PASSWORD" BGSAVE >/dev/null
+PREV_SAVE=$(REDISCLI_AUTH="$REDIS_PASSWORD" docker exec -e REDISCLI_AUTH zxyz-redis redis-cli LASTSAVE) || { echo "ERROR: Redis LASTSAVE 失败" >&2; FAILED=1; exit 1; }
+REDISCLI_AUTH="$REDIS_PASSWORD" docker exec -e REDISCLI_AUTH zxyz-redis redis-cli BGSAVE >/dev/null
 
 echo "等待 Redis BGSAVE 完成..."
 for i in $(seq 1 60); do
   sleep 1
-  CURR_SAVE=$(docker exec zxyz-redis redis-cli -a "$REDIS_PASSWORD" LASTSAVE 2>/dev/null || echo "$PREV_SAVE")
+  CURR_SAVE=$(REDISCLI_AUTH="$REDIS_PASSWORD" docker exec -e REDISCLI_AUTH zxyz-redis redis-cli LASTSAVE 2>/dev/null || echo "$PREV_SAVE")
   if [ "$CURR_SAVE" -gt "$PREV_SAVE" ]; then
     echo "Redis BGSAVE 完成 (${i}s, LASTSAVE=$CURR_SAVE)"
     BACKUP_READY=1
@@ -314,10 +320,14 @@ BACKUP_REMOTE_DIR="${BACKUP_REMOTE_DIR:-/data/backups/zxyz}"
 if [ -n "$BACKUP_REMOTE_HOST" ]; then
   echo "同步备份到远程主机 $BACKUP_REMOTE_HOST..."
   REMOTE_DIR="$BACKUP_REMOTE_DIR/$DATE"
-  ssh -o StrictHostKeyChecking=no "$BACKUP_REMOTE_HOST" "mkdir -p $REMOTE_DIR" || {
+  # 审计 2.3.3：原来用 StrictHostKeyChecking=no（完全不校验主机密钥，可被 MITM 劫持）。
+  # 改为 accept-new：首次连接按 TOFU 固化，之后密钥变化即失败；known_hosts 落到稳定路径，
+  # 需要预置时用 BACKUP_SSH_KNOWN_HOSTS 指向受控文件。
+  SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile=${BACKUP_SSH_KNOWN_HOSTS:-$HOME/.ssh/known_hosts}")
+  ssh "${SSH_OPTS[@]}" "$BACKUP_REMOTE_HOST" "mkdir -p $REMOTE_DIR" || {
     echo "WARN: 无法创建远程目录，跳过 ssh 异地化" >&2
   }
-  scp -o StrictHostKeyChecking=no \
+  scp "${SSH_OPTS[@]}" \
     "${ARTIFACTS[@]}" "$BACKUP_REMOTE_HOST:$REMOTE_DIR/" || {
     echo "WARN: ssh/scp 异地化备份失败，本地备份仍有效" >&2
   }

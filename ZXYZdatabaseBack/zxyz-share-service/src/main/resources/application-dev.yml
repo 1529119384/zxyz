@@ -21,7 +21,7 @@ spring:
 
 app:
   share:
-    cookie-secret: ${SHARE_COOKIE_SECRET:share-secret}
+    cookie-secret: ${SHARE_COOKIE_SECRET}
     frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:5173}
     file-service:
       base-url: ${FILE_SERVICE_BASE_URL:http://localhost:18085}

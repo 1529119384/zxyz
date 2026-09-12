@@ -20,6 +20,7 @@ import uno.acloud.common.ErrorCode;
 import uno.acloud.common.Result;
 import uno.acloud.common.UserErrorCode;
 import uno.acloud.common.SystemRoleCodes;
+import uno.acloud.common.util.LogMaskingUtil;
 import uno.acloud.common.web.ClientIpUtil;
 import uno.acloud.common.web.CurrentUser;
 import uno.acloud.exception.BusinessException;
@@ -102,9 +103,9 @@ public class UserController {
         // 经网关后 getRemoteAddr() 恒为网关容器 IP，直接当限流键会让「每 IP 限流」退化成全局单桶
         String ip = ClientIpUtil.resolve(httpRequest);
         loginRateLimiter.checkAndIncrement(ip, request.getUsername());
-        log.info("用户 {} 请求登录", request.getUsername());
+        log.info("用户 {} 请求登录", LogMaskingUtil.maskUsername(request.getUsername()));
         String token = authService.login(request);
-        log.info("用户 {} 登录成功", request.getUsername());
+        log.info("用户 {} 登录成功", LogMaskingUtil.maskUsername(request.getUsername()));
         int cookieMaxAge = request.isRememberMe()
                 ? serviceProperties.getAuth().getLongLivedTimeoutSeconds()
                 : serviceProperties.getAuth().getTokenTimeoutSeconds();
@@ -127,10 +128,10 @@ public class UserController {
                                    HttpServletRequest httpRequest) {
         String ip = ClientIpUtil.resolve(httpRequest);
         registerRateLimiter.checkAndIncrement(ip);
-        log.info("用户 {} 请求注册", request.getUsername());
+        log.info("用户 {} 请求注册", LogMaskingUtil.maskUsername(request.getUsername()));
         int result = authService.register(request);
         if (result > 0) {
-            log.info("用户 {} 注册成功", request.getUsername());
+            log.info("用户 {} 注册成功", LogMaskingUtil.maskUsername(request.getUsername()));
             return Result.of("注册成功");
         }
 

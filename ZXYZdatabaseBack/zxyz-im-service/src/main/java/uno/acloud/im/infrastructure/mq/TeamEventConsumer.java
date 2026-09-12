@@ -59,7 +59,7 @@ public class TeamEventConsumer {
                 return;
             }
 
-            // 幂等性检查：使用 eventType + 实体标识作为去重 key，防止重复消费
+            // 幂等性检查：使用 eventType + 实体标识 + 序列号作为去重 key，防止重复消费
             String idempotencyKey = buildIdempotencyKey(eventType, root);
             if (!redisTemplate.opsForValue().setIfAbsent(idempotencyKey, "1", IDEMPOTENCY_TTL_HOURS, TimeUnit.HOURS)) {
                 log.warn("MQ: 重复团队事件消息，跳过处理: key={}", idempotencyKey);
@@ -68,43 +68,57 @@ public class TeamEventConsumer {
 
             long sequenceNumber = root.path("sequenceNumber").asLong(0);
             long teamId = root.path("teamId").asLong(0);
+            // 乱序检测只做「只读校验」，序列号在处理成功后才推进（见方法末尾）。
+            // 若在此处就推进，处理失败后的重投会被自己写下的序列号判成「乱序」而永久丢弃，
+            // 与幂等占位键「失败不释放」叠加，就会造成 team-service 与 im-service 的永久数据分歧。
+            String sequenceKey = null;
             if (sequenceNumber > 0 && teamId > 0) {
-                String sequenceKey = "mq:sequence:team:" + teamId;
+                sequenceKey = "mq:sequence:team:" + teamId;
                 String lastSequence = redisTemplate.opsForValue().get(sequenceKey);
                 if (lastSequence != null && sequenceNumber <= Long.parseLong(lastSequence)) {
                     log.warn("MQ: 团队事件乱序丢弃: teamId={}, receivedSeq={}, lastSeq={}", teamId, sequenceNumber, lastSequence);
                     return;
                 }
-                redisTemplate.opsForValue().set(sequenceKey, String.valueOf(sequenceNumber), 24, TimeUnit.HOURS);
-                log.debug("MQ: 团队事件序列号: eventType={}, seq={}", eventType, sequenceNumber);
             }
 
-            switch (eventType) {
-                case RabbitMqConstants.ROUTING_KEY_TEAM_CREATED -> {
-                    TeamCreatedEvent event = objectMapper.readValue(message, TeamCreatedEvent.class);
-                    InternalTeamSyncRequest request = toTeamSyncRequest(event);
-                    internalTeamSyncService.syncTeam(request);
-                    log.debug("MQ: 团队创建同步完成: teamId={}", event.teamId());
+            try {
+                switch (eventType) {
+                    case RabbitMqConstants.ROUTING_KEY_TEAM_CREATED -> {
+                        TeamCreatedEvent event = objectMapper.readValue(message, TeamCreatedEvent.class);
+                        InternalTeamSyncRequest request = toTeamSyncRequest(event);
+                        internalTeamSyncService.syncTeam(request);
+                        log.debug("MQ: 团队创建同步完成: teamId={}", event.teamId());
+                    }
+                    case RabbitMqConstants.ROUTING_KEY_TEAM_UPDATED -> {
+                        TeamUpdatedEvent event = objectMapper.readValue(message, TeamUpdatedEvent.class);
+                        InternalTeamSyncRequest request = toTeamSyncRequest(event);
+                        internalTeamSyncService.syncTeamProfile(request);
+                        log.debug("MQ: 团队资料同步完成: teamId={}", event.teamId());
+                    }
+                    case RabbitMqConstants.ROUTING_KEY_TEAM_MEMBER_ADDED -> {
+                        TeamMemberAddedEvent event = objectMapper.readValue(message, TeamMemberAddedEvent.class);
+                        InternalTeamMemberSyncRequest request = toMemberSyncRequest(event);
+                        internalTeamSyncService.syncMember(request);
+                        log.debug("MQ: 成员加入同步完成: teamId={}, userId={}, seq={}", event.teamId(), event.userId(), sequenceNumber);
+                    }
+                    case RabbitMqConstants.ROUTING_KEY_TEAM_MEMBER_REMOVED -> {
+                        TeamMemberRemovedEvent event = objectMapper.readValue(message, TeamMemberRemovedEvent.class);
+                        InternalTeamMemberRemovalRequest request = toMemberRemovalRequest(event);
+                        internalTeamSyncService.removeMember(request);
+                        log.debug("MQ: 成员移除同步完成: teamId={}, userId={}, seq={}", event.teamId(), event.userId(), sequenceNumber);
+                    }
+                    default -> log.debug("MQ: 未知团队事件类型: {}", eventType);
                 }
-                case RabbitMqConstants.ROUTING_KEY_TEAM_UPDATED -> {
-                    TeamUpdatedEvent event = objectMapper.readValue(message, TeamUpdatedEvent.class);
-                    InternalTeamSyncRequest request = toTeamSyncRequest(event);
-                    internalTeamSyncService.syncTeamProfile(request);
-                    log.debug("MQ: 团队资料同步完成: teamId={}", event.teamId());
-                }
-                case RabbitMqConstants.ROUTING_KEY_TEAM_MEMBER_ADDED -> {
-                    TeamMemberAddedEvent event = objectMapper.readValue(message, TeamMemberAddedEvent.class);
-                    InternalTeamMemberSyncRequest request = toMemberSyncRequest(event);
-                    internalTeamSyncService.syncMember(request);
-                    log.debug("MQ: 成员加入同步完成: teamId={}, userId={}, seq={}", event.teamId(), event.userId(), sequenceNumber);
-                }
-                case RabbitMqConstants.ROUTING_KEY_TEAM_MEMBER_REMOVED -> {
-                    TeamMemberRemovedEvent event = objectMapper.readValue(message, TeamMemberRemovedEvent.class);
-                    InternalTeamMemberRemovalRequest request = toMemberRemovalRequest(event);
-                    internalTeamSyncService.removeMember(request);
-                    log.debug("MQ: 成员移除同步完成: teamId={}, userId={}, seq={}", event.teamId(), event.userId(), sequenceNumber);
-                }
-                default -> log.debug("MQ: 未知团队事件类型: {}", eventType);
+            } catch (Exception e) {
+                // 处理失败必须释放幂等占位键，否则 MQ 重投会被判成「重复消息」而静默丢弃，
+                // 数据分歧被永久固化。范本：file-service 的 UserDeletedEventConsumer。
+                releaseIdempotencyKey(idempotencyKey);
+                throw e;
+            }
+
+            if (sequenceKey != null) {
+                redisTemplate.opsForValue().set(sequenceKey, String.valueOf(sequenceNumber), 24, TimeUnit.HOURS);
+                log.debug("MQ: 团队事件序列号已推进: eventType={}, seq={}", eventType, sequenceNumber);
             }
         } catch (JsonProcessingException e) {
             log.error("团队事件消息反序列化失败（丢弃消息）, message={}", message, e);
@@ -116,16 +130,38 @@ public class TeamEventConsumer {
     }
 
     /**
-     * 构建幂等性 key：eventType + teamId [+ userId]。
-     * 成员事件需要 teamId + userId 组合去重，团队事件仅需 teamId。
+     * 释放幂等占位键，使失败消息在 MQ 重投时能被真正重新处理。
+     * Redis 自身异常只记日志，不得掩盖原始业务异常。
+     */
+    private void releaseIdempotencyKey(String idempotencyKey) {
+        try {
+            redisTemplate.delete(idempotencyKey);
+            log.warn("MQ: 团队事件处理失败，已释放幂等占位键以便重投重试: key={}", idempotencyKey);
+        } catch (Exception e) {
+            log.error("MQ: 释放幂等占位键失败（该消息重投将被判为重复而跳过）: key={}", idempotencyKey, e);
+        }
+    }
+
+    /**
+     * 构建幂等性 key：eventType + teamId [+ userId] [+ seq{sequenceNumber}]。
+     * <p>成员事件需要 teamId + userId 组合去重，团队事件仅需 teamId。</p>
+     * <p>序列号是「事件自身的身份」（发布端单调递增，见 TeamEventPublisher），
+     * 带上它才能区分同一实体在 TTL 窗口内的多次变更（如 移除 → 重新加入 → 再移除），
+     * 否则第二条同类事件会被误判为重复投递而静默丢弃。</p>
      */
     private String buildIdempotencyKey(String eventType, JsonNode root) {
         long teamId = root.path("teamId").asLong(0);
         long userId = root.path("userId").asLong(0);
+        long sequenceNumber = root.path("sequenceNumber").asLong(0);
+        StringBuilder key = new StringBuilder(IDEMPOTENCY_KEY_PREFIX)
+                .append(eventType).append(':').append(teamId);
         if (userId > 0) {
-            return IDEMPOTENCY_KEY_PREFIX + eventType + ":" + teamId + ":" + userId;
+            key.append(':').append(userId);
         }
-        return IDEMPOTENCY_KEY_PREFIX + eventType + ":" + teamId;
+        if (sequenceNumber > 0) {
+            key.append(":seq").append(sequenceNumber);
+        }
+        return key.toString();
     }
 
     // ---- 事件 record → 内部 DTO 映射 ----

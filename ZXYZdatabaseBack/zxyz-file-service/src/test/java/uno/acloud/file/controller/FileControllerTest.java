@@ -58,13 +58,13 @@ class FileControllerTest {
     void getUploadSign_delegatesToFileUploadPort() {
         UploadInfo signInfo = new UploadInfo("oss", "https://oss.example.com/put", "files/key",
                 "https://oss.example.com/files/key", "application/octet-stream", "attachment", 1700000000L, true);
-        when(fileUploadPort.getUploadSign("test.txt")).thenReturn(signInfo);
+        when(fileUploadPort.getUploadSign("test.txt", 1L)).thenReturn(signInfo);
 
-        UploadInfo result = fileUploadPort.getUploadSign("test.txt");
+        UploadInfo result = fileUploadPort.getUploadSign("test.txt", 1L);
 
         assertNotNull(result);
         assertEquals("https://oss.example.com/put", result.getUploadUrl());
-        verify(fileUploadPort).getUploadSign("test.txt");
+        verify(fileUploadPort).getUploadSign("test.txt", 1L);
     }
 
     // ==================== FileQueryPort — getFileListByParentId ====================

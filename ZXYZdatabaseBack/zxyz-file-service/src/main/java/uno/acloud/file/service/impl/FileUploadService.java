@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
@@ -30,6 +31,7 @@ import uno.acloud.file.vo.BatchUploadConfirmResultVO;
 import uno.acloud.file.vo.UploadConfirmItemResultVO;
 
 import java.io.InputStream;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -49,6 +51,15 @@ public class FileUploadService implements FileUploadPort {
 
     private static final String FILE_OBJECT_PREFIX = "files/";
 
+    /**
+     * 上传归属登记键：{@code file:upload-owner:{objectKey}} → userId（审计 12-2.1.2）。
+     * 发签名时写入，确认时校验并消费，把「知道 objectKey 就能挂载」的死口子堵上。
+     */
+    private static final String UPLOAD_OWNER_KEY_PREFIX = "file:upload-owner:";
+
+    /** 归属登记相对签名有效期的宽限（30 分钟），避免边界上「签名未过期、登记先过期」。 */
+    private static final long UPLOAD_OWNER_TTL_MARGIN_MILLIS = 30L * 60L * 1000L;
+
     /** 允许上传的文件扩展名白名单 fallback（热配置不可用时使用） */
     private static final Set<String> FALLBACK_ALLOWED_EXTENSIONS = Set.of(
             // 文档
@@ -59,8 +70,8 @@ public class FileUploadService implements FileUploadPort {
             "zip", "rar", "7z", "tar", "gz",
             // 音视频
             "mp3", "mp4", "avi", "mov", "wav",
-            // 代码/标记
-            "md", "json", "xml", "yaml", "yml", "html", "css",
+            // 代码/标记（html/htm 已禁用，见 NEVER_ALLOWED_EXTENSIONS）
+            "md", "json", "xml", "yaml", "yml", "css",
             "ts", "vue", "java", "py", "go", "sql", "sh", "log",
             "ini", "conf", "toml",
             // 其他文档
@@ -76,6 +87,18 @@ public class FileUploadService implements FileUploadPort {
 
     /** 单文件最大上传大小 fallback（500MB，热配置不可用时使用） */
     private static final long FALLBACK_MAX_FILE_SIZE_BYTES = 500L * 1024L * 1024L;
+
+    /**
+     * 无论白名单怎么配都禁止的扩展名（审计 L1）。
+     *
+     * <p>这些类型在 OSS 公网直链下会被浏览器「内联渲染」而不是下载，从而变成
+     * 存储型 XSS / 钓鱼页（下载路径已被强制 attachment，但直链渲染不受控）。</p>
+     *
+     * <p>写在代码里的 deny 集合而不是只改白名单，是因为白名单来自 Nacos 热配置
+     * （zxyz-dynamic.yml 的 allowed-extensions），改配置需人工 import 才生效；
+     * 放在这里能保证即使配置被改回宽松值也不会重新放开。</p>
+     */
+    private static final Set<String> NEVER_ALLOWED_EXTENSIONS = Set.of("html", "htm", "xhtml", "shtml");
 
     private final StorageProviderRegistry registry;
     private final FileUploadPersistenceManager fileUploadPersistenceService;
@@ -97,6 +120,11 @@ public class FileUploadService implements FileUploadPort {
     /** 单文件最大上传大小（Nacos 注入，缺省 500MB） */
     private final long maxUploadFileSizeBytes;
     private final UsageLedgerMapper usageLedgerMapper;
+    private final StringRedisTemplate redisTemplate;
+
+    /** OSS 预签名有效期（秒），用于推导上传归属登记键的 TTL。 */
+    @Value("${app.oss.sign-expire-seconds:3600}")
+    private long signExpireSeconds;
 
     public FileUploadService(StorageProviderRegistry registry,
                              FileUploadPersistenceManager fileUploadPersistenceService,
@@ -107,6 +135,7 @@ public class FileUploadService implements FileUploadPort {
                              ObjectMapper objectMapper,
                              ServiceProperties serviceProperties,
                              UsageLedgerMapper usageLedgerMapper,
+                             StringRedisTemplate redisTemplate,
                              @Value("${app.file.upload.allowed-extensions:}") String allowedExtensionsRaw,
                              @Value("${app.file.upload.blocked-extensions:}") String blockedExtensionsRaw,
                              @Value("${app.file.upload.max-size-bytes:524288000}") long maxFileSizeBytes) {
@@ -123,6 +152,7 @@ public class FileUploadService implements FileUploadPort {
         this.blockedExtensionsRaw = blockedExtensionsRaw;
         this.maxUploadFileSizeBytes = maxFileSizeBytes;
         this.usageLedgerMapper = usageLedgerMapper;
+        this.redisTemplate = redisTemplate;
     }
 
     private Set<String> allowedExtensions() {
@@ -164,12 +194,15 @@ public class FileUploadService implements FileUploadPort {
         }
     }
 
-    public UploadInfo getUploadSign(String originalName) {
+    public UploadInfo getUploadSign(String originalName, Long userId) {
         validateFileExtension(originalName);
         validateAllowedExtension(originalName);
         String normalizedName = fileDomainValidator.validateInputName(originalName);
         String uuidName = FILE_OBJECT_PREFIX + FileNameUtil.uuidName(normalizedName);
-        return registry.getDefaultProvider().generateUploadInfo(uuidName, normalizedName);
+        UploadInfo uploadInfo = registry.getDefaultProvider().generateUploadInfo(uuidName, normalizedName);
+        // 发签名即登记归属，confirm 阶段强制校验（审计 12-2.1.2）
+        registerUploadOwner(uploadInfo == null ? uuidName : uploadInfo.getObjectKey(), userId, uploadInfo);
+        return uploadInfo;
     }
 
     public UploadInfo directUpload(String originalName, InputStream inputStream,
@@ -186,18 +219,13 @@ public class FileUploadService implements FileUploadPort {
         }
 
         StorageProvider provider = registry.getDefaultProvider();
-        if (!provider.supportsPresignedUpload()) {
-            long bytesWritten = provider.receiveUpload(uuidName, inputStream, contentType,
-                    buildContentDisposition(normalizedName));
-            if (bytesWritten > maxFileSizeBytes()) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST,
-                        "文件大小超过限制（最大 " + formatFileSize(maxFileSizeBytes()) + "）");
-            }
-        } else {
+        if (provider.supportsPresignedUpload()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "当前存储提供者不支持直传上传");
         }
 
-        String fileUrl = provider.generateDownloadInfo(uuidName, normalizedName).getDownloadUrl();
+        // 审计 12-2.1.3：所有「不写字节」的校验必须前置。
+        // 原实现先 receiveUpload 落盘、再解析目标空间/鉴权/查配额，失败路径既不补偿也不记账，
+        // 于是任何一次越权或超额请求都会在存储里留下一个无主大对象（可被反复放大成存储耗尽）。
         ConfirmUploadRequest targetRequest = new ConfirmUploadRequest();
         targetRequest.setParentId(parentId);
         targetRequest.setTeamId(teamId);
@@ -207,17 +235,203 @@ public class FileUploadService implements FileUploadPort {
         SpaceTarget target = resolveUploadTarget(targetRequest, userId);
         requireUploadAccess(target, userId);
         checkUploadQuotaViaHttp(userId, teamId, spaceType, projectId, fileSize != null ? fileSize : 0L);
-        FileItem fileItem = saveFileInfo(uuidName, normalizedName, fileSize, parentId, target, userId, fileUrl);
-        return new UploadInfo(
-                provider.providerId(),
-                fileUrl,
-                uuidName,
-                fileUrl,
-                contentType != null ? contentType : "application/octet-stream",
-                buildContentDisposition(normalizedName),
-                null,
-                true
-        );
+
+        // 边写边限长：客户端可以不报或谎报 fileSize，只有边读边计数才拦得住超额写入
+        String limitMessage = "文件大小超过限制（最大 " + formatFileSize(maxFileSizeBytes()) + "）";
+        long bytesWritten;
+        try {
+            bytesWritten = provider.receiveUpload(uuidName,
+                    limitStream(inputStream, maxFileSizeBytes(), limitMessage), contentType,
+                    buildContentDisposition(normalizedName));
+        } catch (BusinessException e) {
+            deleteQuietly(provider, uuidName);
+            throw e;
+        } catch (Exception e) {
+            deleteQuietly(provider, uuidName);
+            UploadSizeLimitExceededException limitExceeded =
+                    findCause(e, UploadSizeLimitExceededException.class);
+            if (limitExceeded != null) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, limitExceeded.getMessage());
+            }
+            log.error("直传写入存储失败，已清理残留对象: objectKey={}", uuidName, e);
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "文件上传失败，请稍后重试");
+        }
+
+        try {
+            String fileUrl = provider.generateDownloadInfo(uuidName, normalizedName).getDownloadUrl();
+            // 客户端未报大小时以实际写入字节数为准（原本会落成 null，档案无法记账）
+            Long persistedSize = fileSize != null ? fileSize : bytesWritten;
+            FileItem fileItem = saveFileInfo(uuidName, normalizedName, persistedSize, parentId, target, userId, fileUrl);
+            log.info("直传上传成功 objectKey={}, originalName={}, finalName={}, bytes={}",
+                    uuidName, normalizedName, fileItem.getOriginalName(), bytesWritten);
+            return new UploadInfo(
+                    provider.providerId(),
+                    fileUrl,
+                    uuidName,
+                    fileUrl,
+                    contentType != null ? contentType : "application/octet-stream",
+                    buildContentDisposition(normalizedName),
+                    null,
+                    true
+            );
+        } catch (RuntimeException e) {
+            // 落库失败 → 补偿删除，避免留下无记账的孤儿对象
+            deleteQuietly(provider, uuidName);
+            throw e;
+        }
+    }
+
+    /**
+     * 包装输入流，累计超过 {@code maxBytes} 立即中断写入（审计 12-2.1.3）。
+     * 不依赖 Content-Length：客户端可以不报或谎报长度，边读边计数才拦得住。
+     */
+    private InputStream limitStream(InputStream source, long maxBytes, String limitMessage) {
+        return new java.io.FilterInputStream(source) {
+            private long total = 0L;
+
+            private void check(long next) {
+                if (next > maxBytes) {
+                    throw new UploadSizeLimitExceededException(limitMessage);
+                }
+            }
+
+            @Override
+            public int read() throws java.io.IOException {
+                int value = super.read();
+                if (value >= 0) {
+                    total += 1;
+                    check(total);
+                }
+                return value;
+            }
+
+            @Override
+            public int read(byte[] buffer) throws java.io.IOException {
+                int count = super.read(buffer);
+                if (count > 0) {
+                    total += count;
+                    check(total);
+                }
+                return count;
+            }
+
+            @Override
+            public int read(byte[] buffer, int offset, int length) throws java.io.IOException {
+                int count = super.read(buffer, offset, length);
+                if (count > 0) {
+                    total += count;
+                    check(total);
+                }
+                return count;
+            }
+        };
+    }
+
+    /** 直传超限标记异常；写流方可能把它包进 IOException，故用 {@link #findCause} 沿链识别。 */
+    private static final class UploadSizeLimitExceededException extends RuntimeException {
+        private UploadSizeLimitExceededException(String message) {
+            super(message);
+        }
+    }
+
+    /** 沿 cause 链查找指定类型的异常；未命中返回 null。 */
+    private static <T extends Throwable> T findCause(Throwable error, Class<T> type) {
+        Throwable current = error;
+        while (current != null) {
+            if (type.isInstance(current)) {
+                return type.cast(current);
+            }
+            if (current.getCause() == current) {
+                return null;
+            }
+            current = current.getCause();
+        }
+        return null;
+    }
+
+    /** 补偿删除：清理写了一半/写完但未记账的对象；失败仅记日志（对账任务会兜底）。 */
+    private void deleteQuietly(StorageProvider provider, String objectKey) {
+        try {
+            provider.deleteObject(objectKey);
+        } catch (Exception cleanupError) {
+            log.error("补偿删除存储对象失败（对象可能残留，等待对账清理）: objectKey={}", objectKey, cleanupError);
+        }
+    }
+
+    /**
+     * 登记「objectKey → userId」归属凭证（审计 12-2.1.2）。
+     *
+     * <p>objectKey 会随 fileUrl 对外暴露（GetSignUrl 拼直链），而确认接口原先只校验格式，
+     * 唯一屏障是 UUID 的随机性；知道 objectKey 的人就能把他人对象挂进自己的空间。
+     * 这里在发签名时留下归属，确认时强制校验。</p>
+     *
+     * <p>登记失败不阻断签名：拿不到凭证的后果是确认被拒（fail-closed），
+     * 用户当场知道要重传，好过最后一步被静默挂到别人名下。</p>
+     */
+    private void registerUploadOwner(String objectKey, Long userId, UploadInfo uploadInfo) {
+        if (objectKey == null || objectKey.isBlank() || userId == null) {
+            return;
+        }
+        try {
+            redisTemplate.opsForValue().set(
+                    UPLOAD_OWNER_KEY_PREFIX + objectKey,
+                    String.valueOf(userId),
+                    Duration.ofMillis(resolveUploadOwnerTtlMillis(uploadInfo)));
+        } catch (Exception e) {
+            log.error("登记上传归属失败（该 objectKey 的确认将被拒，用户需重新上传）: objectKey={}, userId={}",
+                    objectKey, userId, e);
+        }
+    }
+
+    /** 归属登记 TTL：优先用签名自身的过期时刻 + 宽限，拿不到再退回配置项。 */
+    private long resolveUploadOwnerTtlMillis(UploadInfo uploadInfo) {
+        Long expireAt = uploadInfo == null ? null : uploadInfo.getExpireAt();
+        if (expireAt != null) {
+            long remaining = expireAt - System.currentTimeMillis();
+            if (remaining > 0) {
+                return remaining + UPLOAD_OWNER_TTL_MARGIN_MILLIS;
+            }
+        }
+        return Math.max(signExpireSeconds, 60L) * 1000L + UPLOAD_OWNER_TTL_MARGIN_MILLIS;
+    }
+
+    /**
+     * 校验 objectKey 归属。
+     *
+     * <p>用 GET 而不是 GETDEL：确认流程里有 OSS HEAD、唯一名重试等可重试步骤，
+     * 若第一步就把凭证消费掉，一次瞬时失败就让客户端再也无法确认（必须重传整个文件）。
+     * 改为「成功后才消费」，既保证凭证只用一次，又允许失败重试 —— 与仓库内 MQ 幂等键
+     * 的正确范本（{@code UserDeletedEventConsumer}）同一思路。</p>
+     */
+    private void requireUploadOwnership(String objectKey, Long userId) {
+        String key = UPLOAD_OWNER_KEY_PREFIX + objectKey;
+        String owner;
+        try {
+            owner = redisTemplate.opsForValue().get(key);
+        } catch (Exception e) {
+            log.error("读取上传归属失败，无法判定 objectKey 归属: objectKey={}", objectKey, e);
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "上传凭证校验服务不可用，请稍后重试");
+        }
+        if (owner == null) {
+            log.warn("拒绝确认：objectKey 无有效上传凭证（未申请签名/已确认过/已过期）objectKey={}, userId={}",
+                    objectKey, userId);
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "上传凭证不存在或已失效，请重新上传");
+        }
+        if (!owner.equals(String.valueOf(userId))) {
+            // 跨用户挂载他人对象：拒绝并留证，便于风控排查
+            log.warn("拒绝确认：objectKey 归属不一致 objectKey={}, expectedOwner={}, actualUserId={}",
+                    objectKey, owner, userId);
+            throw new BusinessException(ErrorCode.NO_PERMISSION, "无权确认该上传对象");
+        }
+    }
+
+    /** 确认成功后消费归属凭证；失败仅记日志（残留凭证最多让同一用户重复确认一次）。 */
+    private void consumeUploadOwnership(String objectKey) {
+        try {
+            redisTemplate.delete(UPLOAD_OWNER_KEY_PREFIX + objectKey);
+        } catch (Exception e) {
+            log.warn("消费上传归属凭证失败（该 objectKey 仍可被同一用户重复确认一次）: objectKey={}", objectKey, e);
+        }
     }
 
     private String buildContentDisposition(String originalName) {
@@ -255,6 +469,9 @@ public class FileUploadService implements FileUploadPort {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的文件类型: 文件缺少扩展名");
         }
         String ext = lower.substring(lastDot + 1);
+        if (NEVER_ALLOWED_EXTENSIONS.contains(ext)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的文件类型: ." + ext);
+        }
         if (!allowedExtensions().contains(ext)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的文件类型: ." + ext);
         }
@@ -420,6 +637,8 @@ public class FileUploadService implements FileUploadPort {
         Long parentId = request == null ? null : request.getParentId();
         try {
             validateConfirmUploadItem(request);
+            // 审计 12-2.1.2：确认前必须证明「这个 objectKey 就是本次用户申请过签名的那一个」
+            requireUploadOwnership(request.getObjectKey(), userId);
             // 存储 HEAD 请求校验实际文件大小，防止客户端篡改 fileSize
             Long ossSize = registry.getDefaultProvider().getObjectSize(request.getObjectKey());
             if (ossSize == null) {
@@ -462,6 +681,8 @@ public class FileUploadService implements FileUploadPort {
                     // 并发下同名被先提交者占用，重试下一个序号名
                 }
             }
+            // 确认成功后才消费归属凭证：保证「一个凭证只能确认一次」，同时允许失败重试（审计 12-2.1.2）
+            consumeUploadOwnership(request.getObjectKey());
             log.info("确认上传成功 objectKey={}, originalName={}, finalName={}, fileUrl={}",
                     request.getObjectKey(), request.getOriginalName(), fileItem.getOriginalName(), fileItem.getFileUrl());
             return new UploadConfirmItemResultVO(

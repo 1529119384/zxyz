@@ -56,19 +56,20 @@ public class AuthService {
     }
 
     public int register(RegisterRequest request) {
-        boolean firstRegisteredUser = userMapper.countUsers() == 0;
         User user = buildRegisterUser(request);
 
         // 第一步：本地 DB 操作（单条 INSERT，数据库层面已是原子操作）
         int result = insertUser(user);
 
         // 第二步：远程角色分配（事务外 HTTP 调用，避免 H-4 事务边界问题）
+        //
+        // 这里刻意不再有「首个注册用户自动成为 SYSTEM_ADMIN」的分支（审计 2.1.1）：
+        // /api/users/register 在网关白名单里、无验证码、无邮箱验证，是公网可达路径，
+        // 「先到先得管理员」在新环境部署 / 数据重建 / user 表清空的窗口期内
+        // 就是一条可直接利用的提权路径，且 count 与 INSERT 之间本身还有并发竞态。
+        // 管理员引导由 AdminBootstrapRunner 专职负责（部署时 ADMIN_INIT_USERNAME/PASSWORD 控制）。
         try {
-            if (firstRegisteredUser) {
-                teamServicePermissionClient.assignBootstrapAdminRoleStrict(user.getId());
-            } else {
-                teamServicePermissionClient.ensureDefaultRole(user.getId(), user.getUsername());
-            }
+            teamServicePermissionClient.ensureDefaultRole(user.getId(), user.getUsername());
         } catch (Exception e) {
             log.error("用户 {} 角色分配失败", user.getUsername(), e);
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "注册成功但角色分配失败，请联系管理员");

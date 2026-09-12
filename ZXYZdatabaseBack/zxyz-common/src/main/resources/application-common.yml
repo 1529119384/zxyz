@@ -56,7 +56,18 @@ spring:
     password: ${RABBITMQ_PASSWORD:guest}
     listener:
       simple:
-        prefetch: 10
+        prefetch: ${RABBITMQ_PREFETCH:10}
+        # 消费失败重试（2.2.3）：此前只配了 prefetch，消费者抛 RuntimeException 会让消息
+        # 立刻回队头无限热循环——单条持续失败的消息在进 DLQ 前会饿死整个队列并刷爆日志。
+        # 现在：有限次 + 指数退避重试；耗尽后 ACK 丢弃（不回队列），
+        # 由各业务队列的 x-dead-letter-exchange（zxyz.dlx → zxyz.<svc>.dlq）兜底。
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: ${RABBITMQ_RETRY_MAX_ATTEMPTS:3}
+          initial-interval: ${RABBITMQ_RETRY_INITIAL_INTERVAL:1s}
+          multiplier: 2
+          max-interval: ${RABBITMQ_RETRY_MAX_INTERVAL:10s}
 
 # Sa-Token 配置（所有服务共享）
 sa-token:
@@ -90,7 +101,11 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus,loggers
+        # 审计 12-2.1.4：/actuator/** 在网关侧免鉴权（SaTokenFilterConfig 全量排除），
+        # 因此暴露面必须最小化。原配置含 loggers —— 任何人都能
+        # `POST /actuator/loggers/{name}` 把任意包调到 DEBUG（敏感信息入日志 + 性能损耗），
+        # 并可读 metrics 窥探内部结构。收敛为只读的 health/info/prometheus。
+        include: health,info,prometheus
   endpoint:
     health:
       show-details: when-authorized

@@ -51,25 +51,35 @@ public class UserEventConsumer {
                 return;
             }
 
-            // 幂等性检查：使用 eventType + userId 作为去重 key，防止重复消费
+            // 幂等性检查：eventType + userId + 事件时间戳。
+            // 只用 eventType + userId 建 key 时，同一用户在 TTL（1h）内的第二次资料变更
+            // 会被误判为重复投递而静默丢弃（im 侧资料永久停在旧值）。
+            // 事件自带毫秒时间戳且经 record 紧凑构造器保证非 0，能唯一标识一次事件；
+            // 而真正的重投（同一条消息）时间戳不变，仍会被正确拦下。
             long userId = baseEvent.userId();
-            String idempotencyKey = IDEMPOTENCY_KEY_PREFIX + eventType + ":" + userId;
+            String idempotencyKey = IDEMPOTENCY_KEY_PREFIX + eventType + ":" + userId + ":" + baseEvent.timestamp();
             if (!redisTemplate.opsForValue().setIfAbsent(idempotencyKey, "1", IDEMPOTENCY_TTL_HOURS, TimeUnit.HOURS)) {
                 log.warn("MQ: 重复用户事件消息，跳过处理: key={}", idempotencyKey);
                 return;
             }
 
-            if (RabbitMqConstants.ROUTING_KEY_USER_PROFILE_UPDATED.equals(eventType)) {
-                UserProfileUpdatedEvent event = objectMapper.readValue(message, UserProfileUpdatedEvent.class);
-                InternalUserProfileSyncRequest request = toSyncRequest(event);
-                userProfileSyncService.syncUserProfile(request);
-                log.debug("MQ: 用户资料同步完成: userId={}", userId);
-            } else if (RabbitMqConstants.ROUTING_KEY_USER_DELETED.equals(eventType)) {
-                UserDeletedEvent deletedEvent = objectMapper.readValue(message, UserDeletedEvent.class);
-                userProfileSyncService.removeUserProfile(deletedEvent.userId());
-                log.info("MQ: 用户资料删除同步完成: userId={}", deletedEvent.userId());
-            } else {
-                log.debug("MQ: 未知用户事件类型: {}", eventType);
+            try {
+                if (RabbitMqConstants.ROUTING_KEY_USER_PROFILE_UPDATED.equals(eventType)) {
+                    UserProfileUpdatedEvent event = objectMapper.readValue(message, UserProfileUpdatedEvent.class);
+                    InternalUserProfileSyncRequest request = toSyncRequest(event);
+                    userProfileSyncService.syncUserProfile(request);
+                    log.debug("MQ: 用户资料同步完成: userId={}", userId);
+                } else if (RabbitMqConstants.ROUTING_KEY_USER_DELETED.equals(eventType)) {
+                    UserDeletedEvent deletedEvent = objectMapper.readValue(message, UserDeletedEvent.class);
+                    userProfileSyncService.removeUserProfile(deletedEvent.userId());
+                    log.info("MQ: 用户资料删除同步完成: userId={}", deletedEvent.userId());
+                } else {
+                    log.debug("MQ: 未知用户事件类型: {}", eventType);
+                }
+            } catch (Exception e) {
+                // 处理失败释放幂等占位键，否则重投会被判为「重复消息」而静默丢弃（数据永久分歧）。
+                releaseIdempotencyKey(idempotencyKey);
+                throw e;
             }
         } catch (JsonProcessingException e) {
             log.error("用户事件消息反序列化失败（丢弃消息）, message={}", message, e);
@@ -77,6 +87,19 @@ public class UserEventConsumer {
         } catch (Exception e) {
             log.error("处理用户事件 RabbitMQ 消息失败（将重试）, message={}", message, e);
             throw new RuntimeException("处理用户事件消息失败", e);
+        }
+    }
+
+    /**
+     * 释放幂等占位键，使失败消息在 MQ 重投时能被真正重新处理。
+     * Redis 自身异常只记日志，不得掩盖原始业务异常。
+     */
+    private void releaseIdempotencyKey(String idempotencyKey) {
+        try {
+            redisTemplate.delete(idempotencyKey);
+            log.warn("MQ: 用户事件处理失败，已释放幂等占位键以便重投重试: key={}", idempotencyKey);
+        } catch (Exception e) {
+            log.error("MQ: 释放幂等占位键失败（该消息重投将被判为重复而跳过）: key={}", idempotencyKey, e);
         }
     }
 

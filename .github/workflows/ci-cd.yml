@@ -45,7 +45,11 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # 审计 2.3.2：原为 true。含 deploy 的整条流水线被取消时，正在执行的
+  # `docker compose up -d` 会被中途杀掉，留下「部分服务新镜像、部分旧镜像」的半更新状态，
+  # 且其后的健康检查与失败回滚都来不及跑。改为 false：同一 ref 的多次 push 串行排队执行，
+  # 每次部署都能完整跑完（部署幂等，最后完成的那次生效），代价只是多花 CI 分钟。
+  cancel-in-progress: false
 
 permissions:
   packages: write
@@ -87,8 +91,12 @@ jobs:
 
       - name: Resolve force_deploy flag
         id: force
+        # 审计 2.3.6：github.event.inputs.* 一律经 env 中转再进 shell（表达式注入面）
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          FORCE_DEPLOY_INPUT: ${{ github.event.inputs.force_deploy }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.force_deploy }}" = "true" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$FORCE_DEPLOY_INPUT" = "true" ]; then
             echo "on=true" >> "$GITHUB_OUTPUT"
           else
             echo "on=false" >> "$GITHUB_OUTPUT"
@@ -220,25 +228,44 @@ jobs:
 
       - name: Determine image tag
         id: tag
+        # 审计 2.3.6：输入经 env 中转，并对 tag 做白名单校验后再使用
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          REF_NAME: ${{ github.ref }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
-          elif [ "${{ github.ref }}" = "refs/heads/dev" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            # 该输入会直接成为镜像 tag 传给 docker build/push，先做字符白名单校验（防注入/防非法 tag）
+            if ! printf '%s' "$INPUT_TAG" | grep -qE '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'; then
+              echo "::error::tag 输入非法：仅允许字母/数字/./_/-，长度 1~128，且不得以符号开头"
+              exit 1
+            fi
+            echo "tag=$INPUT_TAG" >> $GITHUB_OUTPUT
+          elif [ "$REF_NAME" = "refs/heads/dev" ]; then
             echo "tag=dev" >> $GITHUB_OUTPUT
-          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          elif [ "$REF_NAME" = "refs/heads/main" ]; then
             echo "tag=latest" >> $GITHUB_OUTPUT
-          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          elif [[ "$REF_NAME" == refs/tags/v* ]]; then
+            echo "tag=${REF_NAME#refs/tags/}" >> $GITHUB_OUTPUT
           else
             echo "tag=dev" >> $GITHUB_OUTPUT
           fi
 
       - name: Determine skip quality
         id: skip-quality
+        # 审计 2.3.6：所有来自 github.event.inputs / github.ref_name / github.actor 的值
+        # 一律经 env 中转，避免直接内插到 shell 脚本造成表达式注入
+        env:
+          REQUESTED_INPUT: ${{ github.event.inputs.skip_quality }}
+          BRANCH_NAME: ${{ github.ref_name }}
+          ACTOR_NAME: ${{ github.actor }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          REF_NAME: ${{ github.ref }}
+          RUN_ID: ${{ github.run_id }}
         run: |
-          REQUESTED="${{ github.event.inputs.skip_quality || 'false' }}"
-          BRANCH="${{ github.ref_name }}"
-          ACTOR="${{ github.actor }}"
+          REQUESTED="${REQUESTED_INPUT:-false}"
+          BRANCH="$BRANCH_NAME"
+          ACTOR="$ACTOR_NAME"
 
           # 保护分支（main/dev）永远不允许跳过质量检查
           if [ "$BRANCH" = "main" ] || [ "$BRANCH" = "dev" ]; then
@@ -251,12 +278,12 @@ jobs:
 
           # 非保护分支：允许跳过，但必须使用非 latest 的显式镜像标签并记录审计日志
           if [ "$REQUESTED" = "true" ]; then
-            TAG_INPUT="${{ github.event.inputs.tag || '' }}"
+            TAG_INPUT="${INPUT_TAG:-}"
             if [ -z "$TAG_INPUT" ] || [ "$TAG_INPUT" = "latest" ]; then
               echo "::error::SKIP_QUALITY_TAG_DENIED: skip_quality=true 时必须指定非 latest 的显式镜像标签（当前: '${TAG_INPUT:-<empty>}'），以防未经质量检查的镜像覆盖 latest"
               exit 1
             fi
-            echo "::warning::[AUDIT] skip_quality=true | actor=${ACTOR} | branch=${BRANCH} | ref=${{ github.ref }} | tag=${TAG_INPUT} | run_id=${{ github.run_id }} | triggered_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+            echo "::warning::[AUDIT] skip_quality=true | actor=${ACTOR} | branch=${BRANCH} | ref=${REF_NAME} | tag=${TAG_INPUT} | run_id=${RUN_ID} | triggered_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
             echo "skip_quality=true" >> $GITHUB_OUTPUT
           else
             echo "skip_quality=false" >> $GITHUB_OUTPUT
@@ -646,8 +673,13 @@ jobs:
 
       - name: Audit annotation for quality bypass
         if: steps.should-build.outputs.build == 'true' && needs.detect-changes.outputs.skip_quality == 'true'
+        env:
+          IMAGE_TAG: ${{ needs.detect-changes.outputs.tag }}
+          ACTOR_NAME: ${{ github.actor }}
+          BRANCH_NAME: ${{ github.ref_name }}
+          RUN_ID: ${{ github.run_id }}
         run: |
-          echo "::warning::[AUDIT] BUILD_WITHOUT_QUALITY_CHECK | image=zxyz-${{ matrix.name }}:${{ needs.detect-changes.outputs.tag }} | actor=${{ github.actor }} | branch=${{ github.ref_name }} | run_id=${{ github.run_id }}"
+          echo "::warning::[AUDIT] BUILD_WITHOUT_QUALITY_CHECK | image=zxyz-${{ matrix.name }}:$IMAGE_TAG | actor=$ACTOR_NAME | branch=$BRANCH_NAME | run_id=$RUN_ID"
 
       - name: Build and push
         if: steps.should-build.outputs.build == 'true'
@@ -779,9 +811,18 @@ jobs:
   # Job 4: 部署到服务器（仅 push 触发且有镜像构建时）
   # ============================================================
   deploy:
-    needs: [detect-changes, build-and-push, secret-scan]
+    # 审计 2.3.6：security-scan（Trivy HIGH/CRITICAL，exit-code=1）必须成为部署硬前置，
+    # 否则扫出高危漏洞的镜像照样上线。安全前提：security-scan 的 if 只比 build-and-push
+    # 多一个 any-change=='true'，而 build-and-push 自身的 if 已强制要求 any-change=='true'，
+    # 因此「build-and-push 成功」⇒ security-scan 不可能被 skipped ⇒ 不会把 deploy 永久锁死。
+    needs: [detect-changes, build-and-push, secret-scan, security-scan]
     runs-on: ubuntu-latest
-    if: always() && needs.build-and-push.result == 'success' && needs.secret-scan.result == 'success' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: always() && needs.build-and-push.result == 'success' && needs.secret-scan.result == 'success' && needs.security-scan.result == 'success' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    # 审计 2.3.2：部署再套一层独立且不取消的并发组，保证同一 ref 的两次部署串行执行。
+    # 真正消除「中途取消」靠的是 workflow 级 concurrency 已改为 cancel-in-progress:false。
+    concurrency:
+      group: deploy-${{ github.ref }}
+      cancel-in-progress: false
     environment: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && 'production' || 'development' }}
     steps:
       - name: Determine deploy target

@@ -37,6 +37,10 @@ class UserAdminServiceTest {
     @Mock
     private TeamServicePermissionClient teamServicePermissionClient;
 
+    /** L12：deleteUser 的写事务由 TransactionTemplate 承载（校验已移出事务） */
+    @Mock
+    private org.springframework.transaction.PlatformTransactionManager transactionManager;
+
     @InjectMocks
     private UserAdminService userAdminService;
 

@@ -29,3 +29,10 @@ redis-server.exe - 快捷方式.lnk
 !.env.example
 ISSUE/
 sql/schema_*.sql
+
+# 运行时数据与备份：构建上下文是仓库根，若不排除，
+# `docker compose build` 会把整个 MySQL/Redis 数据目录与全库备份发给 daemon（还可能进层缓存）。
+# 见审计 2.3.4。
+data/
+backups/
+docs/

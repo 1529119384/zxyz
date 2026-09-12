@@ -65,9 +65,14 @@ jobs:
 
       - name: 上报本包结果
         if: always()
+        # 审计 2.3.6：workflow_dispatch 输入经 env 中转后再进 shell（表达式注入面）
+        env:
+          PKG: ${{ matrix.package }}
+          KEEP: ${{ github.event.inputs.min_versions_to_keep }}
+          OUTCOME: ${{ steps.cleanup.outcome }}
         run: |
-          if [ "${{ steps.cleanup.outcome }}" = "success" ]; then
-            echo "::notice::GHCR 清理 OK: ${{ matrix.package }}（保留最近 ${{ github.event.inputs.min_versions_to_keep || '10' }} 个版本，忽略 dev/latest）"
+          if [ "$OUTCOME" = "success" ]; then
+            echo "::notice::GHCR 清理 OK: ${PKG}（保留最近 ${KEEP:-10} 个版本，忽略 dev/latest）"
           else
-            echo "::warning::GHCR 清理未成功: ${{ matrix.package }}（outcome=${{ steps.cleanup.outcome }}）—— 若为权限问题请确认 workflow 具备 packages: write"
+            echo "::warning::GHCR 清理未成功: ${PKG}（outcome=${OUTCOME}）—— 若为权限问题请确认 workflow 具备 packages: write"
           fi

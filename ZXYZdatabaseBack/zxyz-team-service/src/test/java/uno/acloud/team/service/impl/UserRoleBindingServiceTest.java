@@ -93,15 +93,14 @@ class UserRoleBindingServiceTest {
     // ==================== ensureDefaultRole ====================
 
     @Test
-    void ensureDefaultRole_assignsAdminWhenNoUsersExist() {
+    void ensureDefaultRole_assignsUserRoleEvenWhenNoAdminExists() {
         when(permissionRoleMapper.countUserRoles(10L)).thenReturn(0);
-        when(permissionRoleMapper.countUsersByRoleCode(SystemRoleCodes.SYSTEM_ADMIN)).thenReturn(0);
 
-        RoleEntity adminRole = new RoleEntity();
-        adminRole.setId(1);
-        adminRole.setRoleCode(SystemRoleCodes.SYSTEM_ADMIN);
-        adminRole.setRoleName("系统管理员");
-        when(permissionRoleMapper.getRoleByCode(SystemRoleCodes.SYSTEM_ADMIN)).thenReturn(adminRole);
+        RoleEntity userRole = new RoleEntity();
+        userRole.setId(2);
+        userRole.setRoleCode(SystemRoleCodes.SYSTEM_USER);
+        userRole.setRoleName("普通用户");
+        when(permissionRoleMapper.getRoleByCode(SystemRoleCodes.SYSTEM_USER)).thenReturn(userRole);
 
         TransactionSynchronization[] captured = new TransactionSynchronization[1];
         try (MockedStatic<TransactionSynchronizationManager> mocked = mockStatic(TransactionSynchronizationManager.class)) {
@@ -113,7 +112,9 @@ class UserRoleBindingServiceTest {
 
             userRoleBindingService.ensureDefaultRole(10L, "newuser");
 
-            verify(permissionRoleMapper).insertUserRole(10L, 1);
+            // 审计 2.1.1：即使系统里一个 SYSTEM_ADMIN 都没有，也绝不把新用户提权为管理员
+            verify(permissionRoleMapper).insertUserRole(10L, 2);
+            verify(permissionRoleMapper, never()).countUsersByRoleCode(anyString());
             verify(userServiceClient, never()).clearPermissionCache(anyLong());
             assertNotNull(captured[0]);
             captured[0].afterCommit();
@@ -122,9 +123,8 @@ class UserRoleBindingServiceTest {
     }
 
     @Test
-    void ensureDefaultRole_assignsUserWhenAdminExists() {
+    void ensureDefaultRole_assignsUserRole() {
         when(permissionRoleMapper.countUserRoles(10L)).thenReturn(0);
-        when(permissionRoleMapper.countUsersByRoleCode(SystemRoleCodes.SYSTEM_ADMIN)).thenReturn(1);
 
         RoleEntity userRole = new RoleEntity();
         userRole.setId(2);

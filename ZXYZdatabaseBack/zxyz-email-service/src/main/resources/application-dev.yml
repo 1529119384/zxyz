@@ -25,7 +25,7 @@ email:
   port: ${EMAIL_PORT:587}
   username: ${EMAIL_USERNAME:your@qq.com}
   password: ${EMAIL_PASSWORD:授权码}
-  config-secret: ${EMAIL_CONFIG_SECRET:ACLOUD}
+  config-secret: ${EMAIL_CONFIG_SECRET}
 
 app:
   # RemoteStpInterfaceAutoConfig 需要此属性进行服务间权限校验

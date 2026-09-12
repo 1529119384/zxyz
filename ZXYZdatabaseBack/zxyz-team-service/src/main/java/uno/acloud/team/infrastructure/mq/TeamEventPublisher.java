@@ -35,8 +35,15 @@ import java.util.concurrent.atomic.AtomicLong;
 @Component
 public class TeamEventPublisher {
 
-    /** m52: 消息序列号，用于消费方检测乱序 */
-    private final AtomicLong sequenceCounter = new AtomicLong(0);
+    /**
+     * m52: 消息序列号，用于消费方检测乱序。
+     *
+     * <p>以毫秒时间戳 ×1000 为种子：进程内自增保证同毫秒不重复，跨重启仍保持单调递增。
+     * 此前是 0 起始的纯自增计数器，team-service 每次重启后序号都从 1 重新开始，
+     * 而消费方按「序号回退 = 乱序」判据会把它们全部丢弃（且序列号 key 有 24h TTL），
+     * 于是重启后 24 小时内所有成员变更事件静默不生效。</p>
+     */
+    private final AtomicLong sequenceCounter = new AtomicLong(System.currentTimeMillis() * 1000L);
 
     private static final int MAX_RETRY_ATTEMPTS = 3;
 

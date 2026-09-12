@@ -84,6 +84,8 @@ mkdir -p "$(dirname "$OUT_FILE")"
 # 先写静态骨架，再追加动态配置块（避免多行 sed 替换的脆弱性）
 cat "$TMPL_FILE" > "$OUT_FILE"
 printf '%s\n' "$CFG" >> "$OUT_FILE"
+# 审计 2.3.3：渲染产物含 SMTP 明文口令，收紧到仅属主可读（默认 umask 下会是 0644）
+chmod 600 "$OUT_FILE"
 
 echo "RENDER_ALERTMANAGER_OK: 已渲染 -> $OUT_FILE" >&2
 exit 0

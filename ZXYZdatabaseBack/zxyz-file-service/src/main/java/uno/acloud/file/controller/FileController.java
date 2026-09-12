@@ -81,7 +81,7 @@ public class FileController {
     @SaCheckPermission(SystemPermissionCodes.FILE_UPLOAD)
     public Result<UploadInfo> getUploadSign(@CurrentUser Long userId, @RequestParam String originalName) {
         log.info("用户 {} 请求获取上传签名，原始文件名: {}", userId, originalName);
-        UploadInfo signInfo = fileUploadPort.getUploadSign(originalName);
+        UploadInfo signInfo = fileUploadPort.getUploadSign(originalName, userId);
         return Result.of(signInfo);
     }
 

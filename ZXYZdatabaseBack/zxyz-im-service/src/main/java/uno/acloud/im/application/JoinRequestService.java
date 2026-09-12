@@ -1,5 +1,6 @@
 package uno.acloud.im.application;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -26,6 +27,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @Service
 public class JoinRequestService {
 
@@ -159,13 +161,26 @@ public class JoinRequestService {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                teamPermissionService.grantBuiltInRole(teamId, userId, TeamRoleCodes.MEMBER);
-                domainEventPublisher.publish(ImDomainEventType.TEAM_JOIN_REQUEST_APPROVED, Map.of(
-                        "teamId", teamId,
-                        "operatorUserId", operatorUserId,
-                        "userId", userId,
-                        "requestId", requestId
-                ));
+                // 审计 2.2.2：afterCommit 里抛异常会让接口返回 500，但 join_request 早已提交为 APPROVED
+                // ——用户看到「失败」却已被批准，且 MEMBER 角色永久未授予。这里逐个 catch：
+                // 授权失败只记日志并保留 requestId 作为人工补偿线索，不再把已提交的事务伪装成失败。
+                // （更完整的补偿表/对账方案需结合运维告警渠道落地，已在审计文档中列为待决策项。）
+                try {
+                    teamPermissionService.grantBuiltInRole(teamId, userId, TeamRoleCodes.MEMBER);
+                } catch (Exception e) {
+                    log.error("加入申请已通过但授予 MEMBER 角色失败（需人工补偿）: teamId={}, userId={}, requestId={}",
+                            teamId, userId, requestId, e);
+                }
+                try {
+                    domainEventPublisher.publish(ImDomainEventType.TEAM_JOIN_REQUEST_APPROVED, Map.of(
+                            "teamId", teamId,
+                            "operatorUserId", operatorUserId,
+                            "userId", userId,
+                            "requestId", requestId
+                    ));
+                } catch (Exception e) {
+                    log.error("发布加入申请通过事件失败（事务已提交，不可回滚）: requestId={}", requestId, e);
+                }
             }
         });
         request.setStatus(JOIN_REQUEST_APPROVED);

@@ -45,10 +45,10 @@ case "$ACTION" in
         echo ""
         echo "服务地址："
         echo "  MySQL:    localhost:${MYSQL_PORT:-3306}"
-        echo "  Nacos:    http://localhost:${NACOS_PORT:-8848}/nacos (${NACOS_USERNAME:-nacos}/${NACOS_PASSWORD})"
+        echo "  Nacos:    http://localhost:${NACOS_PORT:-8848}/nacos (用户 ${NACOS_USERNAME:-nacos}，密码见 .env 的 NACOS_PASSWORD)"
         echo "  Nacos UI: http://localhost:${NACOS_CONSOLE_PORT:-8080}"
         echo "  Redis:    localhost:${REDIS_PORT:-6379}"
-        echo "  RabbitMQ: http://localhost:${RABBITMQ_MGMT_PORT:-15672} (${RABBITMQ_USER:-guest}/${RABBITMQ_PASSWORD})"
+        echo "  RabbitMQ: http://localhost:${RABBITMQ_MGMT_PORT:-15672} (用户 ${RABBITMQ_USER:-guest}，密码见 .env 的 RABBITMQ_PASSWORD)"
         echo ""
         echo "IDE 中运行服务时，配置 Nacos 地址为: localhost:${NACOS_PORT:-8848}"
         ;;

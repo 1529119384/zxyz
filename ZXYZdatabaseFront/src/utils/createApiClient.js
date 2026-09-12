@@ -11,8 +11,29 @@ function normalizeErrorText(value) {
 }
 
 /**
+ * 认证失败的“文本兜底”白名单（整条消息必须与其中一项完全相等）。
+ *
+ * 为什么不用 includes：原实现用 `message.includes('未登录')` 这类子串匹配，
+ * 任何包含该词的业务文案（如「对方未登录」「该账号未登录」）都会被误判成认证失败，
+ * 进而清空主应用登录态、把用户踢到登录页（审计 12-第三节中危项）。
+ * 后端已用精确错误码（HTTP 401 / code 4010），文本只作极端兼容，必须精确相等。
+ */
+const AUTH_FAILURE_TEXTS = new Set([
+  'no_login',
+  '未登录',
+  '未登陆',
+  '登录失效',
+  '登录已失效',
+  'token无效',
+  'token已失效',
+  'token失效',
+  'invalid token',
+  'token expired',
+])
+
+/**
  * 检测是否为认证失败响应。
- * 优先通过 HTTP 状态码和业务错误码判断，文本匹配作为兜底。
+ * 优先通过 HTTP 状态码和业务错误码判断，文本匹配仅作精确兜底。
  *
  * @param {Object} payload - 响应 body（可能为 undefined）
  * @param {number} [httpStatus] - HTTP 状态码（可选，非 2xx 响应时传入）
@@ -26,22 +47,11 @@ function isAuthFailurePayload(payload, httpStatus) {
   const code = payload?.code
   if (code === 4010) return true
 
-  // 3. 文本关键词兜底
+  // 3. 文本精确兜底（不允许子串命中）
   const message = normalizeErrorText(payload?.msg || payload?.message)
   if (!message) return false
 
-  return [
-    'no_login',
-    '未登录',
-    '未登陆',
-    'token无效',
-    'token 已失效',
-    'token已失效',
-    'token 失效',
-    '登录失效',
-    'invalid token',
-    'token expired',
-  ].some((keyword) => message.includes(keyword))
+  return AUTH_FAILURE_TEXTS.has(message)
 }
 
 function getBasePath() {
@@ -64,24 +74,27 @@ function buildLoginUrl() {
 }
 
 async function handleAuthFailure(onTokenExpired) {
-  // 无论 onTokenExpired 策略如何，认证失败时都清除本地用户状态
+  // 审计 12-第三节中危项：只有主服务实例（onTokenExpired==='redirect'）才清空本地用户状态并跳转。
+  // 附属服务实例（'silent'，如 IM / 公开分享）的 401 只代表该子系统自己的会话/权限问题，
+  // 原实现无条件 clearProfile() 会把主应用登录态一起抹掉，用户表现为「被登出」。
+  if (onTokenExpired !== 'redirect') {
+    return
+  }
   try {
     useCurrentUserStore().clearProfile()
   } catch (_) {
     // Pinia 未初始化时忽略
   }
-  if (onTokenExpired === 'redirect') {
-    // 礼貌提示后再跳转，避免用户内容丢失
-    try {
-      await ElMessageBox.alert('登录状态已过期，请重新登录', '会话过期', {
-        confirmButtonText: '重新登录',
-        type: 'warning',
-      })
-    } catch (_) {
-      // 用户关闭弹窗或 element-plus 未就绪，继续跳转
-    }
-    redirectToLogin()
+  // 礼貌提示后再跳转，避免用户内容丢失
+  try {
+    await ElMessageBox.alert('登录状态已过期，请重新登录', '会话过期', {
+      confirmButtonText: '重新登录',
+      type: 'warning',
+    })
+  } catch (_) {
+    // 用户关闭弹窗或 element-plus 未就绪，继续跳转
   }
+  redirectToLogin()
 }
 
 function redirectToLogin() {
@@ -131,6 +144,13 @@ export function createApiClient(options = {}) {
 
   // 请求拦截器：认证通过 HttpOnly Cookie 自动携带（withCredentials: true），
   // 无需手动注入 Authorization Header。
+  //
+  // CSRF（审计 12-第三节低危项，结论：不引入 token，仅留档）：
+  // 全站不使用 XSRF-TOKEN 双提交，安全性完全依赖后端 Sa-Token Cookie 的 SameSite 策略。
+  // 已核实后端下发 SameSite=Lax —— 跨站发起的 POST/PUT/DELETE 不会携带该 Cookie，
+  // 而本站全部写操作都是非 GET 且无跨站表单入口，故 CSRF 风险可控。
+  // 若将来把 Cookie 改成 SameSite=None（例如要支持跨站嵌入），必须同时补上
+  // axios 的 xsrfCookieName/xsrfHeaderName 与后端 token 校验，否则会敞开 CSRF 面。
   client.interceptors.request.use(
     (config) => config,
     (error) => Promise.reject(error),

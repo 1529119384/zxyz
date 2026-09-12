@@ -22,12 +22,20 @@ class FakeWebSocket {
   static CLOSING = 2
   static CLOSED = 3
   static instances = []
+  // 测试可通过它让构造器同步抛错，验证调用方是否兵底（L6）
+  static constructorHook = null
 
   constructor(url, protocols) {
+    FakeWebSocket.constructorHook?.()
     this.url = url
     this.protocols = protocols
     this.readyState = FakeWebSocket.CONNECTING
+    this.sent = []
     FakeWebSocket.instances.push(this)
+  }
+
+  send(payload) {
+    this.sent.push(payload)
   }
 
   close() {
@@ -139,6 +147,85 @@ describe('imWebSocket 重连策略', () => {
       window.dispatchEvent(new Event('online'))
       await vi.advanceTimersByTimeAsync(30000)
       expect(FakeWebSocket.instances.length).toBe(countAfterDisconnect)
+    })
+  })
+
+  describe('心跳看护与构造器异常兜底（L6）', () => {
+    let originalWebSocket
+
+    beforeEach(() => {
+      originalWebSocket = globalThis.WebSocket
+      globalThis.WebSocket = FakeWebSocket
+      FakeWebSocket.instances = []
+      FakeWebSocket.constructorHook = null
+      vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+      FakeWebSocket.constructorHook = null
+      globalThis.WebSocket = originalWebSocket
+    })
+
+    async function connectClient() {
+      const statuses = []
+      const errors = []
+      const client = createImWebSocketClient({
+        onStatusChange: (status) => statuses.push(status),
+        onError: (error) => errors.push(error),
+      })
+      client.connect()
+      await vi.advanceTimersByTimeAsync(0)
+      lastSocket().readyState = FakeWebSocket.OPEN
+      lastSocket().onopen()
+      return { client, statuses, errors }
+    }
+
+    it('持续收到 PONG 时保持连接，不发起重连', async () => {
+      const { statuses } = await connectClient()
+      for (let i = 0; i < 2; i += 1) {
+        await vi.advanceTimersByTimeAsync(25000)
+        lastSocket().onmessage({ data: JSON.stringify({ type: 'PONG' }) })
+      }
+      expect(FakeWebSocket.instances.length).toBe(1)
+      expect(statuses.at(-1)).toBe(IM_WS_STATUS.CONNECTED)
+      expect(lastSocket().sent.filter((f) => f.includes('PING')).length).toBe(2)
+    })
+
+    it('心跳超时（收不到 PONG）时主动重连', async () => {
+      const { statuses, errors } = await connectClient()
+      // 第一个周期发出 PING，服务端无响应
+      await vi.advanceTimersByTimeAsync(25000)
+      expect(FakeWebSocket.instances.length).toBe(1)
+      // 第二个周期发现已超过 PONG 宽限期，判定连接已死
+      await vi.advanceTimersByTimeAsync(25000)
+      expect(statuses).toContain(IM_WS_STATUS.RECONNECTING)
+      expect(errors.some((e) => /心跳超时/.test(e.message))).toBe(true)
+      // 退避到期后重建连接
+      await vi.advanceTimersByTimeAsync(30000)
+      expect(FakeWebSocket.instances.length).toBe(2)
+    })
+
+    it('WebSocket 构造器同步抛错时上报 CONNECTION_ERROR 并继续重连', async () => {
+      const { statuses, errors } = await connectClient()
+      expect(statuses.at(-1)).toBe(IM_WS_STATUS.CONNECTED)
+
+      const boom = new Error('WebSocket is not defined')
+      FakeWebSocket.constructorHook = () => {
+        throw boom
+      }
+      const socket = lastSocket()
+      socket.readyState = FakeWebSocket.CLOSED
+      socket.onclose({})
+
+      await vi.advanceTimersByTimeAsync(30000)
+      expect(statuses).toContain(IM_WS_STATUS.CONNECTION_ERROR)
+      expect(errors).toContain(boom)
+
+      // 构造失败后依然在调度重连，不会永久卡在 CONNECTING
+      FakeWebSocket.constructorHook = null
+      await vi.advanceTimersByTimeAsync(30000)
+      expect(FakeWebSocket.instances.length).toBe(2)
     })
   })
 })

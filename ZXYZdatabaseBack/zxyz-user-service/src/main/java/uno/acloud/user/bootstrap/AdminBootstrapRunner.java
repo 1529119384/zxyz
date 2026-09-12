@@ -63,9 +63,9 @@ public class AdminBootstrapRunner implements ApplicationRunner {
             if (existing != null) {
                 log.info("初始管理员 {} 已存在，跳过创建；后台确保其具备角色", LogMaskingUtil.maskUsername(username));
                 // 自愈：历史部署可能「创建成功但角色分配失败」（如 team-service 未就绪）。
-                // ensureDefaultRole 幂等：已有角色则 no-op；无角色且系统尚无其他管理员则授 SYSTEM_ADMIN
-                //（与登录时的默认角色语义一致）。
-                ensureRoleAsync(existing.getId(), username, true);
+                // 统一走 assignBootstrapAdminRoleStrict（team-service 侧幂等：该用户已有任意角色则 no-op）。
+                // 不再走 ensureDefaultRole —— 后者已不允许把用户提权为管理员（审计 2.1.1）。
+                ensureRoleAsync(existing.getId(), username);
                 return;
             }
 
@@ -86,7 +86,7 @@ public class AdminBootstrapRunner implements ApplicationRunner {
                 log.info("已创建初始管理员账号 {}", LogMaskingUtil.maskUsername(username));
             }
 
-            ensureRoleAsync(userId, username, false);
+            ensureRoleAsync(userId, username);
         } catch (Exception e) {
             log.error("初始管理员引导失败（应用继续启动）: username={}",
                     LogMaskingUtil.maskUsername(username), e);
@@ -95,18 +95,16 @@ public class AdminBootstrapRunner implements ApplicationRunner {
 
     /**
      * 后台线程重试角色分配，不阻塞应用启动与就绪判定。
-     * healExisting=true 时走 ensureDefaultRole（幂等自愈，语义同登录默认角色）；
-     * 否则走 assignBootstrapAdminRoleStrict（新账号必须授予管理员，失败抛异常）。
+     * <p>统一走 assignBootstrapAdminRoleStrict：新账号「必须授予管理员」，
+     * 已存在账号的自愈也走同一条幂等路径（team-service 侧该用户已有任意角色则 no-op）。
+     * 这样「把用户提权为系统管理员」的能力只存在于部署引导链路，
+     * 不会通过 ensureDefaultRole 暴露给公网注册/登录路径。</p>
      */
-    private void ensureRoleAsync(Long userId, String username, boolean healExisting) {
+    private void ensureRoleAsync(Long userId, String username) {
         Thread worker = new Thread(() -> {
             for (int attempt = 1; attempt <= ROLE_RETRY_ATTEMPTS; attempt++) {
                 try {
-                    if (healExisting) {
-                        teamServicePermissionClient.ensureDefaultRole(userId, username);
-                    } else {
-                        teamServicePermissionClient.assignBootstrapAdminRoleStrict(userId);
-                    }
+                    teamServicePermissionClient.assignBootstrapAdminRoleStrict(userId);
                     log.info("初始管理员 {} 角色分配成功", LogMaskingUtil.maskUsername(username));
                     return;
                 } catch (Exception e) {

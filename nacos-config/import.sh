@@ -68,6 +68,39 @@ done
 [ "$DUPLICATE" -eq 1 ] || exit 1
 echo "✓ 无重复顶层 key"
 
+# --- 发布前自查：禁止字面量机密（审计 2.3.5） ---
+# 背景：zxyz-static.yml 等文件头部注释声称敏感值走 Jasypt ENC()，实际全是明文 ${ENV} 透传。
+# 于是「有人顺手写了个字面量口令」没有任何拦截，会随配置一起进 Nacos 库（结合 P0-1 的库直连脚本即一锅端）。
+# 本检查不禁止 ${ENV} 引用（那是当前刻意采用的方案），只拦字面量：
+# 值必须以 "${" 开头（env 引用）或 "ENC(" 开头（Jasypt 密文），否则视为明文机密并阻断发布。
+echo "检查 *.yml 是否含字面量机密 ..."
+PLAINTEXT=1
+for file in *.yml; do
+  [ -f "$file" ] || continue
+  if ! python - "$file" <<'PYEOF'
+import re, sys
+path = sys.argv[1]
+# 键名必须以 password/passwd/secret/token 结尾（避免误伤 password-min-length 这类普通配置）
+pat = re.compile(r'^\s*[\w.-]*(?:password|passwd|secret|token)\s*:\s*(\S.*)$', re.I)
+with open(path, encoding="utf-8") as f:
+    for lineno, line in enumerate(f, 1):
+        m = pat.match(line)
+        if not m:
+            continue
+        val = m.group(1).strip().strip('"').strip("'")
+        if not val or val.startswith("${") or val.startswith("ENC("):
+            continue
+        print(f"PLAINTEXT-SECRET {path}:{lineno}: {line.strip()[:100]}")
+        sys.exit(1)
+PYEOF
+  then
+    echo "  ✗ ${file} 含字面量机密（应改为 \${ENV} 引用或 ENC(...) 密文），已中止发布"
+    PLAINTEXT=0
+  fi
+done
+[ "$PLAINTEXT" -eq 1 ] || exit 1
+echo "✓ 无机密字面量"
+
 success=0; fail=0
 for file in *.yml; do
   [ -f "$file" ] || continue

@@ -201,9 +201,12 @@ public class AliyunOssStorageProvider implements StorageProvider {
     @Override
     public boolean healthCheck() {
         try {
-            // 通过检查一个不存在的对象来验证 OSS 连接是否可达
-            // objectExists 内部处理了异常，返回 false 表示连接正常但对象不存在
-            return getSignUrl.objectExists("__health_check__zxyz__");
+            // 用一个确定不存在的探针对象验证连通性：
+            // objectExists 只把「确定不存在」(404/NoSuchKey) 判为 false，其余错误上抛。
+            // 因此「返回 false（404）」＝服务可达＝健康；抛异常＝不可达/鉴权失败＝不健康。
+            // 旧实现直接把 objectExists 的返回值当健康结果，而探针对象本就不存在，
+            // 于是健康检查恒定报告「提供者异常」。
+            return !getSignUrl.objectExists("__health_check__zxyz__");
         } catch (Exception e) {
             log.warn("OSS 健康检查失败: {}", e.getMessage());
             return false;

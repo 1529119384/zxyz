@@ -1,7 +1,9 @@
 services:
   mysql:
     ports:
-      - "${MYSQL_PORT:-3306}:3306"
+      # 审计 2.3.7：仅绑回环。原来写 "${MYSQL_PORT}:3306" 会绑到 0.0.0.0，
+      # 本地开发机在咖啡馆/公司网里等于把 MySQL root 端口暴露给整个局域网。
+      - "127.0.0.1:${MYSQL_PORT:-3306}:3306"
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: zxyz_${SERVICE_DB_SUFFIX:-project}
@@ -28,7 +30,7 @@ services:
 
   redis:
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     command: ["sh", "-c", "redis-server --appendonly yes --requirepass \"$${REDIS_PASSWORD}\""]
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
@@ -38,7 +40,7 @@ services:
   rabbitmq:
     ports:
       # 15672 已由 docker-compose.yml 声明（127.0.0.1:${RABBITMQ_MGMT_PORT}:15672），此处仅补充 AMQP 端口
-      - "${RABBITMQ_AMQP_PORT:-5672}:5672"
+      - "127.0.0.1:${RABBITMQ_AMQP_PORT:-5672}:5672"
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}

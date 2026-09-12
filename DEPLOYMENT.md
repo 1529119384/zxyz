@@ -336,7 +336,7 @@ docker compose down -v
 | `RABBITMQ_MGMT_PORT` | `15672` | RabbitMQ 管理界面端口 |
 | `FRONTEND_BASE_URL` | `http://YOUR_SERVER_IP` | 前端访问地址，用于生成分享链接 |
 | `CORS_ALLOWED_ORIGINS` | `*` | 允许的跨域来源，生产环境建议改为实际域名 |
-| `GATEWAY_TRUSTED_PROXIES` | （空） | 网关可信代理网段（逗号分隔的单 IP/CIDR，如 `172.18.0.0/16`；取值见 `.env.example` 注释）。**留空会导致限流退化为全局单桶**：网关便不解析 `X-Forwarded-For`，下游按真实 IP 的限流（登录/注册/分享提取码验证/邮箱验证码）全部塌成同一个桶，攻击者按阈值节奏请求即可让全平台用户一起失败。`scripts/validate-env.sh` 会就此告警 |
+| —（已移除） | — | **真实客户端 IP 不需要任何配置项**：`zxyz-common` 的 `server.forward-headers-strategy: native`（框架层解析 `X-Forwarded-For`）+ nginx 覆盖式写入 `X-Forwarded-For`/`X-Real-IP` 已保证 `getRemoteAddr()` 就是真实客户端 IP，2026-09-13 用 4 个不同来源做过线上实证（4 个不同限流桶，nginx/网关容器 IP 从未出现）。历史变量 `GATEWAY_TRUSTED_PROXIES` 在本拓扑下配与不配结果相同，已从 `.env.example` / `docker-compose.yml` / `scripts/validate-env.sh` 一并移除——**前提是业务服务与网关都不向宿主机发布端口**，若将来改变该拓扑需重新评估 |
 | `AUTH_COOKIE_SECURE` | `false` | Sa-Token Cookie secure 标志（生产环境改为 true） |
 | `AUTH_COOKIE_DOMAIN` | （空） | Sa-Token Cookie 域名（跨子域共享 session 时设置） |
 | `AUTH_TOKEN_TIMEOUT` | `43200` | 普通登录 Token 超时时间（秒），默认 12 小时 |

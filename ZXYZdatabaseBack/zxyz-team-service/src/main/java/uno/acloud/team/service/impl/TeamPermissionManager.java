@@ -3,6 +3,7 @@ package uno.acloud.team.service.impl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -63,6 +64,18 @@ public class TeamPermissionManager {
                 publishPermissionInvalidation(userId);
             }
         });
+    }
+
+    /**
+     * 在<b>独立事务</b>中分配成员角色（REQUIRES_NEW）。
+     *
+     * <p>供「尽力而为」的补偿/清理路径使用：这类调用方自身有 try/catch 兜底，
+     * 不希望角色分配失败把外层事务标记成 rollback-only——那样 catch 也救不回，
+     * 提交时仍抛 UnexpectedRollbackException，把整个清理/同步一起回滚（见 2.2.5）。</p>
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
+    public void assignMemberRoleIndependent(Long teamId, Long userId, String roleCode) {
+        assignMemberRole(teamId, userId, roleCode);
     }
 
     @Transactional(rollbackFor = Exception.class)

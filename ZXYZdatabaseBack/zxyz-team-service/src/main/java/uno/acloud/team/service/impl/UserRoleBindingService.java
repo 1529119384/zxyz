@@ -76,15 +76,23 @@ public class UserRoleBindingService {
         });
     }
 
-    /** 为新用户分配默认角色（首个用户为管理员，后续为普通用户） */
+    /**
+     * 为新用户分配默认角色（<b>固定为普通用户 SYSTEM_USER</b>）。
+     *
+     * <p>历史实现是「系统里还没有 SYSTEM_ADMIN 时，把新用户提升为管理员」。
+     * 这条启发式规则必须删除（审计 2.1.1）：注册与登录都是公网可达路径，
+     * 在空环境（新部署 / 数据重建 / 角色绑定表被清空）里任何先到者都会被自动提权成
+     * 系统管理员；count 与 INSERT 之间还存在并发竞态，两人同时注册可各自拿到管理员。
+     * 管理员引导的唯一入口是 user-service 的 {@code AdminBootstrapRunner}
+     * （受部署变量 ADMIN_INIT_USERNAME / ADMIN_INIT_PASSWORD / app.admin.bootstrap.enabled 控制），
+     * 它走 assignBootstrapAdminRole，不依赖这条启发式。</p>
+     */
     @Transactional(rollbackFor = Exception.class)
     public void ensureDefaultRole(Long userId, String username) {
         if (userId == null || permissionRoleMapper.countUserRoles(userId) > 0) {
             return;
         }
-        boolean hasAdmin = permissionRoleMapper.countUsersByRoleCode(SystemRoleCodes.SYSTEM_ADMIN) > 0;
-        String roleCode = hasAdmin ? SystemRoleCodes.SYSTEM_USER : SystemRoleCodes.SYSTEM_ADMIN;
-        assignRoleByCode(userId, roleCode);
+        assignRoleByCode(userId, SystemRoleCodes.SYSTEM_USER);
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {

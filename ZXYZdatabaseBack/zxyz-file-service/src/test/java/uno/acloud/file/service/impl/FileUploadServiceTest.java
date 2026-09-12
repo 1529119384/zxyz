@@ -7,6 +7,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 import org.springframework.http.HttpStatus;
@@ -64,6 +66,13 @@ class FileUploadServiceTest {
     @Mock
     private UsageLedgerMapper usageLedgerMapper;
 
+    /** 2.1.2：上传归属凭证用的 Redis 模板（objectKey → userId） */
+    @Mock
+    private StringRedisTemplate redisTemplate;
+
+    @Mock
+    private ValueOperations<String, String> valueOperations;
+
     private ServiceProperties serviceProperties;
 
     private FileUploadService fileUploadService;
@@ -76,11 +85,14 @@ class FileUploadServiceTest {
         serviceProperties.setInternalServiceToken("test-token");
 
         when(registry.getDefaultProvider()).thenReturn(defaultProvider);
+        // 默认：归属凭证存在且属于 userId=1（绝大多数用例的操作者）
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(anyString())).thenReturn("1");
 
         fileUploadService = new FileUploadService(
                 registry, fileUploadPersistenceService, fileDomainValidator,
                 filePathResolver, fileAccessGuardService, restClient,
-                objectMapper, serviceProperties, usageLedgerMapper, "", "", 524288000L);
+                objectMapper, serviceProperties, usageLedgerMapper, redisTemplate, "", "", 524288000L);
     }
 
     // ==================== Upload with sufficient quota — should succeed ====================
@@ -133,6 +145,8 @@ class FileUploadServiceTest {
         assertEquals(1, result.getSuccessCount());
         assertEquals(0, result.getFailCount());
         verify(fileUploadPersistenceService).saveFileItem(any(FileItem.class));
+        // 确认成功后应消费归属凭证，使同一凭证无法再次确认（2.1.2）
+        verify(redisTemplate).delete("file:upload-owner:files/uuid-test.txt");
     }
 
     // ==================== Upload exceeding quota — should throw ====================
@@ -168,7 +182,7 @@ class FileUploadServiceTest {
         FileUploadService quotaService = new FileUploadService(
                 registry, fileUploadPersistenceService, fileDomainValidator,
                 filePathResolver, fileAccessGuardService, restClient,
-                objectMapper, quotaProps, usageLedgerMapper, "", "", 524288000L);
+                objectMapper, quotaProps, usageLedgerMapper, redisTemplate, "", "", 524288000L);
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> quotaService.confirmUpload(request, userId));
@@ -270,7 +284,7 @@ class FileUploadServiceTest {
     @Test
     void getUploadSign_unsupportedExtension_shouldThrow() {
         BusinessException ex = assertThrows(BusinessException.class,
-                () -> fileUploadService.getUploadSign("malware.xyz"));
+                () -> fileUploadService.getUploadSign("malware.xyz", 1L));
         assertEquals(ErrorCode.BAD_REQUEST, ex.getErrorCode());
         assertTrue(ex.getMessage().contains("不支持的文件类型: .xyz"));
     }
@@ -278,7 +292,7 @@ class FileUploadServiceTest {
     @Test
     void getUploadSign_noExtension_shouldThrow() {
         BusinessException ex = assertThrows(BusinessException.class,
-                () -> fileUploadService.getUploadSign("README"));
+                () -> fileUploadService.getUploadSign("README", 1L));
         assertEquals(ErrorCode.BAD_REQUEST, ex.getErrorCode());
         assertTrue(ex.getMessage().contains("缺少扩展名"));
     }
@@ -292,7 +306,7 @@ class FileUploadServiceTest {
                         "https://oss.example.com/files/uuid-report.pdf",
                         "application/pdf", "attachment", 1700000000L, true));
 
-        UploadInfo result = fileUploadService.getUploadSign("report.pdf");
+        UploadInfo result = fileUploadService.getUploadSign("report.pdf", 1L);
         assertNotNull(result);
     }
 
@@ -461,7 +475,7 @@ class FileUploadServiceTest {
         FileUploadService quotaService = new FileUploadService(
                 registry, fileUploadPersistenceService, fileDomainValidator,
                 filePathResolver, fileAccessGuardService, restClient,
-                objectMapper, quotaProps, usageLedgerMapper, "", "", 524288000L);
+                objectMapper, quotaProps, usageLedgerMapper, redisTemplate, "", "", 524288000L);
 
         when(fileDomainValidator.validateInputName("quota-test.txt")).thenReturn("quota-test.txt");
         when(defaultProvider.supportsPresignedUpload()).thenReturn(false);
@@ -523,5 +537,176 @@ class FileUploadServiceTest {
 
         assertNotNull(result);
         verify(fileUploadPersistenceService).saveFileItem(any(FileItem.class));
+    }
+
+    // ==================== 2.1.2：上传归属凭证（objectKey → userId） ====================
+
+    @Test
+    void getUploadSign_registersOwnerBinding() {
+        when(fileDomainValidator.validateInputName("report.pdf")).thenReturn("report.pdf");
+        when(defaultProvider.generateUploadInfo(anyString(), eq("report.pdf")))
+                .thenReturn(new UploadInfo(
+                        "oss", "https://oss.example.com/put", "files/uuid-report.pdf",
+                        "https://oss.example.com/files/uuid-report.pdf",
+                        "application/pdf", "attachment", 1700000000L, true));
+
+        fileUploadService.getUploadSign("report.pdf", 7L);
+
+        verify(valueOperations).set(
+                eq("file:upload-owner:files/uuid-report.pdf"),
+                eq("7"),
+                any(java.time.Duration.class));
+    }
+
+    @Test
+    void getUploadSign_withoutExpireAt_shouldStillRegister() {
+        when(fileDomainValidator.validateInputName("report.pdf")).thenReturn("report.pdf");
+        when(defaultProvider.generateUploadInfo(anyString(), eq("report.pdf")))
+                .thenReturn(new UploadInfo(
+                        "oss", "https://oss.example.com/put", "files/uuid-report.pdf",
+                        null, "application/pdf", "attachment", null, false));
+
+        fileUploadService.getUploadSign("report.pdf", 7L);
+
+        verify(valueOperations).set(anyString(), eq("7"), any(java.time.Duration.class));
+    }
+
+    @Test
+    void getUploadSign_redisFailure_shouldNotBlockSigning() {
+        when(fileDomainValidator.validateInputName("report.pdf")).thenReturn("report.pdf");
+        when(defaultProvider.generateUploadInfo(anyString(), eq("report.pdf")))
+                .thenReturn(new UploadInfo(
+                        "oss", "https://oss.example.com/put", "files/uuid-report.pdf",
+                        null, "application/pdf", "attachment", 1700000000L, true));
+        when(redisTemplate.opsForValue()).thenThrow(new RuntimeException("redis down"));
+
+        UploadInfo result = fileUploadService.getUploadSign("report.pdf", 7L);
+
+        // 登记失败不阻断签名：确认阶段会 fail-closed 拒绝
+        assertNotNull(result);
+    }
+
+    @Test
+    void confirmUpload_withoutOwnerBinding_shouldReturnFail() {
+        when(valueOperations.get(anyString())).thenReturn(null);
+        BatchConfirmUploadRequest request = teamConfirmRequest("files/uuid-orphan.txt", "orphan.txt");
+
+        BatchUploadConfirmResultVO result = fileUploadService.confirmUpload(request, 1L);
+
+        assertEquals(1, result.getTotalCount());
+        assertEquals(0, result.getSuccessCount());
+        assertEquals(1, result.getFailCount());
+        assertTrue(result.getItems().get(0).getMsg().contains("上传凭证"));
+        verify(fileUploadPersistenceService, never()).saveFileItem(any(FileItem.class));
+    }
+
+    @Test
+    void confirmUpload_ownerMismatch_shouldReturnFail() {
+        when(valueOperations.get(anyString())).thenReturn("999");
+        BatchConfirmUploadRequest request = teamConfirmRequest("files/uuid-steal.txt", "steal.txt");
+
+        BatchUploadConfirmResultVO result = fileUploadService.confirmUpload(request, 1L);
+
+        assertEquals(1, result.getTotalCount());
+        assertEquals(0, result.getSuccessCount());
+        assertEquals(1, result.getFailCount());
+        assertEquals(ErrorCode.NO_PERMISSION, result.getItems().get(0).getCode());
+        verify(fileUploadPersistenceService, never()).saveFileItem(any(FileItem.class));
+    }
+
+    @Test
+    void confirmUpload_ownerBindingReadFailure_shouldReturnFail() {
+        when(valueOperations.get(anyString())).thenThrow(new RuntimeException("redis down"));
+        BatchConfirmUploadRequest request = teamConfirmRequest("files/uuid-redis.txt", "redis.txt");
+
+        BatchUploadConfirmResultVO result = fileUploadService.confirmUpload(request, 1L);
+
+        assertEquals(1, result.getFailCount());
+        verify(fileUploadPersistenceService, never()).saveFileItem(any(FileItem.class));
+    }
+
+    /** 构造一个 TEAM 空间的单文件确认请求（objectKey / originalName 可指定）。 */
+    private BatchConfirmUploadRequest teamConfirmRequest(String objectKey, String originalName) {
+        ConfirmUploadRequest item = new ConfirmUploadRequest();
+        item.setObjectKey(objectKey);
+        item.setOriginalName(originalName);
+        item.setFileSize(1024L);
+        item.setParentId(100L);
+        item.setTeamId(10L);
+        item.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+
+        BatchConfirmUploadRequest request = new BatchConfirmUploadRequest();
+        request.setTeamId(10L);
+        request.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+        request.setFiles(List.of(item));
+        return request;
+    }
+
+    // ==================== 2.1.3：直传校验前置 + 写失败补偿删除 ====================
+
+    @Test
+    void directUpload_saveFails_shouldDeleteWrittenObject() {
+        when(fileDomainValidator.validateInputName("cleanup.txt")).thenReturn("cleanup.txt");
+        when(defaultProvider.supportsPresignedUpload()).thenReturn(false);
+        when(defaultProvider.receiveUpload(anyString(), any(), anyString(), anyString())).thenReturn(16L);
+        when(defaultProvider.generateDownloadInfo(anyString(), anyString()))
+                .thenReturn(new DownloadInfo("local", "/download/files/uuid-cleanup.txt", "cleanup.txt", true));
+
+        Folder parentFolder = Folder.create();
+        parentFolder.setId(100L);
+        parentFolder.setTeamId(10L);
+        parentFolder.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+        when(fileDomainValidator.requireFolder(100L)).thenReturn(parentFolder);
+        when(fileUploadPersistenceService.saveFileItem(any(FileItem.class)))
+                .thenThrow(new RuntimeException("db down"));
+
+        java.io.ByteArrayInputStream inputStream =
+                new java.io.ByteArrayInputStream("hello".getBytes());
+
+        assertThrows(RuntimeException.class, () -> fileUploadService.directUpload(
+                "cleanup.txt", inputStream, "text/plain", 100L, 1L, 10L, 1, null, 16L));
+
+        // 落库失败必须补偿删除，否则存储里留下无记账的孤儿对象
+        verify(defaultProvider).deleteObject(anyString());
+    }
+
+    @Test
+    void directUpload_streamExceedingLimit_shouldRejectAndCleanup() {
+        // 声明 8 字节（不超上限）但实际写 16 字节：应被逐字节计数拦下并清理
+        FileUploadService tinyLimitService = new FileUploadService(
+                registry, fileUploadPersistenceService, fileDomainValidator,
+                filePathResolver, fileAccessGuardService, restClient,
+                objectMapper, serviceProperties, usageLedgerMapper, redisTemplate, "", "", 8L);
+
+        when(fileDomainValidator.validateInputName("tiny.txt")).thenReturn("tiny.txt");
+        when(defaultProvider.supportsPresignedUpload()).thenReturn(false);
+        when(defaultProvider.receiveUpload(anyString(), any(), anyString(), anyString()))
+                .thenAnswer(invocation -> {
+                    java.io.InputStream in = invocation.getArgument(1);
+                    byte[] buffer = new byte[4];
+                    long total = 0L;
+                    int read;
+                    while ((read = in.read(buffer)) > 0) {
+                        total += read;
+                    }
+                    return total;
+                });
+
+        Folder parentFolder = Folder.create();
+        parentFolder.setId(100L);
+        parentFolder.setTeamId(10L);
+        parentFolder.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+        when(fileDomainValidator.requireFolder(100L)).thenReturn(parentFolder);
+
+        java.io.ByteArrayInputStream inputStream =
+                new java.io.ByteArrayInputStream("0123456789abcdef".getBytes());
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> tinyLimitService.directUpload(
+                        "tiny.txt", inputStream, "text/plain", 100L, 1L, 10L, 1, null, 8L));
+
+        assertEquals(ErrorCode.BAD_REQUEST, ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("文件大小超过限制"));
+        verify(defaultProvider).deleteObject(anyString());
     }
 }

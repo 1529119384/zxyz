@@ -141,7 +141,6 @@ class AuthServiceTest {
         request.setUsername("bob");
         request.setPassword("rawPassword");
 
-        when(userMapper.countUsers()).thenReturn(1);
         when(passwordEncoder.encode("rawPassword")).thenReturn("encodedPassword");
         when(userMapper.addByUsernameAndPassword(any(User.class))).thenReturn(1);
 
@@ -156,7 +155,6 @@ class AuthServiceTest {
         request.setUsername("alice");
         request.setPassword("pass123");
 
-        when(userMapper.countUsers()).thenReturn(1);
         when(passwordEncoder.encode("pass123")).thenReturn("encoded");
         when(userMapper.addByUsernameAndPassword(any(User.class)))
                 .thenThrow(new DuplicateKeyException("Duplicate entry"));
@@ -167,19 +165,20 @@ class AuthServiceTest {
     }
 
     @Test
-    void register_assignsAdminRoleForFirstUser() {
+    void register_neverAssignsAdminRoleEvenForFirstUser() {
         RegisterRequest request = new RegisterRequest();
         request.setUsername("firstuser");
         request.setPassword("pass123");
 
-        when(userMapper.countUsers()).thenReturn(0);
         when(passwordEncoder.encode("pass123")).thenReturn("encoded");
         when(userMapper.addByUsernameAndPassword(any(User.class))).thenReturn(1);
 
         authService.register(request);
 
-        verify(teamServicePermissionClient).assignBootstrapAdminRoleStrict(any());
-        verify(teamServicePermissionClient, never()).ensureDefaultRole(any(), anyString());
+        // 审计 2.1.1：注册是网关白名单里的公网端点，「首个注册用户自动成为 SYSTEM_ADMIN」
+        // 是可被先到者利用的提权路径，必须彻底消失（管理员只能由 AdminBootstrapRunner 引导）
+        verify(teamServicePermissionClient).ensureDefaultRole(any(), eq("firstuser"));
+        verify(teamServicePermissionClient, never()).assignBootstrapAdminRoleStrict(any());
     }
 
     @Test
@@ -188,7 +187,6 @@ class AuthServiceTest {
         request.setUsername("seconduser");
         request.setPassword("pass123");
 
-        when(userMapper.countUsers()).thenReturn(5);
         when(passwordEncoder.encode("pass123")).thenReturn("encoded");
         when(userMapper.addByUsernameAndPassword(any(User.class))).thenReturn(1);
 
@@ -204,11 +202,10 @@ class AuthServiceTest {
         request.setUsername("failuser");
         request.setPassword("pass123");
 
-        when(userMapper.countUsers()).thenReturn(0);
         when(passwordEncoder.encode("pass123")).thenReturn("encoded");
         when(userMapper.addByUsernameAndPassword(any(User.class))).thenReturn(1);
         doThrow(new RuntimeException("HTTP 500"))
-                .when(teamServicePermissionClient).assignBootstrapAdminRoleStrict(any());
+                .when(teamServicePermissionClient).ensureDefaultRole(any(), anyString());
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> authService.register(request));

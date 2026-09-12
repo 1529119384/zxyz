@@ -88,6 +88,10 @@ public class ImWebSocketFrameHandler extends SimpleChannelInboundHandler<TextWeb
             writeEnvelope(ctx, envelopeFactory.error(requestId, "消息处理失败"));
         } catch (Exception e) {
             String requestId = request == null ? null : request.getRequestId();
+            // 审计 L8：此前这里只回错误信封、不落任何日志，下游 NPE / 解析异常被完全吞掉，
+            // 线上只能看到「消息协议解析失败」，无从定位。畸形帧不足以致命，但必须留痕。
+            log.error("IM command 处理异常（非业务异常）: type={}, requestId={}",
+                    request == null ? null : request.getType(), requestId, e);
             writeEnvelope(ctx, envelopeFactory.error(requestId, "消息协议解析失败"));
         }
     }

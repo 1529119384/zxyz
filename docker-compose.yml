@@ -168,7 +168,9 @@ services:
     networks:
       - zxyz-net
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep PONG"]
+      # 审计 2.3.7：密码经环境变量 REDISCLI_AUTH 传入，不再出现在 argv 里
+      # （`redis-cli -a <pwd>` 会让同机任意进程从 /proc/<pid>/cmdline 读到密码）。
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$${REDIS_PASSWORD}\" redis-cli ping | grep PONG"]
       interval: 10s
       timeout: 5s
       retries: 20
@@ -243,7 +245,7 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${PROJECT_SERVICE_PORT:-18080}
-      APP_INTERNAL_SERVICE_KEY: ${SVC_PROJECT_KEY}
+      APP_INTERNAL_SERVICE_KEY: ${SVC_PROJECT_KEY:?启用矩阵必须设置 SVC_PROJECT_KEY}
       TZ: Asia/Shanghai
       PROJECT_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_project?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       PROJECT_DATASOURCE_USERNAME: ${PROJECT_DB_USERNAME:?缺少 PROJECT_DB_USERNAME，请先运行 scripts/init-secrets.sh}
@@ -255,7 +257,7 @@ services:
       IM_SERVICE_BASE_URL: http://zxyz-im-service
       EMAIL_SERVICE_BASE_URL: http://zxyz-email-service
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
-      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":"{''zxyz-user-service'':''${SVC_USER_KEY}'',''zxyz-admin-service'':''${SVC_ADMIN_KEY}'',''zxyz-project-service'':''${SVC_PROJECT_KEY}'',''zxyz-im-service'':''${SVC_IM_KEY}'',''zxyz-file-service'':''${SVC_FILE_KEY}'',''zxyz-team-service'':''${SVC_TEAM_KEY}'',''zxyz-gateway'':''${SVC_GATEWAY_KEY}'',''zxyz-email-service'':''${SVC_EMAIL_KEY}'',''zxyz-share-service'':''${SVC_SHARE_KEY}'',''zxyz-audit-service'':''${SVC_AUDIT_KEY}''}"}}}'
+      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":"{''zxyz-user-service'':''${SVC_USER_KEY:?启用矩阵必须设置 SVC_USER_KEY}'',''zxyz-admin-service'':''${SVC_ADMIN_KEY:?启用矩阵必须设置 SVC_ADMIN_KEY}'',''zxyz-project-service'':''${SVC_PROJECT_KEY:?启用矩阵必须设置 SVC_PROJECT_KEY}'',''zxyz-im-service'':''${SVC_IM_KEY:?启用矩阵必须设置 SVC_IM_KEY}'',''zxyz-file-service'':''${SVC_FILE_KEY:?启用矩阵必须设置 SVC_FILE_KEY}'',''zxyz-team-service'':''${SVC_TEAM_KEY:?启用矩阵必须设置 SVC_TEAM_KEY}'',''zxyz-gateway'':''${SVC_GATEWAY_KEY:?启用矩阵必须设置 SVC_GATEWAY_KEY}'',''zxyz-email-service'':''${SVC_EMAIL_KEY:?启用矩阵必须设置 SVC_EMAIL_KEY}'',''zxyz-share-service'':''${SVC_SHARE_KEY:?启用矩阵必须设置 SVC_SHARE_KEY}'',''zxyz-audit-service'':''${SVC_AUDIT_KEY:?启用矩阵必须设置 SVC_AUDIT_KEY}''}"}}}'
       SHARE_COOKIE_SECRET: ${SHARE_COOKIE_SECRET}
       FRONTEND_BASE_URL: ${FRONTEND_BASE_URL}
       FILE_SERVICE_BASE_URL: http://zxyz-file-service
@@ -318,7 +320,7 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${IM_SERVICE_PORT:-18081}
-      APP_INTERNAL_SERVICE_KEY: ${SVC_IM_KEY}
+      APP_INTERNAL_SERVICE_KEY: ${SVC_IM_KEY:?启用矩阵必须设置 SVC_IM_KEY}
       TZ: Asia/Shanghai
       IM_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_im?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       IM_DATASOURCE_USERNAME: ${IM_DB_USERNAME:?缺少 IM_DB_USERNAME，请先运行 scripts/init-secrets.sh}
@@ -331,7 +333,7 @@ services:
       FILE_SERVICE_BASE_URL: http://zxyz-file-service
       TEAM_SERVICE_BASE_URL: http://zxyz-team-service
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
-      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":"{''zxyz-user-service'':''${SVC_USER_KEY}'',''zxyz-admin-service'':''${SVC_ADMIN_KEY}'',''zxyz-project-service'':''${SVC_PROJECT_KEY}'',''zxyz-im-service'':''${SVC_IM_KEY}'',''zxyz-file-service'':''${SVC_FILE_KEY}'',''zxyz-team-service'':''${SVC_TEAM_KEY}'',''zxyz-gateway'':''${SVC_GATEWAY_KEY}'',''zxyz-email-service'':''${SVC_EMAIL_KEY}'',''zxyz-share-service'':''${SVC_SHARE_KEY}'',''zxyz-audit-service'':''${SVC_AUDIT_KEY}''}"}}}'
+      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":"{''zxyz-user-service'':''${SVC_USER_KEY:?启用矩阵必须设置 SVC_USER_KEY}'',''zxyz-admin-service'':''${SVC_ADMIN_KEY:?启用矩阵必须设置 SVC_ADMIN_KEY}'',''zxyz-project-service'':''${SVC_PROJECT_KEY:?启用矩阵必须设置 SVC_PROJECT_KEY}'',''zxyz-im-service'':''${SVC_IM_KEY:?启用矩阵必须设置 SVC_IM_KEY}'',''zxyz-file-service'':''${SVC_FILE_KEY:?启用矩阵必须设置 SVC_FILE_KEY}'',''zxyz-team-service'':''${SVC_TEAM_KEY:?启用矩阵必须设置 SVC_TEAM_KEY}'',''zxyz-gateway'':''${SVC_GATEWAY_KEY:?启用矩阵必须设置 SVC_GATEWAY_KEY}'',''zxyz-email-service'':''${SVC_EMAIL_KEY:?启用矩阵必须设置 SVC_EMAIL_KEY}'',''zxyz-share-service'':''${SVC_SHARE_KEY:?启用矩阵必须设置 SVC_SHARE_KEY}'',''zxyz-audit-service'':''${SVC_AUDIT_KEY:?启用矩阵必须设置 SVC_AUDIT_KEY}''}"}}}'
       IM_NETTY_PORT: 19090
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
@@ -388,9 +390,9 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${EMAIL_SERVICE_PORT:-18082}
-      APP_INTERNAL_SERVICE_KEY: ${SVC_EMAIL_KEY}
+      APP_INTERNAL_SERVICE_KEY: ${SVC_EMAIL_KEY:?启用矩阵必须设置 SVC_EMAIL_KEY}
       # P2-A2 邮件试点：开放 allowed-sources（来源服务名 -> 该来源 SVC_*_KEY）
-      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":"{''zxyz-user-service'':''${SVC_USER_KEY}'',''zxyz-admin-service'':''${SVC_ADMIN_KEY}'',''zxyz-project-service'':''${SVC_PROJECT_KEY}'',''zxyz-im-service'':''${SVC_IM_KEY}'',''zxyz-file-service'':''${SVC_FILE_KEY}'',''zxyz-team-service'':''${SVC_TEAM_KEY}'',''zxyz-gateway'':''${SVC_GATEWAY_KEY}'',''zxyz-email-service'':''${SVC_EMAIL_KEY}'',''zxyz-share-service'':''${SVC_SHARE_KEY}'',''zxyz-audit-service'':''${SVC_AUDIT_KEY}''}"}}}'
+      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":"{''zxyz-user-service'':''${SVC_USER_KEY:?启用矩阵必须设置 SVC_USER_KEY}'',''zxyz-admin-service'':''${SVC_ADMIN_KEY:?启用矩阵必须设置 SVC_ADMIN_KEY}'',''zxyz-project-service'':''${SVC_PROJECT_KEY:?启用矩阵必须设置 SVC_PROJECT_KEY}'',''zxyz-im-service'':''${SVC_IM_KEY:?启用矩阵必须设置 SVC_IM_KEY}'',''zxyz-file-service'':''${SVC_FILE_KEY:?启用矩阵必须设置 SVC_FILE_KEY}'',''zxyz-team-service'':''${SVC_TEAM_KEY:?启用矩阵必须设置 SVC_TEAM_KEY}'',''zxyz-gateway'':''${SVC_GATEWAY_KEY:?启用矩阵必须设置 SVC_GATEWAY_KEY}'',''zxyz-email-service'':''${SVC_EMAIL_KEY:?启用矩阵必须设置 SVC_EMAIL_KEY}'',''zxyz-share-service'':''${SVC_SHARE_KEY:?启用矩阵必须设置 SVC_SHARE_KEY}'',''zxyz-audit-service'':''${SVC_AUDIT_KEY:?启用矩阵必须设置 SVC_AUDIT_KEY}''}"}}}'
       TZ: Asia/Shanghai
       EMAIL_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_email?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       EMAIL_DATASOURCE_USERNAME: ${EMAIL_DB_USERNAME:?缺少 EMAIL_DB_USERNAME，请先运行 scripts/init-secrets.sh}
@@ -462,7 +464,7 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${SHARE_SERVICE_PORT:-18084}
-      APP_INTERNAL_SERVICE_KEY: ${SVC_SHARE_KEY}
+      APP_INTERNAL_SERVICE_KEY: ${SVC_SHARE_KEY:?启用矩阵必须设置 SVC_SHARE_KEY}
       TZ: Asia/Shanghai
       SHARE_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_share?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       SHARE_DATASOURCE_USERNAME: ${SHARE_DB_USERNAME:?缺少 SHARE_DB_USERNAME，请先运行 scripts/init-secrets.sh}
@@ -475,7 +477,7 @@ services:
       USER_SERVICE_BASE_URL: http://zxyz-user-service
       TEAM_SERVICE_BASE_URL: http://zxyz-team-service
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
-      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":"{''zxyz-user-service'':''${SVC_USER_KEY}'',''zxyz-admin-service'':''${SVC_ADMIN_KEY}'',''zxyz-project-service'':''${SVC_PROJECT_KEY}'',''zxyz-im-service'':''${SVC_IM_KEY}'',''zxyz-file-service'':''${SVC_FILE_KEY}'',''zxyz-team-service'':''${SVC_TEAM_KEY}'',''zxyz-gateway'':''${SVC_GATEWAY_KEY}'',''zxyz-email-service'':''${SVC_EMAIL_KEY}'',''zxyz-share-service'':''${SVC_SHARE_KEY}'',''zxyz-audit-service'':''${SVC_AUDIT_KEY}''}"}}}'
+      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":"{''zxyz-user-service'':''${SVC_USER_KEY:?启用矩阵必须设置 SVC_USER_KEY}'',''zxyz-admin-service'':''${SVC_ADMIN_KEY:?启用矩阵必须设置 SVC_ADMIN_KEY}'',''zxyz-project-service'':''${SVC_PROJECT_KEY:?启用矩阵必须设置 SVC_PROJECT_KEY}'',''zxyz-im-service'':''${SVC_IM_KEY:?启用矩阵必须设置 SVC_IM_KEY}'',''zxyz-file-service'':''${SVC_FILE_KEY:?启用矩阵必须设置 SVC_FILE_KEY}'',''zxyz-team-service'':''${SVC_TEAM_KEY:?启用矩阵必须设置 SVC_TEAM_KEY}'',''zxyz-gateway'':''${SVC_GATEWAY_KEY:?启用矩阵必须设置 SVC_GATEWAY_KEY}'',''zxyz-email-service'':''${SVC_EMAIL_KEY:?启用矩阵必须设置 SVC_EMAIL_KEY}'',''zxyz-share-service'':''${SVC_SHARE_KEY:?启用矩阵必须设置 SVC_SHARE_KEY}'',''zxyz-audit-service'':''${SVC_AUDIT_KEY:?启用矩阵必须设置 SVC_AUDIT_KEY}''}"}}}'
       SHARE_COOKIE_SECRET: ${SHARE_COOKIE_SECRET}
       FRONTEND_BASE_URL: ${FRONTEND_BASE_URL}
       RABBITMQ_HOST: rabbitmq
@@ -533,7 +535,7 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${FILE_SERVICE_PORT:-18085}
-      APP_INTERNAL_SERVICE_KEY: ${SVC_FILE_KEY}
+      APP_INTERNAL_SERVICE_KEY: ${SVC_FILE_KEY:?启用矩阵必须设置 SVC_FILE_KEY}
       TZ: Asia/Shanghai
       FILE_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_file?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       FILE_DATASOURCE_USERNAME: ${FILE_DB_USERNAME:?缺少 FILE_DB_USERNAME，请先运行 scripts/init-secrets.sh}
@@ -552,7 +554,7 @@ services:
       PROJECT_SERVICE_BASE_URL: http://zxyz-project-service
       SHARE_SERVICE_BASE_URL: http://zxyz-share-service
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
-      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":"{''zxyz-user-service'':''${SVC_USER_KEY}'',''zxyz-admin-service'':''${SVC_ADMIN_KEY}'',''zxyz-project-service'':''${SVC_PROJECT_KEY}'',''zxyz-im-service'':''${SVC_IM_KEY}'',''zxyz-file-service'':''${SVC_FILE_KEY}'',''zxyz-team-service'':''${SVC_TEAM_KEY}'',''zxyz-gateway'':''${SVC_GATEWAY_KEY}'',''zxyz-email-service'':''${SVC_EMAIL_KEY}'',''zxyz-share-service'':''${SVC_SHARE_KEY}'',''zxyz-audit-service'':''${SVC_AUDIT_KEY}''}"}}}'
+      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":"{''zxyz-user-service'':''${SVC_USER_KEY:?启用矩阵必须设置 SVC_USER_KEY}'',''zxyz-admin-service'':''${SVC_ADMIN_KEY:?启用矩阵必须设置 SVC_ADMIN_KEY}'',''zxyz-project-service'':''${SVC_PROJECT_KEY:?启用矩阵必须设置 SVC_PROJECT_KEY}'',''zxyz-im-service'':''${SVC_IM_KEY:?启用矩阵必须设置 SVC_IM_KEY}'',''zxyz-file-service'':''${SVC_FILE_KEY:?启用矩阵必须设置 SVC_FILE_KEY}'',''zxyz-team-service'':''${SVC_TEAM_KEY:?启用矩阵必须设置 SVC_TEAM_KEY}'',''zxyz-gateway'':''${SVC_GATEWAY_KEY:?启用矩阵必须设置 SVC_GATEWAY_KEY}'',''zxyz-email-service'':''${SVC_EMAIL_KEY:?启用矩阵必须设置 SVC_EMAIL_KEY}'',''zxyz-share-service'':''${SVC_SHARE_KEY:?启用矩阵必须设置 SVC_SHARE_KEY}'',''zxyz-audit-service'':''${SVC_AUDIT_KEY:?启用矩阵必须设置 SVC_AUDIT_KEY}''}"}}}'
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USER}
@@ -615,7 +617,7 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${TEAM_SERVICE_PORT:-18086}
-      APP_INTERNAL_SERVICE_KEY: ${SVC_TEAM_KEY}
+      APP_INTERNAL_SERVICE_KEY: ${SVC_TEAM_KEY:?启用矩阵必须设置 SVC_TEAM_KEY}
       TZ: Asia/Shanghai
       TEAM_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_team?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       TEAM_DATASOURCE_USERNAME: ${TEAM_DB_USERNAME:?缺少 TEAM_DB_USERNAME，请先运行 scripts/init-secrets.sh}
@@ -629,7 +631,7 @@ services:
       EMAIL_SERVICE_BASE_URL: http://zxyz-email-service
       FILE_SERVICE_BASE_URL: http://zxyz-file-service
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
-      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":"{''zxyz-user-service'':''${SVC_USER_KEY}'',''zxyz-admin-service'':''${SVC_ADMIN_KEY}'',''zxyz-project-service'':''${SVC_PROJECT_KEY}'',''zxyz-im-service'':''${SVC_IM_KEY}'',''zxyz-file-service'':''${SVC_FILE_KEY}'',''zxyz-team-service'':''${SVC_TEAM_KEY}'',''zxyz-gateway'':''${SVC_GATEWAY_KEY}'',''zxyz-email-service'':''${SVC_EMAIL_KEY}'',''zxyz-share-service'':''${SVC_SHARE_KEY}'',''zxyz-audit-service'':''${SVC_AUDIT_KEY}''}"}}}'
+      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":"{''zxyz-user-service'':''${SVC_USER_KEY:?启用矩阵必须设置 SVC_USER_KEY}'',''zxyz-admin-service'':''${SVC_ADMIN_KEY:?启用矩阵必须设置 SVC_ADMIN_KEY}'',''zxyz-project-service'':''${SVC_PROJECT_KEY:?启用矩阵必须设置 SVC_PROJECT_KEY}'',''zxyz-im-service'':''${SVC_IM_KEY:?启用矩阵必须设置 SVC_IM_KEY}'',''zxyz-file-service'':''${SVC_FILE_KEY:?启用矩阵必须设置 SVC_FILE_KEY}'',''zxyz-team-service'':''${SVC_TEAM_KEY:?启用矩阵必须设置 SVC_TEAM_KEY}'',''zxyz-gateway'':''${SVC_GATEWAY_KEY:?启用矩阵必须设置 SVC_GATEWAY_KEY}'',''zxyz-email-service'':''${SVC_EMAIL_KEY:?启用矩阵必须设置 SVC_EMAIL_KEY}'',''zxyz-share-service'':''${SVC_SHARE_KEY:?启用矩阵必须设置 SVC_SHARE_KEY}'',''zxyz-audit-service'':''${SVC_AUDIT_KEY:?启用矩阵必须设置 SVC_AUDIT_KEY}''}"}}}'
       OSS_REGION: ${OSS_REGION}
       OSS_BUCKET: ${OSS_BUCKET}
       OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID}
@@ -692,7 +694,7 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${AUDIT_SERVICE_PORT:-18087}
-      APP_INTERNAL_SERVICE_KEY: ${SVC_AUDIT_KEY}
+      APP_INTERNAL_SERVICE_KEY: ${SVC_AUDIT_KEY:?启用矩阵必须设置 SVC_AUDIT_KEY}
       TZ: Asia/Shanghai
       AUDIT_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_audit?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       AUDIT_DATASOURCE_USERNAME: ${AUDIT_DB_USERNAME:?缺少 AUDIT_DB_USERNAME，请先运行 scripts/init-secrets.sh}
@@ -707,7 +709,7 @@ services:
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?缺少 CORS_ALLOWED_ORIGINS，请先运行 scripts/init-secrets.sh 或手工填写真实域名}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
-      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":"{''zxyz-user-service'':''${SVC_USER_KEY}'',''zxyz-admin-service'':''${SVC_ADMIN_KEY}'',''zxyz-project-service'':''${SVC_PROJECT_KEY}'',''zxyz-im-service'':''${SVC_IM_KEY}'',''zxyz-file-service'':''${SVC_FILE_KEY}'',''zxyz-team-service'':''${SVC_TEAM_KEY}'',''zxyz-gateway'':''${SVC_GATEWAY_KEY}'',''zxyz-email-service'':''${SVC_EMAIL_KEY}'',''zxyz-share-service'':''${SVC_SHARE_KEY}'',''zxyz-audit-service'':''${SVC_AUDIT_KEY}''}"}}}'
+      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":"{''zxyz-user-service'':''${SVC_USER_KEY:?启用矩阵必须设置 SVC_USER_KEY}'',''zxyz-admin-service'':''${SVC_ADMIN_KEY:?启用矩阵必须设置 SVC_ADMIN_KEY}'',''zxyz-project-service'':''${SVC_PROJECT_KEY:?启用矩阵必须设置 SVC_PROJECT_KEY}'',''zxyz-im-service'':''${SVC_IM_KEY:?启用矩阵必须设置 SVC_IM_KEY}'',''zxyz-file-service'':''${SVC_FILE_KEY:?启用矩阵必须设置 SVC_FILE_KEY}'',''zxyz-team-service'':''${SVC_TEAM_KEY:?启用矩阵必须设置 SVC_TEAM_KEY}'',''zxyz-gateway'':''${SVC_GATEWAY_KEY:?启用矩阵必须设置 SVC_GATEWAY_KEY}'',''zxyz-email-service'':''${SVC_EMAIL_KEY:?启用矩阵必须设置 SVC_EMAIL_KEY}'',''zxyz-share-service'':''${SVC_SHARE_KEY:?启用矩阵必须设置 SVC_SHARE_KEY}'',''zxyz-audit-service'':''${SVC_AUDIT_KEY:?启用矩阵必须设置 SVC_AUDIT_KEY}''}"}}}'
       NACOS_SERVER_ADDR: nacos:8848
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
       JASYPT_PASSWORD: ${JASYPT_PASSWORD}
@@ -759,7 +761,7 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${ADMIN_SERVICE_PORT:-18088}
-      APP_INTERNAL_SERVICE_KEY: ${SVC_ADMIN_KEY}
+      APP_INTERNAL_SERVICE_KEY: ${SVC_ADMIN_KEY:?启用矩阵必须设置 SVC_ADMIN_KEY}
       TZ: Asia/Shanghai
       CONFIG_DB_HOST: mysql
       CONFIG_DB_USERNAME: ${CONFIG_DB_USERNAME:?缺少 CONFIG_DB_USERNAME，请先运行 scripts/init-secrets.sh}
@@ -771,7 +773,7 @@ services:
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
       JASYPT_PASSWORD: ${JASYPT_PASSWORD}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
-      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":"{''zxyz-user-service'':''${SVC_USER_KEY}'',''zxyz-admin-service'':''${SVC_ADMIN_KEY}'',''zxyz-project-service'':''${SVC_PROJECT_KEY}'',''zxyz-im-service'':''${SVC_IM_KEY}'',''zxyz-file-service'':''${SVC_FILE_KEY}'',''zxyz-team-service'':''${SVC_TEAM_KEY}'',''zxyz-gateway'':''${SVC_GATEWAY_KEY}'',''zxyz-email-service'':''${SVC_EMAIL_KEY}'',''zxyz-share-service'':''${SVC_SHARE_KEY}'',''zxyz-audit-service'':''${SVC_AUDIT_KEY}''}"}}}'
+      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":"{''zxyz-user-service'':''${SVC_USER_KEY:?启用矩阵必须设置 SVC_USER_KEY}'',''zxyz-admin-service'':''${SVC_ADMIN_KEY:?启用矩阵必须设置 SVC_ADMIN_KEY}'',''zxyz-project-service'':''${SVC_PROJECT_KEY:?启用矩阵必须设置 SVC_PROJECT_KEY}'',''zxyz-im-service'':''${SVC_IM_KEY:?启用矩阵必须设置 SVC_IM_KEY}'',''zxyz-file-service'':''${SVC_FILE_KEY:?启用矩阵必须设置 SVC_FILE_KEY}'',''zxyz-team-service'':''${SVC_TEAM_KEY:?启用矩阵必须设置 SVC_TEAM_KEY}'',''zxyz-gateway'':''${SVC_GATEWAY_KEY:?启用矩阵必须设置 SVC_GATEWAY_KEY}'',''zxyz-email-service'':''${SVC_EMAIL_KEY:?启用矩阵必须设置 SVC_EMAIL_KEY}'',''zxyz-share-service'':''${SVC_SHARE_KEY:?启用矩阵必须设置 SVC_SHARE_KEY}'',''zxyz-audit-service'':''${SVC_AUDIT_KEY:?启用矩阵必须设置 SVC_AUDIT_KEY}''}"}}}'
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
       RABBITMQ_USERNAME: ${RABBITMQ_USER}
@@ -823,7 +825,7 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${USER_SERVICE_PORT:-18083}
-      APP_INTERNAL_SERVICE_KEY: ${SVC_USER_KEY}
+      APP_INTERNAL_SERVICE_KEY: ${SVC_USER_KEY:?启用矩阵必须设置 SVC_USER_KEY}
       TZ: Asia/Shanghai
       USER_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_user?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       USER_DATASOURCE_USERNAME: ${USER_DB_USERNAME:?缺少 USER_DB_USERNAME，请先运行 scripts/init-secrets.sh}
@@ -836,7 +838,7 @@ services:
       IM_SERVICE_BASE_URL: http://zxyz-im-service
       EMAIL_SERVICE_BASE_URL: http://zxyz-email-service
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
-      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":"{''zxyz-user-service'':''${SVC_USER_KEY}'',''zxyz-admin-service'':''${SVC_ADMIN_KEY}'',''zxyz-project-service'':''${SVC_PROJECT_KEY}'',''zxyz-im-service'':''${SVC_IM_KEY}'',''zxyz-file-service'':''${SVC_FILE_KEY}'',''zxyz-team-service'':''${SVC_TEAM_KEY}'',''zxyz-gateway'':''${SVC_GATEWAY_KEY}'',''zxyz-email-service'':''${SVC_EMAIL_KEY}'',''zxyz-share-service'':''${SVC_SHARE_KEY}'',''zxyz-audit-service'':''${SVC_AUDIT_KEY}''}"}}}'
+      SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":"{''zxyz-user-service'':''${SVC_USER_KEY:?启用矩阵必须设置 SVC_USER_KEY}'',''zxyz-admin-service'':''${SVC_ADMIN_KEY:?启用矩阵必须设置 SVC_ADMIN_KEY}'',''zxyz-project-service'':''${SVC_PROJECT_KEY:?启用矩阵必须设置 SVC_PROJECT_KEY}'',''zxyz-im-service'':''${SVC_IM_KEY:?启用矩阵必须设置 SVC_IM_KEY}'',''zxyz-file-service'':''${SVC_FILE_KEY:?启用矩阵必须设置 SVC_FILE_KEY}'',''zxyz-team-service'':''${SVC_TEAM_KEY:?启用矩阵必须设置 SVC_TEAM_KEY}'',''zxyz-gateway'':''${SVC_GATEWAY_KEY:?启用矩阵必须设置 SVC_GATEWAY_KEY}'',''zxyz-email-service'':''${SVC_EMAIL_KEY:?启用矩阵必须设置 SVC_EMAIL_KEY}'',''zxyz-share-service'':''${SVC_SHARE_KEY:?启用矩阵必须设置 SVC_SHARE_KEY}'',''zxyz-audit-service'':''${SVC_AUDIT_KEY:?启用矩阵必须设置 SVC_AUDIT_KEY}''}"}}}'
       OSS_REGION: ${OSS_REGION}
       OSS_BUCKET: ${OSS_BUCKET}
       OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID}
@@ -902,7 +904,7 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${GATEWAY_PORT:-18000}
-      APP_INTERNAL_SERVICE_KEY: ${SVC_GATEWAY_KEY}
+      APP_INTERNAL_SERVICE_KEY: ${SVC_GATEWAY_KEY:?启用矩阵必须设置 SVC_GATEWAY_KEY}
       # 启用矩阵必须设置 SVC_GATEWAY_KEY（缺失则网关拒绝启动，fail-closed）
       SVC_GATEWAY_KEY: ${SVC_GATEWAY_KEY:?启用矩阵必须设置 SVC_GATEWAY_KEY}
       TZ: Asia/Shanghai
@@ -916,8 +918,6 @@ services:
       ADMIN_SERVICE_BASE_URL: ${ADMIN_SERVICE_BASE_URL:-http://zxyz-admin-service}
       IM_WEBSOCKET_URI: ${IM_WEBSOCKET_URI:-ws://im-service:${IM_NETTY_PORT:-19090}}
       MAX_REQUEST_SIZE: ${MAX_REQUEST_SIZE:-512MB}
-      # 可信代理网段；留空则网关不解析 XFF，下游按真实 IP 的限流会退化为全局单桶（见 .env.example 说明）
-      GATEWAY_TRUSTED_PROXIES: ${GATEWAY_TRUSTED_PROXIES:-}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?缺少 CORS_ALLOWED_ORIGINS，请先运行 scripts/init-secrets.sh 或手工填写真实域名}
       RABBITMQ_HOST: rabbitmq

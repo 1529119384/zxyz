@@ -11,6 +11,10 @@ export const IM_WS_STATUS = {
 }
 
 const HEARTBEAT_INTERVAL_MS = 25000
+// 心跳看护（L6）：发出 PING 后若在宽限期内收不到 PONG，说明连接已「假活」——
+// 服务端进程崩溃、中间设备静默丢包这类半开连接不会触发 onclose，
+// 只看 onclose 会让 UI 永久停在「已连接」却收不到任何消息。
+const PONG_TIMEOUT_MS = 15000
 const BASE_RECONNECT_DELAY_MS = 1000
 const MAX_RECONNECT_DELAY_MS = 30000
 
@@ -57,6 +61,8 @@ export function createImWebSocketClient(options = {}) {
   let reconnectAttempt = 0
   let manualClose = false
   let sendQueue = Promise.resolve()
+  // 最近一次收到 PONG 的本地时间；心跳看护据此判断连接是否还有响应（L6）
+  let lastPongAt = 0
 
   function emitStatus(status) {
     onStatusChange?.(status)
@@ -93,11 +99,40 @@ export function createImWebSocketClient(options = {}) {
     return true
   }
 
+  /**
+   * 心跳看护（L6）：每个周期先检查上一轮 PING 是否得到了 PONG，
+   * 超时即判定连接已死并主动重建。
+   */
   function startHeartbeat() {
     clearHeartbeat()
+    lastPongAt = Date.now()
     heartbeatTimer = setInterval(() => {
+      if (Date.now() - lastPongAt > HEARTBEAT_INTERVAL_MS + PONG_TIMEOUT_MS) {
+        handleDeadConnection()
+        return
+      }
       sendEnvelope(createEnvelope('PING'))
     }, HEARTBEAT_INTERVAL_MS)
+  }
+
+  /**
+   * 心跳超时后的收尾：停心跳、丢弃旧 socket、按退避重连。
+   * 旧 socket 的 onclose 晚到时 socket 已被置空，且 reconnectTimer 已存在，
+   * scheduleReconnect 内部的守卫会拦住重复调度。
+   */
+  function handleDeadConnection() {
+    clearHeartbeat()
+    const deadSocket = socket
+    socket = null
+    if (deadSocket) {
+      try {
+        deadSocket.close()
+      } catch {
+        // 关闭已失效的连接可能抛错，忽略即可
+      }
+    }
+    onError?.(new Error('WebSocket 心跳超时，连接无响应，正在重连'))
+    scheduleReconnect()
   }
 
   // 无限重连：不再设置尝试次数上限，长时间断网（如笔记本合盖过夜）后无需用户手动干预
@@ -143,7 +178,18 @@ export function createImWebSocketClient(options = {}) {
       reconnectAttempt = 0
     }
     emitStatus(reconnectAttempt > 0 ? IM_WS_STATUS.RECONNECTING : IM_WS_STATUS.CONNECTING)
-    socket = new WebSocket(getImWebSocketUrl(), ['Bearer', ticket])
+    try {
+      // 构造器可能同步抛错：URL 非法、浏览器禁用 WebSocket、页面处于非安全上下文等。
+      // 不捕获的话异常会冒泡出 connect()，而 connect() 的调用方都是 fire-and-forget
+      // （onopen/定时器/事件回调），异常无人接手，UI 将永久停在 CONNECTING 且不再重连（L6）。
+      socket = new WebSocket(getImWebSocketUrl(), ['Bearer', ticket])
+    } catch (error) {
+      socket = null
+      emitStatus(IM_WS_STATUS.CONNECTION_ERROR)
+      onError?.(error)
+      scheduleReconnect()
+      return
+    }
 
     socket.onopen = () => {
       reconnectAttempt = 0
@@ -154,6 +200,10 @@ export function createImWebSocketClient(options = {}) {
     socket.onmessage = (event) => {
       try {
         const envelope = JSON.parse(event.data)
+        // 记录 PONG 时刻，供心跳看护判断连接是否仍有响应（L6）
+        if (envelope?.type === 'PONG') {
+          lastPongAt = Date.now()
+        }
         onMessage?.(envelope)
       } catch (error) {
         onError?.(error)

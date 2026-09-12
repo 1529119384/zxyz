@@ -172,6 +172,11 @@ public class FileDomainValidator {
         if (".".equals(normalizedName) || "..".equals(normalizedName)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "文件名不能为 . 或 ..");
         }
+        // 审计 L2：控制字符（CR/LF/NUL 等）会被原样写进 .meta sidecar、DB 与审计日志，
+        // 可造成日志伪造（换行注入伪造日志行）与下游解析异常。在入库前就拒掉。
+        if (normalizedName.matches(".*[\\x00-\\x1f\\x7f].*")) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "文件名不能包含控制字符");
+        }
         if (normalizedName.matches(".*[<>&\"':*?|].*")) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "文件名不能包含特殊字符");
         }

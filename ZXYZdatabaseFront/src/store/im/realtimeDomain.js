@@ -284,7 +284,14 @@ export function createRealtimeDomain(state, deps) {
               return
             }
             lastWsError.value = message
+            return
           }
+          // 未识别类型不再静默丢弃：服务端新增事件而前端未同步升级时，
+          // 只有留下一条日志才能从「消息凭空消失」定位到协议漂移（审计 12-第三节低危项）。
+          logger.warn(
+            '[realtimeDomain] 收到未知的 WebSocket 信封类型，已忽略:',
+            envelope?.type ?? '(无 type 字段)',
+          )
         },
         onError: (error) => {
           logger.warn('[realtimeDomain] WebSocket error:', error)

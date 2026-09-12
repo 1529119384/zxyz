@@ -197,12 +197,51 @@ function formatDatabaseTargets() {
   return targets.map((target) => target.displayName || target.name).join('、')
 }
 
+// 控制字符（含 \r\n\t）与 Windows 保留字符：落盘前统一替换为下划线
+// eslint-disable-next-line no-control-regex
+const UNSAFE_FILENAME_CHARS = /[\u0000-\u001f\u007f<>:"|?*]/g
+
+/**
+ * 清洗服务端建议的下载文件名。
+ *
+ * content-disposition 是响应头，其值不可信（可能被中间层/代理污染）：
+ * `filename*=UTF-8''%2e%2e%2fevil.sh` 解出来是 `../evil.sh`，直接交给 <a download>
+ * 会带上路径；还可能夹带控制字符或 Windows 保留字符。
+ * 因此只保留最后一段文件名，并替换危险字符（审计 12-第三节低危项）。
+ *
+ * @param {string} rawName 已解码的原始文件名
+ * @returns {string} 可安全落盘的文件名；无法归一时返回空串，由调用方回落到默认名
+ */
+function sanitizeDownloadFileName(rawName) {
+  const baseName = String(rawName || '')
+    .replace(/\\/g, '/')
+    .split('/')
+    .pop()
+    .trim()
+
+  // 整段仅由点组成（`.`/`..`）视为无效，避免写回上级目录语义
+  if (!baseName || /^\.+$/.test(baseName)) {
+    return ''
+  }
+
+  return baseName.replace(UNSAFE_FILENAME_CHARS, '_').trim()
+}
+
 function parseDownloadFileName(contentDisposition = '') {
   const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i)
+  let rawName = ''
   if (utf8Match?.[1]) {
-    return decodeURIComponent(utf8Match[1])
+    try {
+      rawName = decodeURIComponent(utf8Match[1])
+    } catch {
+      // 非法百分号编码会抛 URIError，此时忽略扩展语法、回落到普通 filename
+      rawName = ''
+    }
   }
-  const match = contentDisposition.match(/filename="?([^";]+)"?/i)
-  return match?.[1] || ''
+  if (!rawName) {
+    const match = contentDisposition.match(/filename="?([^";]+)"?/i)
+    rawName = match?.[1] || ''
+  }
+  return sanitizeDownloadFileName(rawName)
 }
 </script>
