@@ -15,6 +15,14 @@
     <name>zxyz-starter</name>
     <description>ZXYZ 共享启动器：RestClient 自动配置与跨服务 HTTP 客户端</description>
 
+    <properties>
+        <!-- 本模块**零测试**（无 src/test）⇒ 既无 jacoco.exec 也无 jacoco.csv，
+             门禁对它无意义。显式 skip，避免"无执行数据"被 jacoco 静默跳过、
+             让"到底有没有被检查"变得含糊（本仓最怕这类假绿灯）。
+             依据：ISSUE/10-TESTING-STRATEGY.md §1.0。 -->
+        <jacoco.skip>true</jacoco.skip>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>uno.acloud</groupId>

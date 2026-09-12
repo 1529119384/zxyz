@@ -15,6 +15,12 @@
     <name>zxyz-email-service</name>
     <description>指绣云章独立邮件服务</description>
 
+    <properties>
+        <!-- 覆盖率棘轮：jacoco LINE 下界。口径见 ISSUE/10-TESTING-STRATEGY.md §1.0
+             （"仅单测"实测 41.30% − 约 4 点，与本模块 CI 数字恰好一致） -->
+        <jacoco.line.min>0.37</jacoco.line.min>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>uno.acloud</groupId>

@@ -15,6 +15,13 @@
     <name>zxyz-admin-service</name>
     <description>ZXYZ admin service for configuration management</description>
 
+    <properties>
+        <!-- 覆盖率棘轮：jacoco LINE 下界。口径见 ISSUE/10-TESTING-STRATEGY.md §1.0
+             （"仅单测"实测 53.04% − 约 4 点；**尤其不可**按 CI 含集成测试的 74.12% 设，
+              那是集成测试撑起来的，一跳过就差 21 个点 ⇒ 必然假红） -->
+        <jacoco.line.min>0.49</jacoco.line.min>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>uno.acloud</groupId>

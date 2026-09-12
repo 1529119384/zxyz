@@ -58,6 +58,17 @@
         <resilience4j.version>2.2.0</resilience4j.version>
         <jasypt.version>3.0.5</jasypt.version>
 
+        <!-- ===== 后端覆盖率棘轮（门禁）=====
+             实现：jacoco-maven-plugin 的 `check` goal，见下方 <build><plugins>；各模块用自己的
+             <properties> 覆盖 <jacoco.line.min> 设定各自的 LINE 下界。
+             ⚠️ 两个刻意的设计决定，改之前先读 ISSUE/10-TESTING-STRATEGY.md §1.0：
+             1) `check` 显式绑到 **test** 阶段（jacoco 默认是 verify）—— 本仓 CI 跑的是
+                `mvn -B test`，绑 verify 会让门禁**永不执行**（本仓反复踩过的"假绿灯"）。
+             2) 阈值必须按 **"仅单测"** 实测值 − 约 4 点设，**不可按 CI（含集成测试）基线**：
+                TOTAL 两侧差 6.63pt > 4pt 余量 ⇒ 用 CI 基线设会在集成测试被跳过时集体假红。
+             本属性只是兜底默认（0 = 不设下界），真实阈值在 11 个业务模块的 <properties> 里。 -->
+        <jacoco.line.min>0.00</jacoco.line.min>
+
         <!-- ===== 安全漏洞修复覆盖：以下属性覆盖 Spring Boot 3.5.14 自带
              dependency management 中仍低于修复版的依赖（Trivy HIGH/CRITICAL）。
              全部为 Spring Boot dependencies 已有的同名属性，仅调高版本号，
@@ -271,6 +282,29 @@
                         <id>report</id>
                         <phase>test</phase>
                         <goals><goal>report</goal></goals>
+                    </execution>
+                    <!-- 覆盖率门禁：逐模块校验 LINE 覆盖率下界（值见各模块 <properties> 的
+                         jacoco.line.min）。⚠️ 必须显式绑 test —— jacoco `check` 的默认阶段是
+                         verify，而本仓 CI 跑的是 `mvn -B test`，绑 verify 等于门禁永不执行
+                         （本仓反复踩过的"假绿灯"）。 -->
+                    <execution>
+                        <id>check</id>
+                        <phase>test</phase>
+                        <goals><goal>check</goal></goals>
+                        <configuration>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>${jacoco.line.min}</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
                     </execution>
                 </executions>
                 <configuration>

@@ -15,6 +15,12 @@
     <name>zxyz-im-service</name>
     <description>ZXYZ independent Netty IM service</description>
 
+    <properties>
+        <!-- 覆盖率棘轮：jacoco LINE 下界。口径见 ISSUE/10-TESTING-STRATEGY.md §1.0
+             （"仅单测"实测 14.86% − 约 4 点；不可按 CI 含集成测试的 26.52% 设） -->
+        <jacoco.line.min>0.10</jacoco.line.min>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>uno.acloud</groupId>

@@ -15,6 +15,12 @@
     <name>zxyz-project-service</name>
     <description>ZXYZ project management service</description>
 
+    <properties>
+        <!-- 覆盖率棘轮：jacoco LINE 下界。口径见 ISSUE/10-TESTING-STRATEGY.md §1.0
+             （"仅单测"实测 26.66% − 约 4 点；不可按 CI 含集成测试的 37.17% 设） -->
+        <jacoco.line.min>0.22</jacoco.line.min>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>uno.acloud</groupId>

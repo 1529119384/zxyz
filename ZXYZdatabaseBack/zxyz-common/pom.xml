@@ -14,6 +14,12 @@
     <artifactId>zxyz-common</artifactId>
     <name>zxyz-common</name>
 
+    <properties>
+        <!-- 覆盖率棘轮：jacoco LINE 下界。取值口径见 ISSUE/10-TESTING-STRATEGY.md §1.0
+             （"仅单测"实测 12.12% − 约 4 点；不可按 CI 含集成测试的 12.65% 设） -->
+        <jacoco.line.min>0.08</jacoco.line.min>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
