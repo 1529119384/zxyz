@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import uno.acloud.common.Result;
+import uno.acloud.common.web.ClientIpUtil;
 import uno.acloud.share.controller.support.ShareCookieManager;
 import uno.acloud.share.dto.ShareAccessRequest;
 import uno.acloud.share.dto.ShareVerifyRequest;
@@ -43,7 +44,9 @@ public class PublicShareController {
                               @Valid @RequestBody ShareAccessRequest request,
                               HttpServletRequest httpServletRequest,
                               HttpServletResponse httpServletResponse) {
-        String clientIp = httpServletRequest.getRemoteAddr();
+        // 经网关后 getRemoteAddr() 恒为网关容器 IP；若照旧取它，该分享的失败计数会落进全局单桶
+        // —— 任何人循环输错提取码即可把「所有用户」对任意分享的验证一起锁死。
+        String clientIp = ClientIpUtil.resolve(httpServletRequest);
         rateLimiter.checkAndIncrement(shareKey, clientIp);
         ShareVerifyRequest verifyRequest = new ShareVerifyRequest();
         verifyRequest.setShareKey(shareKey);

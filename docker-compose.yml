@@ -916,6 +916,8 @@ services:
       ADMIN_SERVICE_BASE_URL: ${ADMIN_SERVICE_BASE_URL:-http://zxyz-admin-service}
       IM_WEBSOCKET_URI: ${IM_WEBSOCKET_URI:-ws://im-service:${IM_NETTY_PORT:-19090}}
       MAX_REQUEST_SIZE: ${MAX_REQUEST_SIZE:-512MB}
+      # 可信代理网段；留空则网关不解析 XFF，下游按真实 IP 的限流会退化为全局单桶（见 .env.example 说明）
+      GATEWAY_TRUSTED_PROXIES: ${GATEWAY_TRUSTED_PROXIES:-}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?缺少 CORS_ALLOWED_ORIGINS，请先运行 scripts/init-secrets.sh 或手工填写真实域名}
       RABBITMQ_HOST: rabbitmq

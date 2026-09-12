@@ -342,6 +342,27 @@ _oss_csp_check() {
 _oss_csp_check
 
 echo ""
+echo "--- 网关可信代理（防限流退化为全局单桶） ---"
+# 背景（审计 12-P0-2）：拓扑是 nginx → gateway → service。网关解析真实客户端 IP 依赖
+# 「已知可信代理」这个前提：未声明时它不会信任 X-Forwarded-For，X-Real-IP 会回落成
+# nginx 容器 IP；下游按 X-Real-IP 计数的限流（登录/注册/分享提取码验证/邮箱验证码）
+# 于是退化成**全局单桶** —— 攻击者按阈值节奏打接口即可让全平台用户一起失败。
+# 只告警不阻断：空值不导致功能不可用（只是安全能力退化），且存量部署升级时不至于直接起不来。
+_gateway_trusted_proxies_check() {
+  local trusted="${GATEWAY_TRUSTED_PROXIES:-}"
+  if [ -z "$trusted" ]; then
+    echo "  WARN: GATEWAY_TRUSTED_PROXIES 为空 ⇒ 网关无法解析真实客户端 IP"
+    echo "        登录/注册/分享验证/邮箱验证码的「每 IP 限流」会退化为全局单桶。"
+    echo "        生产请填 Docker 网段，取值："
+    echo "        docker network inspect zxyz-net -f '{{(index .IPAM.Config 0).Subnet}}'"
+    WARNINGS=$((WARNINGS + 1))
+    return 0
+  fi
+  echo "  OK: 已声明可信代理网段 ($trusted)"
+}
+_gateway_trusted_proxies_check
+
+echo ""
 echo "===== 结果 ====="
 if [ $ERRORS -gt 0 ]; then
   echo "ERROR: $ERRORS 个错误，$WARNINGS 个警告"

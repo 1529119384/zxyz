@@ -3,6 +3,7 @@ package uno.acloud.user.controller;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -20,6 +21,7 @@ import uno.acloud.user.service.impl.ContactVerificationService;
 import uno.acloud.user.service.impl.LoginRateLimiter;
 import uno.acloud.user.service.impl.RegisterRateLimiter;
 import uno.acloud.user.service.impl.UserProfileService;
+import uno.acloud.user.vo.ContactVerificationCodeVO;
 import uno.acloud.user.vo.CurrentUserVO;
 import uno.acloud.user.vo.LoginVO;
 import uno.acloud.common.Result;
@@ -258,5 +260,89 @@ class UserControllerTest {
 
         Optional<CurrentUserVO> result = userProfileService.getCurrentUser(999L);
         assertTrue(result.isEmpty());
+    }
+
+    // ==================== 真实客户端 IP（审计 12-P0-2 防回归） ====================
+
+    /** 模拟网关/nginx 容器地址：所有真实客户端在服务侧看到的都是这一个值。 */
+    private static final String GATEWAY_CONTAINER_IP = "172.18.0.5";
+
+    private static MockHttpServletRequest requestBehindGateway(String realIp) {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr(GATEWAY_CONTAINER_IP);
+        if (realIp != null) {
+            request.addHeader("X-Real-IP", realIp);
+        }
+        return request;
+    }
+
+    private static LoginRequest loginRequest(String username) {
+        LoginRequest request = new LoginRequest();
+        request.setUsername(username);
+        request.setPassword("password123");
+        return request;
+    }
+
+    @Test
+    void login_usesGatewayRealIpForRateLimit_notContainerIp() {
+        LoginRequest request = loginRequest("admin");
+        when(authService.login(request)).thenReturn("token");
+
+        userController.login(request, requestBehindGateway("203.0.113.7"), new MockHttpServletResponse());
+
+        verify(loginRateLimiter).checkAndIncrement("203.0.113.7", "admin");
+    }
+
+    @Test
+    void login_fallsBackToRemoteAddrWhenGatewayHeaderMissing() {
+        LoginRequest request = loginRequest("admin");
+        when(authService.login(request)).thenReturn("token");
+
+        userController.login(request, requestBehindGateway(null), new MockHttpServletResponse());
+
+        verify(loginRateLimiter).checkAndIncrement(GATEWAY_CONTAINER_IP, "admin");
+    }
+
+    @Test
+    void login_twoClientsBehindSameGateway_getSeparateRateLimitBuckets() {
+        LoginRequest first = loginRequest("admin");
+        LoginRequest second = loginRequest("admin");
+        when(authService.login(first)).thenReturn("token-1");
+        when(authService.login(second)).thenReturn("token-2");
+
+        userController.login(first, requestBehindGateway("203.0.113.7"), new MockHttpServletResponse());
+        userController.login(second, requestBehindGateway("198.51.100.9"), new MockHttpServletResponse());
+
+        ArgumentCaptor<String> ipCaptor = ArgumentCaptor.forClass(String.class);
+        verify(loginRateLimiter, times(2)).checkAndIncrement(ipCaptor.capture(), eq("admin"));
+
+        List<String> capturedIps = ipCaptor.getAllValues();
+        assertEquals(List.of("203.0.113.7", "198.51.100.9"), capturedIps);
+        assertNotEquals(capturedIps.get(0), capturedIps.get(1),
+                "两个真实客户端必须落到不同限流键；若相同即说明退化成全局单桶");
+    }
+
+    @Test
+    void register_usesGatewayRealIpForRateLimit() {
+        RegisterRequest request = new RegisterRequest();
+        request.setUsername("newuser");
+        request.setPassword("password123");
+        when(authService.register(request)).thenReturn(1);
+
+        userController.register(request, requestBehindGateway("203.0.113.7"));
+
+        verify(registerRateLimiter).checkAndIncrement("203.0.113.7");
+    }
+
+    @Test
+    void createEmailVerificationCode_forwardsResolvedClientIp() {
+        // 该 IP 会一路传到 email-service，成为 zxyz:email:verify:ip:<ip> 限流键 ——
+        // 若此处仍传 getRemoteAddr()，邮件验证码的「每 IP 限流」同样是全局单桶。
+        when(contactVerificationService.createEmailVerificationCode(1L, "203.0.113.7"))
+                .thenReturn(new ContactVerificationCodeVO("email", null));
+
+        userController.createEmailVerificationCode(1L, requestBehindGateway("203.0.113.7"));
+
+        verify(contactVerificationService).createEmailVerificationCode(1L, "203.0.113.7");
     }
 }

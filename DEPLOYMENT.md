@@ -336,6 +336,7 @@ docker compose down -v
 | `RABBITMQ_MGMT_PORT` | `15672` | RabbitMQ 管理界面端口 |
 | `FRONTEND_BASE_URL` | `http://YOUR_SERVER_IP` | 前端访问地址，用于生成分享链接 |
 | `CORS_ALLOWED_ORIGINS` | `*` | 允许的跨域来源，生产环境建议改为实际域名 |
+| `GATEWAY_TRUSTED_PROXIES` | （空） | 网关可信代理网段（逗号分隔的单 IP/CIDR，如 `172.18.0.0/16`；取值见 `.env.example` 注释）。**留空会导致限流退化为全局单桶**：网关便不解析 `X-Forwarded-For`，下游按真实 IP 的限流（登录/注册/分享提取码验证/邮箱验证码）全部塌成同一个桶，攻击者按阈值节奏请求即可让全平台用户一起失败。`scripts/validate-env.sh` 会就此告警 |
 | `AUTH_COOKIE_SECURE` | `false` | Sa-Token Cookie secure 标志（生产环境改为 true） |
 | `AUTH_COOKIE_DOMAIN` | （空） | Sa-Token Cookie 域名（跨子域共享 session 时设置） |
 | `AUTH_TOKEN_TIMEOUT` | `43200` | 普通登录 Token 超时时间（秒），默认 12 小时 |

@@ -20,6 +20,7 @@ import uno.acloud.common.ErrorCode;
 import uno.acloud.common.Result;
 import uno.acloud.common.UserErrorCode;
 import uno.acloud.common.SystemRoleCodes;
+import uno.acloud.common.web.ClientIpUtil;
 import uno.acloud.common.web.CurrentUser;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.common.oss.AvatarUploadSignRequest;
@@ -98,7 +99,8 @@ public class UserController {
     public Result<LoginVO> login(@Valid @RequestBody LoginRequest request,
                                        HttpServletRequest httpRequest,
                                        HttpServletResponse response) {
-        String ip = httpRequest.getRemoteAddr();
+        // 经网关后 getRemoteAddr() 恒为网关容器 IP，直接当限流键会让「每 IP 限流」退化成全局单桶
+        String ip = ClientIpUtil.resolve(httpRequest);
         loginRateLimiter.checkAndIncrement(ip, request.getUsername());
         log.info("用户 {} 请求登录", request.getUsername());
         String token = authService.login(request);
@@ -123,7 +125,7 @@ public class UserController {
     @PostMapping("/register")
     public Result<String> register(@Valid @RequestBody RegisterRequest request,
                                    HttpServletRequest httpRequest) {
-        String ip = httpRequest.getRemoteAddr();
+        String ip = ClientIpUtil.resolve(httpRequest);
         registerRateLimiter.checkAndIncrement(ip);
         log.info("用户 {} 请求注册", request.getUsername());
         int result = authService.register(request);
@@ -189,7 +191,7 @@ public class UserController {
     @Operation(summary = "发送邮箱验证码")
     @PostMapping("/email/verification-code")
     public Result<ContactVerificationCodeVO> createEmailVerificationCode(@CurrentUser Long userId, HttpServletRequest request) {
-        return Result.of(contactVerificationService.createEmailVerificationCode(userId, request == null ? null : request.getRemoteAddr()));
+        return Result.of(contactVerificationService.createEmailVerificationCode(userId, ClientIpUtil.resolve(request)));
     }
 
     @Operation(summary = "发送手机验证码")
