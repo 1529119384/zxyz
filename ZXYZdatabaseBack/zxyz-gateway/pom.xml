@@ -16,8 +16,10 @@
 
     <properties>
         <!-- 覆盖率棘轮：jacoco LINE 下界。口径见 ISSUE/10-TESTING-STRATEGY.md §1.0
-             （"仅单测"实测 28.57% − 约 4 点；不可按 CI 含集成测试的数字设） -->
-        <jacoco.line.min>0.24</jacoco.line.min>
+             （"仅单测"实测 − 约 4 点；不可按 CI 含集成测试的数字设）。
+             2026-09-13 补 6 个 filter 测试类（P0-5）后实测由 28.57% 升至 80.67%
+             ⇒ 阈值随棘轮 0.24 → 0.76。 -->
+        <jacoco.line.min>0.76</jacoco.line.min>
     </properties>
 
     <dependencies>
