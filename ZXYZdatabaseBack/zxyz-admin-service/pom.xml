@@ -112,6 +112,16 @@
             <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- D5 架构约束测试（路线 B）：archunit-junit5 全仓只在这一处声明。
+             ⚠️ 规则集中挂在本模块是有意的 —— 架构规则是跨模块的，而任何单个业务的 classpath
+             都看不到其他服务；本模块是 reactor 的最后一个模块（无任何模块依赖它），因此
+             ArchitectureRulesTest 用 ClassFileImporter 直读全部模块的 target/classes。
+             这带来一个使用约束：该测试要求【全量 reactor 构建】，详见测试类头部的说明。 -->
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
         <!-- Nacos 服务发现 -->
         <dependency>
             <groupId>com.alibaba.cloud</groupId>

@@ -9,6 +9,7 @@ import uno.acloud.common.ShareErrorCode;
 import uno.acloud.share.common.ShareStatus;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.share.config.ShareProperties;
+import uno.acloud.share.config.ShareTimeSource;
 import uno.acloud.share.dto.ShareCreateRequest;
 import uno.acloud.share.infrastructure.client.model.ShareFileProjection;
 import uno.acloud.vo.InternalUserInfoVO;
@@ -39,6 +40,8 @@ public class ShareManager {
     private final ShareProperties shareProperties;
     private final PasswordEncoder passwordEncoder;
     private final TransactionHelper transactionHelper;
+    /** 时间基准（审计 D3）：写入端与 ShareStatusCalculator / ShareCookieManager 共用同一口井。 */
+    private final ShareTimeSource timeSource;
 
     public ShareManager(ShareMapper shareMapper,
                               ShareValidator shareValidator,
@@ -47,7 +50,8 @@ public class ShareManager {
                               ShareStatusCalculator shareStatusCalculator,
                               ShareProperties shareProperties,
                               PasswordEncoder passwordEncoder,
-                              TransactionHelper transactionHelper) {
+                              TransactionHelper transactionHelper,
+                              ShareTimeSource timeSource) {
         this.shareMapper = shareMapper;
         this.shareValidator = shareValidator;
         this.shareInputNormalizer = shareInputNormalizer;
@@ -56,6 +60,7 @@ public class ShareManager {
         this.shareProperties = shareProperties;
         this.passwordEncoder = passwordEncoder;
         this.transactionHelper = transactionHelper;
+        this.timeSource = timeSource;
     }
 
     public ShareCreateResponse createShare(ShareCreateRequest request, Long userId) {
@@ -70,7 +75,7 @@ public class ShareManager {
         return transactionHelper.execute(status -> {
             boolean needPassword = resolveNeedPassword(request);
             String normalizedPassword = needPassword ? shareInputNormalizer.normalizePassword(request.getPassword()) : null;
-            LocalDateTime now = LocalDateTime.now();
+            LocalDateTime now = timeSource.now();
 
             Share share = new Share();
             share.setShareKey(UUID.randomUUID().toString());

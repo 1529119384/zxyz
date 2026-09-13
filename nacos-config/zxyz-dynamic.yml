@@ -16,8 +16,14 @@
 
 # 域名、访问、Cookie（配置键与现有 Java 代码一致，零代码改动）
 app:
-  cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:4173}
+  # ⚠️ app.cors.allowed-origins 刻意【不在】此声明（2026-09-13, D2）。
+  # 它是「按 profile 分叉」的键，Nacos 单文件无法按 profile 分叉：
+  #   application-common.yml  = ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:4173}  ← 本地/缺省宽松档
+  #   各 application-prod.yml = ${CORS_ALLOWED_ORIGINS}                                              ← 缺值即启动失败
+  # 本文件若声明任何一侧，都会把另一侧顶掉（Nacos 优先级高于 jar 内 yml）。
+  # 需要改放行来源时：改 .env 的 CORS_ALLOWED_ORIGINS（须与 FRONTEND_BASE_URL 同源）后重建容器。
+  # 该约束由 scripts/check-nacos-config-sync.py 机器校验（[FORK]/[DIFF] 会阻断 CI）。
+  # —— 规则：Nacos 只声明「所有非 dev profile 同值」的键。
   # Cookie + Token 超时配置（secure 默认 false —— 当前站点为 IP 直连 HTTP，Secure Cookie
   # 在 HTTP 下不会被浏览器回传，置 true 会直接导致登录失效）。
   # ⚠️ 一旦启用 HTTPS（见 DEPLOYMENT.md「TLS 终止」章节：容器内 nginx 443 + 证书挂载），
@@ -80,5 +86,7 @@ app:
     default-storage-limit-bytes: 107374182400
     min-password-length: 8
   # share-service 专用（绑定路径：ShareProperties.frontendBaseUrl，prefix="app.share"）
+  # 同上：与本服务 application-prod.yml 保持逐字一致（裸 ${FRONTEND_BASE_URL}），
+  # localhost 兜底只属于 application-dev.yml，绝不进 Nacos。
   share:
-    frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:5173}
+    frontend-base-url: ${FRONTEND_BASE_URL}

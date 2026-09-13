@@ -17,9 +17,21 @@ spring:
         file-extension: yml
         group: ZXYZ
   profiles:
-    default: dev
+    # [安全默认] 缺省 profile = prod：漏配 profile 时宁可启动失败，也不要静默落到 dev ——
+    # dev profile 带的是本地弱默认（验证码回显、dev-only 弱 pepper、localhost/123456 数据源）。
+    # 本地开发请显式激活 dev：用 scripts/run-local.sh，或加 -Dspring.profiles.active=dev。
+    default: prod
   flyway:
     enabled: true
     baseline-on-migrate: true
     baseline-version: 1
+
+# 补齐端口声明：本服务此前是 10 个服务里唯一【没有 server.port】的
+# （nacos-config/zxyz-audit-service.yml 里声明了 ${SERVER_PORT:18087}，
+#  而代码侧没有 ⇒ 该键在审计里被判为「导入后新增」）。
+# 容器内 SERVER_PORT 由 compose 注入（${AUDIT_SERVICE_PORT:-18087}），加了这行不改变线上行为；
+# 收益是「脱离 compose 直跑（IDEA / mvn spring-boot:run）不再落到 8080」，并让
+# nacos 与代码默认值保持同口径（D2：导入即等价）。
+server:
+  port: ${SERVER_PORT:18087}
 

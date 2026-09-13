@@ -5,11 +5,11 @@ import uno.acloud.common.ErrorCode;
 import uno.acloud.common.ShareErrorCode;
 import uno.acloud.share.common.ShareStatus;
 import uno.acloud.share.common.ShareStatusMeta;
+import uno.acloud.share.config.ShareTimeSource;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.share.infrastructure.entity.Share;
 import uno.acloud.share.infrastructure.mapper.ShareMapper;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
 
@@ -17,9 +17,12 @@ import java.util.Objects;
 public class ShareStatusCalculator {
 
     private final ShareMapper shareMapper;
+    /** 时间基准与写入端（ShareManager）同源，见 ShareTimeSource（审计 D3）。 */
+    private final ShareTimeSource timeSource;
 
-    public ShareStatusCalculator(ShareMapper shareMapper) {
+    public ShareStatusCalculator(ShareMapper shareMapper, ShareTimeSource timeSource) {
         this.shareMapper = shareMapper;
+        this.timeSource = timeSource;
     }
 
     public Share refreshStatusIfNeeded(Share share) {
@@ -35,7 +38,7 @@ public class ShareStatusCalculator {
         if (Objects.equals(share.getStatus(), ShareStatus.CANCELED)) {
             return ShareStatus.CANCELED;
         }
-        if (share.getExpireTime() != null && share.getExpireTime().isBefore(LocalDateTime.now())) {
+        if (share.getExpireTime() != null && share.getExpireTime().isBefore(timeSource.now())) {
             return ShareStatus.EXPIRED;
         }
         if (share.getMaxAccessCount() != null && defaultZero(share.getCurrentAccessCount()) >= share.getMaxAccessCount()) {

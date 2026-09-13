@@ -159,6 +159,39 @@ services:
         max-size: "10m"
         max-file: "1"
 
+  # --- 运维工具（默认不启动；用法：docker compose --profile tools run --rm flyway <args>） ---
+  # 审计 D4a：原先是 scripts/deploy-fast.sh 里裸的 `docker run flyway/flyway:10.12`，只有 tag。
+  # 把 digest 钉在 .sh 里没用 —— Dependabot 的 docker / docker-compose 生态**只扫 Dockerfile 与
+  # compose、不看 .sh**，那样这个 pin 永远不被监控（连"上游发新版"都不会有人知道），
+  # 恰好重演本项目已踩过的"镜像不被监控"。收成 compose 服务后，digest 就落在
+  # .github/dependabot.yml 已有的 `docker-compose` 生态视野内。
+  flyway:
+    image: flyway/flyway:10.12@sha256:ac06f3b8d08887be37b7753f40f4a7315df750d9b42ad3ee5bcd10e29f163a3e
+    container_name: zxyz-flyway
+    profiles: ["tools"]
+    restart: "no"
+    # 默认只打印帮助：避免有人 `docker compose --profile tools up` 时误跑迁移
+    command: ["-?"]
+    environment:
+      # 审计 D4a：不再用 root，复用 admin-service 那套凭证。
+      # 当前线上 .env 的 CONFIG_DB_USERNAME=root ⇒ 与改造前**完全等价**；
+      # 待运维窗口把 .env 切成 zxyz_config（并用 scripts/grant-least-privilege.sh 建号）后，
+      # repair 自动变成最小权限，代码侧无需再改。
+      FLYWAY_URL: jdbc:mysql://mysql:3306/zxyz_config?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+      FLYWAY_USER: ${CONFIG_DB_USERNAME:?缺少 CONFIG_DB_USERNAME，请先运行 scripts/init-secrets.sh}
+      FLYWAY_PASSWORD: ${CONFIG_DB_PASSWORD:?缺少 CONFIG_DB_PASSWORD，请先运行 scripts/init-secrets.sh}
+      TZ: Asia/Shanghai
+    networks:
+      - zxyz-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "1"
+
   redis:
     image: redis:7.4-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
     container_name: zxyz-redis

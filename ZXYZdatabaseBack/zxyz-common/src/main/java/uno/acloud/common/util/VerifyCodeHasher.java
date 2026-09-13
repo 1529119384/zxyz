@@ -121,15 +121,12 @@ public final class VerifyCodeHasher {
      * {@code application-dev.yml} 的 {@code dev-only-insecure-pepper} 与
      * {@code src/test/resources/application-test.yml} 的 {@code test-verify-code-pepper} 同样是全互联网可见的
      * —— 拿它们当 pepper，与「没有 pepper」在安全上是等价的。</p>
-     * <p>而两个服务的 {@code application.yml} 都写着 {@code spring.profiles.default: dev}，
-     * 也就是说<b>任何一次漏设 {@code SPRING_PROFILES_ACTIVE=prod} 的启动都会落到 dev profile</b>。
-     * 若这里再放行 dev 的 pepper，结果就是「服务照常运行、库里的摘要却可被任何人离线穷举」
-     * —— 正是本类要消灭的那种<b>静默弱配置</b>。所以默认一律拒绝；dev / test 必须<b>显式</b>放行，
-     * 而放行是写在 profile 配置文件里的，评审时一眼可见。</p>
-     *
-     * <p>顺带一提：{@code spring.profiles.default: dev} 这个默认值本身还有一个更严重的影响 ——
-     * dev profile 里 {@code return-code-in-response: true}，漏设 profile 会让接口<b>直接把验证码回显给调用方</b>。
-     * 那个问题不由本类负责（已单独记录），此处只是说明「默认 profile 是 dev」这件事的真实后果。</p>
+     * <p>这些弱值最危险的路径，本是「漏设 {@code SPRING_PROFILES_ACTIVE} 的启动静默落到 dev profile」——
+     * 那时 dev 的 pepper 会被自动带上。该默认值已改（2026-09-13：各服务 {@code spring.profiles.default}
+     * 由 {@code dev} 翻为 {@code prod}，漏配 profile 直接启动失败）。但本类<b>仍然保留默认拒绝</b>，
+     * 作为纵深防御：只要有人<b>显式</b>激活 dev / test（本地开发、集成测试）而忘了配真实 pepper，
+     * 「服务照常运行、库里的摘要却可被任何人离线穷举」这种<b>静默弱配置</b>依旧会被挡住。
+     * 放行必须写在 profile 配置文件里，评审时一眼可见。</p>
      *
      * @return 拒绝的理由；不是已知弱值则返回 {@code null}
      */

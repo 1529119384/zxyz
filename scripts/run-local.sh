@@ -12,6 +12,9 @@
 #   - 自动注入 Nacos(18048)/Redis/RabbitMQ/Jasypt/内部 Token 等
 #   - 按服务把 datasource 密码键统一指向 .env 的 MYSQL_ROOT_PASSWORD
 #     （dev yml 默认密码是 123456，与 Docker MySQL 实际密码不一致）
+#   - 显式以 dev profile 启动（-Dspring-boot.run.profiles=dev）：
+#     各服务 spring.profiles.default 已是 prod，漏配 profile 会直接启动失败，
+#     所以本地必须显式激活 dev（本脚本代劳）
 #   - mvn spring-boot:run 启动，DevTools 改代码自动重启
 #   - 需要断点调试时改用 IDEA 运行配置（本脚本适合快速起服务）
 # =============================================================================
@@ -92,9 +95,9 @@ fi
 
 # ---- 5. 启动 ----
 MODULE="zxyz-${SERVICE}"
-echo "🚀 启动 ${MODULE}（dev profile）..."
+echo "🚀 启动 ${MODULE}（dev profile，显式激活）..."
 echo "   Nacos:  $NACOS_SERVER_ADDR"
 echo "   数据库: localhost:3306/${SERVICE#zxyz-}"
 echo "   改代码后 DevTools 自动重启；断点调试请用 IDEA 运行配置"
 cd "$BACKEND_DIR"
-exec mvn -pl "$MODULE" spring-boot:run
+exec mvn -pl "$MODULE" spring-boot:run -Dspring-boot.run.profiles=dev

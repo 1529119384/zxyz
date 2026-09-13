@@ -17,7 +17,10 @@ spring:
         file-extension: yml
         group: ZXYZ
   profiles:
-    default: dev
+    # [安全默认] 缺省 profile = prod：漏配 profile 时宁可启动失败，也不要静默落到 dev ——
+    # dev profile 带的是本地弱默认（验证码回显、dev-only 弱 pepper、localhost/123456 数据源）。
+    # 本地开发请显式激活 dev：用 scripts/run-local.sh，或加 -Dspring.profiles.active=dev。
+    default: prod
   servlet:
     multipart:
       max-file-size: 1GB

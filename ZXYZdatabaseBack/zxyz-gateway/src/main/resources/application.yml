@@ -1,4 +1,8 @@
 spring:
+  # 注意：网关**刻意不设 spring.profiles.default**（其余 9 个服务统一为 prod，2026-09-13）。
+  # 网关没有任何 profile 专属配置（无 application-dev/prod.yml），也不连数据源，
+  # 因此「漏配 profile」不会带出任何不安全默认；设了 default 反而掩盖「profile 到底生效没有」。
+  # 其余服务设 default: prod 是为了让漏配 profile 直接启动失败（见 CLAUDE.md「本地一键启动」）。
   main:
     web-application-type: reactive
   config:

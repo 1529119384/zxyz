@@ -1,0 +1,16 @@
+# 上下文加载类测试专用 profile（由 ZxyzImApplicationTests 的 @ActiveProfiles("test") 激活）。
+#
+# 为什么需要它：im-service 的 application.yml 把 spring.datasource.* 写成无默认值的占位符
+# （${IM_DATASOURCE_URL} 等），而 Spring 绑定 DataSourceProperties 时就会解析这些占位符
+# —— 即使测试里 DataSource 已被 @MockitoBean 替换，占位符仍需能解析，否则上下文加载失败。
+# 此前靠 spring.profiles.default=dev 的默认值兜底；该默认值已翻为 prod（2026-09-13），
+# 所以这里显式给 test profile 一组「能解析、但测试不会真去连」的本地默认值。
+#
+# 刻意不放 dev profile 的任何宽松开关（验证码回显、弱 pepper 放行）：
+# test profile 只负责「能把上下文拉起来」这一件事。
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/zxyz_im?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: test
+    password: test

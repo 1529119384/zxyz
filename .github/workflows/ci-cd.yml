@@ -12,6 +12,10 @@ on:
       - '.env.example'
       - '.gitleaks.toml'
       - '.github/workflows/**'
+      # nacos-config/**：本身不参与构建，但改它必须有人提醒「导入才对线上生效」，
+      # 所以纳入白名单以触发 nacos-config-check 作业（审计 D2）。
+      - 'nacos-config/**'
+      - 'scripts/check-nacos-config-sync.py'
   pull_request:
     branches: [dev, main]
     paths:
@@ -21,6 +25,8 @@ on:
       - 'docker-compose.yml'
       - '.env.example'
       - '.gitleaks.toml'
+      - 'nacos-config/**'
+      - 'scripts/check-nacos-config-sync.py'
   workflow_dispatch:
     inputs:
       tag:
@@ -410,6 +416,46 @@ jobs:
             exit 1
           fi
           echo "Flyway modify-guard: no already-released migrations were modified."
+
+  # ============================================================
+  # Job: Nacos 配置等价性门禁（审计 D2）
+  # ============================================================
+  # 动机：`nacos-config/*.yml` 一旦导入，优先级高于 jar 内 yml ⇒ 与代码取值不同就会
+  # **立刻改变线上行为**（`zxyz-dynamic.yml` 还是 refreshEnabled=true，改完即时生效）。
+  # 此前这份目录从未被导入、也没人校验它与代码是否一致 —— 等于一个"没人跑过的隐藏行为开关"。
+  #
+  # 本 job 只做一件事：跑 scripts/check-nacos-config-sync.py —— 校验
+  #   ① YAML 合法、无顶层重复 key（SnakeYAML 对重复 key 会静默丢弃前一个）；
+  #   ② 每个 dataId 声明的键，与**真正 import 它的服务**在非 dev 档的实际取值逐字相等。
+  #      基线按 dataId 的**实际消费方**取：例如 gateway 的 spring.config.import 里没有
+  #      zxyz-static.yml，那么 gateway 与其它服务在 redis-timeout / sa-token.is-log 上的
+  #      差异就与 zxyz-static.yml 无关，不该判为冲突（否则是假阳性）。
+  #
+  # 为什么**不设 `if:`**：与 secret-scan 同理 —— 设了 `if:` 就可能被判 skipped；将来若把它
+  # 提升为 deploy 的硬前置，`needs.*.result == 'success'` 会恒 false、deploy 永久不放行。
+  # 本 job 很便宜（十几秒），无条件跑最省心。
+  #
+  # 为什么**暂不并入 deploy.needs**：改 nacos-config 不产生新镜像，把它并进 any-change
+  # 会触发"无新镜像的部署"⇒ IMAGE_MISSING；在"导入仍需人工执行"的当前阶段，它的定位是
+  # **显式红灯信号**而非部署闸门。待导入路径自动化后，再提升为部署硬前置。
+  nacos-config-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 校验 nacos-config/ 与代码非 dev 档等价
+        run: |
+          set -euo pipefail
+          if python3 -c 'import yaml' 2>/dev/null; then
+            PY=python3
+          else
+            # ubuntu runner 的默认 venv 路径写死更稳：直接建临时 venv 装 pyyaml
+            python3 -m venv .venv-nacos-sync
+            .venv-nacos-sync/bin/pip install --quiet pyyaml
+            PY=.venv-nacos-sync/bin/python
+          fi
+          "$PY" scripts/check-nacos-config-sync.py
 
   # ============================================================
   # Job: 密钥泄漏扫描（Gitleaks）

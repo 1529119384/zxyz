@@ -111,8 +111,9 @@ class VerifyCodeHasherTest {
     void constructorShouldRejectPublicDevAndTestPeppersUnlessExplicitlyAllowed() {
         // 这两个值同样公开写在仓库里（application-dev.yml / application-test.yml），
         // 拿它们当 pepper 与「没有 pepper」在安全上等价，所以默认一律拒绝。
-        // 这条守卫不是洁癖：两个服务的 application.yml 都写着 spring.profiles.default: dev，
-        // 任何一次漏设 SPRING_PROFILES_ACTIVE=prod 的启动都会落到 dev profile 并带出 dev 的 pepper。
+        // 这条守卫不是洁癖：spring.profiles.default 已由 dev 翻为 prod（2026-09-13），漏配 profile 会
+        // 直接启动失败；但只要有人显式激活 dev/test（本地开发、集成测试）而忘了配真实 pepper，
+        // 这两条断言就是最后一道拦网。
         assertThrows(IllegalStateException.class, () -> new VerifyCodeHasher("dev-only-insecure-pepper"));
         assertThrows(IllegalStateException.class, () -> new VerifyCodeHasher("test-verify-code-pepper"));
         // 带首尾空白的同值也必须被挡住（trim 之后比对）

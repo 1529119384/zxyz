@@ -1172,8 +1172,8 @@ mvn test -pl zxyz-file-service -Dtest=FileUploadServiceTest#confirmUpload_suffic
 # 仅运行集成测试
 mvn test -pl zxyz-file-service -Dgroups=integration
 
-# 单服务运行
-mvn -pl zxyz-project-service spring-boot:run
+# 单服务运行（必须显式给 dev：各服务 spring.profiles.default 已是 prod）
+mvn -pl zxyz-project-service spring-boot:run -Dspring-boot.run.profiles=dev
 ```
 
 ### 前端

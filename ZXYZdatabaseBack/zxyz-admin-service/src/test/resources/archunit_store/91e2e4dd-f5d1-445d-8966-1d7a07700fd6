@@ -1,0 +1,5 @@
+Class <uno.acloud.file.infrastructure.mapper.FileMapper> is not assignable to com.baomidou.mybatisplus.core.mapper.BaseMapper in (FileMapper.java:0)
+Class <uno.acloud.im.infrastructure.mapper.TeamManagementMapper> is not assignable to com.baomidou.mybatisplus.core.mapper.BaseMapper in (TeamManagementMapper.java:0)
+Class <uno.acloud.team.mapper.PermissionRoleMapper> is not assignable to com.baomidou.mybatisplus.core.mapper.BaseMapper in (PermissionRoleMapper.java:0)
+Class <uno.acloud.team.mapper.TeamFileAccessMapper> is not assignable to com.baomidou.mybatisplus.core.mapper.BaseMapper in (TeamFileAccessMapper.java:0)
+Class <uno.acloud.team.mapper.TeamPermissionMapper> is not assignable to com.baomidou.mybatisplus.core.mapper.BaseMapper in (TeamPermissionMapper.java:0)

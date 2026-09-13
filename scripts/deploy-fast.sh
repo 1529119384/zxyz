@@ -158,27 +158,24 @@ fi
 if [ "$REPAIR_FLYWAY" = true ]; then
   echo "===== Flyway Repair ====="
   echo "修复 admin-service V2 迁移校验不匹配问题..."
-  # 读取 .env 中的 MySQL 密码
-  MYSQL_PASSWORD=""
-  if [ -f "$DEPLOY_DIR/.env" ]; then
-    MYSQL_PASSWORD=$(grep -E '^MYSQL_ROOT_PASSWORD=' "$DEPLOY_DIR/.env" | head -1 | cut -d'=' -f2-)
-  fi
-
-  if [ -z "$MYSQL_PASSWORD" ]; then
-    echo "ERROR: 无法读取 MYSQL_ROOT_PASSWORD（请确认 $DEPLOY_DIR/.env 存在且包含该变量）"
+  # 审计 D4a：原先在这里现读 MYSQL_ROOT_PASSWORD，再用 `docker run flyway/flyway:10.12` 以 root 执行。
+  # 现改为复用 docker-compose.yml 里 profiles:["tools"] 的 flyway 服务：
+  #   ① 凭证来自 .env 的 CONFIG_DB_USERNAME/PASSWORD（经 compose 插值，缺失即 compose 层硬失败），
+  #      不再在 shell 里 grep root 口令 —— 少一处口令在宿主机上被读到的路径；
+  #   ② flyway 镜像 digest 钉在 compose 里 ⇒ 进入 Dependabot 的 docker-compose 生态视野
+  #      （钉在 .sh 里是监控盲区）；
+  #   ③ 待运维窗口把 .env 的 CONFIG_DB_USERNAME 切成最小权限账户（scripts/grant-least-privilege.sh
+  #      的 CONFIG 条目）后，repair 自动降权，本脚本无需再改。
+  #
+  # ⚠️ 已知限制（D4a 顺带发现，非本次改动引入）：repair 的「重算并校正 checksum」需要能读到迁移文件，
+  #    而部署目录只有 docker-compose.yml（deploy-on-server.sh 只 cp 这一个文件），
+  #    没有 ZXYZdatabaseBack/*/src/main/resources/db/migration ⇒ 这一步当前**纠正不了校验和**，
+  #    只能清理失败记录 / 标记缺失迁移。要真正生效需把迁移目录一并同步到部署目录（待拍板）。
+  echo "（提示）部署目录无迁移文件 ⇒ repair 只能清理失败记录，无法重算 checksum"
+  if ! docker compose --profile tools run --rm flyway repair; then
+    echo "ERROR: flyway repair 执行失败"
     exit 1
   fi
-
-  echo "执行 flyway repair（更新 zxyz_config 库的 schema history 校验）..."
-  docker run --rm \
-    --network zxyz-net \
-    -e "FLYWAY_URL=jdbc:mysql://mysql:3306/zxyz_config?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true" \
-    -e "FLYWAY_USER=root" \
-    -e "FLYWAY_PASSWORD=$MYSQL_PASSWORD" \
-    flyway/flyway:10.12 repair || {
-      echo "ERROR: flyway repair 执行失败"
-      exit 1
-    }
   echo "Flyway repair 完成"
   echo ""
 fi

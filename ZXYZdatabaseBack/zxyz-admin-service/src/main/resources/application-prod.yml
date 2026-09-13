@@ -1,5 +1,8 @@
 # 生产环境配置，通过环境变量注入敏感信息。
-spring:
+# 注：连接的是「Nacos 配置库」zxyz_config，前缀刻意用**顶层 config.datasource.***
+# 而非 spring.datasource.*（见 ConfigDataSourceConfig：避免与 Spring Boot 自动配置的
+# 主数据源冲突）。此前这里残留了一行空的 `spring:`（值为 null）——它会被 YAML 加载器
+# 变成一个空串属性 `spring=""`，虽实测无害，但属明显笔误，已删除（2026-09-13，D2 顺带修正）。
 config:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver

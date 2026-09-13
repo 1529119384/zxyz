@@ -57,6 +57,14 @@
         <spring-cloud-alibaba.version>2025.0.0.0</spring-cloud-alibaba.version>
         <resilience4j.version>2.2.0</resilience4j.version>
         <jasypt.version>3.0.5</jasypt.version>
+        <!-- D5 架构约束测试（路线 B：只钉现状 + FreezingArchRule 冻结存量违规）：
+             ArchUnit 的 @AnalyzeClasses 只能看到「测试模块自己的 classpath」，而本仓每个服务都是
+             独立 Maven 模块、没有任何模块依赖其他服务 ⇒ 不存在能「看到全部服务」的模块。
+             因此规则不按模块分片，而是用 ClassFileImporter 直接读取各模块的 target/classes，
+             集中挂在 reactor 的最后一个模块 zxyz-admin-service 下（见
+             zxyz-admin-service/src/test/java/uno/acloud/admin/architecture/ArchitectureRulesTest.java）。
+             版本只在根 pom 声明一次，便于将来若要改走路线 A（新建 zxyz-arch-test 模块）时直接复用。 -->
+        <archunit.version>1.3.0</archunit.version>
 
         <!-- ===== 后端覆盖率棘轮（门禁）=====
              实现：jacoco-maven-plugin 的 `check` goal，见下方 <build><plugins>；各模块用自己的
@@ -231,6 +239,12 @@
                 <groupId>org.testcontainers</groupId>
                 <artifactId>mysql</artifactId>
                 <version>${testcontainers.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.tngtech.archunit</groupId>
+                <artifactId>archunit-junit5</artifactId>
+                <version>${archunit.version}</version>
                 <scope>test</scope>
             </dependency>
             <dependency>

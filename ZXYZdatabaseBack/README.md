@@ -148,29 +148,34 @@ mvn clean package -DskipTests
 
 ### 启动各服务
 
+> **⚠️ 本地起服务必须显式给 `dev` profile**：各服务的 `spring.profiles.default` 已是 `prod`
+> （2026-09-13 起），漏配 profile 会**直接启动失败**（这是刻意设计——避免静默落到 dev 的弱默认）。
+> 一键脚本 `bash scripts/run-local.sh <service>` 已代劳；手工启动请照下面写法带上
+> `-Dspring-boot.run.profiles=dev`。线上由 `docker-compose.yml` 显式给 `prod`，不受影响。
+
 ```bash
 # 启动项目服务（端口 18080）
-mvn -pl zxyz-project-service spring-boot:run
+mvn -pl zxyz-project-service spring-boot:run -Dspring-boot.run.profiles=dev
 
 # 启动 IM 服务（端口 18081，Netty 端口 19090）
-mvn -pl zxyz-im-service spring-boot:run
+mvn -pl zxyz-im-service spring-boot:run -Dspring-boot.run.profiles=dev
 
 # 启动邮件服务（端口 18082）
-mvn -pl zxyz-email-service spring-boot:run
+mvn -pl zxyz-email-service spring-boot:run -Dspring-boot.run.profiles=dev
 
 # 启动用户服务（端口 18083）
-mvn -pl zxyz-user-service spring-boot:run
+mvn -pl zxyz-user-service spring-boot:run -Dspring-boot.run.profiles=dev
 
 # 启动分享服务（端口 18084）
-mvn -pl zxyz-share-service spring-boot:run
+mvn -pl zxyz-share-service spring-boot:run -Dspring-boot.run.profiles=dev
 
 # 启动文件服务（端口 18085）
-mvn -pl zxyz-file-service spring-boot:run
+mvn -pl zxyz-file-service spring-boot:run -Dspring-boot.run.profiles=dev
 
 # 启动团队服务（端口 18086）
-mvn -pl zxyz-team-service spring-boot:run
+mvn -pl zxyz-team-service spring-boot:run -Dspring-boot.run.profiles=dev
 
-# 启动网关（端口 18000）
+# 启动网关（端口 18000；网关无 profile 专属配置，可省 profile）
 mvn -pl zxyz-gateway spring-boot:run
 ```
 

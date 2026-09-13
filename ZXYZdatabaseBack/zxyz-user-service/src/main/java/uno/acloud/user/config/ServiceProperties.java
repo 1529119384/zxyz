@@ -121,10 +121,10 @@ public class ServiceProperties {
         /**
          * 是否允许使用「仓库内公开写着」的弱 pepper。<b>只有 dev / test profile 才应置 true。</b>
          *
-         * <p>默认 false —— 因为两个服务的 {@code application.yml} 都有
-         * {@code spring.profiles.default: dev}，漏设 {@code SPRING_PROFILES_ACTIVE=prod}
-         * 的启动会落到 dev profile。若这里默认放行，就会出现「服务正常运行、摘要却可被离线穷举」
-         * 的静默弱配置。放行必须显式写进 profile 配置文件，评审时一眼可见。</p>
+         * <p>默认 false —— 纵深防御：{@code spring.profiles.default} 已由 {@code dev} 翻为 {@code prod}
+         * （2026-09-13），漏配 profile 会直接启动失败；但只要有人<b>显式</b>激活 dev / test 而忘了配真实
+         * pepper，默认放行仍会造出「服务正常运行、摘要却可被离线穷举」的静默弱配置。
+         * 放行必须显式写进 profile 配置文件，评审时一眼可见。</p>
          */
         private boolean allowInsecurePepper;
 

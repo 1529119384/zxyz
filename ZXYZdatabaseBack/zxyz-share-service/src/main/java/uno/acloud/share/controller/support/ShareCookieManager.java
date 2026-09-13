@@ -8,6 +8,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
+import uno.acloud.share.config.ShareTimeSource;
 import uno.acloud.share.infrastructure.entity.Share;
 
 import java.nio.charset.StandardCharsets;
@@ -25,6 +26,13 @@ import javax.crypto.spec.SecretKeySpec;
 public class ShareCookieManager {
     private static final String COOKIE_PREFIX = "share_access_";
     private static final String TOKEN_VERSION_PREFIX = "v2:";
+
+    /** 时间基准与写入端（ShareManager）/ 过期判定（ShareStatusCalculator）同源，见 ShareTimeSource（审计 D3）。 */
+    private final ShareTimeSource timeSource;
+
+    public ShareCookieManager(ShareTimeSource timeSource) {
+        this.timeSource = timeSource;
+    }
 
     @Nullable
     public String resolveAccessToken(String shareKey, @Nullable HttpServletRequest request) {
@@ -76,10 +84,13 @@ public class ShareCookieManager {
     }
 
     private int resolveCookieMaxAge(LocalDateTime expireTime) {
-        if (expireTime.isBefore(LocalDateTime.now())) {
+        // 审计 D3：原实现两次调用 LocalDateTime.now()，理论上跨秒/跨零点会算出不一致的两个值；
+        // 现在只取一次「此刻」，且与写入端同一基准。
+        LocalDateTime now = timeSource.now();
+        if (expireTime.isBefore(now)) {
             return 0;
         }
-        long seconds = Duration.between(LocalDateTime.now(), expireTime).getSeconds();
+        long seconds = Duration.between(now, expireTime).getSeconds();
         return seconds > Integer.MAX_VALUE ? Integer.MAX_VALUE : Math.toIntExact(seconds);
     }
 }

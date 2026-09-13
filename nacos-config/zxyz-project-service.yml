@@ -21,8 +21,11 @@ spring:
     password: ${PROJECT_DATASOURCE_PASSWORD}
 
 app:
-  performance:
-    time-aspect-enabled: true
+  # ⚠️ app.performance.time-aspect-enabled 刻意【不在】此声明。
+  # 它是「按 profile 分叉」的键：application.yml=true（所有 profile）/ application-prod.yml=${TIME_ASPECT_ENABLED:false}。
+  # Nacos 单文件无法按 profile 分叉，且 Nacos 优先级高于 jar 内 yml ⇒ 在此写死 true 会把 prod 的 false 顶掉
+  # （AOP 计时切面全开），属「一导入就改变行为」。留给代码侧按 profile 决定；
+  # 线上确需开关时用环境变量 TIME_ASPECT_ENABLED。
   file-object-delete:
     enabled: true
     batch-size: 20

@@ -74,7 +74,7 @@ mvn test                                         # all tests (~83 test classes)
 mvn test -pl zxyz-team-service                   # single module tests
 mvn test -pl zxyz-file-service -Dtest=FileUploadServiceTest  # single test class
 mvn clean package -DskipTests                    # package for Docker build
-mvn -pl zxyz-project-service spring-boot:run     # run single service
+mvn -pl zxyz-project-service spring-boot:run -Dspring-boot.run.profiles=dev   # run single service（必须显式给 profile）
 ```
 
 **本地热调试（spring-boot-devtools，父 pom 已统一引入）**：
@@ -85,6 +85,14 @@ mvn -pl zxyz-project-service spring-boot:run     # run single service
 - 本地全栈跑通：各服务 `application-dev.yml` 的 `app.*.base-url` 默认值已指向 `localhost:1808x`（环境变量仍可覆盖），先用 `scripts/dev-up.ps1`（或 dev-up.sh）启动 MySQL/Nacos/Redis/RabbitMQ，再本地起需要调试的服务
 
 **本地一键启动（免 IDE 环境变量配置）**：`bash scripts/run-local.sh <service>`（如 `team-service`/`gateway`）——自动读根目录 `.env` 注入 Nacos(18048)/Redis/RabbitMQ/Jasypt/内部 Token，并按服务把 `XXX_DATASOURCE_PASSWORD` 统一指向 `MYSQL_ROOT_PASSWORD`（dev yml 默认 123456 与 Docker MySQL 不一致），再 `mvn spring-boot:run` 启动，DevTools 改代码自动重启；换机器/换目录零配置。`DRY_RUN=1` 可只打印注入变量不启动。需要断点调试时再用 IDEA 运行配置（同一套环境变量）。
+
+**⚠️ profile 必须显式给（2026-09-13 起）**：各服务 `spring.profiles.default` 已由 `dev` 翻为 `prod` ——
+漏配 profile 时宁可**启动失败**（prod 的数据源等占位符无默认值），也不要静默落到 dev
+（dev 带验证码回显、dev-only 弱 pepper、localhost/123456 数据源）。所以本地起服务：
+- `bash scripts/run-local.sh <service>` **已代劳**（脚本内显式加 `-Dspring-boot.run.profiles=dev`）；
+- 直接 `mvn -pl <module> spring-boot:run` 或 IDEA 直跑，请**显式激活 dev**：
+  `-Dspring-boot.run.profiles=dev`，或 IDEA 运行配置里加 VM 参数 `-Dspring.profiles.active=dev`。
+线上不受影响：`docker-compose.yml` 对 10 个服务显式设了 `SPRING_PROFILES_ACTIVE: prod`。
 
 ### Frontend (run in `ZXYZdatabaseFront/`)
 
@@ -99,7 +107,7 @@ npm run test         # Vitest single run
 npm run test:watch   # Vitest watch mode
 npm run test:coverage # Vitest + @vitest/coverage-v8 coverage
 
-各服务可单独启动(端口见上表 Backend Modules)：`mvn -pl zxyz-{service}-service spring-boot:run`（audit 服务通常不单独 run）。
+各服务可单独启动(端口见上表 Backend Modules)：`mvn -pl zxyz-{service}-service spring-boot:run -Dspring-boot.run.profiles=dev`（audit 服务通常不单独 run）。
 ```
 
 ## Architecture

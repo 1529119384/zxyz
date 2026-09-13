@@ -15,7 +15,10 @@ spring:
         file-extension: yml
         group: ZXYZ
   profiles:
-    default: dev
+    # [安全默认] 缺省 profile = prod：漏配 profile 时宁可启动失败，也不要静默落到 dev ——
+    # dev profile 带的是本地弱默认（验证码回显、dev-only 弱 pepper、localhost/123456 数据源）。
+    # 本地开发请显式激活 dev：用 scripts/run-local.sh，或加 -Dspring.profiles.active=dev。
+    default: prod
   application:
     name: zxyz-user-service
   datasource:
@@ -51,8 +54,8 @@ app:
     # 算法/语义详见 zxyz-common 的 VerifyCodeHasher。
     code-pepper: ${VERIFY_CODE_PEPPER:${JASYPT_PASSWORD:}}
     # 是否允许用「仓库里公开写着」的弱 pepper（dev-only-insecure-pepper 等）。
-    # 默认 false 是刻意的：application.yml 里 spring.profiles.default=dev，
-    # 漏设 SPRING_PROFILES_ACTIVE=prod 的启动会落到 dev profile —— 若默认放行，
-    # 就会出现「服务正常运行、但库里的摘要可被任何人离线穷举」这种静默弱配置。
+    # 默认 false 是刻意的（纵深防御）：spring.profiles.default 已由 dev 翻为 prod（2026-09-13），
+    # 漏配 profile 会直接启动失败；但只要有人显式激活 dev/test 而忘了配真实 pepper，
+    # 默认放行仍会造成「服务正常运行、但库里的摘要可被任何人离线穷举」这种静默弱配置。
     # 只有 application-dev.yml / application-test.yml 才显式置 true。
     allow-insecure-pepper: ${VERIFY_CODE_ALLOW_INSECURE_PEPPER:false}
