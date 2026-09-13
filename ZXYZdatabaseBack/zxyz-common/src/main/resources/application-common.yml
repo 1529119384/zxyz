@@ -183,3 +183,14 @@ knife4j:
   enable: ${KNIFE4J_ENABLE:false}
   setting:
     language: zh_cn
+
+# 日志：把 requestId 打进每一行，让 `docker logs <svc>` 能直接串起一次跨服务请求。
+# 只覆写 level 片段（logging.pattern.level）而不是整段 logging.pattern.console ——
+# Spring Boot 默认 pattern 的 level 位置就是 ${LOG_LEVEL_PATTERN:-%5p}，
+# 因此这样既拿到了 requestId，又不会动到日期/线程/logger 名与 %clr 颜色，
+# 也没有"整段 pattern 写错导致所有服务起不来"的风险。
+# `%X{requestId:-}` 的 `:-` 默认值语法保证没有该 MDC 的日志（启动阶段、网关侧）
+# 渲染成空串而不是抛异常。值由 zxyz-common 的 RequestIdFilter 从 X-Request-Id 恢复。
+logging:
+  pattern:
+    level: "%5p [%X{requestId:-}]"

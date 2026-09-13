@@ -35,6 +35,13 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <!-- 其余 9 个业务服务都有该依赖，只有本服务缺 —— 导致 /actuator/prometheus 返回 404，
+             而 deploy/prometheus/prometheus.yml:94 早已配好 job_name: audit-service 抓
+             zxyz-audit-service:18087，即该 target 长期是 DOWN 的（Grafana 只能为它做特例）。 -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
         <!-- 引用 zxyz-common 的 InternalServiceAuthInterceptor（implements HandlerInterceptor），
              编译期靠 common 的传递依赖通过，但 fat jar 打包不含 provided/optional 传递项，
              缺此依赖会导致运行时启动即崩（FileNotFoundException: HandlerInterceptor.class） -->
