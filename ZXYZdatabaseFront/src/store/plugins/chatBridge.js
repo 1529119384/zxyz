@@ -1,3 +1,4 @@
+// @ts-check
 import { useTeamStore } from '@/store/team'
 
 /**
@@ -8,6 +9,8 @@ import { useTeamStore } from '@/store/team'
  * 解除 chat.js 对 team.js 的模块级耦合。
  *
  * 用法：在 main.js 中 `createPinia().use(chatBridgePlugin)` 注册即可。
+ *
+ * @param {{ store: { $id: string, _setTeamBridge: (teamStore: ReturnType<typeof useTeamStore>) => void } }} context Pinia 插件上下文（只声明本插件真正用到的字段）
  */
 export function chatBridgePlugin({ store }) {
   if (store.$id !== 'chat') return

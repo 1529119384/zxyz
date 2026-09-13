@@ -27,7 +27,7 @@ import { join, posix } from 'node:path'
 const SRC_DIR = 'src'
 
 /** 棘轮基线：已点亮文件数不得低于此值。上调后方可收紧。 */
-const CHECKJS_BASELINE = 28
+const CHECKJS_BASELINE = 33
 
 /**
  * 声明式规则：这些目录下的 .js 必须全部带 // @ts-check（相对仓库根，含尾斜杠）。

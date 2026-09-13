@@ -1,15 +1,28 @@
+// @ts-check
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
 import { useCurrentUserStore } from '@/store/currentUser'
 import { useTeamStore } from '@/store/team'
 
+/**
+ * 会话快照：登录后一次性产出的上下文包。
+ * @typedef {object} SessionSnapshot
+ * @property {unknown} profile
+ * @property {any[]} teams
+ * @property {boolean} canCreateTeam
+ * @property {boolean} hasTeams
+ * @property {boolean} shouldEnterNoTeam
+ */
+
+/** @type {Promise<SessionSnapshot>|null} */
 let pendingSessionReady = null
 
 export const useSessionStore = defineStore('session', () => {
   const bootstrapped = ref(false)
   let sessionVersion = 0
 
+  /** @param {{ force?: boolean }} [options] force=true 会丢弃在途初始化结果并重开一轮 */
   async function ensureSessionReady(options = {}) {
     const { force = false } = options
 
@@ -54,6 +67,7 @@ export const useSessionStore = defineStore('session', () => {
     return createSessionSnapshot({ profile, teams })
   }
 
+  /** @param {{ profile?: unknown, teams?: unknown }} [overrides] 用调用方已取到的数据覆盖，避免重复请求 */
   function createSessionSnapshot(overrides = {}) {
     const currentUserStore = useCurrentUserStore()
     const teamStore = useTeamStore()

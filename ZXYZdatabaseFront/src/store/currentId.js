@@ -1,3 +1,4 @@
+// @ts-check
 import { defineStore } from 'pinia'
 import { ref, readonly } from 'vue'
 
@@ -32,6 +33,7 @@ export const useCurrentIdStore = defineStore('currentId', () => {
     window.sessionStorage.setItem(PATH_TO_ID_MAP_KEY, JSON.stringify(pathToIdMap.value))
   }
 
+  /** @param {number} id */
   function setCurrentId(id) {
     currentId.value = id
   }
@@ -48,6 +50,10 @@ export const useCurrentIdStore = defineStore('currentId', () => {
     }
   }
 
+  /**
+   * @param {string} path
+   * @param {number} id
+   */
   function rememberPathId(path, id) {
     if (!path) {
       return
@@ -58,6 +64,7 @@ export const useCurrentIdStore = defineStore('currentId', () => {
     persistPathToIdMap()
   }
 
+  /** @param {string} path */
   function getPathId(path) {
     if (!path) {
       return undefined
@@ -70,6 +77,7 @@ export const useCurrentIdStore = defineStore('currentId', () => {
     return Object.keys(pathToIdMap.value)
   }
 
+  /** @param {string} path */
   function findNearestPathId(path) {
     if (!path) {
       return {
@@ -102,6 +110,7 @@ export const useCurrentIdStore = defineStore('currentId', () => {
     }
   }
 
+  /** @param {string} path */
   function forgetPathId(path) {
     if (!path || pathToIdMap.value[path] === undefined) {
       return

@@ -1,3 +1,4 @@
+// @ts-check
 import { readonly, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useLocalStorage } from '@vueuse/core'
@@ -58,7 +59,7 @@ export const useTeamStore = defineStore('team', () => {
   const teamDomain = createTeamDomain(state, { emitter })
 
   // permissionDomain 发出的事件 → teamDomain 执行刷新
-  emitter.on('teamMembersNeedReload', (teamId) => {
+  emitter.on('teamMembersNeedReload', (/** @type {number|null} */ teamId) => {
     teamDomain.loadTeamMembersSafe(teamId)
   })
   emitter.on('teamsNeedReload', () => {
@@ -66,7 +67,7 @@ export const useTeamStore = defineStore('team', () => {
   })
 
   // teamDomain 发出的事件 → permissionDomain 执行刷新
-  emitter.on('permissionCenterNeedsReload', (teamId) => {
+  emitter.on('permissionCenterNeedsReload', (/** @type {number|null} */ teamId) => {
     permissionDomain.loadTeamPermissionCenter(teamId)
   })
 
