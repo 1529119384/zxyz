@@ -5,9 +5,24 @@ server:
   shutdown: graceful
 
 # Jasypt 配置加密
+#
+# ⚠️ algorithm 必须是 **PBE 算法名**，不是 Cipher 的转换名。原配置写的是 "AES/GCM/NoPadding"，
+#    实测在 jasypt 1.9.3（jasypt-spring-boot-starter 3.0.5 的内核）上直接抛
+#      EncryptionInitializationException: AES/GCM/NoPadding SecretKeyFactory not available
+#    —— jasypt 用 SecretKeyFactory.getInstance(algorithm) 取算法，而 "AES/GCM/NoPadding"
+#       是 Cipher 的转换名，SecretKeyFactory 里没有这个算法名。
+#    后果：只要往任一配置项写入 ENC(...)，该服务就**启动失败**。此前所有敏感值都是 ${ENV}
+#    透传、从未产生过密文，所以这个缺陷从未被任何一次启动验证暴露 —— 它会在实施「ENC 落地」
+#    的那一刻才炸，且看起来像「主密钥配错了」。
+# 现改为 jasypt-spring-boot 官方推荐的 PBEWITHHMACSHA512ANDAES_256（HMAC-SHA512 + AES-256 + 随机 IV）。
+#    已在 JDK 17 上用同一版本 jasypt-1.9.3 实测：加解密往返 OK、同明文两次密文不同（IV 随机化生效）、
+#    错误主密钥被拒（EncryptionOperationNotPossibleException）。运行时基础镜像是
+#    eclipse-temurin:17.0.14_7-jre-alpine，Java 9+ 默认启用无限强度策略，AES-256 可用。
+# 无存量兼容问题：仓库里没有任何 ENC() 密文，改本项不影响现有 ${ENV} 取值。
+# 若日后要改本项，必须同步重加密全部 ENC() 值（见 docs/jasypt-key-management.md）。
 jasypt:
   encryptor:
-    algorithm: AES/GCM/NoPadding
+    algorithm: PBEWITHHMACSHA512ANDAES_256
     iv-generator-classname: org.jasypt.iv.RandomIvGenerator
     password: ${JASYPT_PASSWORD}
 

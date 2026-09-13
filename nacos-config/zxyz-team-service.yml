@@ -2,9 +2,14 @@
 # team-service 专用配置
 # =============================================================================
 # 敏感值使用 ENC() 格式存储，jasypt-spring-boot-starter 启动时自动解密。
-# 加密命令: java -cp jasypt-1.9.3.jar org.jasypt.intf.cli.JasyptPBEStringEncryptionCLI \
-#   algorithm=AES/GCM/NoPadding password=$JASYPT_PASSWORD input="your-secret"
-# 输出格式: ENC(encrypted_value)
+# 加密命令（⚠️ algorithm 必须是 PBE 算法名，写成 AES/GCM/NoPadding 会在 jasypt 1.9.3 上初始化即失败）:
+#   java -cp jasypt-1.9.3.jar org.jasypt.intf.cli.JasyptPBEStringEncryptionCLI \
+#     input="your-secret" password="$JASYPT_PASSWORD" \
+#     algorithm=PBEWITHHMACSHA512ANDAES_256 \
+#     ivGeneratorClassName=org.jasypt.iv.RandomIvGenerator \
+#     stringOutputType=base64
+# CLI 输出的是裸 Base64（在 "----OUTPUT---" 下一空行后），须自行包成 ENC(...)
+# 生成后必须用 JasyptPBEStringDecryptionCLI 解密自检，详见 docs/jasypt-key-management.md
 server:
   port: ${SERVER_PORT:18086}
 

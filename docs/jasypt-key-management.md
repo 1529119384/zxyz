@@ -2,434 +2,377 @@
 
 本文档说明 Jasypt 在项目中的密钥管理策略、加密操作流程和密钥轮换方案。
 
+> ## 0. 本轮修订摘要（2026-09-13）
+>
+> 修订前本文档有三处会直接导致故障的错误，均已按实测结果订正：
+>
+> | # | 原文 | 实际情况 |
+> |---|---|---|
+> | 1 | 算法为 `AES/GCM/NoPadding` | **该值在 jasypt 1.9.3 上初始化即抛异常**（`SecretKeyFactory not available`）。一旦写入任何 `ENC(...)`，服务会启动失败。已改为 `PBEWITHHMACSHA512ANDAES_256` |
+> | 2 | CLI 输出形如 `ENC(encrypted_value_here)` | **CLI 输出的是裸 Base64，不带 `ENC()` 包装**，必须自己加；且输出在 `----OUTPUT---` 下一空行之后 |
+> | 3 | §6.3 建议用 `jasypt.encryptor.password-list` 做零停机轮换 | **该配置项在 jasypt-spring-boot 3.0.5 中不存在**（已 `javap` 列出属性类全部字段核实）。写进 YAML 会被静默忽略，让人误以为做了零停机轮换 |
+>
+> 另：CLI 命令原文缺 `ivGeneratorClassName`，按它加密出的密文在运行时配置下**解不开**。
+>
+> ## 0.1 现状（先读这段，它决定本机制值不值得投入）
+>
+> - 依赖：`zxyz-common/pom.xml` 已引入 `jasypt-spring-boot-starter` **3.0.5**（内核 jasypt **1.9.3**）。
+> - 主密钥注入：`docker-compose.yml` 已为**全部 10 个后端服务**注入 `JASYPT_PASSWORD`（project / im / email / share / file / team / audit / admin / user / gateway）。
+> - 变量名是 **`JASYPT_PASSWORD`**，不是 jasypt 默认探测的 `JASYPT_ENCRYPTOR_PASSWORD`。这是有意的：`application-common.yml` 里显式写了 `password: ${JASYPT_PASSWORD}`，比依赖框架的环境变量自动探测更清晰，也不必多维护一个名字。
+> - **当前仓库与 Nacos 配置里 `ENC()` 密文数量为 0** —— 所有敏感值仍是 `${ENV}` 透传。也就是说：**这套加密机制从未真正被启用过**，上面那个算法缺陷也从未被任何一次启动验证暴露。
+>
+> ## 0.2 一句判断：ENC() 的价值边界
+>
+> 对**已经由 `.env` 经环境变量注入**的值（如 `${TEAM_DATASOURCE_PASSWORD}`），把它改成 `ENC(...)` **不带来实质安全提升**：密文仍存在 Nacos 里，而解它的主密钥就在同一台机器的 `.env` 里。**真正的安全边界是主机访问权限，不是「配置容器里存明文还是密文」。**
+>
+> `ENC()` 真正有收益的场景是：
+> 1. 值**必须**落在配置文件中（无法走环境变量），而该文件会被**导出、备份或分发**；
+> 2. 需要把配置模板（含密文）交给第三方，或提交到版本库的非密钥位置。
+>
+> 因此本项的正确定位是**纵深防御的一层**，而非替代 `.env`。**若做不到「主密钥与密文分离存储」，ENC 化的收益有限** —— 投入前请先确认这一点。
+>
+> ## 0.3 时机提示：改主密钥的最佳窗口就是现在
+>
+> 轮换主密钥必须重加密**全部** `ENC()` 值。当前 `ENC()` 数量为 0 ⇒ **现在轮换主密钥零成本**（只需改 `.env` 里的一个值）。
+> 一旦开始 ENC 化，每次轮换都要重加密并重新发布全部相关配置。
+> ⇒ 如果对当前 `.env` 里的 `JASYPT_PASSWORD` 有疑虑（它是否曾进入过版本库/日志/共享文档），**请在开始 ENC 化之前先轮换它**。
+
 ## 1. 概述
 
-Jasypt (Java Simplified Encryption) 是本项目用于加密配置文件中敏感信息的统一方案。通过 `jasypt-spring-boot-starter`，项目可以透明地加密和解密数据库密码、Redis 密码、API 密钥等敏感配置。
+Jasypt (Java Simplified Encryption) 是本项目用于加密配置文件中敏感信息的方案。通过 `jasypt-spring-boot-starter`，项目可以透明地加密和解密数据库密码、Redis 密码、API 密钥等敏感配置。
 
 **核心特性**：
 - 加密后的值格式为 `ENC(ciphertext)`
 - Spring Boot 启动时自动解密，业务代码无需改动
-- 支持 Nacos 配置中心的敏感值加密
+- 可与 Nacos 配置中心配合（敏感值加密后写入 Nacos）
 
 ## 2. 加密算法
-
-项目使用 **AES/GCM/NoPadding** 算法：
-
-| 参数 | 值 | 说明 |
-|---|---|---|
-| 算法 | AES/GCM/NoPadding | AES 加密 + GCM 认证模式，无填充 |
-| IV 生成器 | RandomIvGenerator | 每次加密生成随机初始化向量 |
-| 密钥 | JASYPT_PASSWORD | 通过环境变量注入 |
 
 **配置位置**：`ZXYZdatabaseBack/zxyz-common/src/main/resources/application-common.yml`
 
 ```yaml
 jasypt:
   encryptor:
-    algorithm: AES/GCM/NoPadding
+    algorithm: PBEWITHHMACSHA512ANDAES_256
     iv-generator-classname: org.jasypt.iv.RandomIvGenerator
     password: ${JASYPT_PASSWORD}
 ```
 
-**算法说明**：
-- **AES**：高级加密标准，对称加密算法
-- **GCM**：Galois/Counter Mode，提供认证加密（AEAD），同时保证数据机密性和完整性
-- **NoPadding**：GCM 模式不需要填充，由算法本身处理
+| 参数 | 值 | 说明 |
+|---|---|---|
+| 算法 | `PBEWITHHMACSHA512ANDAES_256` | PBE：HMAC-SHA512 派生密钥 + AES-256 加密。jasypt-spring-boot 官方推荐值 |
+| IV 生成器 | `org.jasypt.iv.RandomIvGenerator` | 每次加密生成随机 IV，**必需**（不能省，否则解密失败） |
+| 迭代次数 | 1000（默认） | key 派生迭代次数；提高会增加暴力破解成本，也会略增启动耗时 |
+| 输出编码 | base64（默认） | `ENC()` 括号内的形式 |
+| 密钥 | `JASYPT_PASSWORD` | 通过环境变量注入，见 §3 |
+
+### 2.1 ⚠️ 为什么 `algorithm` 必须是 PBE 算法名
+
+jasypt 的 `StandardPBEByteEncryptor` 用 **`SecretKeyFactory.getInstance(algorithm)`** 获取算法 —— 它把 `algorithm` 当 **PBE 算法名**，而**不是** `Cipher` 的转换名。
+
+原配置写的 `AES/GCM/NoPadding` 是 `Cipher` 的转换名，`SecretKeyFactory` 里没有这个名字，于是直接抛：
+
+```
+org.jasypt.exceptions.EncryptionInitializationException:
+  java.security.NoSuchAlgorithmException: AES/GCM/NoPadding SecretKeyFactory not available
+    at org.jasypt.encryption.pbe.StandardPBEByteEncryptor.initialize(...)
+```
+
+**影响**：只要任一配置项是 `ENC(...)`，该服务就**启动失败**。由于此前零 `ENC()` 值，这个缺陷一直潜伏；它会在「开始 ENC 化」的那一刻才炸，而且错误信息看起来像「主密钥配错了」，很容易查错方向。
+
+### 2.2 候选算法实测结果（2026-09-13，jasypt 1.9.3 / Eclipse Temurin JDK 17.0.20）
+
+运行时基础镜像为 `eclipse-temurin:17.0.14_7-jre-alpine`，Java 9+ 默认启用无限强度策略（实测 `Cipher.getMaxAllowedKeyLength("AES")` = 2147483647），AES-256 可用。
+
+| algorithm | 加解密往返 | 同明文两次密文不同 | 错误主密钥被拒 | 结论 |
+|---|---|---|---|---|
+| `PBEWITHHMACSHA512ANDAES_256` | OK | OK | OK | **采用** |
+| `PBEWITHHMACSHA256ANDAES_256` | OK | OK | OK | 可用 |
+| `PBEWITHHMACSHA512ANDAES_128` | OK | OK | OK | 可用（强度更低） |
+| `PBEWITHMD5ANDDES` | OK | OK | OK | 可用但**弱**（MD5+DES），不要用 |
+| `AES/GCM/NoPadding` | — | — | — | **不可用**（见 §2.1） |
+
+复验方式：用容器跑一段最小程序，逐项打印上表四个指标（`StandardPBEStringEncryptor` + `SimpleStringPBEConfig`，参数与 `application-common.yml` 逐项对齐）。
 
 ## 3. 密钥管理
 
-### 3.1 JASYPT_PASSWORD 环境变量
+### 3.1 主密钥的托管位置
 
-**生产环境必须通过环境变量注入，严禁硬编码在代码或配置文件中。**
+**主密钥只存于服务器 `.env`**，由 compose 注入容器环境变量：
 
-**Docker Compose 配置**（所有服务共享）：
 ```yaml
+# docker-compose.yml（10 个后端服务每个都有这一段）
 environment:
   JASYPT_PASSWORD: ${JASYPT_PASSWORD}
 ```
 
-**服务器 .env 文件**（`/www/zxyz/.env`）：
 ```bash
-# Jasypt 加密密钥。必须使用强密码，建议 32 位随机字符串。
-# 生成方式: openssl rand -base64 32
-JASYPT_PASSWORD=your-strong-password-here
+# /www/zxyz/.env（未纳入版本控制）
+JASYPT_PASSWORD=<强随机串>
 ```
 
-### 3.2 密钥生成建议
+链路：`.env` → compose 插值 → 容器环境变量 `JASYPT_PASSWORD` → `application-common.yml` 的 `jasypt.encryptor.password`。
 
-使用以下命令生成 32 字节随机密钥：
+**为什么不放 Nacos**：Nacos 里存主密钥，等于把「锁」和「钥匙」放在同一个被广泛读取的地方，ENC 化立刻失去意义。
+
+**关于 `.env` 的安全性**：`.env` 已在 `.dockerignore` 与 Gitleaks 视野内；仓库里被追踪的只有 `.env.example`（占位符 `CHANGE_ME_JASYPT_PASSWORD`）。真实值只在服务器与 CI Secret 中。
+
+### 3.2 密钥生成
 
 ```bash
-# 方式一：OpenSSL（推荐）
+# 推荐：OpenSSL（32 字节随机）
 openssl rand -base64 32
 
-# 方式二：Python
+# 备选：Python
 python -c "import secrets; print(secrets.token_urlsafe(32))"
-
-# 方式三：Java
-java -cp jasypt-1.9.3.jar org.jasypt.intf.cli.JasyptPBEStringEncryptionCLI \
-  input="dummy" password="dummy" verbose=false 2>&1 | head -1
 ```
 
-**密钥要求**：
-- 长度：至少 32 字节（256 位）
-- 复杂度：包含大小写字母、数字、特殊字符
-- 唯一性：不同环境（开发、测试、生产）使用不同密钥
+**要求**：≥32 字节；不同环境（dev / prod）使用不同密钥；不要复用其它系统的密钥。
 
-### 3.3 密钥存储位置
+### 3.3 环境隔离
 
 | 环境 | 存储位置 | 说明 |
 |---|---|---|
-| 开发环境 | `.env` 文件或 IDE 环境变量 | 可使用简单密钥，方便调试 |
-| 测试环境 | 服务器 `.env` 文件 | 与生产环境隔离 |
-| 生产环境 | 服务器 `.env` 文件 + 密钥管理服务 | 不纳入版本控制 |
-
-**安全要求**：
-- `.env` 文件已加入 `.gitignore`，禁止提交到 Git
-- 生产环境建议使用密钥管理服务（如 AWS Secrets Manager、阿里云 KMS、HashiCorp Vault）
+| 开发 | IDE 环境变量或本地 `.env` | 可用简单值，方便调试 |
+| 生产 | 服务器 `.env` | 不与开发共用；不入版本控制 |
 
 ## 4. 加密操作
 
-### 4.1 使用 JasyptEncryptor 工具类
-
-项目提供 `uno.acloud.common.util.JasyptEncryptor` 工具类：
-
-```java
-import uno.acloud.common.util.JasyptEncryptor;
-
-@Service
-public class ConfigEncryptionService {
-
-    private final JasyptEncryptor jasyptEncryptor;
-
-    public ConfigEncryptionService(JasyptEncryptor jasyptEncryptor) {
-        this.jasyptEncryptor = jasyptEncryptor;
-    }
-
-    public void encryptSensitiveValues() {
-        // 加密数据库密码
-        String encryptedDbPassword = jasyptEncryptor.encrypt("my-db-password");
-        System.out.println("DB Password: " + encryptedDbPassword);
-        // 输出: ENC(base64_encrypted_value)
-
-        // 解密
-        String decrypted = jasyptEncryptor.decrypt(encryptedDbPassword);
-        System.out.println("Decrypted: " + decrypted);
-        // 输出: my-db-password
-
-        // 检查是否已加密
-        boolean isEncrypted = jasyptEncryptor.isEncrypted(encryptedDbPassword);
-        System.out.println("Is Encrypted: " + isEncrypted);
-        // 输出: true
-    }
-}
-```
-
-**使用场景**：
-- 在应用启动后，通过单元测试或临时接口生成加密值
-- 适用于开发和测试环境
-
-### 4.2 使用命令行工具加密
-
-**注意**：Jasypt 1.9.3 CLI 使用 PBE 算法，与 starter 默认的 AES/GCM 不同。需要确保算法配置一致。
+### 4.1 用官方 CLI 加密（推荐，已实测）
 
 ```bash
-# 下载 Jasypt CLI 工具
-wget https://github.com/jasypt/jasypt/releases/download/jasypt-1.9.3/jasypt-1.9.3.jar
+JASYPT_JAR=/path/to/jasypt-1.9.3.jar
 
-# 加密（需要指定算法和 IV 生成器）
-java -cp jasypt-1.9.3.jar org.jasypt.intf.cli.JasyptPBEStringEncryptionCLI \
-  input="my-secret-password" \
-  password="${JASYPT_PASSWORD}" \
-  algorithm=AES/GCM/NoPadding \
-  ivGeneratorClassName=org.jasypt.iv.RandomIvGenerator
-
-# 输出类似：
-# ----ENVIRONMENT-----------------
-# Runtime: ...
-# ----ARGUMENTS-------------------
-# algorithm: AES/GCM/NoPadding
-# input: my-secret-password
-# ivGeneratorClassName: org.jasypt.iv.RandomIvGenerator
-# password: ...
-# ----OUTPUT----------------------
-# ENC(encrypted_value_here)
+java -cp "$JASYPT_JAR" org.jasypt.intf.cli.JasyptPBEStringEncryptionCLI \
+  input="$PLAINTEXT" \
+  password="$JASYPT_PASSWORD" \
+  algorithm=PBEWITHHMACSHA512ANDAES_256 \
+  ivGeneratorClassName=org.jasypt.iv.RandomIvGenerator \
+  stringOutputType=base64
 ```
 
-**使用场景**：
-- 在 CI/CD 流程中批量加密配置
-- 在没有应用运行环境时加密敏感值
+输出形如（**注意 `----OUTPUT---` 之后先是空行，才是密文**）：
+
+```
+----ENVIRONMENT-----------------
+
+Runtime: Eclipse Adoptium OpenJDK 64-Bit Server VM 17.0.20+8
+
+----ARGUMENTS-------------------
+
+input: my-secret-password
+password: ...
+stringOutputType: base64
+ivGeneratorClassName: org.jasypt.iv.RandomIvGenerator
+algorithm: PBEWITHHMACSHA512ANDAES_256
+
+----OUTPUT----------------------
+
+AdB5pVL+bnSoWvoGiGBWJ93Z9MZj+r3AAIkyIfnvPtxiANmXmT+lxrOLhDS086LBRa9y3x4v94yACFnvj0DCig==
+```
+
+⚠️ **三个容易踩的点**：
+1. 输出是**裸 Base64**，**不带 `ENC()` 包装** —— 写进配置时要自己加：`ENC(<那一行>)`。
+2. 上面这条命令**必须带 `ivGeneratorClassName`**。少了它，jasypt 会退回 `NoIvGenerator`，加密时与运行时配置不一致 ⇒ 密文**解不开**。
+3. `input=` 的值用双引号时，`$` 与反引号**仍会被 shell 展开**。口令含这类字符请改用单引号：`input='p@$$w0rd'`。
+
+**一行取出密文的写法**（避免手抄出错）：
+
+```bash
+CIPHER=$(java -cp "$JASYPT_JAR" org.jasypt.intf.cli.JasyptPBEStringEncryptionCLI \
+  input="$PLAINTEXT" password="$JASYPT_PASSWORD" \
+  algorithm=PBEWITHHMACSHA512ANDAES_256 \
+  ivGeneratorClassName=org.jasypt.iv.RandomIvGenerator stringOutputType=base64 2>/dev/null \
+  | grep -E '^[A-Za-z0-9+/=]{20,}$' | tail -1)
+echo "ENC($CIPHER)"
+```
+
+**生成后必须自检**（这一步能挡住「密钥写错」「算法不一致」「手抄错字符」三类事故）：
+
+```bash
+java -cp "$JASYPT_JAR" org.jasypt.intf.cli.JasyptPBEStringDecryptionCLI \
+  input="$CIPHER" password="$JASYPT_PASSWORD" \
+  algorithm=PBEWITHHMACSHA512ANDAES_256 \
+  ivGeneratorClassName=org.jasypt.iv.RandomIvGenerator stringOutputType=base64
+# 输出的明文必须与 input 完全一致
+```
+
+**服务器上没有 JDK 时**，用容器跑（jar 在 Maven 卷里）：
+
+```bash
+docker run --rm \
+  -e JASYPT_PASSWORD \
+  -v zxyz-m2:/root/.m2:ro \
+  maven:3.9-eclipse-temurin-17 \
+  java -cp /root/.m2/repository/org/jasypt/jasypt/1.9.3/jasypt-1.9.3.jar \
+  org.jasypt.intf.cli.JasyptPBEStringEncryptionCLI \
+  input="$PLAINTEXT" password="$JASYPT_PASSWORD" \
+  algorithm=PBEWITHHMACSHA512ANDAES_256 \
+  ivGeneratorClassName=org.jasypt.iv.RandomIvGenerator stringOutputType=base64
+```
+
+⚠️ 主密钥通过 `-e JASYPT_PASSWORD`（从环境带入）传给容器，**不要**写成 `-e JASYPT_PASSWORD=真实值` —— 那会进 shell 历史。
+
+### 4.2 用 `JasyptEncryptor` 工具类（应用内）
+
+`uno.acloud.common.util.JasyptEncryptor`（`zxyz-common`，`@Component`）封装了 starter 自动配置的 `StringEncryptor`：
+
+```java
+private final JasyptEncryptor jasyptEncryptor;
+
+String encrypted = jasyptEncryptor.encrypt("my-secret");  // → "ENC(base64...)"（已带包装）
+String plain     = jasyptEncryptor.decrypt(encrypted);    // → "my-secret"
+boolean yes      = jasyptEncryptor.isEncrypted(encrypted); // → true
+```
+
+与 CLI 的差别：**`encrypt()` 的返回值已自带 `ENC()` 包装**，CLI 需要自己加。
+
+⚠️ **不要为生成密文而临时暴露 HTTP 接口**：那等于在业务进程里对外提供了「用主密钥加密任意内容」的能力。生成密文是**运维动作**，应在独立的 CLI/容器环境执行。
 
 ### 4.3 加密后的格式
 
-加密后的值格式为 `ENC(ciphertext)`，其中 `ciphertext` 是 Base64 编码的加密数据。
+格式为 `ENC(ciphertext)`，`ciphertext` 是 Base64。
 
-**示例**：
-```yaml
-# 原始配置（明文）
-spring:
-  datasource:
-    password: my-secret-password
-
-# 加密后配置
-spring:
-  datasource:
-    password: ENC(dBwMkHhF5Q2V3w8j9K0L1M2N3O4P5Q6R7S8T9U0V1W2X3Y4Z5)
-```
-
-**格式要求**：
-- 必须以 `ENC(` 开头，以 `)` 结尾
-- 括号内为 Base64 编码的密文
-- 不要在 `ENC(...)` 前后添加空格
-- 不要手动修改括号内的内容
+**要求**：以 `ENC(` 开头、`)` 结尾；括号内不改动；前后不加空格；`ENC(` 与 `)` 之间不能换行。
 
 ## 5. 在 Nacos 配置中使用
 
-### 5.1 配置模板示例
+### 5.1 迁移方式（保留 `${ENV}` 回退一版）
 
-在 Nacos 配置模板中使用 `ENC()` 值：
+**采用逐个配置项迁移**，而不是一次性全改：每项先改成 `ENC(...)`，保留原 `${ENV}` 形式在注释里一版，观察一次发布周期后再删。
 
 ```yaml
-# 数据库配置
 spring:
   datasource:
-    url: jdbc:mysql://localhost:3306/zxyz_user?useSSL=false&serverTimezone=Asia/Shanghai
-    username: zxyz_user
-    password: ENC(encrypted_db_password_here)
-
-  # Redis 配置
-  data:
-    redis:
-      host: localhost
-      port: 6379
-      password: ENC(encrypted_redis_password_here)
-
-  # RabbitMQ 配置
-  rabbitmq:
-    host: localhost
-    port: 5672
-    username: guest
-    password: ENC(encrypted_rabbitmq_password_here)
-
-# OSS 配置
-app:
-  oss:
-    access-key-id: your-access-key-id
-    access-key-secret: ENC(encrypted_oss_secret_here)
+    # 迁移前: password: ${TEAM_DATASOURCE_PASSWORD}
+    password: ENC(xxxxxxxx)
 ```
+
+`nacos-config/import.sh` 会拦截「新增的明文机密键」：值必须以 `${`（环境变量引用）或 `ENC(`（Jasypt 密文）开头，否则**中止发布**。所以迁移过程不会因手误把明文推到 Nacos。
+
+⚠️ **Nacos 配置不会自动生效**：改 `nacos-config/*.yml` 后必须在服务器手动执行 `import.sh`，并重启对应服务。
 
 ### 5.2 自动解密原理
 
-`jasypt-spring-boot-starter` 的工作流程：
+`jasypt-spring-boot-starter` 通过 `EnvironmentPostProcessor` 在启动早期包装所有 `PropertySource`，读取配置时识别 `ENC(...)` 并解密。Nacos 配置的加载同样基于 `EnvironmentPostProcessor`，两者的执行顺序由 `@AutoConfiguration` 的 `before`/`after` 决定。
 
-1. **注册 EnvironmentPostProcessor**：在 Spring Boot 启动早期阶段注册
-2. **拦截属性源**：包装所有 `PropertySource`，使其支持透明解密
-3. **自动识别 ENC()**：读取配置时，检测 `ENC(...)` 格式
-4. **解密并返回明文**：使用 `JASYPT_PASSWORD` 解密，返回明文给应用
+⚠️ **这是一个理论上的风险点**：若 Nacos 属性源在 Jasypt 包装**之后**才注册，Nacos 里的 `ENC()` 值可能不被解密。**首次把某个 `ENC()` 值写入 Nacos 时，务必确认对应服务真的解开了**（看启动日志有无 `EncryptionOperationNotPossibleException` / 配置注入是否拿到明文），不要假设顺序一定正确。
 
-**执行顺序**：
-```
-Spring Boot 启动
-  → EnvironmentPostProcessor 执行（Jasypt 在此阶段注册 EncryptablePropertySource）
-  → Nacos 配置加载（Nacos 的 EnvironmentPostProcessor）
-  → Jasypt 包装 Nacos 属性源（确保 ENC() 值被解密）
-  → @ConfigurationProperties 和 @Value 注入（已经是明文）
-```
+### 5.3 编辑注意事项
 
-**重要**：Jasypt 和 Nacos 都通过 `EnvironmentPostProcessor` 实现，执行顺序由 `@AutoConfiguration` 的 `before`/`after` 声明决定。必须在 PoC 中验证顺序是否正确。
-
-### 5.3 编辑加密配置注意事项
-
-1. **不要手动编辑加密值**
-   - `ENC(...)` 中的内容是加密后的密文，手动修改会导致解密失败
-   - 如果需要修改加密值，必须重新加密
-
-2. **使用工具类加密**
-   - 启动应用后，通过 `JasyptEncryptor` 工具类加密新值
-   - 将加密后的 `ENC(...)` 值粘贴到 Nacos 配置
-
-3. **配置格式**
-   - 确保 `ENC(...)` 格式正确，括号完整
-   - 不要在 `ENC(...)` 前后添加空格
-
-4. **环境变量优先级**
-   - 如果同时存在环境变量和 Nacos 配置，环境变量优先
-   - 建议敏感值通过环境变量注入，而非 Nacos 配置
+1. **不要手改 `ENC(...)` 内容** —— 密文任何一位变化都会解密失败（GCM/AES 有完整性校验）。
+2. **换主密钥 = 全部重加密**（见 §6）。
+3. **环境变量优先于 Nacos**：同一键同时在 `.env` 与 Nacos 中时以环境变量为准。若某个键想用 Nacos 的 `ENC()` 值，就要先把它从 `.env` / compose 的 `environment:` 中移除，否则你改 Nacos 不会有任何效果。
 
 ## 6. 密钥轮换流程
 
-### 6.1 轮换场景
+### 6.1 触发场景
 
-- 定期轮换（建议每 90 天一次）
-- 密钥泄露
-- 人员变动
-- 安全审计要求
+定期（建议每 90 天）、密钥疑似泄露、人员变动、安全审计要求。
 
-### 6.2 轮换步骤
+### 6.2 步骤
 
-**步骤 1：生成新密钥**
+**步骤 0：评估影响面（当前 = 零，见 §0.3）**
 
 ```bash
-# 生成新密钥
-NEW_JASYPT_PASSWORD=$(openssl rand -base64 32)
-echo "新密钥: $NEW_JASYPT_PASSWORD"
+# 统计仓库里有多少 ENC() 值（决定重加密工作量）
+grep -rn "ENC(" nacos-config/ ZXYZdatabaseBack/*/src/main/resources/ | wc -l
 ```
 
-**步骤 2：使用新密钥重新加密所有敏感值**
+**步骤 1：生成新主密钥并备份现状**
 
 ```bash
-# 设置新密钥环境变量
-export JASYPT_PASSWORD="$NEW_JASYPT_PASSWORD"
-
-# 使用 Jasypt CLI 加密所有敏感值
-# 数据库密码
-java -cp jasypt-1.9.3.jar org.jasypt.intf.cli.JasyptPBEStringEncryptionCLI \
-  input="db-password" password="$NEW_JASYPT_PASSWORD" \
-  algorithm=AES/GCM/NoPadding ivGeneratorClassName=org.jasypt.iv.RandomIvGenerator
-
-# Redis 密码
-java -cp jasypt-1.9.3.jar org.jasypt.intf.cli.JasyptPBEStringEncryptionCLI \
-  input="redis-password" password="$NEW_JASYPT_PASSWORD" \
-  algorithm=AES/GCM/NoPadding ivGeneratorClassName=org.jasypt.iv.RandomIvGenerator
-
-# RabbitMQ 密码
-java -cp jasypt-1.9.3.jar org.jasypt.intf.cli.JasyptPBEStringEncryptionCLI \
-  input="rabbitmq-password" password="$NEW_JASYPT_PASSWORD" \
-  algorithm=AES/GCM/NoPadding ivGeneratorClassName=org.jasypt.iv.RandomIvGenerator
-
-# OSS Secret
-java -cp jasypt-1.9.3.jar org.jasypt.intf.cli.JasyptPBEStringEncryptionCLI \
-  input="oss-secret" password="$NEW_JASYPT_PASSWORD" \
-  algorithm=AES/GCM/NoPadding ivGeneratorClassName=org.jasypt.iv.RandomIvGenerator
+NEW_KEY=$(openssl rand -base64 32)
+# 备份当前 .env 与 Nacos 配置（回滚用）
+cp /www/zxyz/.env /www/zxyz/.env.bak-$(date +%F)
 ```
+
+**步骤 2：用新密钥重新加密所有 `ENC()` 值**
+
+对每个 `ENC()` 值执行 §4.1 的加密 + **解密自检**（自检不可省 —— 它是唯一能在改 `.env` 之前发现「密钥/算法不一致」的手段）。建议写成循环脚本，不要手抄单个值。
 
 **步骤 3：更新 Nacos 配置**
 
-1. 登录 Nacos 控制台
-2. 找到所有包含 `ENC(...)` 的配置
-3. 将旧的 `ENC(...)` 值替换为新生成的值
-4. 发布配置
+替换所有 `ENC(...)` 为新值 → 发布 → 在服务器执行 `import.sh`。
 
-**步骤 4：更新服务器 .env 文件**
+**步骤 4：更新 `.env` 的主密钥**
 
 ```bash
-# 在服务器上更新 .env 文件
-vi /www/zxyz/.env
-
-# 修改 JASYPT_PASSWORD 为新密钥
-JASYPT_PASSWORD=新密钥
+vi /www/zxyz/.env     # JASYPT_PASSWORD=<新密钥>
 ```
 
-**步骤 5：重启所有服务**
+⚠️ **顺序很重要**：必须**先**把 Nacos 里的密文换成新密钥加密的、**再**改 `.env`。反过来会让服务在中间态用新密钥解旧密文 ⇒ 启动失败。
+
+**步骤 5：重建并重启服务**
 
 ```bash
-# 使用 Docker Compose 重启所有服务
-cd /www/zxyz
-docker-compose down
-docker-compose up -d
-
-# 或者只重启需要的服务
-docker-compose restart zxyz-user-service zxyz-project-service ...
+cd /www/zxyz && docker compose up -d <受影响的 10 个后端服务>
 ```
+⚠️ 注意用 `docker compose up -d`（会重新读取 `.env` 并重建容器），**不是** `docker compose restart` —— `restart` 复用已有容器的环境变量，**主密钥不会更新**。
 
-**步骤 6：验证服务正常**
+**步骤 6：验证**
 
 ```bash
-# 检查服务状态
-docker-compose ps
-
-# 检查服务日志
-docker-compose logs -f zxyz-user-service
-
-# 测试服务功能
-curl http://localhost:18083/actuator/health
+docker compose ps
+docker compose logs --tail=100 zxyz-user-service | grep -i "encrypt\|decrypt\|password"
+curl -fsS http://localhost:18083/actuator/health
 ```
 
-### 6.3 零停机轮换（高级）
+**回滚**：恢复 `.env.bak-*` 与 Nacos 配置 → `docker compose up -d` 相关服务。
 
-如果需要零停机轮换，可以使用 Jasypt 的多密钥支持：
+### 6.3 关于「零停机轮换」
 
-```yaml
-jasypt:
-  encryptor:
-    password: ${JASYPT_PASSWORD}
-    password-list: ${JASYPT_PASSWORD_OLD},${JASYPT_PASSWORD}
-```
+> ⚠️ **本文档旧版建议的 `jasypt.encryptor.password-list` 配置项不存在。**
+> 已用 `javap` 列出 jasypt-spring-boot 3.0.5 的 `JasyptEncryptorConfigurationProperties` 全部字段核实，可用的只有：
+> `password`、`algorithm`、`keyObtentionIterations`、`poolSize`、`providerName`、`providerClassName`、`saltGeneratorClassname`、`ivGeneratorClassname`、`stringOutputType`、`privateKeyString/Location/Format`、`publicKeyString/Location/Format`、`gcmSecretKeyString/Location/Password/Salt/Algorithm`、`property.*`、`bean`、`proxyPropertySources`、`skipPropertySources`、`refreshedEventClasses`。
+> 写进 YAML 会被 Spring Boot **静默忽略** —— 不会报错，只会让人误以为已经实现零停机轮换，而在真正轮换时因旧密文解不开而全站起不来。
 
-**流程**：
-1. 生成新密钥，添加到 `password-list`
-2. 使用新密钥加密所有敏感值
-3. 更新 Nacos 配置
-4. 将旧密钥移到 `password-list` 末尾
-5. 最终移除旧密钥
+**本项目的做法**：低峰期一次性重加密 + 重建重启（§6.2）。
 
-## 7. 注意事项
+之所以不需要零停机方案，是因为本项目的形态很特殊：**10 个后端服务共用同一个主密钥、同一批 Nacos 配置**，轮换天然是一次整体动作，不存在「部分服务已换密钥、部分还没换」的长期共存期。真正需要「新旧密钥并存」的场景（多集群分批滚动升级）在本项目不成立。
+
+**如果将来确实需要**：要在**代码层**实现 —— 自定义 `EncryptablePropertyResolver`（先试新密钥、失败再试旧密钥）+ 同时注册两个 `StringEncryptor` bean，并明确旧密钥的淘汰期限。这不在当前方案内。
+
+## 7. 注意事项与故障排查
 
 ### 7.1 安全要求
 
-- **不要在代码中硬编码密钥**
-- **不要将 .env 文件提交到 Git**
-- **不要在日志中打印明文密码**
-- **不要在 Nacos 中存储 JASYPT_PASSWORD**
+- 不在代码中硬编码密钥
+- 不把 `.env` 提交到 Git
+- 不在日志中打印明文密钥
+- **不在 Nacos 中存放 `JASYPT_PASSWORD`**（锁与钥匙分离）
+- 不在命令行参数里写密钥明文（用环境变量带入）
 
-### 7.2 环境隔离
+### 7.2 故障排查
 
-| 环境 | 密钥要求 | 存储方式 |
-|---|---|---|
-| 开发环境 | 可使用简单密钥 | IDE 环境变量或 `.env` |
-| 测试环境 | 与生产环境隔离 | 服务器 `.env` |
-| 生产环境 | 必须使用强密码 | 密钥管理服务 + 服务器 `.env` |
+**问题 1：`EncryptionInitializationException: ... SecretKeyFactory not available`**
 
-### 7.3 敏感配置清单
+- 原因：`algorithm` 不是 PBE 算法名（例如写成了 `AES/GCM/NoPadding` 这类 Cipher 转换名）
+- 解决：见 §2.1 / §2.2，改回 `PBEWITHHMACSHA512ANDAES_256`
 
-以下配置建议加密：
+**问题 2：`EncryptionOperationNotPossibleException`**
 
-- 数据库密码：`spring.datasource.password`
-- Redis 密码：`spring.data.redis.password`
-- RabbitMQ 密码：`spring.rabbitmq.password`
-- OSS AccessKey Secret：`app.oss.access-key-secret`
-- SMTP 密码：`email.password`
-- Nacos 密码：`spring.cloud.nacos.password`
-- 内部服务 Token：`app.internal-service-token`（可选）
+- 原因（按概率）：① `JASYPT_PASSWORD` 未设置或与加密时不一致；② 密文被手工改动；③ 加密时**没带 `ivGeneratorClassName`**（§4.1 第 2 点）；④ 加密与运行时的 `algorithm` 不一致
+- 解决：用 §4.1 的解密自检命令，在当前主密钥下复现；能解开说明是部署侧取值问题，解不开说明密钥或算法不匹配
 
-### 7.4 故障排查
+**问题 3：服务启动后某个配置项仍是 `ENC(...)` 字面值**
 
-**问题 1：解密失败**
-```
-DecryptionException: Unable to decrypt: ENC(encrypted_value)
-```
+- 原因：该属性源在 Jasypt 包装之后才注册（见 §5.2），或该值来自 `@Value` 之外的直接读取（如 `System.getenv`）
+- 解决：核对属性的来源；确认它确实经过了 Spring 的 `Environment` 取值路径
 
-**原因**：
-- `JASYPT_PASSWORD` 环境变量未设置或错误
-- 加密时使用的密钥与当前不一致
-- 加密值被手动修改
+**问题 4：改了 Nacos 里的 `ENC()` 值但服务行为没变**
 
-**解决方案**：
-1. 检查环境变量是否正确设置
-2. 确认加密时使用的密钥
-3. 重新加密配置值
-
-**问题 2：配置格式错误**
-```
-IllegalArgumentException: Invalid ENC format
-```
-
-**原因**：
-- `ENC(...)` 格式不正确
-- 括号不匹配
-- 包含非法字符
-
-**解决方案**：
-1. 检查 `ENC(...)` 格式
-2. 重新加密配置值
+- 原因：同一键在 `.env` / compose 的 `environment:` 里也有值，**环境变量优先级更高**（见 §5.3 第 3 条）
+- 解决：先移除环境变量侧的该键，或改环境变量侧
 
 ## 8. 参考资料
 
 - [Jasypt 官方文档](http://www.jasypt.org/)
 - [jasypt-spring-boot GitHub](https://github.com/ulisesbocchio/jasypt-spring-boot)
-- [AES/GCM/NoPadding 算法说明](https://docs.oracle.com/en/java/javase/17/docs/specs/security/standard-names.html#cipher-algorithm-names)
+- [Java 标准算法名（SecretKeyFactory 与 Cipher 是两套名字）](https://docs.oracle.com/en/java/javase/17/docs/specs/security/standard-names.html)
 - [Spring Boot 外部化配置](https://docs.spring.io/spring-boot/docs/current/reference/html/features.html#features.external-config)
 
 ## 更新日志
 
-- **2026-06-15**: 初始版本，Jasypt 密钥管理文档
+- **2026-09-13**: 订正三处会导致故障的错误 —— 算法名（`AES/GCM/NoPadding` → `PBEWITHHMACSHA512ANDAES_256`，原值在 jasypt 1.9.3 上初始化即失败）、CLI 输出格式（裸 Base64，不含 `ENC()` 包装）、以及在 jasypt-spring-boot 3.0.5 中不存在的 `password-list` 配置项；补充实测证据（4 个候选算法 × 4 项指标）、可复制的生成/自检命令、容器内执行方式、`ENC()` 的价值边界（§0.2）与「现在就是改主密钥的最佳窗口」（§0.3）；新增 3 条故障排查。同步修正 11 个 `nacos-config/*.yml` 头部的加密命令注释。
+- **2026-06-15**: 初始版本。
