@@ -27,10 +27,13 @@ import { join, posix } from 'node:path'
 const SRC_DIR = 'src'
 
 /** 棘轮基线：已点亮文件数不得低于此值。上调后方可收紧。 */
-const CHECKJS_BASELINE = 24
+const CHECKJS_BASELINE = 28
 
-/** 声明式规则：这些目录下的 .js 必须全部带 // @ts-check（相对仓库根，含尾斜杠）。 */
-const FULLY_LIT_DIRS = ['src/api/']
+/**
+ * 声明式规则：这些目录下的 .js 必须全部带 // @ts-check（相对仓库根，含尾斜杠）。
+ * src/models/ 已于 2026-09-13 全目录点亮（8 个 .js + __tests__/upload.spec.js）。
+ */
+const FULLY_LIT_DIRS = ['src/api/', 'src/models/']
 
 function walk(dir, acc = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {

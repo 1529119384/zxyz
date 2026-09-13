@@ -35,12 +35,19 @@ export interface ApiResult<T = unknown> {
   data: T
 }
 
-/** 空间/搜索列表展示用文件条目（与 src/models/file.js 的 mapFullFileEntry 输出对应）。 */
+/**
+ * 空间/搜索列表展示用文件条目（与 src/models/file.js 的 mapFullFileEntry 输出对应）。
+ *
+ * 注意这里是**归一化后的展示模型**而非后端原始报文：`type` 是数值枚举
+ * （0=文件夹/1=文件，见 src/models/filePresentation.js 的 FILE_ENTRY_TYPES），
+ * `category` 也是数值分类编号。此处若写成 `string` 会与归一化实现不符
+ * ——下面的 `as ApiFileItem[]` 断言会以 TS2352 报警，正是这条锚点在防漂移。
+ */
 export interface ApiFileItem {
   id?: string | number
   fileName?: string
-  type?: string
-  category?: string | null
+  type?: 0 | 1
+  category?: number | null
   fileSize?: number
   parentId?: string | number | null
   teamId?: string | number | null

@@ -1,5 +1,48 @@
+// @ts-check
 import { formatSize } from '@/utils/format'
 
+/**
+ * 后端 IM 消息原始记录（宽松描述：只列本模块读取的字段）。
+ * @typedef {object} RawImMessage
+ * @property {string} [content]
+ * @property {string} [messageType]
+ */
+
+/**
+ * 结构化消息体（公告/系统通知：content 字段里是 JSON 字符串）。
+ * @typedef {object} StructuredMessagePayload
+ * @property {string} [title]
+ * @property {string} [content]
+ */
+
+/**
+ * 文件卡片消息体。
+ * @typedef {object} FileCardPayload
+ * @property {string} [shareType]
+ * @property {number} [entryCount]
+ * @property {Array<{ originalName?: string }>} [entries]
+ */
+
+/**
+ * 项目创建申请卡片体。
+ * @typedef {object} ProjectCreateRequestPayload
+ * @property {string} [status]
+ * @property {string} [content]
+ * @property {string|number} [reviewerUserId]
+ * @property {string} [reviewTime]
+ * @property {string} [reviewReason]
+ */
+
+/**
+ * 聊天时间格式化函数签名（默认实现 formatChatTime，便于测试注入桩）。
+ * @typedef {(value: string|number|Date|null) => string|number|Date} ChatTimeFormatter
+ */
+
+/**
+ * 状态码 → 文案。JS 取对象属性恒按字符串匹配，查找处统一 String() 归一：
+ * 未知状态仍会落到不存在的键，由 `|| 兜底文案` 接手。
+ * @type {Readonly<Record<string, string>>}
+ */
 const WS_STATUS_TEXT = {
   CONNECTED: '已连接',
   CONNECTING: '连接中',
@@ -7,6 +50,7 @@ const WS_STATUS_TEXT = {
   RECONNECTING: '重连中',
 }
 
+/** @type {Readonly<Record<string, string>>} */
 const CONVERSATION_TYPE_TEXT = {
   SYSTEM: '系统消息',
   TEAM_NOTIFICATION: '团队消息',
@@ -15,25 +59,42 @@ const CONVERSATION_TYPE_TEXT = {
   TEAM: '团队群聊',
 }
 
+/** @type {Readonly<Record<string, string>>} */
 const MESSAGE_STATUS_TEXT = {
   SENDING: '发送中',
   FAILED: '发送失败',
   RECALLED: '已撤回',
 }
 
+/**
+ * @param {string} [status]
+ * @returns {string}
+ */
 export function formatWsStatus(status) {
-  return WS_STATUS_TEXT[status] || '未知状态'
+  return WS_STATUS_TEXT[String(status)] || '未知状态'
 }
 
+/**
+ * @param {{ type?: string }|null} [conversation]
+ * @returns {string}
+ */
 export function getConversationTypeText(conversation) {
   if (!conversation) return ''
-  return CONVERSATION_TYPE_TEXT[conversation.type] || '会话'
+  return CONVERSATION_TYPE_TEXT[String(conversation.type)] || '会话'
 }
 
+/**
+ * @param {string} [status]
+ * @returns {string}
+ */
 export function getMessageStatusText(status) {
-  return MESSAGE_STATUS_TEXT[status] || ''
+  return MESSAGE_STATUS_TEXT[String(status)] || ''
 }
 
+/**
+ * @param {RawImMessage} [message]
+ * @returns {StructuredMessagePayload}
+ */
 export function parseStructuredMessagePayload(message = {}) {
   const rawContent = message.content || ''
   if (!rawContent) return {}
@@ -49,16 +110,27 @@ export function parseStructuredMessagePayload(message = {}) {
   }
 }
 
+/**
+ * @param {RawImMessage} [message]
+ * @returns {StructuredMessagePayload}
+ */
 export function parseAnnouncementPayload(message = {}) {
   return parseStructuredMessagePayload(message)
 }
 
+/**
+ * @param {RawImMessage} [message]
+ * @returns {StructuredMessagePayload}
+ */
 export function parseSystemNotificationPayload(message = {}) {
   return parseStructuredMessagePayload(message)
 }
 
+/**
+ * @param {RawImMessage} [message]
+ */
 export function getStructuredMessageSearchContent(message = {}) {
-  if (!['ANNOUNCEMENT', 'SYSTEM_NOTIFICATION'].includes(message.messageType)) {
+  if (!['ANNOUNCEMENT', 'SYSTEM_NOTIFICATION'].includes(String(message.messageType))) {
     return message.content
   }
 
@@ -68,21 +140,37 @@ export function getStructuredMessageSearchContent(message = {}) {
     : payload.content || message.content
 }
 
+/**
+ * @param {FileCardPayload} [fileCard]
+ * @returns {string}
+ */
 export function getFileCardTitle(fileCard = {}) {
   if (fileCard.shareType === 'MULTI_FILE') return `共 ${fileCard.entryCount || 0} 项`
   return fileCard.entries?.[0]?.originalName || '文件卡片'
 }
 
+/**
+ * @param {FileCardPayload} [fileCard]
+ * @returns {string}
+ */
 export function getFileCardSummary(fileCard = {}) {
   if (fileCard.shareType === 'SINGLE_FILE') return '文件'
   if (fileCard.shareType === 'SINGLE_FOLDER') return '文件夹'
   return `包含 ${fileCard.entryCount || 0} 个资源`
 }
 
+/**
+ * @param {FileCardPayload} [fileCard]
+ * @returns {Array<{ originalName?: string }>}
+ */
 export function getFileCardPreviewEntries(fileCard = {}) {
   return (fileCard.entries || []).slice(0, 3)
 }
 
+/**
+ * @param {RawImMessage} [message]
+ * @returns {ProjectCreateRequestPayload}
+ */
 export function parseProjectCreateRequestPayload(message = {}) {
   if (!message.content) return {}
   try {
@@ -93,6 +181,11 @@ export function parseProjectCreateRequestPayload(message = {}) {
   }
 }
 
+/**
+ * @param {ProjectCreateRequestPayload} [payload]
+ * @param {ChatTimeFormatter} [formatTime]
+ * @returns {string}
+ */
 export function formatProjectCreateRequestStatusText(payload = {}, formatTime = formatChatTime) {
   const reviewer = payload.reviewerUserId ? `，处理人 ${payload.reviewerUserId}` : ''
   const reviewTime = payload.reviewTime ? `，处理时间 ${formatTime(payload.reviewTime)}` : ''
@@ -100,10 +193,18 @@ export function formatProjectCreateRequestStatusText(payload = {}, formatTime = 
   return `${payload.status === 'APPROVED' ? '已同意' : '已拒绝'}${reviewer}${reviewTime}${reason}`
 }
 
+/**
+ * @param {number|string|null} [value]
+ * @returns {string}
+ */
 export function formatProjectQuotaText(value) {
   return value == null ? '无限' : formatSize(Number(value || 0))
 }
 
+/**
+ * @param {string|number|Date|null} [value]
+ * @returns {string|number|Date}
+ */
 export function formatChatTime(value) {
   if (!value) return ''
   const date = new Date(value)
