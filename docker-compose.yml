@@ -26,6 +26,15 @@
 #      中 zxyz-gateway 项一致，否则 admin 邮件管理经网关调用在矩阵下 401。
 #      灰度已完成（email 先行，随后铺开到全部 10 个服务）；完整手稿见 docs/matrix-enable-guide.md。
 # ---------------------------------------------------------------------------
+# 【重要】本文件的任何改动（哪怕只改注释）都会走「配置变更 ⇒ 全量重建」：
+#   detect-changes 的 docker-config 组命中本文件 ⇒ scripts/deploy-on-server.sh 把 UPDATE_SVC
+#   覆盖为全部 11 个服务（含 frontend-nginx），且 IMAGE_TAG 取**本次新 sha**。
+#   因此 CI 的 build-and-push 必须把 11 个镜像**全部构建**：否则该 sha 的镜像不存在，
+#   部署会在镜像预检处 IMAGE_MISSING 硬失败（run 34733088945 即此故 —— 仅配置变更 +
+#   前端无变更 ⇒ 前端行被判「no changes」跳过 ⇒ 整条部署中止；fail-safe，生产未被半更新）。
+#   ⇒ 该耦合已在 ci-cd.yml 的行级 should-build / was-built 门禁中补上 docker-config 分支。
+#     **不要**把它挪回 job 级 any-change：job 级只管「要不要起这个矩阵」，管不到「某一行要不要构建」。
+# ---------------------------------------------------------------------------
 services:
   mysql:
     image: mysql:8.4.0-oraclelinux8

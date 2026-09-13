@@ -646,8 +646,18 @@ jobs:
       - name: Check if needs build
         id: should-build
         run: |
-          # 后端服务：自身变更 || backend-common 变更
+          # 构建条件（三者取或）：
+          #   ① 自身有变更；
+          #   ② docker-compose.yml / .env.example 变更（docker-config）—— 部署脚本会把
+          #      UPDATE_SVC 覆盖为「全部 11 个服务」（含 frontend-nginx），且 IMAGE_TAG 取
+          #      本次新 sha；此时若不构建，该 sha 的镜像根本不存在，部署会在镜像预检处
+          #      IMAGE_MISSING 硬失败。run 34733088945 教训：仅配置变更 + 前端无变更 ⇒
+          #      前端行被判「no changes」跳过 ⇒ 整条部署中止（fail-safe，生产未被半更新）。
+          #   ③ 后端服务且 backend-common 变更（common 是全部后端的公共依赖）。
+          #   注意 ② 必须放在行级而不是仅放在 job 级 any-change：job 级只管「要不要起这个
+          #   矩阵」，管不到「某一行要不要构建」。
           if [ "${{ matrix.change }}" = "true" ] || \
+             [ "${{ needs.detect-changes.outputs.docker-config }}" = "true" ] || \
              ([ "${{ matrix.is_backend }}" = "true" ] && [ "${{ needs.detect-changes.outputs.backend-common }}" = "true" ]); then
             echo "build=true" >> $GITHUB_OUTPUT
           else
@@ -758,7 +768,10 @@ jobs:
       - name: Check if image was built
         id: was-built
         run: |
+          # 与 build-and-push 的 should-build 保持逐字一致（含 docker-config 分支），
+          # 否则「因配置变更而被构建」的镜像会漏扫。
           if [ "${{ matrix.change }}" = "true" ] || \
+             [ "${{ needs.detect-changes.outputs.docker-config }}" = "true" ] || \
              ([ "${{ matrix.is_backend }}" = "true" ] && [ "${{ needs.detect-changes.outputs.backend-common }}" = "true" ]); then
             echo "built=true" >> $GITHUB_OUTPUT
           else
