@@ -31,7 +31,9 @@ docker-compose.yml
 .github/workflows/**
 ```
 
-不在此白名单内的文件变更（如 `CLAUDE.md`、`docs/**`、`nacos-config/**`、`scripts/**`、`sql/**`）**不触发** workflow。`dorny/paths-filter` 进一步按服务目录判断哪些镜像需要重建。
+不在此白名单内的文件变更（如 `CLAUDE.md`、`docs/**`、`scripts/**`、`sql/**`）**不触发** workflow。`dorny/paths-filter` 进一步按服务目录判断哪些镜像需要重建。
+
+> `nacos-config/**` 自 2026-09-13 起**已纳入白名单**：它不参与镜像构建，但改它必须导入 Nacos 才对线上生效，故由 `nacos-config-check`（等价性门禁）与 `nacos-import`（自动导入 + 逐份回读校验）两个作业接管。详见 `nacos-config/README.md`。
 
 ### 提交规范与同步顺序
 

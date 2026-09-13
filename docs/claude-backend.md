@@ -32,7 +32,8 @@ Profile 覆盖：`application-dev.yml` / `application-prod.yml`。
 **配置单一事实来源（P3-7）**：每个 key 只允许在**一个**配置载体定义一次，避免跨文件/跨数据源重复定义依赖 import 合并顺序：
 - 本地 `application.yml` 与 Nacos（`zxyz-{svc}.yml`/`zxyz-static.yml`/`zxyz-dynamic.yml`）**不得对同一 key 双轨重复**（如 `spring.datasource.*`、`server.port`、`app.*`）。本地为 dev 默认、Nacos 为 prod 覆盖的同一 key 只留一处，另一方删除或注释。
 - `spring.datasource` 由 `zxyz-static.yml`（仅 `hikari.*` 连接池）与各 `zxyz-{svc}.yml`（`url/username/password`）共同组成——这是合法的**父子键拆分**；请勿在两侧定义同一子键（如两边都写 `url`）。同一父 key 下子键必须在同一载体内。
-- Nacos 配置发布前 `nacos-config/import.sh` 已做单文件顶层重复 key 自检（检出即中止），勿绕过。
+- Nacos 配置发布前 `nacos-config/import.sh` 已做单文件顶层重复 key 自检（检出即中止）、字面量机密拦截、以及**导入后逐份 md5 回读校验**，勿绕过。
+- 改 `nacos-config/**` 由 CI 作业 `nacos-import` **自动导入**；**不要手工改 Nacos 控制台** —— 会造成仓库与线上漂移，且下次导入会覆盖它。
 
 ## 服务间通信
 

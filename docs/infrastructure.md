@@ -18,7 +18,8 @@ Schema 文件：**表结构仅由各服务的 Flyway 迁移管理** —— `ZXYZ
 环境变量：`NACOS_SERVER_ADDR`, `NACOS_USERNAME`, `NACOS_PASSWORD`, `NACOS_NAMESPACE`
 认证变量：`NACOS_AUTH_TOKEN`（JWT 签名密钥）, `NACOS_AUTH_IDENTITY_KEY`, `NACOS_AUTH_IDENTITY_VALUE`
 
-配置模板存放于 `nacos-config/` 目录，通过 `nacos-config/import.sh` 批量导入（group=`ZXYZ`）。
+配置模板存放于 `nacos-config/` 目录（**Nacos 的运行真源**），通过 `nacos-config/import.sh` 批量导入（group=`ZXYZ`，命名空间 public）。
+改 `nacos-config/**` 并 push 后由 CI 作业 `nacos-import` **自动导入并逐份回读校验**；`zxyz-dynamic.yml` 入库即热更新，其余 11 份需重启服务生效。详见 `nacos-config/README.md`。
 共享配置：`zxyz-static.yml`（连接池、Sa-Token、服务间地址）、`zxyz-dynamic.yml`（CORS、认证超时、热更新项）。
 敏感值使用 `ENC(...)` 格式（Jasypt AES/GCM 加密），启动时通过 `JASYPT_PASSWORD` 环境变量解密。
 

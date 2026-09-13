@@ -250,7 +250,9 @@ spring:
 
 `nacos-config/import.sh` 会拦截「新增的明文机密键」：值必须以 `${`（环境变量引用）或 `ENC(`（Jasypt 密文）开头，否则**中止发布**。所以迁移过程不会因手误把明文推到 Nacos。
 
-⚠️ **Nacos 配置不会自动生效**：改 `nacos-config/*.yml` 后必须在服务器手动执行 `import.sh`，并重启对应服务。
+⚠️ **生效时机取决于 `refreshEnabled`**：`zxyz-dynamic.yml` 入库即热更新；其余 11 份（`refreshEnabled=false`）需**重启对应服务**才接管。
+导入**不必手工**：改 `nacos-config/**` 并 push 后，CI 作业 `nacos-import` 会自动导入并逐份回读校验（详见 `nacos-config/README.md`）。应急时可在服务器手工执行：
+`cd /www/zxyz-repo/nacos-config && bash ./import.sh "" 127.0.0.1:8848 127.0.0.1:18081`。
 
 ### 5.2 自动解密原理
 
