@@ -135,6 +135,122 @@ class FileCopyServiceTest {
         verify(fileObjectReferenceService).retainReference(eq("uuid-test.txt"), anyString());
     }
 
+    // ============ copyFiles — 复制后必须失效用量缓存（用户报障：容量未及时刷新） ============
+
+    @Test
+    void copyFiles_shouldPublishCreatedNodeIdsForCacheInvalidation() {
+        Long userId = 1L;
+        Long fileNodeId = 100L;
+        Long targetParentId = 200L;
+        Long teamId = 10L;
+        Long createdNodeId = 1000L;
+
+        FileItem sourceFile = FileItem.create();
+        sourceFile.setId(fileNodeId);
+        sourceFile.setOriginalName("test.txt");
+        sourceFile.setStorePath("/test.txt");
+        sourceFile.setUploadUserId(userId);
+        sourceFile.setTeamId(teamId);
+        sourceFile.setSpaceType(2);
+        sourceFile.setUuidName("uuid-test.txt");
+        sourceFile.setFileSize(1024L);
+        sourceFile.setStorageProvider("oss");
+
+        Folder targetFolder = Folder.create();
+        targetFolder.setId(targetParentId);
+        targetFolder.setOriginalName("target");
+        targetFolder.setStorePath("/target");
+        targetFolder.setTeamId(teamId);
+        targetFolder.setSpaceType(2);
+        SpaceTarget spaceTarget = new SpaceTarget(teamId, 2, null);
+
+        when(fileDomainValidator.requireMovableNodes(anyList())).thenReturn(List.of(sourceFile));
+        when(fileDomainValidator.requireTargetFolder(targetParentId)).thenReturn(targetFolder);
+        when(helper.resolveOperationTarget(targetParentId, teamId, null, null, targetFolder))
+                .thenReturn(spaceTarget);
+        when(helper.resolveCopyName(eq(sourceFile), any(FileOperationHelper.CopyTargetContext.class), eq(userId)))
+                .thenReturn("test.txt");
+        when(helper.isRenamed(sourceFile, "test.txt")).thenReturn(false);
+        when(helper.buildDetail(any(FileNode.class), anyString(), anyString(), anyBoolean(),
+                anyString(), anyInt(), anyString()))
+                .thenReturn(new BatchOperationDetailVO.ItemDetail(
+                        fileNodeId, "test.txt", FileNodeType.FILE, "copied",
+                        false, "test.txt", "success", ErrorCode.SUCCESS, "success"));
+        when(helper.buildBatchResult(anyList(), eq(targetParentId)))
+                .thenReturn(new BatchOperationDetailVO(1, 1, 0, 0, 0, targetParentId, List.of()));
+        when(fileMapper.insertFileItem(any(FileItem.class))).thenAnswer(invocation -> {
+            FileItem item = invocation.getArgument(0);
+            ReflectionTestUtils.setField(item, "id", createdNodeId);
+            return 1;
+        });
+
+        fileCopyService.copyFiles(List.of(fileNodeId), targetParentId, teamId, userId);
+
+        // 复制新增了 file_node 行 ⇒ SUM(file_size) 变化，必须用「新建节点 id」失效用量缓存并广播变更事件。
+        verify(helper).publishByIdsAfterCommit(FileOperationHelper.ACTION_COPIED, List.of(createdNodeId));
+    }
+
+    @Test
+    void copyFiles_partialBatchFailure_shouldStillInvalidateCommittedBatches() {
+        Long userId = 1L;
+        Long targetParentId = 200L;
+        Long teamId = 10L;
+
+        Folder targetFolder = Folder.create();
+        targetFolder.setId(targetParentId);
+        targetFolder.setOriginalName("target");
+        targetFolder.setStorePath("/target");
+        targetFolder.setTeamId(teamId);
+        targetFolder.setSpaceType(2);
+        SpaceTarget spaceTarget = new SpaceTarget(teamId, 2, null);
+
+        // 31 个顶层文件 → 分两批（30 + 1），第二批配额失败
+        List<FileNode> topLevel = new ArrayList<>();
+        for (int i = 0; i < 31; i++) {
+            FileItem item = FileItem.create();
+            item.setId((long) (100 + i));
+            item.setOriginalName("f" + i + ".txt");
+            // 必须设置 storePath：FilePathUtil.reduceToTopLevelNodes 会用 safeStorePath 校验路径
+            // （null/空白直接抛 BusinessException），否则本用例会在进入批次循环前就中断。
+            item.setStorePath("/f" + i + ".txt");
+            item.setUploadUserId(userId);
+            item.setTeamId(teamId);
+            item.setSpaceType(2);
+            item.setFileSize(10L);
+            topLevel.add(item);
+        }
+
+        when(fileDomainValidator.requireMovableNodes(anyList())).thenReturn(topLevel);
+        when(fileDomainValidator.requireTargetFolder(targetParentId)).thenReturn(targetFolder);
+        when(helper.resolveOperationTarget(targetParentId, teamId, null, null, targetFolder))
+                .thenReturn(spaceTarget);
+        when(helper.resolveCopyName(any(FileNode.class), any(FileOperationHelper.CopyTargetContext.class), eq(userId)))
+                .thenReturn("copy.txt");
+        when(helper.isRenamed(any(FileNode.class), anyString())).thenReturn(false);
+        when(helper.buildDetail(any(FileNode.class), anyString(), anyString(), anyBoolean(),
+                anyString(), anyInt(), anyString()))
+                .thenReturn(new BatchOperationDetailVO.ItemDetail(
+                        1L, "copy.txt", FileNodeType.FILE, "copied",
+                        false, "copy.txt", "success", ErrorCode.SUCCESS, "success"));
+        when(fileMapper.insertFileItem(any(FileItem.class))).thenAnswer(invocation -> {
+            FileItem item = invocation.getArgument(0);
+            ReflectionTestUtils.setField(item, "id", 9000L);
+            return 1;
+        });
+        // 第一批扣减成功，第二批超限 → 第一批已提交、第二批整体回滚
+        when(usageLedgerMapper.incrementWhenUnderLimit(anyString(), anyLong())).thenReturn(1, 0);
+        when(helper.withBatchData(any(BusinessException.class), anyList(), anyLong()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        List<Long> sourceIds = topLevel.stream().map(FileNode::getId).toList();
+        assertThrows(BusinessException.class, () ->
+                fileCopyService.copyFiles(sourceIds, targetParentId, teamId, userId));
+
+        // 已提交的第一批必须失效（否则这 30 个节点的用量永久停在旧值），且不得把回滚批次的 id 算进去。
+        verify(helper).publishByIdsAfterCommit(eq(FileOperationHelper.ACTION_COPIED),
+                argThat(ids -> ids != null && ids.size() == 30));
+    }
+
     // ==================== copyFiles — exceeding MAX_COPY_NODES_PER_TRANSACTION ====================
 
     @Test

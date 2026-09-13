@@ -37,12 +37,14 @@ public class FileLifecycleService implements FileLifecyclePort {
     private final FileResourceChangedPublisher fileResourceChangedPublisher;
     private final TransactionHelper transactionHelper;
     private final UsageLedgerMapper usageLedgerMapper;
+    private final StorageCacheService storageCacheService;
 
     public FileLifecycleService(FileMapper fileMapper, FileDomainValidator fileDomainValidator,
                                 ShareCleanupClient shareCleanupClient, FileAccessGuard fileAccessGuardService,
                                 FileObjectReferenceManager fileObjectReferenceService, FileConverter fileConverter,
                                 Optional<FileResourceChangedPublisher> fileResourceChangedPublisher,
-                                TransactionHelper transactionHelper, UsageLedgerMapper usageLedgerMapper) {
+                                TransactionHelper transactionHelper, UsageLedgerMapper usageLedgerMapper,
+                                StorageCacheService storageCacheService) {
         this.fileMapper = fileMapper;
         this.fileDomainValidator = fileDomainValidator;
         this.shareCleanupClient = shareCleanupClient;
@@ -52,6 +54,7 @@ public class FileLifecycleService implements FileLifecyclePort {
         this.fileResourceChangedPublisher = fileResourceChangedPublisher.orElse(null);
         this.transactionHelper = transactionHelper;
         this.usageLedgerMapper = usageLedgerMapper;
+        this.storageCacheService = storageCacheService;
     }
 
     @Override
@@ -276,6 +279,11 @@ public class FileLifecycleService implements FileLifecyclePort {
     }
 
     private void publishByIdsAfterCommit(String eventType, List<Long> fileIds) {
+        // 存储用量缓存必须随文件变更失效。该缓存（StorageCacheService，TTL 30s）此前
+        // **没有任何生产代码调用过它的失效方法** ⇒ 上传/彻底删除后前端重新拉取仍拿到旧值，
+        // 表现为「删除/上传后顶部容量条不刷新」（用户报障）。
+        // 刻意放在 publisher 判空之前：即使 MQ 发布器缺席（如单测），失效也必须照做。
+        invalidateStorageUsageAfterCommit();
         if (fileResourceChangedPublisher == null || fileIds == null || fileIds.isEmpty()) {
             return;
         }
@@ -284,11 +292,22 @@ public class FileLifecycleService implements FileLifecyclePort {
     }
 
     private void publishFromSnapshotsAfterCommit(String eventType, List<FileInfoDTO> snapshots) {
+        invalidateStorageUsageAfterCommit();
         if (fileResourceChangedPublisher == null || snapshots == null || snapshots.isEmpty()) {
             return;
         }
         List<FileInfoDTO> eventSnapshots = List.copyOf(snapshots);
         TransactionUtils.runAfterCommit(() -> fileResourceChangedPublisher.publishFromSnapshots(eventType, eventSnapshots));
+    }
+
+    /**
+     * 事务提交后失效存储用量缓存。
+     *
+     * <p><b>为什么必须等提交后</b>：事务内失效会让并发请求把「未提交的旧数据」重新查回来并写进缓存，
+     * 反而把脏值固化整整一个 TTL；提交后失效才是 read-your-writes 语义。</p>
+     */
+    private void invalidateStorageUsageAfterCommit() {
+        TransactionUtils.runAfterCommit(() -> storageCacheService.invalidateAllStorageCaches());
     }
 
     private record RestoreNameScope(Long parentId, SpaceTarget target, Integer fileType, Long ownerUserId) {

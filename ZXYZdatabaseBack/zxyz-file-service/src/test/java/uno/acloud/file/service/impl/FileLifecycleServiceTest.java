@@ -54,6 +54,9 @@ class FileLifecycleServiceTest {
     @Mock
     private UsageLedgerMapper usageLedgerMapper;
 
+    @Mock
+    private StorageCacheService storageCacheService;
+
     private FileLifecycleService service;
 
     @BeforeEach
@@ -61,7 +64,8 @@ class FileLifecycleServiceTest {
         service = new FileLifecycleService(
                 fileMapper, fileDomainValidator, shareCleanupClient,
                 fileAccessGuardService, fileObjectReferenceService, fileConverter,
-                Optional.ofNullable(fileResourceChangedPublisher), transactionHelper, usageLedgerMapper);
+                Optional.ofNullable(fileResourceChangedPublisher), transactionHelper, usageLedgerMapper,
+                storageCacheService);
         // Mock TransactionHelper to execute lambdas directly
         lenient().when(transactionHelper.execute(any())).thenAnswer(invocation -> {
             TransactionHelper.TransactionCallback<?> callback = invocation.getArgument(0);
@@ -171,6 +175,31 @@ class FileLifecycleServiceTest {
 
         verify(fileObjectReferenceService).releaseReferences(ossKeys);
         verify(shareCleanupClient).deleteShareItemsByFileIds(allIds);
+    }
+
+    @Test
+    void reallyDelete_shouldInvalidateStorageUsageCache() {
+        FileItem node = fileNode(1L, FileDeleteStatus.RECYCLE);
+        node.setUuidName("uuid-abc");
+        List<Long> fileIds = List.of(1L);
+        List<Long> allIds = List.of(1L);
+        List<String> ossKeys = List.of("uuid-abc");
+
+        when(fileDomainValidator.normalizeFileIds(fileIds)).thenReturn(fileIds);
+        when(fileDomainValidator.requireNodes(fileIds)).thenReturn(List.of(node));
+        when(fileConverter.toFileInfoDTO(node)).thenReturn(
+                new uno.acloud.dto.FileInfoDTO(1L, 1, "uuid-abc", "test.txt", null, null,
+                        "/test.txt", null, null, FileDeleteStatus.RECYCLE, null, null));
+        when(fileMapper.collectDescendantIds(fileIds)).thenReturn(allIds);
+        when(fileMapper.getOssKeysByIds(allIds)).thenReturn(ossKeys);
+        when(fileMapper.reallyDeleteByIds(allIds, 100L)).thenReturn(1);
+
+        service.reallyDelete(fileIds, 100L);
+
+        // 只有「彻底删除」才真正释放配额（回收站条目仍计入 SUM(file_size)，故逻辑删除不失效是正确的），
+        // 因此彻底删除后必须失效用量缓存，否则前端容量条会停在旧值。
+        verify(storageCacheService).invalidateAllStorageCaches();
+        verify(fileResourceChangedPublisher).publishFromSnapshots(eq("DELETED"), anyList());
     }
 
     // ---- restoreFiles tests ----

@@ -139,35 +139,50 @@ public class FileCopyService {
         FileOperationHelper.CopyTargetContext rootTargetContext = new FileOperationHelper.CopyTargetContext(targetParentId, target);
         List<BatchOperationDetailVO.ItemDetail> details = new ArrayList<>();
         String scopeKey = scopeKeyOf(target, userId);
+        // 本次复制实际落库的新节点 id（跨批次累积），供提交后失效两层用量缓存并广播变更事件。
+        List<Long> copiedNodeIds = new ArrayList<>();
 
         // 注意：分批独立事务，后续批次失败时前面批次已提交（部分成功语义）。
         // 调用方应通过返回的 BatchOperationDetailVO 中的 status 字段判断每个节点的处理结果。
         // 因此配额扣减必须按批次落在各自事务内（不能在循环外一次性扣总量），否则某批回滚会造成台账泄漏。
         List<List<FileNode>> batches = partition(topLevelNodes, 30);
-        for (List<FileNode> batch : batches) {
-            // 记录本批开始前已累积的明细条数：批次回滚时可用它丢弃本批明细。
-            int detailsMark = details.size();
-            try {
-                transactionTemplate.executeWithoutResult(status -> {
-                    ByteAccumulator batchBytes = new ByteAccumulator();
-                    for (FileNode fileNode : batch) {
-                        fileDomainValidator.validateFolderTarget(fileNode, targetFolder);
-                        String resolvedName = copySingleNode(fileNode, rootTargetContext, userId, childrenMap, batchBytes);
-                        details.add(helper.buildDetail(fileNode, FileOperationHelper.ACTION_COPIED, resolvedName,
-                                helper.isRenamed(fileNode, resolvedName),
-                                FileOperationHelper.STATUS_SUCCESS, ErrorCode.SUCCESS, FileOperationHelper.STATUS_SUCCESS));
+        try {
+            for (List<FileNode> batch : batches) {
+                // 记录本批开始前已累积的明细条数：批次回滚时可用它丢弃本批明细。
+                int detailsMark = details.size();
+                try {
+                    transactionTemplate.executeWithoutResult(status -> {
+                        CopyAccumulator batchAccumulator = new CopyAccumulator();
+                        for (FileNode fileNode : batch) {
+                            fileDomainValidator.validateFolderTarget(fileNode, targetFolder);
+                            String resolvedName = copySingleNode(fileNode, rootTargetContext, userId, childrenMap, batchAccumulator);
+                            details.add(helper.buildDetail(fileNode, FileOperationHelper.ACTION_COPIED, resolvedName,
+                                    helper.isRenamed(fileNode, resolvedName),
+                                    FileOperationHelper.STATUS_SUCCESS, ErrorCode.SUCCESS, FileOperationHelper.STATUS_SUCCESS));
+                        }
+                        // 事务提交前扣减：超限抛 BusinessException 回滚本批（含已插入的 file_node 行），
+                        // 由外层 catch 捕获并携带批次明细。
+                        chargeQuotaInTransaction(scopeKey, batchAccumulator.value());
+                        // 只有本批扣减成功（即将提交）才把新节点 id 计入待失效集合。
+                        copiedNodeIds.addAll(batchAccumulator.createdIds());
+                    });
+                } catch (RuntimeException e) {
+                    // 本批事务已整体回滚，其明细条目必须一并丢弃，否则返回值会把未落库的节点报成"成功"。
+                    details.subList(detailsMark, details.size()).clear();
+                    if (e instanceof BusinessException businessException) {
+                        throw helper.withBatchData(businessException, details, targetParentId);
                     }
-                    // 事务提交前扣减：超限抛 BusinessException 回滚本批（含已插入的 file_node 行），
-                    // 由外层 catch 捕获并携带批次明细。
-                    chargeQuotaInTransaction(scopeKey, batchBytes.value());
-                });
-            } catch (RuntimeException e) {
-                // 本批事务已整体回滚，其明细条目必须一并丢弃，否则返回值会把未落库的节点报成"成功"。
-                details.subList(detailsMark, details.size()).clear();
-                if (e instanceof BusinessException businessException) {
-                    throw helper.withBatchData(businessException, details, targetParentId);
+                    throw e;
                 }
-                throw e;
+            }
+        } finally {
+            // 复制新增了 file_node 行 ⇒ SUM(file_size) 口径变化，必须失效用量缓存并广播变更。
+            // 刻意放在 finally：批次是独立事务，中途某批失败时前面批次**已经提交**，
+            // 若只在成功路径失效，这些已落库的批次会让用量一直停在旧值（用户报障：复制后容量不刷新）。
+            // publishByIdsAfterCommit 内部走 TransactionUtils.runAfterCommit（吞异常），
+            // 因此这里不会掩盖上面抛出的批次异常。
+            if (!copiedNodeIds.isEmpty()) {
+                helper.publishByIdsAfterCommit(FileOperationHelper.ACTION_COPIED, copiedNodeIds);
             }
         }
         return helper.buildBatchResult(details, targetParentId);
@@ -210,15 +225,35 @@ public class FileCopyService {
         return UsageLedger.scopeKeyOf(target.spaceType(), target.teamId(), target.projectId(), userId);
     }
 
-    /** 批次内实际写入字节数的累加器（Folder 计 0，仅 FileItem 的 fileSize 计入）。 */
-    private static final class ByteAccumulator {
+    /**
+     * 批次内复制结果的累加器：字节数（配额扣减口径，Folder 计 0）
+     * 与新建节点 id（缓存失效与 MQ 事件口径）。
+     */
+    private static final class CopyAccumulator {
 
+        private final List<Long> createdIds = new ArrayList<>();
         private long bytes;
 
-        void add(FileItem copied) {
-            if (copied != null && copied.getFileSize() != null) {
+        void addFile(FileItem copied) {
+            if (copied == null) {
+                return;
+            }
+            if (copied.getId() != null) {
+                createdIds.add(copied.getId());
+            }
+            if (copied.getFileSize() != null) {
                 bytes += copied.getFileSize();
             }
+        }
+
+        void addFolder(Folder copied) {
+            if (copied != null && copied.getId() != null) {
+                createdIds.add(copied.getId());
+            }
+        }
+
+        List<Long> createdIds() {
+            return createdIds;
         }
 
         long value() {
@@ -238,16 +273,17 @@ public class FileCopyService {
                                    FileOperationHelper.CopyTargetContext targetContext,
                                    Long userId,
                                    Map<Long, List<FileNode>> childrenMap,
-                                   ByteAccumulator batchBytes) {
+                                   CopyAccumulator batchAccumulator) {
         LocalDateTime now = LocalDateTime.now();
         String resolvedName = helper.resolveCopyName(source, targetContext, userId);
         if (source instanceof FileItem fileItem) {
-            batchBytes.add(cloneFileItem(fileItem, targetContext.parentId(), targetContext.target(), resolvedName, userId, now));
+            batchAccumulator.addFile(cloneFileItem(fileItem, targetContext.parentId(), targetContext.target(), resolvedName, userId, now));
             return resolvedName;
         }
 
         Folder copiedRoot = cloneFolder((Folder) source, targetContext.parentId(), targetContext.target(), resolvedName, userId, now);
-        copyChildrenRecursively(source.getId(), new FileOperationHelper.CopyTargetContext(copiedRoot.getId(), targetContext.target()), userId, now, childrenMap, batchBytes);
+        batchAccumulator.addFolder(copiedRoot);
+        copyChildrenRecursively(source.getId(), new FileOperationHelper.CopyTargetContext(copiedRoot.getId(), targetContext.target()), userId, now, childrenMap, batchAccumulator);
         return resolvedName;
     }
 
@@ -310,14 +346,15 @@ public class FileCopyService {
         return clone;
     }
 
-    private void copyChildrenRecursively(Long sourceParentId, FileOperationHelper.CopyTargetContext targetContext, Long userId, LocalDateTime now, Map<Long, List<FileNode>> childrenMap, ByteAccumulator batchBytes) {
+    private void copyChildrenRecursively(Long sourceParentId, FileOperationHelper.CopyTargetContext targetContext, Long userId, LocalDateTime now, Map<Long, List<FileNode>> childrenMap, CopyAccumulator batchAccumulator) {
         helper.walkDescendantsPreloaded(sourceParentId, childrenMap, targetContext, (child, currentTargetContext) -> {
             String resolvedName = helper.resolveCopyName(child, currentTargetContext, userId);
             if (child instanceof FileItem fileItem) {
-                batchBytes.add(cloneFileItem(fileItem, currentTargetContext.parentId(), currentTargetContext.target(), resolvedName, userId, now));
+                batchAccumulator.addFile(cloneFileItem(fileItem, currentTargetContext.parentId(), currentTargetContext.target(), resolvedName, userId, now));
                 return currentTargetContext;
             }
             Folder copiedChild = cloneFolder((Folder) child, currentTargetContext.parentId(), currentTargetContext.target(), resolvedName, userId, now);
+            batchAccumulator.addFolder(copiedChild);
             return new FileOperationHelper.CopyTargetContext(copiedChild.getId(), currentTargetContext.target());
         });
     }

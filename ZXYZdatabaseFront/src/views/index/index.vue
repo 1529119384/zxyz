@@ -114,7 +114,7 @@
 </template>
 
 <script setup>
-import { computed, defineOptions, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineOptions, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 
@@ -336,6 +336,9 @@ const moveCopyAction = useMoveCopyAction({
       query: buildFileSpaceQuery(payload?.targetPath || ''),
     })
     await refreshFileList()
+    // 复制会真实复制一份数据（用量随之增加），移动不改变用量但走的是同一个回调 ⇒
+    // 统一补拉一次用量，避免「复制大文件夹后顶部容量条不变」。
+    refreshStorageUsage()
   },
 })
 const {
@@ -399,6 +402,20 @@ function handleUploaderSuccess() {
   refreshFileList()
   refreshStorageUsage()
 }
+
+// keep-alive 命中时组件不会重新挂载（IndexPage 在 layout 的 keepAliveNames 中），
+// onMounted 只跑一次 ⇒ 从回收站「彻底删除」或分享管理页返回首页时，顶部容量条会一直
+// 停在旧值（用户报障：删除后大小没及时刷新）。故每次「重新激活」补拉一次用量。
+// onActivated 在首次挂载后也会触发一次，用标志位跳过首次，避免与 onMounted 重复请求。
+let storageUsageActivatedBefore = false
+
+onActivated(() => {
+  if (!storageUsageActivatedBefore) {
+    storageUsageActivatedBefore = true
+    return
+  }
+  refreshStorageUsage()
+})
 
 onMounted(() => {
   resetMoveCopyDialog()

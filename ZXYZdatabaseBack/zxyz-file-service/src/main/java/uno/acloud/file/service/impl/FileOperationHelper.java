@@ -37,17 +37,20 @@ public class FileOperationHelper {
     private final FileAccessGuard fileAccessGuardService;
     private final FileObjectReferenceManager fileObjectReferenceService;
     private final FileResourceChangedPublisher fileResourceChangedPublisher;
+    private final StorageCacheService storageCacheService;
 
     public FileOperationHelper(FileMapper fileMapper,
                                FileDomainValidator fileDomainValidator,
                                FileAccessGuard fileAccessGuardService,
                                FileObjectReferenceManager fileObjectReferenceService,
-                               Optional<FileResourceChangedPublisher> fileResourceChangedPublisher) {
+                               Optional<FileResourceChangedPublisher> fileResourceChangedPublisher,
+                               StorageCacheService storageCacheService) {
         this.fileMapper = fileMapper;
         this.fileDomainValidator = fileDomainValidator;
         this.fileAccessGuardService = fileAccessGuardService;
         this.fileObjectReferenceService = fileObjectReferenceService;
         this.fileResourceChangedPublisher = fileResourceChangedPublisher.orElse(null);
+        this.storageCacheService = storageCacheService;
     }
 
     // ---- Inner types ----
@@ -212,6 +215,10 @@ public class FileOperationHelper {
     // ---- MQ event publishing ----
 
     public void publishByIdsAfterCommit(String eventType, List<Long> fileIds) {
+        // 统一策略：任何用户发起的文件变更（含移动/重命名）都失效存储用量缓存。
+        // 移动/重命名本身不改变 SUM(file_size) 口径，但失效成本极小（SCAN 一个很小的 key 空间），
+        // 换来的是「口径将来变了也不会静默返回旧值」的鲁棒性。
+        TransactionUtils.runAfterCommit(() -> storageCacheService.invalidateAllStorageCaches());
         if (fileResourceChangedPublisher == null || fileIds == null || fileIds.isEmpty()) {
             return;
         }
