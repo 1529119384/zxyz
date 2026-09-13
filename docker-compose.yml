@@ -861,7 +861,13 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
-      VERIFICATION_RETURN_CODE: ${VERIFICATION_RETURN_CODE:-true}
+      # 验证码回显（审计 12 §2.1.5）。【安全默认 false】
+      # 这一行才是真正的开关：容器始终注入该环境变量，它会覆盖
+      # application-prod.yml / application.yml / Nacos 三处占位符的默认值，
+      # 所以「只改那三处」不生效，必须改这里。
+      # 本地 dev 直跑 JVM（scripts/run-local.sh）已显式导出 true，不走本文件。
+      # ⚠️ 本文件任何改动都会置 DOCKER_CFG=true ⇒ 部署时全量重建 11 个服务。
+      VERIFICATION_RETURN_CODE: ${VERIFICATION_RETURN_CODE:-false}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?缺少 CORS_ALLOWED_ORIGINS，请先运行 scripts/init-secrets.sh 或手工填写真实域名}
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
       AUTH_COOKIE_DOMAIN: ${AUTH_COOKIE_DOMAIN:-}

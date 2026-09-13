@@ -18,7 +18,7 @@ spring:
 app:
   verification:
     # 【安全默认】回显验证码 = 把验证码直接返回给调用方，属「有则必关」。
-    # 生产（SPRING_PROFILES_ACTIVE=prod）一律 false；仅本地 dev 需要看码时，
-    # 由 scripts/run-local.sh 导出 VERIFICATION_RETURN_CODE=true 覆盖（环境变量优先）。
-    # 注意本文件 refreshEnabled=false ⇒ 改完必须：scripts/import.sh 导入 + 重启 user-service。
+    # 真正生效的开关是 docker-compose.yml 里 user-service 的 VERIFICATION_RETURN_CODE
+    # （容器始终注入该环境变量，会覆盖本处默认值）；本地 dev 直跑 JVM 时由
+    # scripts/run-local.sh 显式导出 true。本处仅作兜底默认，保持三处口径一致即可。
     return-code-in-response: ${VERIFICATION_RETURN_CODE:false}
