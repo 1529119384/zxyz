@@ -3,11 +3,13 @@ package uno.acloud.user.service.impl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.util.VerifyCodeHasher;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.user.config.ServiceProperties;
 import uno.acloud.user.dto.ContactVerifyRequest;
@@ -29,6 +31,10 @@ class ContactVerificationServiceTest {
 
     /** 对应 @Value("${app.email.verify-code.cooldown-seconds:60}") 的注入值 */
     private static final int EMAIL_VERIFY_CODE_COOLDOWN_SECONDS = 60;
+
+    private static final String TEST_PEPPER = "test-pepper";
+
+    private VerifyCodeHasher verifyCodeHasher;
 
     @Mock
     private UserMapper userMapper;
@@ -53,10 +59,11 @@ class ContactVerificationServiceTest {
     void setUp() {
         serviceProperties = new ServiceProperties();
         serviceProperties.getVerification().setReturnCodeInResponse(true);
+        verifyCodeHasher = new VerifyCodeHasher(TEST_PEPPER);
 
         contactVerificationService = new ContactVerificationService(
                 userMapper, stringRedisTemplate, emailServiceMailClient,
-                userQueryHelper, serviceProperties, EMAIL_VERIFY_CODE_COOLDOWN_SECONDS);
+                userQueryHelper, serviceProperties, verifyCodeHasher, EMAIL_VERIFY_CODE_COOLDOWN_SECONDS);
     }
 
     private User userWithEmail(Long id, String email, boolean emailVerified) {
@@ -218,7 +225,7 @@ class ContactVerificationServiceTest {
 
         // 新版流程：先计一次尝试，再消费；两者都成功才认定通过
         when(userMapper.bumpContactVerificationAttempt(userId, "phone", maxAttempts)).thenReturn(1);
-        when(userMapper.consumeContactVerificationCode(userId, "phone", "123456", maxAttempts)).thenReturn(1);
+        when(userMapper.consumeContactVerificationCode(userId, "phone", verifyCodeHasher.hash("123456"), maxAttempts)).thenReturn(1);
         when(userMapper.verifyPhone(userId)).thenReturn(1);
 
         CurrentUserVO currentUser = new CurrentUserVO(
@@ -245,7 +252,7 @@ class ContactVerificationServiceTest {
         request.setCode("000000");
 
         when(userMapper.bumpContactVerificationAttempt(userId, "phone", maxAttempts)).thenReturn(1);
-        when(userMapper.consumeContactVerificationCode(userId, "phone", "000000", maxAttempts)).thenReturn(0);
+        when(userMapper.consumeContactVerificationCode(userId, "phone", verifyCodeHasher.hash("000000"), maxAttempts)).thenReturn(0);
         when(userMapper.findContactVerificationAttempt(userId, "phone")).thenReturn(1);
 
         BusinessException ex = assertThrows(BusinessException.class,
@@ -310,7 +317,38 @@ class ContactVerificationServiceTest {
 
         assertNotNull(result);
         assertEquals("phone", result.getType());
-        verify(userMapper).upsertContactVerificationCode(eq(userId), eq("phone"), anyString());
+        ArgumentCaptor<String> digestCaptor = ArgumentCaptor.forClass(String.class);
+        verify(userMapper).upsertContactVerificationCode(eq(userId), eq("phone"), digestCaptor.capture());
+        String stored = digestCaptor.getValue();
+        assertTrue(stored.matches("[0-9a-f]{64}"), "库里必须是 64 位十六进制摘要：" + stored);
+        assertNotNull(result.getCode(), "回显开启时应返回明文，用于与本用例交叉校验");
+        assertEquals(verifyCodeHasher.hash(result.getCode()), stored);
+        assertNotEquals(result.getCode(), stored, "库里绝不能是明文验证码");
+    }
+
+    // ==================== Verify phone with blank code — attempt must still be counted ====================
+
+    @Test
+    void verifyContact_blankPhoneCode_shouldStillCountAttemptAndReject() {
+        Long userId = 1L;
+        int maxAttempts = serviceProperties.getVerification().getPhoneCodeMaxAttempts();
+
+        ContactVerifyRequest request = new ContactVerifyRequest();
+        request.setType("phone");
+        request.setCode("   ");
+
+        when(userMapper.bumpContactVerificationAttempt(userId, "phone", maxAttempts)).thenReturn(1);
+        when(userMapper.consumeContactVerificationCode(eq(userId), eq("phone"), anyString(), eq(maxAttempts)))
+                .thenReturn(0);
+        when(userMapper.findContactVerificationAttempt(userId, "phone")).thenReturn(1);
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> contactVerificationService.verifyContact(userId, request));
+        assertEquals(ErrorCode.BAD_REQUEST, ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("验证码无效或已过期"));
+        // 关键：空码也要先计一次尝试 —— 否则「提交空码」就是不计数的免费探测
+        verify(userMapper).bumpContactVerificationAttempt(userId, "phone", maxAttempts);
+        verify(userMapper, never()).verifyPhone(anyLong());
     }
 
     private User userWithPhone(Long id, String phone) {

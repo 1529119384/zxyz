@@ -1,0 +1,36 @@
+-- 验证码落库由明文改为 HMAC-SHA256 摘要（审计 12-②(b)）。
+--
+-- 背景：contact_verification_code.code 原为 VARCHAR(16)，存的是 6 位明文验证码。
+-- 6 位码空间只有 10^6，明文入库意味着任何拿到库读权限的人都能直接读走用户验证码。
+--
+-- 现在存的是 VerifyCodeHasher 产出的 64 位小写十六进制摘要（pepper 不落库，见
+-- zxyz-common 的 VerifyCodeHasher 类注释），故列宽 16 → 64。
+--
+-- 存量数据：不回填。验证码 TTL 是 10 分钟，加宽后旧明文行（6 字符）依然存得下，
+-- 但用新摘要去比对必然匹配不上 ⇒ 上线瞬间的在途验证码失效一次，用户 TTL 内重发即可。
+-- 这是审计里选定的方案。
+--
+-- ⚠️ 本 ALTER 不是「瞬时加宽」，而是 ALGORITHM=COPY 全表重建（重建期间阻塞写入）。
+--    原因：utf8mb4 下 VARCHAR(16) 的最大字节数是 64（≤255，用 1 字节长度前缀），
+--    改成 VARCHAR(64) 后是 256 字节（>255，需要 2 字节长度前缀），跨过了这个边界，
+--    行格式必须改写，故 MySQL 拒绝 INSTANT（ERROR 1846: Need to rebuild the table to
+--    change column type）与 INPLACE（ERROR 1846: Cannot change column type INPLACE），
+--    只能走 COPY。实测（MySQL 8.4.11，STRICT_TRANS_TABLES 生效）：
+--      · 50,000 行的表：约 2.1s；
+--      · 本表实际行数上限是「每 (user_id, contact_type) 一行」/「每 (email, scene) 一行」，
+--        随用户数增长，是很小的表 —— 2026-09-13 线上实测两张表均为 0 行，所以重建开销可忽略；
+--      · Flyway 在服务启动时执行本迁移，因此这次重建会体现为一次**启动延迟 + 短暂写入阻塞**。
+--    若将来本表变得很大：① 改用不跨 255 字节边界、且排序规则能区分大小写的存储（如
+--    `VARCHAR(43)` 的 Base64 摘要配 `COLLATE ..._bin`，或 `CHAR(64) CHARACTER SET ascii
+--    COLLATE ascii_bin` —— 注意 `ascii` 默认排序规则 `ascii_general_ci` 仍大小写不敏感，
+--    要大小写敏感必须显式加 `COLLATE ascii_bin`），② 或改用 gh-ost / pt-online-schema-change
+--    做在线变更。本次不做，是因为这两张表很小，而换编码会引入新问题（Base64 区分大小写，
+--    而本列排序规则 utf8mb4_unicode_ci 不区分大小写 —— 等于让两串仅大小写不同的摘要互相匹配）。
+--    为什么本次不改用更短的编码来避开重建：不值得（见上）+ 摘要列不参与索引（两张表的唯一键
+--    分别是 uk_cvc_user_type / uk_verify_code_email_scene，摘要只作为过滤条件），
+--    所以这次重建与编码选择不会影响后续查询性能。
+--
+-- 排序规则仍是 utf8mb4_unicode_ci（大小写不敏感）：对本列无影响 ——
+-- 摘要恒由 HexFormat 产出小写，且十六进制大小写不携带额外信息。
+ALTER TABLE contact_verification_code
+    MODIFY COLUMN code VARCHAR(64) NOT NULL COMMENT '验证码摘要（HMAC-SHA256 hex，pepper 不落库）';

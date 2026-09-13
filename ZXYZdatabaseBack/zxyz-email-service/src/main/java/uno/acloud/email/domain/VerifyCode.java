@@ -43,11 +43,6 @@ public class VerifyCode implements Serializable {
         return this.expireTime == null || !this.expireTime.isAfter(now);
     }
 
-    /** 与用户输入的验证码比对（忽略大小写）。 */
-    public boolean matches(String code) {
-        return this.code != null && this.code.equalsIgnoreCase(code);
-    }
-
     /** 标记为已使用，并记录使用时间。 */
     public void markUsed() {
         this.used = true;

@@ -6,6 +6,7 @@ import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.util.VerifyCodeHasher;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.user.config.ServiceProperties;
 import uno.acloud.user.dto.ContactVerifyRequest;
@@ -41,6 +42,7 @@ public class ContactVerificationService {
     private final EmailServiceMailClient emailServiceMailClient;
     private final UserQueryHelper userQueryHelper;
     private final ServiceProperties serviceProperties;
+    private final VerifyCodeHasher verifyCodeHasher;
     private final boolean returnCodeInResponse;
     /** 邮箱验证码发送冷却时长，默认 60 秒 */
     private final Duration emailVerifyCodeCooldown;
@@ -50,12 +52,14 @@ public class ContactVerificationService {
                                       EmailServiceMailClient emailServiceMailClient,
                                       UserQueryHelper userQueryHelper,
                                       ServiceProperties serviceProperties,
+                                      VerifyCodeHasher verifyCodeHasher,
                                       @Value("${app.email.verify-code.cooldown-seconds:60}") int emailVerifyCodeCooldownSeconds) {
         this.userMapper = userMapper;
         this.stringRedisTemplate = stringRedisTemplate;
         this.emailServiceMailClient = emailServiceMailClient;
         this.userQueryHelper = userQueryHelper;
         this.serviceProperties = serviceProperties;
+        this.verifyCodeHasher = verifyCodeHasher;
         this.returnCodeInResponse = serviceProperties.getVerification().isReturnCodeInResponse();
         this.emailVerifyCodeCooldown = Duration.ofSeconds(emailVerifyCodeCooldownSeconds);
     }
@@ -127,7 +131,7 @@ public class ContactVerificationService {
         if (userMapper.bumpContactVerificationAttempt(userId, type, maxAttempts) != 1) {
             throw contactCodeRejected(userId, type, maxAttempts);
         }
-        if (userMapper.consumeContactVerificationCode(userId, type, code, maxAttempts) != 1) {
+        if (userMapper.consumeContactVerificationCode(userId, type, verifyCodeHasher.hash(code), maxAttempts) != 1) {
             throw contactCodeRejected(userId, type, maxAttempts);
         }
         userQueryHelper.requireUpdated(userMapper.verifyPhone(userId));
@@ -136,7 +140,8 @@ public class ContactVerificationService {
 
     private ContactVerificationCodeVO createContactVerificationCode(Long userId, String type) {
         String code = String.format("%06d", SECURE_RANDOM.nextInt(1_000_000));
-        userMapper.upsertContactVerificationCode(userId, type, code);
+        // 落库的是摘要；明文只用于发信与（dev 下的）回显
+        userMapper.upsertContactVerificationCode(userId, type, verifyCodeHasher.hash(code));
         String responseCode = returnCodeInResponse ? code : null;
         return new ContactVerificationCodeVO(type, responseCode);
     }

@@ -132,14 +132,16 @@ public interface UserMapper extends BaseMapper<User> {
     List<String> listVerifiedEmails();
 
     /**
-     * 写入/覆盖验证码，并把「尝试次数」与「使用状态」一并复位。
+     * 写入/覆盖验证码<b>摘要</b>，并把「尝试次数」与「使用状态」一并复位。
      *
      * <p>复位是必须的：同一个 {@code (user_id, contact_type)} 只有一行，重发走 ON DUPLICATE KEY，
      * 若不复位 {@code attempt_count}/{@code used}，上一次把次数用光后，新发的码会一出生就是作废状态。</p>
+     *
+     * <p>入参是 {@code VerifyCodeHasher} 产出的 64 位十六进制摘要，明文绝不入参、绝不落库。</p>
      */
     @Insert("""
             INSERT INTO contact_verification_code(user_id, contact_type, code, attempt_count, used, used_time, expire_time, create_time)
-            VALUES(#{userId}, #{type}, #{code}, 0, 0, NULL, DATE_ADD(NOW(), INTERVAL 10 MINUTE), NOW())
+            VALUES(#{userId}, #{type}, #{codeHash}, 0, 0, NULL, DATE_ADD(NOW(), INTERVAL 10 MINUTE), NOW())
             ON DUPLICATE KEY UPDATE code = VALUES(code),
                                     attempt_count = 0,
                                     used = 0,
@@ -149,7 +151,7 @@ public interface UserMapper extends BaseMapper<User> {
             """)
     int upsertContactVerificationCode(@Param("userId") Long userId,
                                       @Param("type") String type,
-                                      @Param("code") String code);
+                                      @Param("codeHash") String codeHash);
 
     /**
      * 校验第 1 步：先计一次尝试（成功与否都计，避免"猜错不计数"）。
@@ -160,10 +162,12 @@ public interface UserMapper extends BaseMapper<User> {
      * <p><b>IF 里用的是自增后的 {@code attempt_count}，而不是 {@code attempt_count + 1}：</b>
      * MySQL 单表 UPDATE 的 SET 子句<b>从左到右</b>求值，后一项读到的已经是自增后的值。
      * 所以判据只能是"自增后是否已超过上限" —— 这样 {@code maxAttempts} 次尝试全部可用，
-     * 第 {@code maxAttempts + 1} 次才作废。
-     * （{@code zxyz-email-service} 的 verify_code 写的是 {@code attempt_count + 1 > maxAttempts}，
-     * 在同样的左到右求值下实际会"少给一次机会"，与它自己 Javadoc 写的「含第 maxAttempts 次」不符；
-     * 此处**刻意不照抄**，已在真实 MySQL 8.4 上逐次验证。）</p>
+     * 第 {@code maxAttempts + 1} 次才作废。</p>
+     *
+     * <p>{@code zxyz-email-service} 的 {@code VerifyCodeMapper.bumpAttemptCount} 原先写的是
+     * {@code attempt_count + 1 > maxAttempts}，在同样的左到右求值下实际会「少给一次机会」，
+     * 与它自己 Javadoc 写的「含第 maxAttempts 次」不符。该处<b>已在本轮一并改为与这里一致</b>
+     * （审计 12-②(b) 同批修正），两侧口径现已对齐；两处都在真实 MySQL 8.4 上逐次验证过。</p>
      */
     @Update("""
             UPDATE contact_verification_code
@@ -180,7 +184,10 @@ public interface UserMapper extends BaseMapper<User> {
                                        @Param("maxAttempts") int maxAttempts);
 
     /**
-     * 校验第 2 步：仅当验证码正确、未使用、未过期、且尝试次数未超上限时消费成功。
+     * 校验第 2 步：仅当验证码<b>摘要</b>一致、未使用、未过期、且尝试次数未超上限时消费成功。
+     *
+     * <p>比对仍在 SQL 层一次完成，故防爆破的原子性不变（见 VerifyCodeHasher 类注释）。
+     * 入参是提交码经 {@code VerifyCodeHasher} 算出的 64 位十六进制摘要。</p>
      *
      * @return 消费成功返回 1，否则返回 0
      */
@@ -190,14 +197,14 @@ public interface UserMapper extends BaseMapper<User> {
                 used_time = NOW(3)
             WHERE user_id = #{userId}
               AND contact_type = #{type}
-              AND code = #{code}
+              AND code = #{codeHash}
               AND used = 0
               AND attempt_count <= #{maxAttempts}
               AND expire_time >= NOW(3)
             """)
     int consumeContactVerificationCode(@Param("userId") Long userId,
                                        @Param("type") String type,
-                                       @Param("code") String code,
+                                       @Param("codeHash") String codeHash,
                                        @Param("maxAttempts") int maxAttempts);
 
     /** 仅用于把「尝试次数过多」与「验证码无效」区分开（对齐 email 侧的 findAttemptCount）。 */

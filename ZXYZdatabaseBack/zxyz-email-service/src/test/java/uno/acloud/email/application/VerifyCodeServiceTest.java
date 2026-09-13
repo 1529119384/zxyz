@@ -6,16 +6,19 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.util.VerifyCodeHasher;
 import uno.acloud.email.config.EmailProperties;
 import uno.acloud.email.domain.VerifyCode;
 import uno.acloud.email.infrastructure.VerifyCodeMapper;
 import uno.acloud.exception.BusinessException;
 
+import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
@@ -24,6 +27,8 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class VerifyCodeServiceTest {
+
+    private static final VerifyCodeHasher HASHER = new VerifyCodeHasher("test-pepper");
 
     @Mock
     private VerifyCodeMapper verifyCodeMapper;
@@ -34,25 +39,26 @@ class VerifyCodeServiceTest {
     @Mock
     private EmailSendingAvailabilityService emailSendingAvailabilityService;
 
+    private VerifyCodeService createService(EmailProperties properties) {
+        return new VerifyCodeService(verifyCodeMapper, emailDispatchService, emailRateLimiter,
+                properties, emailSendingAvailabilityService, HASHER);
+    }
+
     @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
     void sendCodeShouldCreateVerifyCodeAndEmailRecord() {
         EmailProperties properties = new EmailProperties();
         properties.setVerifyCodeExpireMinutes(10);
+        ArgumentCaptor<Map<String, Object>> paramsCaptor = ArgumentCaptor.forClass(Map.class);
         when(emailDispatchService.sendByTemplate(
                 eq("user@example.com"),
                 eq("EMAIL_BIND_CODE"),
-                any(),
+                paramsCaptor.capture(),
                 eq("VERIFY_CODE"),
                 eq("EMAIL_BIND"),
                 eq(null)
         )).thenReturn(9L);
-        VerifyCodeService service = new VerifyCodeService(
-                verifyCodeMapper,
-                emailDispatchService,
-                emailRateLimiter,
-                properties,
-                emailSendingAvailabilityService
-        );
+        VerifyCodeService service = createService(properties);
 
         service.sendCode("USER@example.com", "email_bind", "127.0.0.1");
 
@@ -62,7 +68,11 @@ class VerifyCodeServiceTest {
         VerifyCode saved = codeCaptor.getValue();
         assertEquals("user@example.com", saved.getEmail());
         assertEquals("EMAIL_BIND", saved.getScene());
-        assertTrue(saved.getCode().matches("\\d{6}"));
+        String plaintext = (String) paramsCaptor.getValue().get("code");
+        assertTrue(plaintext.matches("\\d{6}"), "邮件模板里必须是 6 位明文（用户要能看见）");
+        assertEquals(HASHER.hash(plaintext), saved.getCode(), "落库的必须是该明文的摘要");
+        assertNotEquals(plaintext, saved.getCode(), "库里绝不能是明文验证码");
+        assertTrue(saved.getCode().matches("[0-9a-f]{64}"), "落库的必须是 64 位十六进制摘要");
         assertFalse(saved.getUsed());
         assertEquals(9L, saved.getEmailRecordId());
         verify(emailSendingAvailabilityService).requireSendingAvailable();
@@ -76,13 +86,7 @@ class VerifyCodeServiceTest {
                 EmailSendingAvailabilityService.SEND_DISABLED_MESSAGE
         );
         doThrow(disabled).when(emailSendingAvailabilityService).requireSendingAvailable();
-        VerifyCodeService service = new VerifyCodeService(
-                verifyCodeMapper,
-                emailDispatchService,
-                emailRateLimiter,
-                properties,
-                emailSendingAvailabilityService
-        );
+        VerifyCodeService service = createService(properties);
 
         BusinessException exception = assertThrows(BusinessException.class,
                 () -> service.sendCode("USER@example.com", "email_bind", "127.0.0.1"));
@@ -96,13 +100,7 @@ class VerifyCodeServiceTest {
     @Test
     void checkCodeShouldRejectInvalidCode() {
         EmailProperties properties = new EmailProperties();
-        VerifyCodeService service = new VerifyCodeService(
-                verifyCodeMapper,
-                emailDispatchService,
-                emailRateLimiter,
-                properties,
-                emailSendingAvailabilityService
-        );
+        VerifyCodeService service = createService(properties);
 
         BusinessException exception = assertThrows(BusinessException.class,
                 () -> service.checkCode("user@example.com", "EMAIL_BIND", "abc"));
@@ -116,18 +114,12 @@ class VerifyCodeServiceTest {
         EmailProperties properties = new EmailProperties();
         properties.setVerifyCodeMaxAttempts(5);
         when(verifyCodeMapper.bumpAttemptCount("user@example.com", "EMAIL_BIND", 5)).thenReturn(1);
-        when(verifyCodeMapper.markUsedByCode("user@example.com", "EMAIL_BIND", "123456", 5)).thenReturn(1);
-        VerifyCodeService service = new VerifyCodeService(
-                verifyCodeMapper,
-                emailDispatchService,
-                emailRateLimiter,
-                properties,
-                emailSendingAvailabilityService
-        );
+        when(verifyCodeMapper.markUsedByCode("user@example.com", "EMAIL_BIND", HASHER.hash("123456"), 5)).thenReturn(1);
+        VerifyCodeService service = createService(properties);
 
         service.checkCode("user@example.com", "EMAIL_BIND", "123456");
 
-        verify(verifyCodeMapper).markUsedByCode("user@example.com", "EMAIL_BIND", "123456", 5);
+        verify(verifyCodeMapper).markUsedByCode("user@example.com", "EMAIL_BIND", HASHER.hash("123456"), 5);
     }
 
     @Test
@@ -135,15 +127,9 @@ class VerifyCodeServiceTest {
         EmailProperties properties = new EmailProperties();
         properties.setVerifyCodeMaxAttempts(5);
         when(verifyCodeMapper.bumpAttemptCount("user@example.com", "EMAIL_BIND", 5)).thenReturn(1);
-        when(verifyCodeMapper.markUsedByCode("user@example.com", "EMAIL_BIND", "444444", 5)).thenReturn(0);
+        when(verifyCodeMapper.markUsedByCode("user@example.com", "EMAIL_BIND", HASHER.hash("444444"), 5)).thenReturn(0);
         when(verifyCodeMapper.findAttemptCount("user@example.com", "EMAIL_BIND")).thenReturn(5);
-        VerifyCodeService service = new VerifyCodeService(
-                verifyCodeMapper,
-                emailDispatchService,
-                emailRateLimiter,
-                properties,
-                emailSendingAvailabilityService
-        );
+        VerifyCodeService service = createService(properties);
 
         BusinessException exception = assertThrows(BusinessException.class,
                 () -> service.checkCode("user@example.com", "EMAIL_BIND", "444444"));
@@ -157,15 +143,9 @@ class VerifyCodeServiceTest {
         EmailProperties properties = new EmailProperties();
         properties.setVerifyCodeMaxAttempts(5);
         when(verifyCodeMapper.bumpAttemptCount("user@example.com", "EMAIL_BIND", 5)).thenReturn(1);
-        when(verifyCodeMapper.markUsedByCode("user@example.com", "EMAIL_BIND", "111111", 5)).thenReturn(0);
+        when(verifyCodeMapper.markUsedByCode("user@example.com", "EMAIL_BIND", HASHER.hash("111111"), 5)).thenReturn(0);
         when(verifyCodeMapper.findAttemptCount("user@example.com", "EMAIL_BIND")).thenReturn(2);
-        VerifyCodeService service = new VerifyCodeService(
-                verifyCodeMapper,
-                emailDispatchService,
-                emailRateLimiter,
-                properties,
-                emailSendingAvailabilityService
-        );
+        VerifyCodeService service = createService(properties);
 
         BusinessException exception = assertThrows(BusinessException.class,
                 () -> service.checkCode("user@example.com", "EMAIL_BIND", "111111"));
@@ -182,13 +162,7 @@ class VerifyCodeServiceTest {
                 "请求过于频繁，请稍后再试"
         );
         doThrow(rateLimitEx).when(emailRateLimiter).requireVerifyCodeAllowed("user@example.com", "127.0.0.1");
-        VerifyCodeService service = new VerifyCodeService(
-                verifyCodeMapper,
-                emailDispatchService,
-                emailRateLimiter,
-                properties,
-                emailSendingAvailabilityService
-        );
+        VerifyCodeService service = createService(properties);
 
         BusinessException exception = assertThrows(BusinessException.class,
                 () -> service.sendCode("user@example.com", "email_bind", "127.0.0.1"));
@@ -202,13 +176,7 @@ class VerifyCodeServiceTest {
     @Test
     void checkCodeShouldRejectWhenCodeIsEmpty() {
         EmailProperties properties = new EmailProperties();
-        VerifyCodeService service = new VerifyCodeService(
-                verifyCodeMapper,
-                emailDispatchService,
-                emailRateLimiter,
-                properties,
-                emailSendingAvailabilityService
-        );
+        VerifyCodeService service = createService(properties);
 
         BusinessException exception = assertThrows(BusinessException.class,
                 () -> service.checkCode("user@example.com", "EMAIL_BIND", ""));

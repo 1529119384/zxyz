@@ -110,6 +110,23 @@ public class ServiceProperties {
         private int phoneCodeMaxAttempts = 5;
         /** 手机验证码发送冷却时长（秒），防止重发接口被当作免费重试。 */
         private int phoneCodeCooldownSeconds = 60;
+        /**
+         * 验证码摘要 pepper（HMAC-SHA256 的密钥，<b>绝不落库</b>）。
+         *
+         * <p>来自 {@code app.verification.code-pepper}，缺省回退 Jasypt 主密钥 —— 两者同属
+         * 「必须保密的根秘密」这一等级，复用可免去另起一份需要独立托管/轮换的秘密。</p>
+         */
+        @com.fasterxml.jackson.annotation.JsonIgnore
+        private String codePepper;
+        /**
+         * 是否允许使用「仓库内公开写着」的弱 pepper。<b>只有 dev / test profile 才应置 true。</b>
+         *
+         * <p>默认 false —— 因为两个服务的 {@code application.yml} 都有
+         * {@code spring.profiles.default: dev}，漏设 {@code SPRING_PROFILES_ACTIVE=prod}
+         * 的启动会落到 dev profile。若这里默认放行，就会出现「服务正常运行、摘要却可被离线穷举」
+         * 的静默弱配置。放行必须显式写进 profile 配置文件，评审时一眼可见。</p>
+         */
+        private boolean allowInsecurePepper;
 
         public boolean isReturnCodeInResponse() {
             return returnCodeInResponse;
@@ -133,6 +150,22 @@ public class ServiceProperties {
 
         public void setPhoneCodeCooldownSeconds(int phoneCodeCooldownSeconds) {
             this.phoneCodeCooldownSeconds = phoneCodeCooldownSeconds;
+        }
+
+        public String getCodePepper() {
+            return codePepper;
+        }
+
+        public void setCodePepper(String codePepper) {
+            this.codePepper = codePepper;
+        }
+
+        public boolean isAllowInsecurePepper() {
+            return allowInsecurePepper;
+        }
+
+        public void setAllowInsecurePepper(boolean allowInsecurePepper) {
+            this.allowInsecurePepper = allowInsecurePepper;
         }
     }
 

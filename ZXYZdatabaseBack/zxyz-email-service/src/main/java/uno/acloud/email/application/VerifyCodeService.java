@@ -3,6 +3,7 @@ package uno.acloud.email.application;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.util.VerifyCodeHasher;
 import uno.acloud.email.config.EmailProperties;
 import uno.acloud.email.domain.VerifyCode;
 import uno.acloud.email.infrastructure.VerifyCodeMapper;
@@ -27,17 +28,20 @@ public class VerifyCodeService {
     private final EmailRateLimiter emailRateLimiter;
     private final EmailProperties emailProperties;
     private final EmailSendingAvailabilityService emailSendingAvailabilityService;
+    private final VerifyCodeHasher verifyCodeHasher;
 
     public VerifyCodeService(VerifyCodeMapper verifyCodeMapper,
                              EmailDispatchService emailDispatchService,
                              EmailRateLimiter emailRateLimiter,
                              EmailProperties emailProperties,
-                             EmailSendingAvailabilityService emailSendingAvailabilityService) {
+                             EmailSendingAvailabilityService emailSendingAvailabilityService,
+                             VerifyCodeHasher verifyCodeHasher) {
         this.verifyCodeMapper = verifyCodeMapper;
         this.emailDispatchService = emailDispatchService;
         this.emailRateLimiter = emailRateLimiter;
         this.emailProperties = emailProperties;
         this.emailSendingAvailabilityService = emailSendingAvailabilityService;
+        this.verifyCodeHasher = verifyCodeHasher;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -61,7 +65,8 @@ public class VerifyCodeService {
         VerifyCode verifyCode = new VerifyCode();
         verifyCode.setEmail(normalizedEmail);
         verifyCode.setScene(normalizedScene);
-        verifyCode.setCode(code);
+        // 库里只存摘要；上面发给用户的邮件模板用的仍是明文 code
+        verifyCode.setCode(verifyCodeHasher.hash(code));
         verifyCode.markCreated(now.plusMinutes(emailProperties.getVerifyCodeExpireMinutes()));
         verifyCode.setRequestIp(requestIp);
         verifyCode.setEmailRecordId(recordId);
@@ -88,7 +93,7 @@ public class VerifyCodeService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "验证码无效或已过期");
         }
         // 仅在未达上限且码正确时消费成功
-        if (verifyCodeMapper.markUsedByCode(normalizedEmail, normalizedScene, normalizedCode, maxAttempts) == 1) {
+        if (verifyCodeMapper.markUsedByCode(normalizedEmail, normalizedScene, verifyCodeHasher.hash(normalizedCode), maxAttempts) == 1) {
             return;
         }
         // 未能消费：可能码错误，或本次尝试恰好触达上限

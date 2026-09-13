@@ -39,6 +39,16 @@ email:
   retry-fixed-delay-ms: ${EMAIL_RETRY_FIXED_DELAY_MS:60000}
   retry-initial-delay-ms: ${EMAIL_RETRY_INITIAL_DELAY_MS:10000}
   verify-code-expire-minutes: ${EMAIL_VERIFY_CODE_EXPIRE_MINUTES:10}
+  # 验证码摘要 pepper（HMAC-SHA256 密钥，绝不落库；库里只存摘要）。
+  # 缺省回退 Jasypt 主密钥；未配置或为公开占位值时启动失败（fail-closed）。
+  # 见 zxyz-common 的 VerifyCodeHasher。
+  verify-code-pepper: ${VERIFY_CODE_PEPPER:${JASYPT_PASSWORD:}}
+  # 是否允许用「仓库里公开写着」的弱 pepper（dev-only-insecure-pepper 等）。
+  # 默认 false 是刻意的：application.yml 里 spring.profiles.default=dev，
+  # 漏设 SPRING_PROFILES_ACTIVE=prod 的启动会落到 dev profile —— 若默认放行，
+  # 就会出现「服务正常运行、但库里的摘要可被任何人离线穷举」这种静默弱配置。
+  # 只有 application-dev.yml 才显式置 true。
+  verify-code-allow-insecure-pepper: ${VERIFY_CODE_ALLOW_INSECURE_PEPPER:false}
   ip-limit-per-minute: ${EMAIL_IP_LIMIT_PER_MINUTE:3}
   email-limit-per-minute: ${EMAIL_ADDRESS_LIMIT_PER_MINUTE:1}
 

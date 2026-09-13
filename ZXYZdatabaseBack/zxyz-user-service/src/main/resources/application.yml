@@ -41,3 +41,18 @@ app:
     # 缺省与生产（prod profile）一律 false；仅本地 dev profile 显式置 true
     # （见 application-dev.yml）。nacos-config/zxyz-user-service.yml 同口径。
     return-code-in-response: ${VERIFICATION_RETURN_CODE:false}
+    # 验证码摘要 pepper（HMAC-SHA256 密钥，绝不落库；库里只存摘要）。
+    # 缺省回退 Jasypt 主密钥 —— 两者同属「必须保密的根秘密」等级，复用可免去另管一份秘密。
+    # 未配置（或等于 .env.example 里的公开占位值）时服务启动即失败：绝不允许退化成
+    # 「无密钥校验」（那等价于库里仍存明文）。
+    # ⚠️ VERIFY_CODE_PEPPER 目前不会经 compose 进入容器（docker-compose.yml 用的是显式
+    #    environment 映射，不是 env_file），所以容器内走的是 JASYPT_PASSWORD 回退；
+    #    该环境变量名是留给「将来要独立轮换 pepper」的接缝（届时需在 compose 显式加映射）。
+    # 算法/语义详见 zxyz-common 的 VerifyCodeHasher。
+    code-pepper: ${VERIFY_CODE_PEPPER:${JASYPT_PASSWORD:}}
+    # 是否允许用「仓库里公开写着」的弱 pepper（dev-only-insecure-pepper 等）。
+    # 默认 false 是刻意的：application.yml 里 spring.profiles.default=dev，
+    # 漏设 SPRING_PROFILES_ACTIVE=prod 的启动会落到 dev profile —— 若默认放行，
+    # 就会出现「服务正常运行、但库里的摘要可被任何人离线穷举」这种静默弱配置。
+    # 只有 application-dev.yml / application-test.yml 才显式置 true。
+    allow-insecure-pepper: ${VERIFY_CODE_ALLOW_INSECURE_PEPPER:false}

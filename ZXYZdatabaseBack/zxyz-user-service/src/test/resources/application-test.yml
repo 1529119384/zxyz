@@ -20,3 +20,9 @@ app:
     base-url: http://localhost:19999
   email-service:
     base-url: http://localhost:19999
+  verification:
+    # 集成测试用的固定 pepper。集成测试基类 AbstractIntegrationTest 带 @ActiveProfiles("test")
+    # 才会加载本文件；缺了它 VerifyCodeHasher 构造器会拒绝启动整个测试上下文。
+    code-pepper: test-verify-code-pepper
+    # test profile 显式放行仓库内公开的测试 pepper（默认 false，理由见 application.yml）。
+    allow-insecure-pepper: true

@@ -26,6 +26,10 @@ email:
   username: ${EMAIL_USERNAME:your@qq.com}
   password: ${EMAIL_PASSWORD:授权码}
   config-secret: ${EMAIL_CONFIG_SECRET}
+  # 本地开发用的固定 pepper（dev profile 只在本地激活，生产不启用）。
+  verify-code-pepper: ${VERIFY_CODE_PEPPER:dev-only-insecure-pepper}
+  # dev profile 显式放行仓库内公开的 dev pepper（默认 false，理由见 application.yml）。
+  verify-code-allow-insecure-pepper: true
 
 app:
   # RemoteStpInterfaceAutoConfig 需要此属性进行服务间权限校验

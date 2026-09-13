@@ -19,6 +19,17 @@ public class EmailProperties {
     private int retryInitialDelayMs = 10000;
     private int verifyCodeExpireMinutes = 10;
     private int verifyCodeMaxAttempts = 5;
+    /**
+     * 验证码摘要 pepper（HMAC-SHA256 的密钥，<b>绝不落库</b>），对应
+     * {@code email.verify-code-pepper}，缺省回退 Jasypt 主密钥。
+     */
+    @JsonIgnore
+    private String verifyCodePepper;
+    /**
+     * 是否允许使用「仓库内公开写着」的弱 pepper。<b>只有 dev / test profile 才应置 true。</b>
+     * 默认 false 的理由见 {@code application.yml} 的注释与 {@code VerifyCodeHasher}。
+     */
+    private boolean verifyCodeAllowInsecurePepper;
     private int ipLimitPerMinute = 3;
     private int emailLimitPerMinute = 1;
 
@@ -124,6 +135,22 @@ public class EmailProperties {
 
     public void setVerifyCodeMaxAttempts(int verifyCodeMaxAttempts) {
         this.verifyCodeMaxAttempts = verifyCodeMaxAttempts;
+    }
+
+    public String getVerifyCodePepper() {
+        return verifyCodePepper;
+    }
+
+    public void setVerifyCodePepper(String verifyCodePepper) {
+        this.verifyCodePepper = verifyCodePepper;
+    }
+
+    public boolean isVerifyCodeAllowInsecurePepper() {
+        return verifyCodeAllowInsecurePepper;
+    }
+
+    public void setVerifyCodeAllowInsecurePepper(boolean verifyCodeAllowInsecurePepper) {
+        this.verifyCodeAllowInsecurePepper = verifyCodeAllowInsecurePepper;
     }
 
     public int getIpLimitPerMinute() {

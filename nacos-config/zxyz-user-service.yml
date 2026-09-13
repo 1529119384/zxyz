@@ -27,3 +27,10 @@ app:
     # （容器始终注入该环境变量，会覆盖本处默认值）；本地 dev 直跑 JVM 时由
     # scripts/run-local.sh 显式导出 true。本处仅作兜底默认，保持三处口径一致即可。
     return-code-in-response: ${VERIFICATION_RETURN_CODE:false}
+    # 验证码摘要 pepper（HMAC-SHA256 密钥，绝不落库；库里只存摘要）。
+    # 缺省回退 Jasypt 主密钥；未配置或为公开占位值则服务启动失败（fail-closed）。
+    # 本文件不自动生效，改动需手动 nacos-config/import.sh。
+    code-pepper: ${VERIFY_CODE_PEPPER:${JASYPT_PASSWORD:}}
+    # 注意：allow-insecure-pepper / verify-code-allow-insecure-pepper 刻意不写在本文件里。
+    # 它默认 false；只有 application-dev.yml / application-test.yml 显式置 true。
+    # 若把它写进本文件（Nacos 优先级高于 jar 内 application.yml），会让 dev 直跑立刻起不来。

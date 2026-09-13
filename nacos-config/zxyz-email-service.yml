@@ -28,5 +28,12 @@ email:
   retry-fixed-delay-ms: ${EMAIL_RETRY_FIXED_DELAY_MS:60000}
   retry-initial-delay-ms: ${EMAIL_RETRY_INITIAL_DELAY_MS:10000}
   verify-code-expire-minutes: ${EMAIL_VERIFY_CODE_EXPIRE_MINUTES:10}
+  # 验证码摘要 pepper（HMAC-SHA256 密钥，绝不落库；库里只存摘要）。
+  # 缺省回退 Jasypt 主密钥；未配置或为公开占位值则服务启动失败（fail-closed）。
+  # 本文件不自动生效，改动需手动 nacos-config/import.sh。
+  verify-code-pepper: ${VERIFY_CODE_PEPPER:${JASYPT_PASSWORD:}}
+  # 注意：allow-insecure-pepper / verify-code-allow-insecure-pepper 刻意不写在本文件里。
+  # 它默认 false；只有 application-dev.yml / application-test.yml 显式置 true。
+  # 若把它写进本文件（Nacos 优先级高于 jar 内 application.yml），会让 dev 直跑立刻起不来。
   ip-limit-per-minute: ${EMAIL_IP_LIMIT_PER_MINUTE:3}
   email-limit-per-minute: ${EMAIL_ADDRESS_LIMIT_PER_MINUTE:1}

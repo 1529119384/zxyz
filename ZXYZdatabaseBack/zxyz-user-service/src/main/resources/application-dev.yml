@@ -19,3 +19,8 @@ app:
     base-url: ${EMAIL_SERVICE_BASE_URL:http://localhost:18082}
   verification:
     return-code-in-response: ${VERIFICATION_RETURN_CODE:true}
+    # 本地开发用的固定 pepper：dev profile 只在本地激活（生产不启用），
+    # 目的是让开发机不必为了跑起来而配置 JASYPT_PASSWORD。
+    code-pepper: ${VERIFY_CODE_PEPPER:dev-only-insecure-pepper}
+    # dev profile 显式放行仓库内公开的 dev pepper（默认 false，理由见 application.yml）。
+    allow-insecure-pepper: true
