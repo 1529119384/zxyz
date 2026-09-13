@@ -272,6 +272,21 @@ spring:
 
 定期（建议每 90 天）、密钥疑似泄露、人员变动、安全审计要求。
 
+> ⚠️ **轮换前必读：主密钥不只是 jasypt 的钥匙，它还是验证码摘要的 pepper 回退源。**
+> `nacos-config/zxyz-user-service.yml` 与 `nacos-config/zxyz-email-service.yml` 都写了
+> `verify-code-pepper: ${VERIFY_CODE_PEPPER:${JASYPT_PASSWORD:}}`，而生产**未注入** `VERIFY_CODE_PEPPER`
+> （compose 用显式 `environment:` 而非 `env_file`，该键根本不进容器）⇒ 实际 pepper 就是主密钥。
+> 后果：轮换主密钥会**同时换掉验证码摘要口径** ——
+> ① 已发出的验证码**立即全部失效**，处于登录/注册流程中的用户须重新获取；
+> ② `macKey` 在 `VerifyCodeHasher` 构造器里固化、未加 `@RefreshScope`，必须**重启服务**才生效（本流程本来就要重启）。
+> ⇒ 轮换应安排在低峰/维护窗口，并提前知会「验证码可能需重新获取」。
+
+> **当前线上实况（2026-09-13 实测，未打印明文）**：`/www/zxyz/.env` 中 `JASYPT_PASSWORD` **已有真实值**
+> （长度 24、非 `CHANGE_ME*`），由 `scripts/init-secrets.sh` 首次部署时自动生成；生成当时的完整值另存于
+> `/www/zxyz/init-secrets.log`（权限 `600`，形如 `... GENERATED JASYPT_PASSWORD=<值>`）。
+> ⚠️ 该值走的是 `gen_val` 的「通用强密码」分支（`${raw//[+/=]/}` 后截 **24 字符**），**低于 §3.2 要求的 ≥32 字节**
+> ⇒ 若要满足文档口径，轮换时请用 `openssl rand -base64 32` 的**全量输出**（不去字符、不截断）。
+
 ### 6.2 步骤
 
 **步骤 0：评估影响面（当前 = 零，见 §0.3）**
