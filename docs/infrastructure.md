@@ -4,8 +4,8 @@
 
 MySQL 8.4，10 个独立数据库：`zxyz_project`, `zxyz_user`, `zxyz_file`, `zxyz_share`, `zxyz_team`, `zxyz_im`, `zxyz_email`, `zxyz_config`, `nacos`, `zxyz_audit`
 
-Schema 文件：根目录 `sql/`（Docker 挂载源）和 `ZXYZdatabaseBack/sql/`（本地开发参考）。
-初始化脚本 `sql/00-init-zxyz.sh` 在 Docker 首次启动时自动执行。
+Schema 文件：**表结构仅由各服务的 Flyway 迁移管理** —— `ZXYZdatabaseBack/zxyz-<svc>/src/main/resources/db/migration/V*.sql`，**不要**再维护 `sql/schema_*.sql`（与 `CLAUDE.md` 一致）。
+根目录 `sql/` 只放三件**非表结构**的东西：`00-init-zxyz.sh`（数据卷首次创建时初始化各库与账号，由 MySQL 官方镜像 entrypoint 执行，`/var/lib/mysql` 非空时**不会重跑**）、`nacos-mysql-schema.sql`（Nacos 3.x 不会自动建表，随 initdb 导入）、`grant-least-privilege.sql`（手工收敛账号权限，不在启动链路里）。
 
 ## Redis
 

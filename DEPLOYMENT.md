@@ -30,7 +30,7 @@
 | Docker Engine | 20.10+ | 支持 BuildKit 和多阶段构建 |
 | Docker Compose | 2.0+ | 使用 `services` 顶层键（非 Compose v1 的 `version` 字段） |
 | 磁盘空间 | 10 GB+ | 含镜像构建缓存和数据卷 |
-| 内存 | 4 GB+ | 建议 8 GB 以上，8 个 Java 服务 + MySQL + Redis + RabbitMQ + Nacos |
+| 内存 | 4 GB+ | 建议 8 GB 以上，10 个 Java 服务 + MySQL + Redis + RabbitMQ + Nacos |
 | 操作系统 | Linux x86_64 | 推荐 Ubuntu 22.04 / CentOS 8+，Windows/macOS 仅供开发测试 |
 
 ---
@@ -156,7 +156,7 @@ docker compose up -d --build
 
 首次启动会：
 1. 拉取基础镜像（MySQL、Redis、RabbitMQ、Nacos、Maven、Node、Nginx）
-2. 使用 Maven 多阶段构建编译 8 个后端服务镜像
+2. 使用 Maven 多阶段构建编译 10 个后端服务镜像
 3. 使用 Node 多阶段构建编译前端并打包为 Nginx 镜像
 4. 按依赖顺序启动容器（通过健康检查 + `depends_on` 控制）
 
@@ -438,7 +438,7 @@ docker compose up -d
 
 文件路径：`ZXYZdatabaseBack/Dockerfile`
 
-该 Dockerfile 适用于全部 8 个后端服务，通过 `MODULE` 构建参数选择打包哪个 Maven 子模块。
+该 Dockerfile 适用于全部 10 个后端服务，通过 `MODULE` 构建参数选择打包哪个 Maven 子模块。
 
 **构建阶段**（`maven:3.9-eclipse-temurin-17`）：
 
@@ -490,7 +490,7 @@ build:
 
 ```
 第 1 层：mysql, redis, rabbitmq, nacos（中间件层，mysql 健康后 nacos 启动）
-第 2 层：所有 8 个业务服务 + gateway（并行启动，依赖第 1 层全部 healthy）
+第 2 层：所有 9 个业务服务 + gateway（并行启动，依赖第 1 层全部 healthy）
 第 3 层：frontend-nginx（依赖 gateway healthy）
 ```
 
@@ -725,15 +725,22 @@ sudo ss -tlnp | grep :80
 
 **症状**：业务服务启动报 SQL 异常，表不存在。
 
-**解决**：检查 `docker compose logs mysql` 中的初始化日志。如果初始化已执行但 schema 需要更新，可手动执行：
+**解决**：先确认这不是"表结构该由谁管"的问题 —— **表结构一律由各服务的 Flyway 迁移管理**（见 `CLAUDE.md`），`sql/00-init-zxyz.sh` 只在**数据卷首次创建**时由 MySQL 官方镜像的 entrypoint 执行（`/var/lib/mysql` 非空时不会重跑），因此用它来"补表"是没有效果的。检查 `docker compose logs mysql` 中的初始化日志确认走的是哪条路径：
 
 ```bash
-# 进入 MySQL 容器
-docker compose exec mysql mysql -uroot -p
-
-# 手动重建时，可重新执行初始化脚本
-docker compose exec mysql mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" < /docker-entrypoint-initdb.d/00-init-zxyz.sh
+# 进入 MySQL 客户端。密码经 MYSQL_PWD 传入 —— 不出现在 argv / /proc/<pid>/cmdline 里
+docker compose exec -e MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql mysql -uroot
 ```
+
+```bash
+# 确实需要手工重放初始化脚本时：在【宿主侧】重定向，用 stdin 喂进容器
+# ⚠️ 不要写成 `docker compose exec mysql mysql -uroot -p"$PWD" < /docker-entrypoint-initdb.d/00-init-zxyz.sh`
+#    —— `<` 由宿主 shell 解释，那个路径在宿主上并不存在，命令必然失败；
+#    而且 -p"$PWD" 会把口令暴露在宿主进程列表里。
+docker compose exec -T -e MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql mysql -uroot < sql/00-init-zxyz.sh
+```
+
+> 若是"新加了表/字段但库是旧的"，正确做法是**加一个 Flyway 迁移文件**并重启对应服务，而不是重放 init 脚本。
 
 ### 9.8 admin-service V2 迁移校验不匹配（Flyway Checksum Mismatch）
 
