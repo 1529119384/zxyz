@@ -26,7 +26,9 @@ export async function uploadFileWithPresign(file, parentId, onProgress, options 
   let directUpload = false
 
   try {
-    const signRes = await getUploadSign(file.name)
+    // 把声明大小一并带上：后端可据此在发签名前就拒掉超限文件，
+    // 避免「拿到签名 → 传了 500MB → 才在 confirm 阶段被拒」的无效流量。
+    const signRes = await getUploadSign(file.name, file.size)
     uploadUrl = signRes.data.uploadUrl
     objectKey = signRes.data.objectKey
     contentType = signRes.data.contentType || ''

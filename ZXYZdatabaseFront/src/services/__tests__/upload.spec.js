@@ -81,7 +81,7 @@ describe('services/upload 上传编排', () => {
         clientRequestId: 'r1',
       })
 
-      expect(getUploadSign).toHaveBeenCalledWith('a.txt')
+      expect(getUploadSign).toHaveBeenCalledWith('a.txt', FILE_SIZE)
       expect(uploadToOss).toHaveBeenCalledWith('https://bucket.oss/x?a=1', FILE, {
         onUploadProgress: onProgress,
         contentType: 'text/plain',
@@ -207,7 +207,7 @@ describe('services/upload 上传编排', () => {
         spaceType: 'team',
         projectId: 3,
       })
-      expect(getUploadSign).toHaveBeenCalledWith('a.txt')
+      expect(getUploadSign).toHaveBeenCalledWith('a.txt', FILE_SIZE)
       // 关键：parentId 用的是新建目录的 id(99)，而不是根 parentId(1)
       expect(confirmUpload).toHaveBeenCalledWith(
         expect.objectContaining({ parentId: 99, clientRequestId: 'docs/a.txt' }),

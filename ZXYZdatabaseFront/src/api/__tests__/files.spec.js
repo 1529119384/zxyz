@@ -240,18 +240,27 @@ describe('files API', () => {
   })
 
   describe('上传链路', () => {
-    it('getUploadSign 带上传超时与 originalName 参数', async () => {
+    it('getUploadSign 带上传超时、originalName 与可选 fileSize 参数', async () => {
       vi.mocked(request.post).mockResolvedValue({
         code: 1,
         msg: 'ok',
         data: { uploadUrl: 'https://oss' },
       })
-      const result = await getUploadSign('a.txt')
+      const result = await getUploadSign('a.txt', 1024)
       expect(request.post).toHaveBeenCalledWith('/api/files/uploads', null, {
-        params: { originalName: 'a.txt' },
+        params: { originalName: 'a.txt', fileSize: 1024 },
         timeout: 30000,
       })
       expect(result.data.uploadUrl).toBe('https://oss')
+    })
+
+    it('getUploadSign 不传 fileSize 时保持兼容（透传为 undefined，axios 序列化时不落 query）', async () => {
+      vi.mocked(request.post).mockResolvedValue({ code: 1, msg: 'ok', data: {} })
+      await getUploadSign('a.txt')
+      expect(request.post).toHaveBeenCalledWith('/api/files/uploads', null, {
+        params: { originalName: 'a.txt', fileSize: undefined },
+        timeout: 30000,
+      })
     })
 
     it('directUpload 组装 FormData 并用 multipart 头', async () => {

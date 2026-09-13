@@ -194,9 +194,22 @@ public class FileUploadService implements FileUploadPort {
         }
     }
 
-    public UploadInfo getUploadSign(String originalName, Long userId) {
+    public UploadInfo getUploadSign(String originalName, Long fileSize, Long userId) {
         validateFileExtension(originalName);
         validateAllowedExtension(originalName);
+        // 审计 12-2.1.3 第一步：客户端声明了大小时提前拒绝，避免「字节已经落盘才发现超额」。
+        // 位置很关键 —— 必须在 registerUploadOwner 之前：否则一次超额请求会在 Redis 里
+        // 留下一条永远等不到 confirm 的归属登记（无主登记，随 TTL 过期才消失）。
+        // fileSize 可空（老前端不带该参数）且不可信，故 confirm 阶段对存储对象的 HEAD 比对仍是最终兜底。
+        //
+        // 关于原文设想的第二步「预签名时携带受签名保护的 Content-Length」：已核实当前依赖
+        // alibabacloud-oss-v2:0.4.1 的 PresignOptions 只支持 expiration，且 content-length
+        // 不在 V4 的默认签名头集合里（additionalHeaders 只能做客户端级全局配置，不能按请求传）。
+        // 即本仓库当前无法把大小约束下沉到 OSS 侧；将来若升级 SDK 支持，应叠加在这一层之上。
+        if (fileSize != null && fileSize > maxFileSizeBytes()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                    "文件大小超过限制（最大 " + formatFileSize(maxFileSizeBytes()) + "）");
+        }
         String normalizedName = fileDomainValidator.validateInputName(originalName);
         String uuidName = FILE_OBJECT_PREFIX + FileNameUtil.uuidName(normalizedName);
         UploadInfo uploadInfo = registry.getDefaultProvider().generateUploadInfo(uuidName, normalizedName);

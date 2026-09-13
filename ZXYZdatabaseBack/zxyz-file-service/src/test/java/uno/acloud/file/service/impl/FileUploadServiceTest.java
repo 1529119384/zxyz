@@ -284,7 +284,7 @@ class FileUploadServiceTest {
     @Test
     void getUploadSign_unsupportedExtension_shouldThrow() {
         BusinessException ex = assertThrows(BusinessException.class,
-                () -> fileUploadService.getUploadSign("malware.xyz", 1L));
+                () -> fileUploadService.getUploadSign("malware.xyz", null, 1L));
         assertEquals(ErrorCode.BAD_REQUEST, ex.getErrorCode());
         assertTrue(ex.getMessage().contains("不支持的文件类型: .xyz"));
     }
@@ -292,7 +292,7 @@ class FileUploadServiceTest {
     @Test
     void getUploadSign_noExtension_shouldThrow() {
         BusinessException ex = assertThrows(BusinessException.class,
-                () -> fileUploadService.getUploadSign("README", 1L));
+                () -> fileUploadService.getUploadSign("README", null, 1L));
         assertEquals(ErrorCode.BAD_REQUEST, ex.getErrorCode());
         assertTrue(ex.getMessage().contains("缺少扩展名"));
     }
@@ -306,7 +306,7 @@ class FileUploadServiceTest {
                         "https://oss.example.com/files/uuid-report.pdf",
                         "application/pdf", "attachment", 1700000000L, true));
 
-        UploadInfo result = fileUploadService.getUploadSign("report.pdf", 1L);
+        UploadInfo result = fileUploadService.getUploadSign("report.pdf", null, 1L);
         assertNotNull(result);
     }
 
@@ -550,7 +550,7 @@ class FileUploadServiceTest {
                         "https://oss.example.com/files/uuid-report.pdf",
                         "application/pdf", "attachment", 1700000000L, true));
 
-        fileUploadService.getUploadSign("report.pdf", 7L);
+        fileUploadService.getUploadSign("report.pdf", null, 7L);
 
         verify(valueOperations).set(
                 eq("file:upload-owner:files/uuid-report.pdf"),
@@ -566,7 +566,7 @@ class FileUploadServiceTest {
                         "oss", "https://oss.example.com/put", "files/uuid-report.pdf",
                         null, "application/pdf", "attachment", null, false));
 
-        fileUploadService.getUploadSign("report.pdf", 7L);
+        fileUploadService.getUploadSign("report.pdf", null, 7L);
 
         verify(valueOperations).set(anyString(), eq("7"), any(java.time.Duration.class));
     }
@@ -580,7 +580,7 @@ class FileUploadServiceTest {
                         null, "application/pdf", "attachment", 1700000000L, true));
         when(redisTemplate.opsForValue()).thenThrow(new RuntimeException("redis down"));
 
-        UploadInfo result = fileUploadService.getUploadSign("report.pdf", 7L);
+        UploadInfo result = fileUploadService.getUploadSign("report.pdf", null, 7L);
 
         // 登记失败不阻断签名：确认阶段会 fail-closed 拒绝
         assertNotNull(result);

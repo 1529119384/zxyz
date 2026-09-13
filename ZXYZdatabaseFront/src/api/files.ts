@@ -258,9 +258,14 @@ export const getFileDownloadUrl = (fileId: string | number): Promise<ApiResult<D
   return request.get<DownloadUrlResult>(`/api/files/${fileId}/download-url`)
 }
 
-export const getUploadSign = (originalName: string): Promise<ApiResult<UploadSignResult>> => {
+export const getUploadSign = (
+  originalName: string,
+  fileSize?: number,
+): Promise<ApiResult<UploadSignResult>> => {
   return request.post<UploadSignResult>('/api/files/uploads', null, {
-    params: { originalName },
+    // fileSize 让后端在发签名前就能拒掉超大文件（省掉一次注定失败的 PUT）。
+    // 注意它来自客户端、不可信 —— 后端 confirm 阶段的 HEAD 才是真正的把关点。
+    params: { originalName, fileSize },
     timeout: UPLOAD_REQUEST_TIMEOUT,
   })
 }

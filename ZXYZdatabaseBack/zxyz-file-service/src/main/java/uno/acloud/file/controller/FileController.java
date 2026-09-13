@@ -79,9 +79,11 @@ public class FileController {
     @Log
     @PostMapping("/uploads")
     @SaCheckPermission(SystemPermissionCodes.FILE_UPLOAD)
-    public Result<UploadInfo> getUploadSign(@CurrentUser Long userId, @RequestParam String originalName) {
-        log.info("用户 {} 请求获取上传签名，原始文件名: {}", userId, originalName);
-        UploadInfo signInfo = fileUploadPort.getUploadSign(originalName, userId);
+    public Result<UploadInfo> getUploadSign(@CurrentUser Long userId,
+                                            @RequestParam String originalName,
+                                            @RequestParam(required = false) Long fileSize) {
+        log.info("用户 {} 请求获取上传签名，原始文件名: {}, 声明大小: {}", userId, originalName, fileSize);
+        UploadInfo signInfo = fileUploadPort.getUploadSign(originalName, fileSize, userId);
         return Result.of(signInfo);
     }
 
