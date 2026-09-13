@@ -21,6 +21,7 @@ import uno.acloud.team.infrastructure.client.UserServiceClient;
 import uno.acloud.team.mapper.TeamMapper;
 import uno.acloud.team.mapper.TeamQuotaMapper;
 import uno.acloud.team.service.AdminTeamPort;
+import uno.acloud.team.service.BroadcastBatchDispatcher;
 import uno.acloud.team.vo.team.AdminTeamOverviewVO;
 
 import uno.acloud.dto.UserInfoDTO;
@@ -50,6 +51,7 @@ public class AdminTeamService implements AdminTeamPort {
     private final ProjectServiceClient projectServiceClient;
     private final ImSystemNotificationClient imSystemNotificationClient;
     private final EmailServiceClient emailServiceClient;
+    private final BroadcastBatchDispatcher broadcastBatchDispatcher;
     private AdminTeamService self;
 
     public AdminTeamService(TeamMapper teamMapper,
@@ -59,6 +61,7 @@ public class AdminTeamService implements AdminTeamPort {
                             ProjectServiceClient projectServiceClient,
                             ImSystemNotificationClient imSystemNotificationClient,
                             EmailServiceClient emailServiceClient,
+                            BroadcastBatchDispatcher broadcastBatchDispatcher,
                             @Lazy AdminTeamService self) {
         this.teamMapper = teamMapper;
         this.teamQuotaMapper = teamQuotaMapper;
@@ -67,6 +70,7 @@ public class AdminTeamService implements AdminTeamPort {
         this.projectServiceClient = projectServiceClient;
         this.imSystemNotificationClient = imSystemNotificationClient;
         this.emailServiceClient = emailServiceClient;
+        this.broadcastBatchDispatcher = broadcastBatchDispatcher;
         this.self = self;
     }
 
@@ -193,15 +197,20 @@ public class AdminTeamService implements AdminTeamPort {
     public void broadcastSystemMessage(BroadcastSystemMessageRequest request) {
         String title = requireText(request == null ? null : request.getTitle(), "系统消息标题不能为空", 120, "内容长度不能超过 120");
         String content = requireText(request == null ? null : request.getContent(), "系统消息内容不能为空", 5000, "内容长度不能超过 5000");
-        imSystemNotificationClient.sendBatch(
-                userServiceClient.getAllUserIds(),
-                GLOBAL_BROADCAST_TYPE,
-                title,
-                content,
-                GLOBAL_BROADCAST_BUSINESS,
-                null,
-                null
-        );
+        // 审计 L10：不再把全部用户 id 塞进一个请求 —— 分批交给下游，单批规模被钉在常数上。
+        List<Long> allUserIds = userServiceClient.getAllUserIds();
+        int batches = broadcastBatchDispatcher.dispatch(allUserIds, batch ->
+                imSystemNotificationClient.sendBatch(
+                        batch,
+                        GLOBAL_BROADCAST_TYPE,
+                        title,
+                        content,
+                        GLOBAL_BROADCAST_BUSINESS,
+                        null,
+                        null
+                ));
+        log.info("全站系统消息已分批派发：目标用户数={}, 批数={}, 每批上限={}",
+                allUserIds.size(), batches, broadcastBatchDispatcher.batchSize());
         sendBroadcastEmail(title, content);
     }
 
@@ -217,10 +226,19 @@ public class AdminTeamService implements AdminTeamPort {
         if (recipients.isEmpty()) {
             return;
         }
-        try {
-            emailServiceClient.scheduleBatch(recipients, subject, contentHtml, scheduledTime, "ADMIN_SCHEDULED_EMAIL", null);
-        } catch (Exception e) {
-            log.warn("调度批量邮件失败: subject={}, recipientCount={}", subject, recipients.size(), e);
+        // 审计 L10：这条链路同样是「全站收件人塞进一个请求」，一并分批。
+        java.util.concurrent.atomic.AtomicInteger failedBatches = new java.util.concurrent.atomic.AtomicInteger();
+        broadcastBatchDispatcher.dispatch(recipients, batch -> {
+            try {
+                emailServiceClient.scheduleBatch(batch, subject, contentHtml, scheduledTime, "ADMIN_SCHEDULED_EMAIL", null);
+            } catch (Exception e) {
+                failedBatches.incrementAndGet();
+                log.warn("调度批量邮件失败（该批已跳过）：subject={}, batchSize={}", subject, batch.size(), e);
+            }
+        });
+        if (failedBatches.get() > 0) {
+            log.warn("调度批量邮件存在失败批次：subject={}, 失败批数={}, 收件人总数={}",
+                    subject, failedBatches.get(), recipients.size());
         }
     }
 
@@ -229,16 +247,27 @@ public class AdminTeamService implements AdminTeamPort {
         if (recipients.isEmpty()) {
             return;
         }
-        try {
-            emailServiceClient.sendBatchByTemplate(
-                    recipients,
-                    "SYSTEM_MESSAGE",
-                    java.util.Map.of("title", title, "content", content),
-                    GLOBAL_BROADCAST_BUSINESS,
-                    null
-            );
-        } catch (Exception e) {
-            log.warn("全局系统消息邮件投递失败，已保留站内消息：recipientCount={}", recipients.size(), e);
+        // 审计 L10：邮件路径同样分批。批内失败只跳过该批 —— 站内消息已经发出去了，
+        // 不该让某一个批次的邮件故障把后续批次也一起带停（原有「邮件失败不影响站内消息」
+        // 的语义因此被保留并细化到批粒度）。
+        java.util.concurrent.atomic.AtomicInteger failedBatches = new java.util.concurrent.atomic.AtomicInteger();
+        broadcastBatchDispatcher.dispatch(recipients, batch -> {
+            try {
+                emailServiceClient.sendBatchByTemplate(
+                        batch,
+                        "SYSTEM_MESSAGE",
+                        java.util.Map.of("title", title, "content", content),
+                        GLOBAL_BROADCAST_BUSINESS,
+                        null
+                );
+            } catch (Exception e) {
+                failedBatches.incrementAndGet();
+                log.warn("全局系统消息邮件投递失败（该批已跳过，站内消息已保留）：batchSize={}", batch.size(), e);
+            }
+        });
+        if (failedBatches.get() > 0) {
+            log.warn("全局系统消息邮件投递存在失败批次：失败批数={}, 收件人总数={}",
+                    failedBatches.get(), recipients.size());
         }
     }
 

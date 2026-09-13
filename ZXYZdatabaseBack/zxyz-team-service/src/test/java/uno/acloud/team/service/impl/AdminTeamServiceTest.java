@@ -3,6 +3,7 @@ package uno.acloud.team.service.impl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -10,6 +11,8 @@ import org.mockito.quality.Strictness;
 import uno.acloud.common.PageResult;
 import uno.acloud.dto.UserInfoDTO;
 import uno.acloud.exception.BusinessException;
+import uno.acloud.team.dto.system.BroadcastSystemMessageRequest;
+import uno.acloud.team.dto.system.ScheduledEmailBatchRequest;
 import uno.acloud.team.dto.team.UpdateTeamQuotaRequest;
 import uno.acloud.team.entity.Team;
 import uno.acloud.team.infrastructure.client.EmailServiceClient;
@@ -19,6 +22,7 @@ import uno.acloud.team.infrastructure.client.ProjectServiceClient;
 import uno.acloud.team.infrastructure.client.UserServiceClient;
 import uno.acloud.team.mapper.TeamMapper;
 import uno.acloud.team.mapper.TeamQuotaMapper;
+import uno.acloud.team.service.BroadcastBatchDispatcher;
 import uno.acloud.team.vo.team.AdminTeamOverviewVO;
 
 import java.time.LocalDateTime;
@@ -62,6 +66,8 @@ class AdminTeamServiceTest {
         adminTeamService = new AdminTeamService(
                 teamMapper, teamQuotaMapper, userServiceClient,
                 fileServiceClient, projectServiceClient, imSystemNotificationClient, emailServiceClient,
+                // 每批 2 条、间隔 0：让「分批」在用例里真的被走到（且不引入真实等待）
+                new BroadcastBatchDispatcher(2, 0L),
                 null);
         // Self-injection for @Transactional proxy — in unit tests, point to the same instance
         adminTeamService.setSelf(adminTeamService);
@@ -166,6 +172,85 @@ class AdminTeamServiceTest {
         assertEquals(2, page.getPage());
         verify(teamMapper).listAdminTeamOverviewsPaged(PageResult.MAX_PAGE_SIZE,
                 PageResult.offsetOf(2, PageResult.MAX_PAGE_SIZE));
+    }
+
+    // ==================== 广播 — L10 分批派发 ====================
+
+    private static BroadcastSystemMessageRequest broadcastRequest() {
+        BroadcastSystemMessageRequest request = new BroadcastSystemMessageRequest();
+        request.setTitle("系统维护通知");
+        request.setContent("今晚 23:00 起维护");
+        return request;
+    }
+
+    @Test
+    void broadcastSystemMessage_shouldDispatchNotificationsInBatchesInsteadOfOneGiantRequest() {
+        when(userServiceClient.getAllUserIds()).thenReturn(List.of(1L, 2L, 3L, 4L, 5L));
+        when(userServiceClient.getVerifiedEmails()).thenReturn(List.of());
+
+        adminTeamService.broadcastSystemMessage(broadcastRequest());
+
+        // 5 个用户 / 每批 2 ⇒ 3 批。核心契约是「不存在任何一批装下全部 5 条」——
+        // 一旦退回单次全量，L10 要修的请求体过大 / 单个长事务就原样回来了。
+        ArgumentCaptor<List<Long>> captor = ArgumentCaptor.forClass(List.class);
+        verify(imSystemNotificationClient, times(3))
+                .sendBatch(captor.capture(), any(), any(), any(), any(), any(), any());
+        assertEquals(List.of(List.of(1L, 2L), List.of(3L, 4L), List.of(5L)), captor.getAllValues());
+    }
+
+    @Test
+    void broadcastSystemMessage_shouldDispatchEmailsInBatchesToo() {
+        when(userServiceClient.getAllUserIds()).thenReturn(List.of(1L));
+        when(userServiceClient.getVerifiedEmails())
+                .thenReturn(List.of("a@x.com", "b@x.com", "c@x.com"));
+
+        adminTeamService.broadcastSystemMessage(broadcastRequest());
+
+        ArgumentCaptor<List<String>> captor = ArgumentCaptor.forClass(List.class);
+        verify(emailServiceClient, times(2))
+                .sendBatchByTemplate(captor.capture(), any(), any(), any(), any());
+        assertEquals(List.of(List.of("a@x.com", "b@x.com"), List.of("c@x.com")), captor.getAllValues());
+    }
+
+    @Test
+    void broadcastSystemMessage_shouldKeepTryingRemainingEmailBatchesWhenOneBatchFails() {
+        when(userServiceClient.getAllUserIds()).thenReturn(List.of(1L));
+        when(userServiceClient.getVerifiedEmails())
+                .thenReturn(List.of("a@x.com", "b@x.com", "c@x.com"));
+        doThrow(new RuntimeException("smtp down")).when(emailServiceClient)
+                .sendBatchByTemplate(anyList(), any(), any(), any(), any());
+
+        adminTeamService.broadcastSystemMessage(broadcastRequest());
+
+        // 批内失败不得打断后续批次：站内消息已经发出去了，剩下的收件人仍应尝试投递
+        verify(emailServiceClient, times(2)).sendBatchByTemplate(anyList(), any(), any(), any(), any());
+    }
+
+    @Test
+    void scheduleSystemEmailBatch_shouldDispatchInBatches() {
+        when(userServiceClient.getVerifiedEmails())
+                .thenReturn(List.of("a@x.com", "b@x.com", "c@x.com"));
+        ScheduledEmailBatchRequest request = new ScheduledEmailBatchRequest();
+        request.setSubject("周报");
+        request.setContentHtml("<p>内容</p>");
+        request.setScheduledTime(LocalDateTime.now().plusDays(1));
+
+        adminTeamService.scheduleSystemEmailBatch(request);
+
+        ArgumentCaptor<List<String>> captor = ArgumentCaptor.forClass(List.class);
+        verify(emailServiceClient, times(2)).scheduleBatch(captor.capture(), eq("周报"), eq("<p>内容</p>"),
+                any(), eq("ADMIN_SCHEDULED_EMAIL"), isNull());
+        assertEquals(2, captor.getAllValues().size());
+    }
+
+    @Test
+    void broadcastSystemMessage_shouldNotCallDownstreamWhenThereAreNoUsers() {
+        when(userServiceClient.getAllUserIds()).thenReturn(List.of());
+        when(userServiceClient.getVerifiedEmails()).thenReturn(List.of());
+
+        adminTeamService.broadcastSystemMessage(broadcastRequest());
+
+        verifyNoInteractions(imSystemNotificationClient, emailServiceClient);
     }
 
     // ==================== updateTeamQuota — CV-3 项目配额总和校验 ====================

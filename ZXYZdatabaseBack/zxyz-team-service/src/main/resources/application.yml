@@ -46,3 +46,9 @@ app:
     default-team-sync:
       initial-delay-ms: ${DEFAULT_TEAM_SYNC_INITIAL_DELAY_MS:30000}
       fixed-delay-ms: ${DEFAULT_TEAM_SYNC_FIXED_DELAY_MS:30000}
+  # 全站广播（系统消息 / 系统邮件）的分批参数（审计 L10）。
+  # 一次性把全站用户塞进一个请求会撑爆下游的请求体与单个事务；分批 + 批间隔把压力摊平。
+  # 单批条数有硬上限 5000（见 BroadcastBatchDispatcher.MAX_BATCH_SIZE），配置写再大也会被钳制。
+  broadcast:
+    batch-size: ${BROADCAST_BATCH_SIZE:500}
+    batch-interval-ms: ${BROADCAST_BATCH_INTERVAL_MS:200}
