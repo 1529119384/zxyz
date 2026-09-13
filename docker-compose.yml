@@ -1,17 +1,20 @@
 # ---------------------------------------------------------------------------
 # 服务间鉴权（P2-A2 每服务独立密钥 + 白名单矩阵）
 #
-# 当前默认：过渡模式 —— 所有收方 app.internal.allowed-sources 为空 map，
-# 服务间校验回退到单一 INTERNAL_SERVICE_TOKEN（docker-compose 每个服务已注入），
-# 现有 dev/生产无需配置即可启动，行为与历史一致。
+# 当前默认：矩阵**已全量启用**（不再是"过渡模式 / allowed-sources 为空 map"）——
+# 9 个业务服务 + gateway 的 environment 均以 SPRING_APPLICATION_JSON 预置完整的
+# app.internal.allowed-sources 映射（来源服务名 -> 该来源的 SVC_*_KEY），
+# 且每个 SVC_*_KEY 都用 `:?` 硬失败：缺任一键则对应服务拒绝启动。
+# 服务间校验**不再**回退到单一 INTERNAL_SERVICE_TOKEN。
 #
-# 启用服务级白名单矩阵（生产安全隔离，阻止「持 token 服务伪造任意来源」）：
-#   1) SVC_*_KEY 已由 scripts/init-secrets.sh 自动生成（每服务独立、互不相同、≠ INTERNAL_SERVICE_TOKEN），
+# 机制说明（以下 1)~4) 是"矩阵由哪些部分构成"，不是"待做的启用步骤"）：
+#   1) SVC_*_KEY 由 scripts/init-secrets.sh 自动生成（每服务独立、互不相同、≠ INTERNAL_SERVICE_TOKEN），
 #      .env.example 中已取消注释；运行 init-secrets.sh 即写入 .env，无需手填。
 #   2) 各服务 environment 已注入 `APP_INTERNAL_SERVICE_KEY: ${SVC_<SERVICE>_KEY}`
-#      （= 该服务自己向收方签发的密钥；缺此则矩阵启用后发方仍持 legacy token 会被收方拒）。
-#   3) 收方 app.internal.allowed-sources 由各服务 application.yml 声明「允许来源服务名 -> 该来源密钥」映射；
-#      email-service 已通过 SPRING_APPLICATION_JSON 预置 allowed-sources 试点。
+#      （= 该服务自己向收方签发的密钥；缺此则发方持 legacy token 会被收方拒）。
+#   3) 收方 app.internal.allowed-sources 由本文件的 SPRING_APPLICATION_JSON 逐服务预置
+#      "允许来源服务名 -> 该来源密钥" 的**完整映射**；10 个服务均已预置
+#      （email-service 是当初的试点，现已是全量）。
 #   4) gateway 服务 environment 已注入 `SVC_GATEWAY_KEY: ${SVC_GATEWAY_KEY:?启用矩阵必须设置 SVC_GATEWAY_KEY}`
 #      （用 :? 硬失败；变量缺失则网关拒绝启动，桥接不会带空 token 401）。
 #      网关已用 StripInternalHeadersFilter 剥离外部伪造的 X-Internal-Service-Token / X-Internal-Caller-Service，
@@ -21,7 +24,7 @@
 # 警告：allowed-sources 一旦启用，任何未列举来源将被拒（fail-closed）；密钥键禁 YAML 默认值，
 #      未定义环境变量对应服务拒绝启动（强制配齐）。SVC_GATEWAY_KEY 必须与 email 的 allowed-sources
 #      中 zxyz-gateway 项一致，否则 admin 邮件管理经网关调用在矩阵下 401。
-#      建议先单服务（如 email）灰度再铺开；完整手稿见 docs/matrix-enable-guide.md。
+#      灰度已完成（email 先行，随后铺开到全部 10 个服务）；完整手稿见 docs/matrix-enable-guide.md。
 # ---------------------------------------------------------------------------
 services:
   mysql:
