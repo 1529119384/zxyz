@@ -37,7 +37,7 @@
 # ---------------------------------------------------------------------------
 services:
   mysql:
-    image: mysql:8.4.0-oraclelinux8
+    image: mysql:8.4.0-oraclelinux8@sha256:f7a8e140a7d6d1e6e0c99eeb0489c50a186ee4ac44ff55323a176529b9a43d33
     container_name: zxyz-mysql
     restart: unless-stopped
     deploy:
@@ -87,7 +87,7 @@ services:
         max-file: "3"
 
   nacos:
-    image: nacos/nacos-server:v3.2.1
+    image: nacos/nacos-server:v3.2.1@sha256:8b9bbcf2367b90b14f9657d1b6e3a0d4d12050f2c722e0d64a97259da7cb9d00
     container_name: zxyz-nacos
     restart: unless-stopped
     deploy:
@@ -991,7 +991,7 @@ services:
       - zxyz-net
 
   loki:
-    image: grafana/loki:3.0.0
+    image: grafana/loki:3.0.0@sha256:757b5fadf816a1396f1fea598152947421fa49cb8b2db1ddd2a6e30fae003253
     container_name: zxyz-loki
     restart: unless-stopped
     deploy:
@@ -1018,7 +1018,7 @@ services:
         max-file: "3"
 
   promtail:
-    image: grafana/promtail:3.0.0
+    image: grafana/promtail:3.0.0@sha256:d3de3da9431cfbe74a6a94555050df5257f357e827be8e63f8998d509c37af8b
     container_name: zxyz-promtail
     restart: unless-stopped
     deploy:
@@ -1055,7 +1055,7 @@ services:
   # 生产经宿主机 Nginx 反代并加来源限制，切勿直接暴露公网。
   # ---------------------------------------------------------------------------
   prometheus:
-    image: prom/prometheus:v2.53.0
+    image: prom/prometheus:v2.53.0@sha256:075b1ba2c4ebb04bc3a6ab86c06ec8d8099f8fda1c96ef6d104d9bb1def1d8bc
     container_name: zxyz-prometheus
     restart: unless-stopped
     deploy:
@@ -1089,7 +1089,7 @@ services:
         max-file: "3"
 
   alertmanager:
-    image: prom/alertmanager:v0.27.0
+    image: prom/alertmanager:v0.27.0@sha256:e13b6ed5cb929eeaee733479dce55e10eb3bc2e9c4586c705a4e8da41e5eacf5
     container_name: zxyz-alertmanager
     restart: unless-stopped
     deploy:
@@ -1117,7 +1117,7 @@ services:
         max-file: "3"
 
   grafana:
-    image: grafana/grafana:11.1.0
+    image: grafana/grafana:11.1.0@sha256:079600c9517b678c10cda6006b4487d3174512fd4c6cface37df7822756ed7a5
     container_name: zxyz-grafana
     restart: unless-stopped
     deploy:
