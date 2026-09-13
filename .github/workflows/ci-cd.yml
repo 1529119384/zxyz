@@ -85,6 +85,8 @@ jobs:
       admin-service: ${{ steps.force.outputs.on == 'true' && 'true' || steps.filter.outputs.admin-service }}
       gateway: ${{ steps.force.outputs.on == 'true' && 'true' || steps.filter.outputs.gateway }}
       docker-config: ${{ steps.force.outputs.on == 'true' && 'true' || steps.filter.outputs.docker-config }}
+      # nacos-config：驱动 nacos-import 作业。刻意不并入 any-change（不需要重建镜像）。
+      nacos-config: ${{ steps.force.outputs.on == 'true' && 'true' || steps.filter.outputs.nacos-config }}
       frontend: ${{ steps.force.outputs.on == 'true' && 'true' || steps.filter.outputs.frontend }}
       backend-any: ${{ steps.force.outputs.on == 'true' && 'true' || steps.backend-any.outputs.changed }}
       # any-change：后端 / 前端 / compose+env 任一有变更。
@@ -200,6 +202,11 @@ jobs:
               - '.env.example'
             frontend:
               - 'ZXYZdatabaseFront/**'
+            # nacos-config/**：不参与镜像构建，但它是 Nacos 的运行真源 ——
+            # 改它必须 import 才对线上生效（由 nacos-import 作业自动完成）。
+            # 刻意**不**并入 any-change：纯配置变更不需要重建任何镜像。
+            nacos-config:
+              - 'nacos-config/**'
 
       - name: Check if any backend changed
         id: backend-any
@@ -456,6 +463,109 @@ jobs:
             PY=.venv-nacos-sync/bin/python
           fi
           "$PY" scripts/check-nacos-config-sync.py
+
+  # ============================================================
+  # Job 1.6: Nacos 配置导入（发布契约的自动化部分）
+  # ============================================================
+  # 契约：`nacos-config/**` 是 Nacos 的运行真源，**改它必须 import 才对线上生效**。
+  # 此前这一步纯人工，漏做 ⇒ 配置静默不生效（正是当初那条契约想避免的失败模式，
+  # 也解释了为什么线上 Nacos 库一度 0 行配置）。本作业把它并入发布流程：
+  # 只要 nacos-config/** 有变更，就自动导入 + 逐份回读校验。
+  #
+  # 为什么必须独立成 job、不能并进 deploy：deploy 的前置 build-and-push 要求
+  # any-change=='true'，而纯配置变更不参与镜像构建（any-change 刻意不含 nacos-config）
+  # ⇒ deploy 会被 skip，配置就永远导不进去。
+  #
+  # 安全性：import.sh 自带三层护栏 —— 顶层重复 key 拦截（SnakeYAML 遇重复键会起不来）、
+  # 字面量机密拦截、导入后逐份 md5 回读校验；导入是幂等 upsert，重跑安全。
+  # 本作业**不重启任何服务**：refreshEnabled=false 的 11 份配置只在服务下次启动时接管，
+  # 故不会让运行中的服务立刻改变行为（唯一即时影响是 zxyz-dynamic.yml 的热更新，
+  # 而那正是它被设计出来的用途）。
+  # ============================================================
+  nacos-import:
+    needs: [detect-changes, nacos-config-check]
+    runs-on: ubuntu-latest
+    if: always() && needs.nacos-config-check.result == 'success' && needs.detect-changes.outputs.nacos-config == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    concurrency:
+      group: nacos-import-${{ github.ref }}
+      cancel-in-progress: false
+    environment: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && 'production' || 'development' }}
+    steps:
+      - name: Determine deploy target
+        id: target
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ] || [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "host=${{ secrets.PROD_DEPLOY_HOST }}" >> $GITHUB_OUTPUT
+          else
+            echo "host=${{ (secrets.DEV_DEPLOY_HOST || secrets.DEPLOY_HOST) }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Determine SSH key
+        id: ssh-key
+        run: |
+          # 私钥是多行 PEM，必须用 heredoc 定界符写进 GITHUB_ENV（单行 name=value 会报 Invalid format）
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]] || [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            {
+              echo "ssh_key<<GH_SSH_KEY_EOF"
+              echo "${{ secrets.PROD_SSH_KEY }}"
+              echo "GH_SSH_KEY_EOF"
+            } >> "$GITHUB_ENV"
+          else
+            {
+              echo "ssh_key<<GH_SSH_KEY_EOF"
+              echo "${{ (secrets.DEV_SSH_KEY || secrets.DEPLOY_SSH_KEY) }}"
+              echo "GH_SSH_KEY_EOF"
+            } >> "$GITHUB_ENV"
+          fi
+
+      - name: Import nacos-config into Nacos
+        uses: appleboy/ssh-action@v1
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/www/zxyz' }}
+        with:
+          host: ${{ steps.target.outputs.host }}
+          username: ${{ secrets.DEPLOY_USERNAME }}
+          key: ${{ env.ssh_key }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          timeout: 300s
+          command_timeout: 10m
+          envs: DEPLOY_PATH
+          script: |
+            #!/bin/bash
+            set -euo pipefail
+            DEPLOY_DIR="${DEPLOY_PATH:-/www/zxyz}"
+            REPO_DIR="${DEPLOY_DIR}-repo"     # 与 deploy 作业同源的克隆
+            if [ ! -d "$REPO_DIR/.git" ]; then
+              echo "::error::REPO_MISSING: $REPO_DIR 不存在，无法取得本次提交的 nacos-config/"
+              exit 1
+            fi
+            # 刷新克隆以拿到本次提交的 nacos-config/。与 deploy 作业可能并发
+            # （同一次 push 同时改了代码与配置时），故对 git 锁竞争做退避重试，
+            # 避免把「抢锁失败」误报成拉取失败。
+            ok=0
+            for i in 1 2 3 4 5; do
+              if git -C "$REPO_DIR" pull --ff-only -q; then ok=1; break; fi
+              echo "pull 第 $i 次失败（疑与其他作业的 git 操作竞争），5s 后重试"
+              sleep 5
+            done
+            if [ "$ok" != "1" ]; then
+              echo "::error::REPO_PULL_FAILED: 无法更新 $REPO_DIR"
+              exit 1
+            fi
+
+            ENVF="$DEPLOY_DIR/.env"
+            if [ ! -f "$ENVF" ]; then
+              echo "::error::ENV_MISSING: $ENVF"
+              exit 1
+            fi
+            # 只取需要的两个键（绝不整体 cat .env）；凭据经环境变量交给 import.sh，不落任何文件
+            NACOS_USER=$(grep -E '^NACOS_USERNAME=' "$ENVF" | head -1 | cut -d= -f2- | tr -d '"' | tr -d '\r')
+            NACOS_PASS=$(grep -E '^NACOS_PASSWORD=' "$ENVF" | head -1 | cut -d= -f2- | tr -d '"' | tr -d '\r')
+            export NACOS_USER NACOS_PASS
+
+            cd "$REPO_DIR/nacos-config"
+            echo "===== import.sh（namespace=public, group=ZXYZ, 端口 8848/18081）====="
+            exec bash ./import.sh "" 127.0.0.1:8848 127.0.0.1:18081
 
   # ============================================================
   # Job: 密钥泄漏扫描（Gitleaks）

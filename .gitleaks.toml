@@ -31,7 +31,7 @@ description = "生成的 API 文档：正文含 curl 请求示例，示例里的
 paths = ['''^\.qoder/repowiki/''']
 
 [[allowlists]]
-description = "已知历史泄露：提交 a43f5c6 把真实 DB 口令写进该脚本，工作区已移除并改为 env 传参"
+description = "已知历史泄露：提交 a43f5c6 把真实 DB 口令写进该脚本。该脚本现已整体删除（它直连 config_info，首行 DELETE 会无备份清空配置表、且不写 tenant_id 导致写进去也读不到），本豁免只用于容忍那一笔历史提交，不影响当前树。"
 condition = "AND"
 commits = ["a43f5c6ffd0b645cca3dec0a8dac06152f7e86fb"]
 paths = ['''^scripts/import_nacos_configs\.py$''']
