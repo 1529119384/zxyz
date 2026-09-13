@@ -45,6 +45,19 @@ public interface ShareMapper extends BaseMapper<Share> {
     @Select("SELECT id, share_id, file_id, file_type, create_time FROM share_item WHERE share_id = #{shareId} ORDER BY create_time ASC, id ASC")
     List<ShareItem> listItemsByShareId(Long shareId);
 
+    /**
+     * 按 {@code id} 游标顺序读取分享条目（对账用，审计 2.2.7）。
+     * <p><b>为什么用游标而不是 {@code LIMIT/OFFSET}</b>：对账期间用户仍可能在增删分享，
+     * OFFSET 会随着已有行的变化而漂移，让某些记录在翻页时重复出现或被整条跳过。
+     * 按「{@code id > lastId} 且升序」单向推进则不受插入/删除影响。</p>
+     * <p>「是否有下一页」由调用方按「返回行数 &lt; limit」判断，不要另外 COUNT。</p>
+     *
+     * @param lastId 上一批最后一行的 id；首轮传 0（id 为自增正整数）
+     * @param limit  单批行数上限
+     */
+    @Select("SELECT id, share_id, file_id, file_type, create_time FROM share_item WHERE id > #{lastId} ORDER BY id ASC LIMIT #{limit}")
+    List<ShareItem> listItemsByCursor(@Param("lastId") Long lastId, @Param("limit") int limit);
+
     @Delete("DELETE FROM share_item WHERE share_id = #{shareId}")
     int deleteShareItemsByShareId(@Param("shareId") Long shareId);
 

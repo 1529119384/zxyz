@@ -117,6 +117,20 @@ public class InternalFileController {
                 .toList());
     }
 
+    @Operation(summary = "批量获取文件 share 投影（含已删除，供对账使用）")
+    @PostMapping("/batch-share-projection-with-deleted")
+    public Result<List<ShareFileProjectionVO>> getBatchShareProjectionWithDeleted(@Valid @RequestBody InternalBatchFileIdsRequest request) {
+        // 为什么不能复用上面的 /batch-share-projection：它走 getActiveFileNodesByIds，只返回 deleted=0，
+        // 于是「回收站里的文件」和「已彻底删除的文件」在调用方看来都是「查不到」——两者被混为一谈。
+        // 对账场景必须区分：回收站（deleted=1）用户随时可能还原，把它当孤儿清掉会让还原后的分享残缺；
+        // 只有 deleted=2（彻底删除）和「行不存在」才是真孤儿。故此处返回真实 deleted，不过滤。
+        List<FileNode> nodes = fileQueryPort.getFileNodesByIds(request.getFileIds());
+        return Result.of(nodes.stream()
+                .filter(Objects::nonNull)
+                .map(this::toShareProjectionVO)
+                .toList());
+    }
+
     @Operation(summary = "获取分享子文件列表（窄投影）")
     @GetMapping("/{parentId}/share-children-projection")
     public Result<List<ShareFileProjectionVO>> getShareChildrenProjection(@PathVariable Long parentId) {

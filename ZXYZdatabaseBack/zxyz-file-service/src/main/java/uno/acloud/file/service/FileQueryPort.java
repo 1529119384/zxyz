@@ -53,6 +53,17 @@ public interface FileQueryPort {
     List<uno.acloud.file.infrastructure.entity.FileNode> getActiveFileNodesByIds(List<Long> fileIds);
 
     /**
+     * 批量获取文件节点实体（<b>含已删除</b>，不进行权限校验）。
+     * <p>与 {@link #getActiveFileNodesByIds} 的唯一区别是<b>不按 {@code deleted} 过滤</b>：
+     * 回收站（{@code deleted=1}）与彻底删除（{@code deleted=2}）的节点也会返回。</p>
+     * <p>存在的意义是让「对账」类场景能区分「文件不可访问」的三种成因 ——
+     * 回收站（用户可还原，<b>不该清</b>）/ 已彻底删除（<b>该清</b>）/ 行根本不存在 ——
+     * 而不是把三者混为一谈。只按 {@code deleted=0} 过滤的接口做不到这种区分。
+     * <b>业务读取路径不要用它</b>（会读到用户已删除的文件）。</p>
+     */
+    List<uno.acloud.file.infrastructure.entity.FileNode> getFileNodesByIds(List<Long> fileIds);
+
+    /**
      * 获取文件节点实体（流式下载等内部操作使用）
      */
     uno.acloud.file.infrastructure.entity.FileNode getFileNodeForStream(Long fileId, Long userId);

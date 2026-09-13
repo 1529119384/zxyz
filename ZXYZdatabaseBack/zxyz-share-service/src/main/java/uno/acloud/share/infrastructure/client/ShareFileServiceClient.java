@@ -63,6 +63,39 @@ public class ShareFileServiceClient extends AbstractServiceClient {
     }
 
     /**
+     * 批量获取文件投影（<b>含已删除</b>）——仅供对账场景使用。
+     * <p>与 {@link #getShareFileProjections(List)} 的关键区别：走 file-service 的
+     * {@code /batch-share-projection-with-deleted}，<b>不按 {@code file_node.deleted} 过滤</b>。
+     * 因此调用方可以区分「文件不可访问」的三种成因：</p>
+     * <ul>
+     *   <li>{@code deleted=1}（回收站）—— 用户随时可能还原，<b>不是孤儿，不该清</b>；</li>
+     *   <li>{@code deleted=2}（彻底删除）—— 真孤儿，该清；</li>
+     *   <li>请求了但<b>不在返回集里</b> —— 行根本不存在，也是真孤儿。</li>
+     * </ul>
+     * <p><b>契约依赖</b>：上游实现必须等价于 {@code SELECT ... WHERE id IN (...)}（不静默丢 id），
+     * 否则「返回集缺失」会被误判成「行不存在」。file-service 侧
+     * {@code InternalFileController#getBatchShareProjectionWithDeleted} 已按此实现。</p>
+     * <p>业务读取路径请用 {@link #getShareFileProjections(List)}（它会过滤掉已删除文件，
+     * 避免把用户已删除的文件暴露给分享页）。</p>
+     */
+    public List<ShareFileProjection> getShareFileProjectionsWithDeleted(List<Long> fileIds) {
+        if (fileIds == null || fileIds.isEmpty()) {
+            return List.of();
+        }
+        JsonNode root = postJson("/api/internal/files/batch-share-projection-with-deleted",
+                objectMapper().createObjectNode().putPOJO("fileIds", fileIds));
+        enforceSuccessCode(root, "批量获取文件投影（含已删除）失败");
+        JsonNode data = root.path("data");
+        List<ShareFileProjection> result = new ArrayList<>();
+        if (data.isArray()) {
+            for (JsonNode item : data) {
+                result.add(mapToProjection(item));
+            }
+        }
+        return result;
+    }
+
+    /**
      * 按 ID 获取单个文件投影。
      */
     public ShareFileProjection getShareProjection(Long fileId) {

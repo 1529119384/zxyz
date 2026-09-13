@@ -299,6 +299,19 @@ public class FileQueryService implements FileQueryPort {
         return fileMapper.getActiveFileNodesByIds(fileIds);
     }
 
+    /**
+     * 批量获取文件节点实体（含已删除）。
+     * <p>仅供对账类场景使用 —— 见 {@link FileQueryPort#getFileNodesByIds(List)} 的说明。
+     * 与 {@link #getActiveFileNodesByIds} 的唯一差别是不按 {@code deleted} 过滤。</p>
+     */
+    @Override
+    public List<FileNode> getFileNodesByIds(List<Long> fileIds) {
+        if (fileIds == null || fileIds.isEmpty()) {
+            return List.of();
+        }
+        return fileMapper.getFileNodesByIds(fileIds);
+    }
+
     @Override
     public FileNode getFileNodeForStream(Long fileId, Long userId) {
         return fileDomainValidator.requireNode(fileId, userId, fileAccessGuardService);

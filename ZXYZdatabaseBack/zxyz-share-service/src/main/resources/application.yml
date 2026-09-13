@@ -39,3 +39,13 @@ app:
       base-url: ${FILE_SERVICE_BASE_URL:http://zxyz-file-service}
     user-service:
       base-url: ${USER_SERVICE_BASE_URL:http://zxyz-user-service}
+    # 分享条目对账（审计 2.2.7）：定期扫描 share_item 中指向「已彻底删除 / 已不存在文件」的残留引用。
+    # 灰度期只告警不删除 —— 先把一周的数据量看清楚，再决定是否打开 deletion-enabled。
+    # ⚠️ deletion-enabled=true 是**不可逆**动作（按 file_id 删 share_item 行），开之前请先确认灰度数据。
+    item-reconcile:
+      enabled: ${SHARE_ITEM_RECONCILE_ENABLED:true}
+      deletion-enabled: ${SHARE_ITEM_RECONCILE_DELETION_ENABLED:false}
+      initial-delay-ms: ${SHARE_ITEM_RECONCILE_INITIAL_DELAY_MS:300000}
+      interval-ms: ${SHARE_ITEM_RECONCILE_INTERVAL_MS:1800000}
+      batch-size: ${SHARE_ITEM_RECONCILE_BATCH_SIZE:500}
+      lock-ttl-seconds: ${SHARE_ITEM_RECONCILE_LOCK_TTL_SECONDS:1500}
