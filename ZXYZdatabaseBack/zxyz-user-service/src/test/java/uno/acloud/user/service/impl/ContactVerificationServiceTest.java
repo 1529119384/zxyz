@@ -189,13 +189,15 @@ class ContactVerificationServiceTest {
     @Test
     void verifyContact_expiredPhoneCode_shouldThrow() {
         Long userId = 1L;
+        int maxAttempts = serviceProperties.getVerification().getPhoneCodeMaxAttempts();
 
         ContactVerifyRequest request = new ContactVerifyRequest();
         request.setType("phone");
         request.setCode("654321");
 
-        // Expired code: countValidContactVerificationCode returns 0
-        when(userMapper.countValidContactVerificationCode(userId, "phone", "654321")).thenReturn(0);
+        // 无存活码：bump 返回 0；而计数未达上限 ⇒ 归因为「无效或已过期」
+        when(userMapper.bumpContactVerificationAttempt(userId, "phone", maxAttempts)).thenReturn(0);
+        when(userMapper.findContactVerificationAttempt(userId, "phone")).thenReturn(0);
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> contactVerificationService.verifyContact(userId, request));
@@ -208,12 +210,15 @@ class ContactVerificationServiceTest {
     @Test
     void verifyContact_correctPhoneCode_shouldSucceed() {
         Long userId = 1L;
+        int maxAttempts = serviceProperties.getVerification().getPhoneCodeMaxAttempts();
 
         ContactVerifyRequest request = new ContactVerifyRequest();
         request.setType("phone");
         request.setCode("123456");
 
-        when(userMapper.countValidContactVerificationCode(userId, "phone", "123456")).thenReturn(1);
+        // 新版流程：先计一次尝试，再消费；两者都成功才认定通过
+        when(userMapper.bumpContactVerificationAttempt(userId, "phone", maxAttempts)).thenReturn(1);
+        when(userMapper.consumeContactVerificationCode(userId, "phone", "123456", maxAttempts)).thenReturn(1);
         when(userMapper.verifyPhone(userId)).thenReturn(1);
 
         CurrentUserVO currentUser = new CurrentUserVO(
@@ -226,5 +231,93 @@ class ContactVerificationServiceTest {
         assertNotNull(result);
         assertTrue(result.getPhoneVerified());
         verify(userMapper).verifyPhone(userId);
+    }
+
+    // ==================== Verify phone with wrong code — attempt counted ====================
+
+    @Test
+    void verifyContact_wrongPhoneCode_shouldThrow() {
+        Long userId = 1L;
+        int maxAttempts = serviceProperties.getVerification().getPhoneCodeMaxAttempts();
+
+        ContactVerifyRequest request = new ContactVerifyRequest();
+        request.setType("phone");
+        request.setCode("000000");
+
+        when(userMapper.bumpContactVerificationAttempt(userId, "phone", maxAttempts)).thenReturn(1);
+        when(userMapper.consumeContactVerificationCode(userId, "phone", "000000", maxAttempts)).thenReturn(0);
+        when(userMapper.findContactVerificationAttempt(userId, "phone")).thenReturn(1);
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> contactVerificationService.verifyContact(userId, request));
+        assertEquals(ErrorCode.BAD_REQUEST, ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("验证码无效或已过期"));
+        verify(userMapper, never()).verifyPhone(anyLong());
+    }
+
+    // ==================== Verify phone — attempts exhausted ====================
+
+    @Test
+    void verifyContact_phoneCodeAttemptsExhausted_shouldThrow() {
+        Long userId = 1L;
+        int maxAttempts = serviceProperties.getVerification().getPhoneCodeMaxAttempts();
+
+        ContactVerifyRequest request = new ContactVerifyRequest();
+        request.setType("phone");
+        request.setCode("123456");
+
+        // 次数用尽后该码已被作废 ⇒ bump 返回 0，且计数已达上限
+        when(userMapper.bumpContactVerificationAttempt(userId, "phone", maxAttempts)).thenReturn(0);
+        when(userMapper.findContactVerificationAttempt(userId, "phone")).thenReturn(maxAttempts);
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> contactVerificationService.verifyContact(userId, request));
+        assertEquals(ErrorCode.BAD_REQUEST, ex.getErrorCode());
+        // 必须是「次数过多」而不是泛化的「无效」——否则用户只会反复重试把次数耗光
+        assertTrue(ex.getMessage().contains("尝试次数过多"));
+        verify(userMapper, never()).verifyPhone(anyLong());
+    }
+
+    // ==================== Send phone code — cooldown ====================
+
+    @Test
+    void createPhoneVerificationCode_cooldownActive_shouldThrowAndNotTouchCode() {
+        Long userId = 1L;
+        User user = userWithPhone(userId, "+8613800138000");
+        when(userQueryHelper.requireExistingUser(userId)).thenReturn(user);
+
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.setIfAbsent(anyString(), eq("1"), any(Duration.class))).thenReturn(false);
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> contactVerificationService.createPhoneVerificationCode(userId));
+        assertEquals(ErrorCode.BAD_REQUEST, ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("秒后再试"));
+        // 冷却被拒时绝不能写库：否则重发接口就成了「免费重置尝试次数」的入口
+        verify(userMapper, never()).upsertContactVerificationCode(anyLong(), anyString(), anyString());
+    }
+
+    @Test
+    void createPhoneVerificationCode_cooldownAcquired_shouldUpsertCode() {
+        Long userId = 1L;
+        User user = userWithPhone(userId, "+8613800138000");
+        when(userQueryHelper.requireExistingUser(userId)).thenReturn(user);
+
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.setIfAbsent(anyString(), eq("1"), any(Duration.class))).thenReturn(true);
+
+        ContactVerificationCodeVO result = contactVerificationService.createPhoneVerificationCode(userId);
+
+        assertNotNull(result);
+        assertEquals("phone", result.getType());
+        verify(userMapper).upsertContactVerificationCode(eq(userId), eq("phone"), anyString());
+    }
+
+    private User userWithPhone(Long id, String phone) {
+        User user = new User();
+        user.setId(id);
+        user.setUsername("testuser");
+        user.setPhone(phone);
+        return user;
     }
 }

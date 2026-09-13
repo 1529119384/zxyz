@@ -34,11 +34,13 @@ public class ContactVerificationService {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final String EMAIL_BIND_VERIFY_SCENE = "EMAIL_BIND";
     private static final String EMAIL_VERIFY_CODE_COOLDOWN_KEY_PREFIX = "zxyz:user:email-verify-code:cooldown:";
+    private static final String PHONE_VERIFY_CODE_COOLDOWN_KEY_PREFIX = "zxyz:user:phone-verify-code:cooldown:";
 
     private final UserMapper userMapper;
     private final StringRedisTemplate stringRedisTemplate;
     private final EmailServiceMailClient emailServiceMailClient;
     private final UserQueryHelper userQueryHelper;
+    private final ServiceProperties serviceProperties;
     private final boolean returnCodeInResponse;
     /** 邮箱验证码发送冷却时长，默认 60 秒 */
     private final Duration emailVerifyCodeCooldown;
@@ -53,6 +55,7 @@ public class ContactVerificationService {
         this.stringRedisTemplate = stringRedisTemplate;
         this.emailServiceMailClient = emailServiceMailClient;
         this.userQueryHelper = userQueryHelper;
+        this.serviceProperties = serviceProperties;
         this.returnCodeInResponse = serviceProperties.getVerification().isReturnCodeInResponse();
         this.emailVerifyCodeCooldown = Duration.ofSeconds(emailVerifyCodeCooldownSeconds);
     }
@@ -80,11 +83,13 @@ public class ContactVerificationService {
         if (Boolean.TRUE.equals(user.getEmailVerified())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "邮箱已验证，无需重复发送验证码");
         }
-        String cooldownKey = acquireEmailVerifyCodeCooldown(userId, email);
+        String cooldownKey = acquireVerifyCodeCooldown(
+                EMAIL_VERIFY_CODE_COOLDOWN_KEY_PREFIX + userId + ":" + email.toLowerCase(Locale.ROOT),
+                emailVerifyCodeCooldown);
         try {
             emailServiceMailClient.sendVerifyCode(email, EMAIL_BIND_VERIFY_SCENE, requestIp);
         } catch (RuntimeException e) {
-            releaseEmailVerifyCodeCooldown(cooldownKey);
+            releaseVerifyCodeCooldown(cooldownKey);
             throw e;
         }
         return new ContactVerificationCodeVO("email", null);
@@ -95,7 +100,17 @@ public class ContactVerificationService {
         if (!PHONE_PATTERN.matcher(requireText(user.getPhone(), "请先绑定手机号")).matches()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "手机号格式不正确");
         }
-        return createContactVerificationCode(userId, "phone");
+        // 发送冷却：没有它，重发接口就等于给爆破者「免费重置尝试次数」，
+        // 上限再严也只是把爆破成本除以 10 分钟一次的重置频率。
+        Duration cooldown = Duration.ofSeconds(
+                serviceProperties.getVerification().getPhoneCodeCooldownSeconds());
+        String cooldownKey = acquireVerifyCodeCooldown(PHONE_VERIFY_CODE_COOLDOWN_KEY_PREFIX + userId, cooldown);
+        try {
+            return createContactVerificationCode(userId, "phone");
+        } catch (RuntimeException e) {
+            releaseVerifyCodeCooldown(cooldownKey);
+            throw e;
+        }
     }
 
     public CurrentUserVO verifyContact(Long userId, ContactVerifyRequest request) {
@@ -107,8 +122,13 @@ public class ContactVerificationService {
             userQueryHelper.requireUpdated(userMapper.verifyEmail(userId));
             return userQueryHelper.requireCurrentUser(userId);
         }
-        if (userMapper.countValidContactVerificationCode(userId, type, code) <= 0) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "验证码无效或已过期");
+        int maxAttempts = serviceProperties.getVerification().getPhoneCodeMaxAttempts();
+        // 先计一次尝试（成功与否都计）：否则"猜错不计数"可以让 6 位码被无限枚举。
+        if (userMapper.bumpContactVerificationAttempt(userId, type, maxAttempts) != 1) {
+            throw contactCodeRejected(userId, type, maxAttempts);
+        }
+        if (userMapper.consumeContactVerificationCode(userId, type, code, maxAttempts) != 1) {
+            throw contactCodeRejected(userId, type, maxAttempts);
         }
         userQueryHelper.requireUpdated(userMapper.verifyPhone(userId));
         return userQueryHelper.requireCurrentUser(userId);
@@ -121,36 +141,43 @@ public class ContactVerificationService {
         return new ContactVerificationCodeVO(type, responseCode);
     }
 
-    private String acquireEmailVerifyCodeCooldown(Long userId, String email) {
-        String cooldownKey = buildEmailVerifyCodeCooldownKey(userId, email);
+    /**
+     * 校验失败时的错误归因。
+     *
+     * <p>「次数用尽」与「码不对/已过期」必须给不同提示：都回一句泛化文案的话，
+     * 用户只会反复重试，把剩下的次数也一并耗光，最后连正确码都用不了。</p>
+     */
+    private BusinessException contactCodeRejected(Long userId, String type, int maxAttempts) {
+        Integer attempt = userMapper.findContactVerificationAttempt(userId, type);
+        if (attempt != null && attempt >= maxAttempts) {
+            return new BusinessException(ErrorCode.BAD_REQUEST, "尝试次数过多，请重新获取验证码");
+        }
+        return new BusinessException(ErrorCode.BAD_REQUEST, "验证码无效或已过期");
+    }
+
+    private String acquireVerifyCodeCooldown(String cooldownKey, Duration cooldown) {
         try {
             Boolean acquired = stringRedisTemplate.opsForValue()
-                    .setIfAbsent(cooldownKey, "1", emailVerifyCodeCooldown);
+                    .setIfAbsent(cooldownKey, "1", cooldown);
             if (!Boolean.TRUE.equals(acquired)) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "验证码已发送，请 60 秒后再试");
+                throw new BusinessException(ErrorCode.BAD_REQUEST,
+                        "验证码已发送，请 " + cooldown.toSeconds() + " 秒后再试");
             }
             return cooldownKey;
         } catch (BusinessException e) {
             throw e;
         } catch (RuntimeException e) {
-            log.warn("邮箱验证码发送冷却校验失败：userId={}, email={}", userId, email, e);
+            log.warn("验证码发送冷却校验失败：key={}", cooldownKey, e);
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "验证码发送校验暂不可用，请稍后再试");
         }
     }
 
-    private void releaseEmailVerifyCodeCooldown(String cooldownKey) {
+    private void releaseVerifyCodeCooldown(String cooldownKey) {
         try {
             stringRedisTemplate.delete(cooldownKey);
         } catch (RuntimeException e) {
-            log.warn("邮箱验证码冷却键释放失败：key={}", cooldownKey, e);
+            log.warn("验证码冷却键释放失败：key={}", cooldownKey, e);
         }
-    }
-
-    private String buildEmailVerifyCodeCooldownKey(Long userId, String email) {
-        return EMAIL_VERIFY_CODE_COOLDOWN_KEY_PREFIX
-                + userId
-                + ":"
-                + email.toLowerCase(Locale.ROOT);
     }
 
     private String normalizeContactType(String value) {

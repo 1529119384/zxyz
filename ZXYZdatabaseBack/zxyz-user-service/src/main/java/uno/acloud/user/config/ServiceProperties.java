@@ -106,6 +106,10 @@ public class ServiceProperties {
 
     public static class Verification {
         private boolean returnCodeInResponse = true;
+        /** 手机验证码最大校验尝试次数，超过即作废（防 6 位码爆破）。 */
+        private int phoneCodeMaxAttempts = 5;
+        /** 手机验证码发送冷却时长（秒），防止重发接口被当作免费重试。 */
+        private int phoneCodeCooldownSeconds = 60;
 
         public boolean isReturnCodeInResponse() {
             return returnCodeInResponse;
@@ -113,6 +117,22 @@ public class ServiceProperties {
 
         public void setReturnCodeInResponse(boolean returnCodeInResponse) {
             this.returnCodeInResponse = returnCodeInResponse;
+        }
+
+        public int getPhoneCodeMaxAttempts() {
+            return phoneCodeMaxAttempts;
+        }
+
+        public void setPhoneCodeMaxAttempts(int phoneCodeMaxAttempts) {
+            this.phoneCodeMaxAttempts = phoneCodeMaxAttempts;
+        }
+
+        public int getPhoneCodeCooldownSeconds() {
+            return phoneCodeCooldownSeconds;
+        }
+
+        public void setPhoneCodeCooldownSeconds(int phoneCodeCooldownSeconds) {
+            this.phoneCodeCooldownSeconds = phoneCodeCooldownSeconds;
         }
     }
 

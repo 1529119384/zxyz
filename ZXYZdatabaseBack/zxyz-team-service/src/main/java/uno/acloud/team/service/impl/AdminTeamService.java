@@ -138,10 +138,31 @@ public class AdminTeamService implements AdminTeamPort {
                 teamId
         );
 
-        return listTeams().stream()
-                .filter(item -> item.getId().equals(teamId))
-                .findFirst()
-                .orElseThrow(() -> new BusinessException(ErrorCode.SYSTEM_ERROR, "团队信息刷新失败"));
+        return buildTeamOverview(teamId);
+    }
+
+    /**
+     * 构建单个团队的概览（补齐 owner 用户名与已用存储）。
+     *
+     * <p><b>为什么不复用 {@link #listTeams()}：</b>那条路径会先把「全部团队」查出来，
+     * 再对全部团队的 owner 与全部团队的用量各发一次批量 HTTP，最后只为了返回其中一条。
+     * 团队数增长后，改一个团队的配额会顺带拉走整张表与跨服务全量数据。</p>
+     */
+    private AdminTeamOverviewVO buildTeamOverview(Long teamId) {
+        AdminTeamOverviewVO overview = teamMapper.getAdminTeamOverview(teamId);
+        if (overview == null) {
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "团队信息刷新失败");
+        }
+        Long ownerUserId = overview.getOwnerUserId();
+        if (ownerUserId != null) {
+            userServiceClient.listByIds(List.of(ownerUserId)).stream()
+                    .filter(owner -> ownerUserId.equals(owner.getId()))
+                    .findFirst()
+                    .ifPresent(owner -> overview.setOwnerUsername(owner.getUsername()));
+        }
+        overview.setUsedStorage(fileServiceClient.listTeamStorageUsageByTeamIds(List.of(teamId))
+                .getOrDefault(teamId, 0L));
+        return overview;
     }
 
     @Transactional(rollbackFor = Exception.class)

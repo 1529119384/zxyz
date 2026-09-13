@@ -45,8 +45,11 @@ public interface TeamMapper extends BaseMapper<Team> {
     /**
      * 管理端概览查询 — 不含 user/file_node 跨库 JOIN。
      * ownerUsername 和 usedStorage 由 Service 层通过 HTTP 调用填充。
+     *
+     * <p>列表与单条共用同一段 SELECT，仅靠追加的 WHERE/ORDER 片段区分：
+     * 两处若各写一份，字段或 JOIN 条件很容易只改一边而漂移。</p>
      */
-    @Select("""
+    String ADMIN_TEAM_OVERVIEW_SELECT = """
             SELECT t.id,
                    t.name,
                    t.description,
@@ -64,9 +67,19 @@ public interface TeamMapper extends BaseMapper<Team> {
             ) member_stats ON member_stats.team_id = t.id
             LEFT JOIN team_quota tq ON tq.team_id = t.id
             WHERE t.status = 0
-            ORDER BY t.id ASC
-            """)
+            """;
+
+    @Select(ADMIN_TEAM_OVERVIEW_SELECT + " ORDER BY t.id ASC")
     List<AdminTeamOverviewVO> listAdminTeamOverviews();
+
+    /**
+     * 单个团队的概览 — 供「只改一个团队的配额」这类只需要一条记录的场景使用。
+     *
+     * <p>刻意不再复用 {@link #listAdminTeamOverviews()} 后过滤：那条路径会先拉全量团队，
+     * 再对全部团队 owner 与全部团队用量各发一次批量 HTTP，只为返回其中一条。</p>
+     */
+    @Select(ADMIN_TEAM_OVERVIEW_SELECT + " AND t.id = #{teamId}")
+    AdminTeamOverviewVO getAdminTeamOverview(@Param("teamId") Long teamId);
 
     @Insert("""
             INSERT INTO team_member(team_id, user_id, role_code, status, join_time, update_time)

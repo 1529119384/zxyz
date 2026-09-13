@@ -170,10 +170,10 @@ class AdminTeamServiceTest {
         request.setMemberLimit(10);
         request.setStorageLimit(2L * 1024 * 1024 * 1024); // 2GB > 500MB
 
-        // listTeams 用于返回结果
+        // 单团队查询用于返回结果（不再走全量 listTeams）
         AdminTeamOverviewVO vo = new AdminTeamOverviewVO(
                 1L, "Team A", null, null, null, 0, 0, 0L, null, null);
-        when(teamMapper.listAdminTeamOverviews()).thenReturn(List.of(vo));
+        when(teamMapper.getAdminTeamOverview(1L)).thenReturn(vo);
 
         when(teamQuotaMapper.upsertQuota(any())).thenReturn(1);
 
@@ -199,11 +199,55 @@ class AdminTeamServiceTest {
 
         AdminTeamOverviewVO vo = new AdminTeamOverviewVO(
                 1L, "Team A", null, null, null, 0, 0, 0L, null, null);
-        when(teamMapper.listAdminTeamOverviews()).thenReturn(List.of(vo));
+        when(teamMapper.getAdminTeamOverview(1L)).thenReturn(vo);
         when(teamQuotaMapper.upsertQuota(any())).thenReturn(1);
 
         var result = adminTeamService.updateTeamQuota(1L, request);
         assertNotNull(result);
         verify(teamQuotaMapper, times(1)).upsertQuota(any());
+    }
+
+    /**
+     * 回归守卫：改单个团队的配额必须走「单条查询」。
+     *
+     * <p>原实现用 {@code listTeams()} 拉全量再过滤，本用例把「别再退回去」钉死：
+     * 一旦有人改回全量路径，这里立刻会红。</p>
+     */
+    @Test
+    void updateTeamQuota_shouldQuerySingleTeamInsteadOfFullList() {
+        Team team = new Team();
+        team.setId(7L);
+        team.setName("Team G");
+        team.setStatus(0);
+        when(teamMapper.selectById(7L)).thenReturn(team);
+        when(teamMapper.countOccupiedMembers(7L)).thenReturn(1);
+        when(fileServiceClient.sumActiveFileSize(null, 7L, 2, null)).thenReturn(0L);
+        org.mockito.Mockito.doReturn(0L).when(projectServiceClient).sumProjectQuota(7L);
+        when(teamQuotaMapper.upsertQuota(any())).thenReturn(1);
+
+        // owner 用户名与已用存储都必须在单条路径上补齐，不能因为"不再走列表"而丢字段
+        AdminTeamOverviewVO vo = new AdminTeamOverviewVO(
+                7L, "Team G", null, 900L, null, 1, 10, 1024L, null, null);
+        when(teamMapper.getAdminTeamOverview(7L)).thenReturn(vo);
+        UserInfoDTO owner = new UserInfoDTO();
+        owner.setId(900L);
+        owner.setUsername("owner-g");
+        when(userServiceClient.listByIds(List.of(900L))).thenReturn(List.of(owner));
+        when(fileServiceClient.listTeamStorageUsageByTeamIds(List.of(7L))).thenReturn(Map.of(7L, 2048L));
+
+        UpdateTeamQuotaRequest request = new UpdateTeamQuotaRequest();
+        request.setMemberLimit(10);
+        request.setStorageLimit(2048L);
+
+        AdminTeamOverviewVO result = adminTeamService.updateTeamQuota(7L, request);
+
+        assertEquals("owner-g", result.getOwnerUsername());
+        assertEquals(2048L, result.getUsedStorage().longValue());
+        verify(teamMapper).getAdminTeamOverview(7L);
+        // 全量查询绝不能被调用
+        verify(teamMapper, never()).listAdminTeamOverviews();
+        // 跨服务调用只针对这一个团队，而不是全部团队
+        verify(userServiceClient).listByIds(List.of(900L));
+        verify(fileServiceClient).listTeamStorageUsageByTeamIds(List.of(7L));
     }
 }

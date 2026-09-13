@@ -131,26 +131,79 @@ public interface UserMapper extends BaseMapper<User> {
             """)
     List<String> listVerifiedEmails();
 
+    /**
+     * 写入/覆盖验证码，并把「尝试次数」与「使用状态」一并复位。
+     *
+     * <p>复位是必须的：同一个 {@code (user_id, contact_type)} 只有一行，重发走 ON DUPLICATE KEY，
+     * 若不复位 {@code attempt_count}/{@code used}，上一次把次数用光后，新发的码会一出生就是作废状态。</p>
+     */
     @Insert("""
-            INSERT INTO contact_verification_code(user_id, contact_type, code, expire_time, create_time)
-            VALUES(#{userId}, #{type}, #{code}, DATE_ADD(NOW(), INTERVAL 10 MINUTE), NOW())
-            ON DUPLICATE KEY UPDATE code = VALUES(code), expire_time = VALUES(expire_time), create_time = VALUES(create_time)
+            INSERT INTO contact_verification_code(user_id, contact_type, code, attempt_count, used, used_time, expire_time, create_time)
+            VALUES(#{userId}, #{type}, #{code}, 0, 0, NULL, DATE_ADD(NOW(), INTERVAL 10 MINUTE), NOW())
+            ON DUPLICATE KEY UPDATE code = VALUES(code),
+                                    attempt_count = 0,
+                                    used = 0,
+                                    used_time = NULL,
+                                    expire_time = VALUES(expire_time),
+                                    create_time = VALUES(create_time)
             """)
     int upsertContactVerificationCode(@Param("userId") Long userId,
                                       @Param("type") String type,
                                       @Param("code") String code);
 
-    @Select("""
-            SELECT COUNT(*)
-            FROM contact_verification_code
+    /**
+     * 校验第 1 步：先计一次尝试（成功与否都计，避免"猜错不计数"）。
+     *
+     * <p>命中存活行返回 1；无存活行（不存在 / 已使用 / 已过期）返回 0。
+     * 自增后若已超过上限，顺带把该码置为已使用（作废），使爆破无法继续累积。</p>
+     *
+     * <p><b>IF 里用的是自增后的 {@code attempt_count}，而不是 {@code attempt_count + 1}：</b>
+     * MySQL 单表 UPDATE 的 SET 子句<b>从左到右</b>求值，后一项读到的已经是自增后的值。
+     * 所以判据只能是"自增后是否已超过上限" —— 这样 {@code maxAttempts} 次尝试全部可用，
+     * 第 {@code maxAttempts + 1} 次才作废。
+     * （{@code zxyz-email-service} 的 verify_code 写的是 {@code attempt_count + 1 > maxAttempts}，
+     * 在同样的左到右求值下实际会"少给一次机会"，与它自己 Javadoc 写的「含第 maxAttempts 次」不符；
+     * 此处**刻意不照抄**，已在真实 MySQL 8.4 上逐次验证。）</p>
+     */
+    @Update("""
+            UPDATE contact_verification_code
+            SET attempt_count = attempt_count + 1,
+                used = IF(attempt_count > #{maxAttempts}, 1, used),
+                used_time = IF(attempt_count > #{maxAttempts}, NOW(3), used_time)
+            WHERE user_id = #{userId}
+              AND contact_type = #{type}
+              AND used = 0
+              AND expire_time >= NOW(3)
+            """)
+    int bumpContactVerificationAttempt(@Param("userId") Long userId,
+                                       @Param("type") String type,
+                                       @Param("maxAttempts") int maxAttempts);
+
+    /**
+     * 校验第 2 步：仅当验证码正确、未使用、未过期、且尝试次数未超上限时消费成功。
+     *
+     * @return 消费成功返回 1，否则返回 0
+     */
+    @Update("""
+            UPDATE contact_verification_code
+            SET used = 1,
+                used_time = NOW(3)
             WHERE user_id = #{userId}
               AND contact_type = #{type}
               AND code = #{code}
-              AND expire_time >= NOW()
+              AND used = 0
+              AND attempt_count <= #{maxAttempts}
+              AND expire_time >= NOW(3)
             """)
-    int countValidContactVerificationCode(@Param("userId") Long userId,
-                                          @Param("type") String type,
-                                          @Param("code") String code);
+    int consumeContactVerificationCode(@Param("userId") Long userId,
+                                       @Param("type") String type,
+                                       @Param("code") String code,
+                                       @Param("maxAttempts") int maxAttempts);
+
+    /** 仅用于把「尝试次数过多」与「验证码无效」区分开（对齐 email 侧的 findAttemptCount）。 */
+    @Select("SELECT attempt_count FROM contact_verification_code WHERE user_id = #{userId} AND contact_type = #{type} LIMIT 1")
+    Integer findContactVerificationAttempt(@Param("userId") Long userId,
+                                           @Param("type") String type);
 
     @Select("""
             SELECT DISTINCT linked.*
