@@ -5,6 +5,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.PageResult;
 import uno.acloud.common.TeamErrorCode;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.team.dto.system.BroadcastSystemMessageRequest;
@@ -27,6 +28,7 @@ import uno.acloud.dto.UserInfoDTO;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -69,19 +71,30 @@ public class AdminTeamService implements AdminTeamPort {
     }
 
     @Override
-    public List<AdminTeamOverviewVO> listTeams() {
-        List<AdminTeamOverviewVO> overviews = teamMapper.listAdminTeamOverviews();
-        if (overviews.isEmpty()) {
-            return overviews;
+    public PageResult<AdminTeamOverviewVO> listTeams(Integer page, Integer pageSize) {
+        int finalPage = PageResult.normalizePage(page);
+        int finalPageSize = PageResult.normalizePageSize(pageSize);
+        long total = teamMapper.countAdminTeamOverviews();
+        if (total <= 0) {
+            return PageResult.of(finalPage, finalPageSize, 0L, List.of());
         }
-        // Batch-fetch owner usernames (avoid N+1 HTTP calls)
+        List<AdminTeamOverviewVO> overviews = teamMapper.listAdminTeamOverviewsPaged(
+                finalPageSize, PageResult.offsetOf(finalPage, finalPageSize));
+        if (overviews.isEmpty()) {
+            // total > 0 但本页为空：页码越界，仍按真实总数返回空列表，让前端能算出正确页数。
+            return PageResult.of(finalPage, finalPageSize, total, List.of());
+        }
+        // Batch-fetch owner usernames (avoid N+1 HTTP calls) —— 只针对本页，调用量不随团队总数增长
         List<Long> ownerUserIds = overviews.stream()
                 .map(AdminTeamOverviewVO::getOwnerUserId)
+                .filter(Objects::nonNull)
                 .distinct()
                 .toList();
-        Map<Long, UserInfoDTO> ownerMap = userServiceClient.listByIds(ownerUserIds).stream()
-                .collect(Collectors.toMap(UserInfoDTO::getId, Function.identity()));
-        // Batch-fetch team storage usage (avoid N+1 HTTP calls)
+        Map<Long, UserInfoDTO> ownerMap = ownerUserIds.isEmpty()
+                ? Map.of()
+                : userServiceClient.listByIds(ownerUserIds).stream()
+                        .collect(Collectors.toMap(UserInfoDTO::getId, Function.identity()));
+        // Batch-fetch team storage usage (avoid N+1 HTTP calls) —— 同样只针对本页
         List<Long> teamIds = overviews.stream()
                 .map(AdminTeamOverviewVO::getId)
                 .toList();
@@ -94,7 +107,7 @@ public class AdminTeamService implements AdminTeamPort {
             }
             vo.setUsedStorage(storageMap.getOrDefault(vo.getId(), 0L));
         }
-        return overviews;
+        return PageResult.of(finalPage, finalPageSize, total, overviews);
     }
 
     @Override
@@ -144,9 +157,9 @@ public class AdminTeamService implements AdminTeamPort {
     /**
      * 构建单个团队的概览（补齐 owner 用户名与已用存储）。
      *
-     * <p><b>为什么不复用 {@link #listTeams()}：</b>那条路径会先把「全部团队」查出来，
-     * 再对全部团队的 owner 与全部团队的用量各发一次批量 HTTP，最后只为了返回其中一条。
-     * 团队数增长后，改一个团队的配额会顺带拉走整张表与跨服务全量数据。</p>
+     * <p><b>为什么不复用 {@link #listTeams(Integer, Integer)}：</b>那条路径会先查出「一整页
+     * 团队」，再对该页全部 owner 与全部 teamId 各发一次批量 HTTP，最后只为了返回其中一条。
+     * 改一个团队的配额不该顺带拉走一页数据与跨服务批量结果。</p>
      */
     private AdminTeamOverviewVO buildTeamOverview(Long teamId) {
         AdminTeamOverviewVO overview = teamMapper.getAdminTeamOverview(teamId);

@@ -6,7 +6,12 @@ import request from '@/utils/request'
  */
 export const createAdminTeam = (payload) => request.post('/api/admin/teams', payload)
 
-export const fetchAdminTeams = () => request.get('/api/admin/teams')
+/**
+ * 分页拉取管理端团队列表。
+ *
+ * @param {{page?: number, pageSize?: number}} [params] - 分页参数（默认 1 / 20，后端上限 200）
+ */
+export const fetchAdminTeams = (params) => request.get('/api/admin/teams', { params })
 
 /**
  * @param {string|number} teamId - 团队 ID

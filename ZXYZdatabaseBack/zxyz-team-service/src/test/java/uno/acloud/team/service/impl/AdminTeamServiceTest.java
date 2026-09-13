@@ -7,6 +7,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import uno.acloud.common.PageResult;
 import uno.acloud.dto.UserInfoDTO;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.team.dto.team.UpdateTeamQuotaRequest;
@@ -79,7 +80,9 @@ class AdminTeamServiceTest {
                 3L, "Team C", "desc C", 100L, null, 2, 80, 2147483648L, null, LocalDateTime.now());
         // team1 and team3 share the same owner (100L)
 
-        when(teamMapper.listAdminTeamOverviews()).thenReturn(List.of(team1, team2, team3));
+        when(teamMapper.countAdminTeamOverviews()).thenReturn(3L);
+        when(teamMapper.listAdminTeamOverviewsPaged(PageResult.DEFAULT_PAGE_SIZE, 0))
+                .thenReturn(List.of(team1, team2, team3));
 
         // Batch user fetch — should be called once with distinct owner IDs [100, 200]
         UserInfoDTO owner100 = new UserInfoDTO();
@@ -94,9 +97,14 @@ class AdminTeamServiceTest {
         when(fileServiceClient.listTeamStorageUsageByTeamIds(anyList()))
                 .thenReturn(Map.of(1L, 1024L, 2L, 2048L, 3L, 512L));
 
-        List<AdminTeamOverviewVO> result = adminTeamService.listTeams();
+        PageResult<AdminTeamOverviewVO> page = adminTeamService.listTeams(null, null);
+        List<AdminTeamOverviewVO> result = page.getList();
 
         assertEquals(3, result.size());
+        // 信封必须回填归一化后的页码/页大小与真实总数，否则前端算不出页数
+        assertEquals(1, page.getPage());
+        assertEquals(PageResult.DEFAULT_PAGE_SIZE, page.getPageSize());
+        assertEquals(3L, page.getTotal());
 
         // Verify batch call — single call for all owners
         verify(userServiceClient, times(1)).listByIds(argThat(ids ->
@@ -119,13 +127,45 @@ class AdminTeamServiceTest {
 
     @Test
     void listTeams_withEmptyResult_shouldReturnEmptyList() {
-        when(teamMapper.listAdminTeamOverviews()).thenReturn(Collections.emptyList());
+        when(teamMapper.countAdminTeamOverviews()).thenReturn(0L);
 
-        List<AdminTeamOverviewVO> result = adminTeamService.listTeams();
+        PageResult<AdminTeamOverviewVO> page = adminTeamService.listTeams(null, null);
 
-        assertTrue(result.isEmpty());
-        // No batch calls should be made when there are no teams
+        assertTrue(page.getList().isEmpty());
+        assertEquals(0L, page.getTotal());
+        // 一条数据都没有时不该去翻表，也不该发任何跨服务批量调用
+        verify(teamMapper, never()).listAdminTeamOverviewsPaged(anyInt(), anyInt());
         verifyNoInteractions(userServiceClient, fileServiceClient);
+    }
+
+    @Test
+    void listTeams_withPageBeyondRange_shouldReturnEmptyPageWithRealTotal() {
+        // 页码越界：仍要如实回报总数，否则前端会以为总共 0 条而清空分页器
+        when(teamMapper.countAdminTeamOverviews()).thenReturn(50L);
+        when(teamMapper.listAdminTeamOverviewsPaged(anyInt(), anyInt())).thenReturn(Collections.emptyList());
+
+        PageResult<AdminTeamOverviewVO> page = adminTeamService.listTeams(9, 20);
+
+        assertTrue(page.getList().isEmpty());
+        assertEquals(50L, page.getTotal());
+        assertEquals(9, page.getPage());
+        assertEquals(20, page.getPageSize());
+        verifyNoInteractions(userServiceClient, fileServiceClient);
+    }
+
+    @Test
+    void listTeams_shouldClampPageSizeAndComputeOffsetFromPage() {
+        // pageSize 超上限必须被钳到 200，否则传入极大值等于把接口恢复成全表查询
+        when(teamMapper.countAdminTeamOverviews()).thenReturn(1000L);
+        when(teamMapper.listAdminTeamOverviewsPaged(PageResult.MAX_PAGE_SIZE,
+                PageResult.offsetOf(2, PageResult.MAX_PAGE_SIZE))).thenReturn(Collections.emptyList());
+
+        PageResult<AdminTeamOverviewVO> page = adminTeamService.listTeams(2, 99999);
+
+        assertEquals(PageResult.MAX_PAGE_SIZE, page.getPageSize());
+        assertEquals(2, page.getPage());
+        verify(teamMapper).listAdminTeamOverviewsPaged(PageResult.MAX_PAGE_SIZE,
+                PageResult.offsetOf(2, PageResult.MAX_PAGE_SIZE));
     }
 
     // ==================== updateTeamQuota — CV-3 项目配额总和校验 ====================
@@ -244,8 +284,8 @@ class AdminTeamServiceTest {
         assertEquals("owner-g", result.getOwnerUsername());
         assertEquals(2048L, result.getUsedStorage().longValue());
         verify(teamMapper).getAdminTeamOverview(7L);
-        // 全量查询绝不能被调用
-        verify(teamMapper, never()).listAdminTeamOverviews();
+        // 列表查询绝不能被调用（只允许单团队定点查询）
+        verify(teamMapper, never()).listAdminTeamOverviewsPaged(anyInt(), anyInt());
         // 跨服务调用只针对这一个团队，而不是全部团队
         verify(userServiceClient).listByIds(List.of(900L));
         verify(fileServiceClient).listTeamStorageUsageByTeamIds(List.of(7L));

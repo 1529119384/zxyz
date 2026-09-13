@@ -156,9 +156,17 @@ class TeamMapperIntegrationTest extends AbstractIntegrationTest {
         quota.setUpdateTime(now);
         teamQuotaMapper.upsertQuota(quota);
 
-        List<AdminTeamOverviewVO> overviews = teamMapper.listAdminTeamOverviews();
+        // 分页查询与计数必须同口径（t.status = 0）。这里刻意用「一页装得下」的 pageSize，
+        // 验证 SQL 拼接顺序正确（LIMIT #{pageSize} OFFSET #{offset}）而不是拿分页把结果截断。
+        long total = teamMapper.countAdminTeamOverviews();
+        assertTrue(total >= 1L, "刚插入的团队必须被计入总数");
+        List<AdminTeamOverviewVO> overviews = teamMapper.listAdminTeamOverviewsPaged(200, 0);
         assertNotNull(overviews);
         assertFalse(overviews.isEmpty());
+        // 口径一致性：一页装得下时返回条数必须等于总数。两条 SQL 的 WHERE 一旦漂移，这里会红
+        // （这正是「总数够但翻页越界」这类只在翻到底才暴露的错的第一道拦网）。
+        assertEquals((int) Math.min(total, 200L), overviews.size(),
+                "分页查询与计数的口径必须一致（同为 t.status = 0）");
 
         AdminTeamOverviewVO overview = overviews.stream()
                 .filter(o -> o.getId().equals(team.getId()))

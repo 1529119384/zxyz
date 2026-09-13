@@ -21,6 +21,16 @@
         </template>
       </el-table-column>
     </el-table>
+    <el-pagination
+      class="admin-team-pagination"
+      layout="total, sizes, prev, pager, next"
+      :total="adminTeamPage.total"
+      :current-page="adminTeamPage.page"
+      :page-size="adminTeamPage.pageSize"
+      :page-sizes="[10, 20, 50, 100]"
+      @current-change="handleAdminTeamPageChange"
+      @size-change="handleAdminTeamPageSizeChange"
+    />
   </section>
 
   <el-dialog v-model="teamQuotaDialogVisible" title="修改团队上限" width="460px">
@@ -59,6 +69,14 @@ const loadingAdminTeams = ref(false)
 const savingTeamQuota = ref(false)
 const teamQuotaDialogVisible = ref(false)
 
+// 分页状态。后端已从「一次返回全部团队」改为 PageResult 信封（默认 20 / 上限 200），
+// 管理端必须自己维护页码，否则永远只能看到第一页。
+const adminTeamPage = reactive({
+  page: 1,
+  pageSize: 20,
+  total: 0,
+})
+
 const teamQuotaForm = reactive({
   id: null,
   name: '',
@@ -73,13 +91,37 @@ onMounted(loadAdminTeams)
 async function loadAdminTeams() {
   loadingAdminTeams.value = true
   try {
-    const response = await fetchAdminTeams()
-    adminTeams.value = Array.isArray(response?.data) ? response.data : []
+    const response = await fetchAdminTeams({
+      page: adminTeamPage.page,
+      pageSize: adminTeamPage.pageSize,
+    })
+    const data = response?.data
+    // 兼容两种形状：新版是分页信封 {page,pageSize,total,list}，旧版直接是数组。
+    // 保留数组分支，是为了「前端已发、后端未发」的中间态下管理页不至于整页空白。
+    if (Array.isArray(data)) {
+      adminTeams.value = data
+      adminTeamPage.total = data.length
+    } else {
+      adminTeams.value = Array.isArray(data?.list) ? data.list : []
+      adminTeamPage.total = Number(data?.total || 0)
+    }
   } catch (error) {
     handleBusinessError(error, '加载团队运营数据失败')
   } finally {
     loadingAdminTeams.value = false
   }
+}
+
+function handleAdminTeamPageChange(page) {
+  adminTeamPage.page = page
+  loadAdminTeams()
+}
+
+function handleAdminTeamPageSizeChange(size) {
+  adminTeamPage.pageSize = size
+  // 改每页条数后必须回到第 1 页：否则当前页码可能已越界，用户会看到一张空表
+  adminTeamPage.page = 1
+  loadAdminTeams()
 }
 
 function openTeamQuotaDialog(team) {

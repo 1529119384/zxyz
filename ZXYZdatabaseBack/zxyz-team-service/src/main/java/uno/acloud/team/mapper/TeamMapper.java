@@ -69,14 +69,36 @@ public interface TeamMapper extends BaseMapper<Team> {
             WHERE t.status = 0
             """;
 
-    @Select(ADMIN_TEAM_OVERVIEW_SELECT + " ORDER BY t.id ASC")
-    List<AdminTeamOverviewVO> listAdminTeamOverviews();
+    /**
+     * 分页查团队概览（管理端列表）。
+     *
+     * <p><b>为什么必须分页</b>：这张列表返回的是「全平台所有团队」，且 Service 层还要按页内
+     * owner 与 page 内 teamId 各发一次批量 HTTP 去补用户名与用量。全量查询意味着团队数一涨
+     * 就要把整张表 + 全量跨服务数据拉一遍，管理页打开即变慢、内存也随团队数线性增长。</p>
+     *
+     * <p>排序固定 {@code ORDER BY t.id ASC}，配合 {@code LIMIT/OFFSET} 保证翻页结果稳定
+     * （没有稳定序的 LIMIT/OFFSET 会让同一条记录在两页里重复出现或漏掉）。</p>
+     */
+    @Select(ADMIN_TEAM_OVERVIEW_SELECT + " ORDER BY t.id ASC LIMIT #{pageSize} OFFSET #{offset}")
+    List<AdminTeamOverviewVO> listAdminTeamOverviewsPaged(@Param("pageSize") int pageSize,
+                                                          @Param("offset") int offset);
+
+    /**
+     * 团队总数 — 与 {@link #listAdminTeamOverviewsPaged} 同口径（{@code t.status = 0}）。
+     *
+     * <p>概览 SELECT 里的两个 LEFT JOIN 都不会过滤掉主表行（{@code member_stats} 已按
+     * {@code team_id} GROUP BY、{@code team_quota} 以 {@code team_id} 唯一），所以计数
+     * 只需数主表 —— 但**口径必须与上面那条查询的 WHERE 保持一致**，否则会出现
+     * 「总页数比实际多/少」这种只在翻到底时才暴露的错。</p>
+     */
+    @Select("SELECT COUNT(*) FROM team t WHERE t.status = 0")
+    long countAdminTeamOverviews();
 
     /**
      * 单个团队的概览 — 供「只改一个团队的配额」这类只需要一条记录的场景使用。
      *
-     * <p>刻意不再复用 {@link #listAdminTeamOverviews()} 后过滤：那条路径会先拉全量团队，
-     * 再对全部团队 owner 与全部团队用量各发一次批量 HTTP，只为返回其中一条。</p>
+     * <p>刻意不再复用 {@link #listAdminTeamOverviewsPaged(int, int)} 后过滤：那条路径会先拉
+     * 一整页团队，再对该页全部 owner 与全部 teamId 各发一次批量 HTTP，只为返回其中一条。</p>
      */
     @Select(ADMIN_TEAM_OVERVIEW_SELECT + " AND t.id = #{teamId}")
     AdminTeamOverviewVO getAdminTeamOverview(@Param("teamId") Long teamId);
