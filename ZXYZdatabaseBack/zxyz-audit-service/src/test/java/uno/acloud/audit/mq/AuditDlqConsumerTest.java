@@ -42,10 +42,16 @@ class AuditDlqConsumerTest {
 
         assertThat(event.getLevel()).isEqualTo(Level.ERROR);
         assertThat(event.getFormattedMessage())
+                .contains("service=audit-service")
+                .contains("dlqQueue=zxyz.audit.dlq")
                 .contains("zxyz.audit.exchange")
                 .contains("zxyz.audit-operate-log")
                 .contains("rejected")
-                .contains("messageLength=7");
+                .contains("payloadLength=7")
+                // payload 不再原样打印，改为「清洗 + 截断」的预览与 sha256 前 12 位摘要
+                // （审计消息本身带 message_hash，摘要可与库内值直接对齐）
+                .contains("payloadSha256_12=239f59ed55e7")
+                .contains("payloadPreview=payload");
     }
 
     @Test
@@ -54,13 +60,18 @@ class AuditDlqConsumerTest {
         ILoggingEvent event = captureSingleLog(() -> consumer.handleDeadLetter("payload", Map.of()));
 
         assertThat(event.getLevel()).isEqualTo(Level.ERROR);
-        assertThat(event.getFormattedMessage()).contains("messageLength=7");
+        // 死信头缺失时 death 降级为 none，长度/摘要仍必须给出 —— 不能因为读头失败就丢掉整条线索
+        assertThat(event.getFormattedMessage())
+                .contains("payloadLength=7")
+                .contains("death=none");
     }
 
     @Test
     void handleDeadLetter_whenMessageNull_reportsZeroLengthInsteadOfNpe() {
         ILoggingEvent event = captureSingleLog(() -> consumer.handleDeadLetter(null, Map.of()));
 
-        assertThat(event.getFormattedMessage()).contains("messageLength=0");
+        assertThat(event.getFormattedMessage())
+                .contains("payloadLength=0")
+                .contains("payloadSha256_12=n/a");
     }
 }
