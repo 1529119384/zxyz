@@ -1,0 +1,15 @@
+{
+  "$comment": "前端产物体积预算（gzip KiB）。棘轮：只能收紧。改动请附理由。重新生成：npm run build && node scripts/check-bundle-size.mjs --baseline",
+  "$baseline": "2026-09-13 首次建立。基线 = dev @ 87bca6d 起的前端产物，vite 7.3.2 / node 22。取值 = 实测 + 8%（分组）/ 3%（总计），并已对 selection 做一次棘轮收紧。",
+  "totalJsGzipKib": 471,
+  "totalCssGzipKib": 50,
+  "groupGzipKib": {
+    "element-plus": 203,
+    "index": 94,
+    "archiveDownloadRunner": 71,
+    "vendor": 62,
+    "SystemAdmin": 27,
+    "bootstrap": 26,
+    "selection": 9
+  }
+}

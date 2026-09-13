@@ -10,9 +10,17 @@ type ApiRequest = {
   // get：拉取资源；T 为响应 data 的精确类型
   get: <T = unknown>(url: string, config?: AxiosRequestConfig) => Promise<ApiResult<T>>
   // post：新建资源；data 为请求体，config 透传 axios 配置（timeout/headers 等）
-  post: <T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig) => Promise<ApiResult<T>>
+  post: <T = unknown>(
+    url: string,
+    data?: unknown,
+    config?: AxiosRequestConfig,
+  ) => Promise<ApiResult<T>>
   // patch：部分更新
-  patch: <T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig) => Promise<ApiResult<T>>
+  patch: <T = unknown>(
+    url: string,
+    data?: unknown,
+    config?: AxiosRequestConfig,
+  ) => Promise<ApiResult<T>>
   // delete：删除；axios 把请求体放在 config.data 中
   delete: <T = unknown>(url: string, config?: AxiosRequestConfig) => Promise<ApiResult<T>>
 }
@@ -170,7 +178,10 @@ export interface SearchOptions {
 
 const buildFileListParams = (
   parentId: string | number,
-  sortOptions: Pick<FileListSortOptions, 'sortField' | 'sortOrder' | 'teamId' | 'spaceType' | 'projectId'> = {},
+  sortOptions: Pick<
+    FileListSortOptions,
+    'sortField' | 'sortOrder' | 'teamId' | 'spaceType' | 'projectId'
+  > = {},
 ) => {
   const params: Record<string, string | number> = { parentId }
   const { sortField, sortOrder, teamId, spaceType, projectId } = sortOptions
@@ -219,12 +230,14 @@ export const fetchFileList = async (
     : Array.isArray((rawData as { list?: unknown } | null)?.list)
       ? (rawData as { list: unknown[] }).list
       : []
-  const rawTotal = Array.isArray(rawData) ? null : ((rawData as { total?: unknown } | null)?.total ?? null)
+  const rawTotal = Array.isArray(rawData)
+    ? null
+    : ((rawData as { total?: unknown } | null)?.total ?? null)
   const total = rawTotal == null ? undefined : Number(rawTotal)
 
   return {
     ...response,
-    data: mapSpaceFileEntries(rawList as unknown[]) as ApiFileItem[],
+    data: mapSpaceFileEntries(rawList as import('@/models/file').RawFileRecord[]) as ApiFileItem[],
     ...(total === undefined ? {} : { total }),
   }
 }
@@ -254,7 +267,9 @@ export const searchFiles = async (
   }
 }
 
-export const getFileDownloadUrl = (fileId: string | number): Promise<ApiResult<DownloadUrlResult>> => {
+export const getFileDownloadUrl = (
+  fileId: string | number,
+): Promise<ApiResult<DownloadUrlResult>> => {
   return request.get<DownloadUrlResult>(`/api/files/${fileId}/download-url`)
 }
 
@@ -436,7 +451,9 @@ export const copyFiles = async ({
   return response
 }
 
-export const logicalDeleteFiles = (fileIds: Array<string | number>): Promise<ApiResult<LogicalDeleteResult>> => {
+export const logicalDeleteFiles = (
+  fileIds: Array<string | number>,
+): Promise<ApiResult<LogicalDeleteResult>> => {
   return request.patch<LogicalDeleteResult>('/api/files/trash', { fileIds })
 }
 
@@ -476,20 +493,28 @@ export const fetchRecycleList = async (
     : Array.isArray((rawData as { list?: unknown } | null)?.list)
       ? (rawData as { list: unknown[] }).list
       : []
-  const rawTotal = Array.isArray(rawData) ? null : ((rawData as { total?: unknown } | null)?.total ?? null)
+  const rawTotal = Array.isArray(rawData)
+    ? null
+    : ((rawData as { total?: unknown } | null)?.total ?? null)
   const total = rawTotal == null ? undefined : Number(rawTotal)
 
   return {
     ...response,
-    data: mapRecycleFileEntries(rawList as unknown[]) as RecycleFileItem[],
+    data: mapRecycleFileEntries(
+      rawList as import('@/models/file').RawFileRecord[],
+    ) as RecycleFileItem[],
     ...(total === undefined ? {} : { total }),
   }
 }
 
-export const restoreFiles = (fileIds: Array<string | number>): Promise<ApiResult<RestoreFilesResult>> => {
+export const restoreFiles = (
+  fileIds: Array<string | number>,
+): Promise<ApiResult<RestoreFilesResult>> => {
   return request.delete<RestoreFilesResult>('/api/files/trash', { data: { fileIds } })
 }
 
-export const deleteFilesForever = (fileIds: Array<string | number>): Promise<ApiResult<DeleteForeverResult>> => {
+export const deleteFilesForever = (
+  fileIds: Array<string | number>,
+): Promise<ApiResult<DeleteForeverResult>> => {
   return request.delete<DeleteForeverResult>('/api/files', { data: { fileIds } })
 }

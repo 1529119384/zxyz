@@ -10,6 +10,7 @@
     "format": "prettier --write src/",
     "typecheck": "vue-tsc --noEmit",
     "typecheck:scope": "node scripts/check-typecheck-scope.mjs",
+    "size:check": "node scripts/check-bundle-size.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

@@ -1,3 +1,17 @@
+// @ts-check
+/**
+ * 构造"上传/新建成功"的统一结果对象。
+ * @param {object} options
+ * @param {string} [options.originalName] 用户可见的原始文件名。
+ * @param {string} [options.finalName] 服务端重命名后的文件名；为空则回退 originalName。
+ * @param {number} [options.type] 1=文件，0=文件夹。
+ * @param {number} [options.size]
+ * @param {string|number|null} [options.id]
+ * @param {string|number|null} [options.parentId]
+ * @param {string} [options.fileUrl]
+ * @param {Record<string, any>} [options.extra] 额外字段，原样展开进结果。
+ * @returns {Record<string, any>}
+ */
 function createUploadSuccessResult({
   originalName,
   finalName,
@@ -23,6 +37,17 @@ function createUploadSuccessResult({
   }
 }
 
+/**
+ * 构造"上传失败"的统一结果对象（字段与成功结果保持同形，便于列表直接消费）。
+ * @param {object} options
+ * @param {string} [options.originalName]
+ * @param {string} [options.finalName]
+ * @param {number} [options.type]
+ * @param {number} [options.size]
+ * @param {string} [options.message]
+ * @param {Record<string, any>} [options.extra]
+ * @returns {Record<string, any>}
+ */
 export function createUploadFailResult({
   originalName,
   finalName = '',
@@ -46,6 +71,13 @@ export function createUploadFailResult({
   }
 }
 
+/**
+ * 把"新建文件夹"的响应归一化为统一结果：新接口返回对象，旧接口可能直接返回 id。
+ * @param {any} responseData
+ * @param {string} requestedName
+ * @param {string|number|null} [parentId]
+ * @returns {Record<string, any>}
+ */
 export function normalizeFolderCreateResult(responseData, requestedName, parentId) {
   if (responseData && typeof responseData === 'object' && !Array.isArray(responseData)) {
     return createUploadSuccessResult({
@@ -68,6 +100,17 @@ export function normalizeFolderCreateResult(responseData, requestedName, parentI
   })
 }
 
+/**
+ * 把"上传确认"的响应归一化为统一结果，兼容三种形态：批量信封（items[0]）、
+ * 旧版单对象、以及仅返回 fileUrl 字符串的极简响应。
+ * @param {any} responseData
+ * @param {object} uploadMeta
+ * @param {string} [uploadMeta.originalName]
+ * @param {number} [uploadMeta.fileSize]
+ * @param {string|number|null} [uploadMeta.parentId]
+ * @param {string} [uploadMeta.clientRequestId]
+ * @returns {Record<string, any>}
+ */
 export function normalizeUploadConfirmResult(
   responseData,
   { originalName, fileSize, parentId, clientRequestId },

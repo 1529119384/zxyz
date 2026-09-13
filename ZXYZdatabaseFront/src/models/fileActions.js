@@ -1,3 +1,4 @@
+// @ts-check
 export const FILE_CONTEXT_ACTIONS = Object.freeze({
   ARCHIVE_DOWNLOAD: 'archiveDownload',
   BATCH_DOWNLOAD: 'batchDownload',
