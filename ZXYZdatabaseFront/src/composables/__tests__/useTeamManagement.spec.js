@@ -686,7 +686,7 @@ describe('useTeamManagement: createMemberAccount', () => {
     const { api, workspace } = setup({ teamStore: { selectedTeamId: 5 } })
     const form = {
       username: '  newuser  ',
-      password: '  secret6  ',
+      password: '  secret888  ',
       name: '  张三  ',
       roleCode: 'team_admin',
     }
@@ -695,7 +695,7 @@ describe('useTeamManagement: createMemberAccount', () => {
 
     expect(createTeamMember).toHaveBeenCalledWith(5, {
       username: 'newuser',
-      password: 'secret6',
+      password: 'secret888',
       name: '张三',
       roleCode: 'team_admin',
     })
@@ -708,13 +708,13 @@ describe('useTeamManagement: createMemberAccount', () => {
     const { api } = setup({ teamStore: { selectedTeamId: 5 } })
     await api.createMemberAccount({
       username: 'u',
-      password: '123456',
+      password: '12345678',
       name: '   ',
       roleCode: 'team_member',
     })
     expect(createTeamMember).toHaveBeenCalledWith(5, {
       username: 'u',
-      password: '123456',
+      password: '12345678',
       name: null,
       roleCode: 'team_member',
     })
@@ -742,33 +742,33 @@ describe('useTeamManagement: createMemberAccount', () => {
     expect(createTeamMember).not.toHaveBeenCalled()
   })
 
-  it('密码短于 6 位时提示并返回 false', async () => {
+  it('密码短于 8 位时提示并返回 false', async () => {
     const { api } = setup({ teamStore: { selectedTeamId: 5 } })
-    await expect(api.createMemberAccount({ username: 'u', password: '12345' })).resolves.toBe(false)
-    expect(ElMessage.warning).toHaveBeenCalledWith('初始密码不能少于 6 位')
+    await expect(api.createMemberAccount({ username: 'u', password: '1234567' })).resolves.toBe(false)
+    expect(ElMessage.warning).toHaveBeenCalledWith('初始密码不能少于 8 位')
     expect(createTeamMember).not.toHaveBeenCalled()
   })
 
-  it('恰好 6 位密码可通过', async () => {
+  it('恰好 8 位密码可通过', async () => {
     const { api } = setup({ teamStore: { selectedTeamId: 5 } })
     await expect(
-      api.createMemberAccount({ username: 'u', password: '123456', name: 'n', roleCode: 'r' }),
+      api.createMemberAccount({ username: 'u', password: '12345678', name: 'n', roleCode: 'r' }),
     ).resolves.toBe(true)
   })
 
   it('密码校验基于 trim 后的长度（前后空格不计入）', async () => {
     const { api } = setup({ teamStore: { selectedTeamId: 5 } })
     await expect(
-      api.createMemberAccount({ username: 'u', password: '  12345  ', name: '', roleCode: 'r' }),
+      api.createMemberAccount({ username: 'u', password: '  1234567  ', name: '', roleCode: 'r' }),
     ).resolves.toBe(false)
-    expect(ElMessage.warning).toHaveBeenCalledWith('初始密码不能少于 6 位')
+    expect(ElMessage.warning).toHaveBeenCalledWith('初始密码不能少于 8 位')
   })
 
   it('接口失败时为 false 且不重置表单', async () => {
     const error = new Error('x')
     createTeamMember.mockRejectedValueOnce(error)
     const { api, workspace } = setup({ teamStore: { selectedTeamId: 5 } })
-    const form = { username: 'u', password: '123456', name: '', roleCode: 'r' }
+    const form = { username: 'u', password: '12345678', name: '', roleCode: 'r' }
 
     await expect(api.createMemberAccount(form)).resolves.toBe(false)
 

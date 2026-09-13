@@ -13,7 +13,12 @@ export function usePasswordChange({ applyProfile }) {
     const newPassword = passwordForm.newPassword.trim()
     const confirmPassword = passwordForm.confirmPassword.trim()
     if (!oldPassword || !newPassword) return ElMessage.warning('请填写当前密码和新密码')
-    if (newPassword.length < 6) return ElMessage.warning('新密码不能少于 6 位')
+    // 与后端 zxyz-common::PasswordPolicy 保持一致（≥8 位且至少含字母与数字）。
+    // 前端只是提前提示；准入判定在后端，这里漏改会表现为「本地放行 → 提交后被后端 400 拒」。
+    if (newPassword.length < 8) return ElMessage.warning('新密码不能少于 8 位')
+    if (!/^(?=.*[A-Za-z])(?=.*[0-9]).+$/.test(newPassword)) {
+      return ElMessage.warning('新密码必须同时包含字母和数字')
+    }
     if (newPassword !== confirmPassword) return ElMessage.warning('两次输入的新密码不一致')
     savingPassword.value = true
     try {

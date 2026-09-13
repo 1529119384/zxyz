@@ -69,8 +69,9 @@ async function submitCreateTeam() {
   if (!createTeamForm.ownerUsername.trim() || !createTeamForm.ownerPassword.trim()) {
     return ElMessage.warning('请输入团队管理员用户名和密码')
   }
-  if (createTeamForm.ownerPassword.trim().length < 6)
-    return ElMessage.warning('团队管理员密码不能少于 6 位')
+  // 与后端对齐：team-service 的 app.team.min-password-length 已由 6 提到 8
+  if (createTeamForm.ownerPassword.trim().length < 8)
+    return ElMessage.warning('团队管理员密码不能少于 8 位')
   creatingTeam.value = true
   try {
     await createAdminTeam({

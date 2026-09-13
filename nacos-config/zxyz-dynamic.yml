@@ -73,7 +73,7 @@ app:
   team:
     default-max-members: 100
     default-storage-limit-bytes: 107374182400
-    min-password-length: 6
+    min-password-length: 8
   # share-service 专用（绑定路径：ShareProperties.frontendBaseUrl，prefix="app.share"）
   share:
     frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:5173}

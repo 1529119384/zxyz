@@ -107,7 +107,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
                                  TeamUserDefaultSyncMapper teamUserDefaultSyncMapper,
                                  @Value("${app.team.default-max-members:100}") int defaultMemberLimit,
                                  @Value("${app.team.default-storage-limit-bytes:107374182400}") long defaultStorageLimit,
-                                 @Value("${app.team.min-password-length:6}") int minPasswordLength) {
+                                 @Value("${app.team.min-password-length:8}") int minPasswordLength) {
         this.teamMapper = teamMapper;
         this.quotaMapper = quotaMapper;
         this.userServiceClient = userServiceClient;
@@ -598,7 +598,10 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
     private String normalizePassword(String value) {
         String password = requireText(value, "密码不能为空");
         if (password.length() < minPasswordLength) {
-            throw new ValidationException("密码不能少于 6 位");
+            // 文案必须由 minPasswordLength 拼出来 —— 原来硬编码「6 位」，一旦把
+            // app.team.min-password-length 调到 8，提示就会与实际规则不符，
+            // 用户按提示改到 6 位仍被拒，且看不出原因。
+            throw new ValidationException("密码不能少于 " + minPasswordLength + " 位");
         }
         return password;
     }

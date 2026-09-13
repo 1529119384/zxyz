@@ -5,6 +5,7 @@ import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
+import uno.acloud.common.PasswordPolicy;
 
 import java.io.Serializable;
 
@@ -19,7 +20,9 @@ public class InternalCreateTeamUserRequest implements Serializable {
     private String username;
 
     @NotBlank(message = "密码不能为空")
-    @Size(min = 6, max = 128, message = "密码长度为 6-128 个字符")
+    // 只约束长度、不加复杂度：这条链路的调用方是 team-service 的建号流程，
+    // 与注册/改密共享同一个最小长度即可，复杂度要求属该链路之外的行为变更。
+    @Size(min = PasswordPolicy.MIN_LENGTH, max = PasswordPolicy.MAX_LENGTH, message = PasswordPolicy.SIZE_MESSAGE)
     private String password;
 
     private String name;

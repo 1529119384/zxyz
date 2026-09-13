@@ -81,7 +81,15 @@ const registerRules = {
   ],
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 6, message: '密码至少 6 个字符', trigger: 'blur' },
+    // 与后端 zxyz-common::PasswordPolicy 保持一致（≥8 位且至少含字母与数字）。
+    // 前端只是「提前提示」；真正的准入判定在后端，这里漏改会表现为
+    // 「前端放行 → 提交后被后端 400 拒」，错误信息还会落在通用提示里，很难定位。
+    { min: 8, message: '密码至少 8 个字符', trigger: 'blur' },
+    {
+      pattern: /^(?=.*[A-Za-z])(?=.*[0-9]).+$/,
+      message: '密码必须同时包含字母和数字',
+      trigger: 'blur',
+    },
   ],
   confirmPassword: [
     { required: true, message: '请确认密码', trigger: 'blur' },

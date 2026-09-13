@@ -294,8 +294,11 @@ export function useTeamManagement({
       ElMessage.warning('请填写成员用户名和初始密码')
       return false
     }
-    if (password.length < 6) {
-      ElMessage.warning('初始密码不能少于 6 位')
+    if (password.length < 8) {
+      // 与后端对齐：team-service 的 app.team.min-password-length 已由 6 提到 8，
+      // user-service 的 InternalCreateTeamUserRequest 也要求 ≥8。前端这条只是「提前提示」，
+      // 漏改的表现是「本地放行 → 提交后被后端拒」，错误落进通用提示里很难定位。
+      ElMessage.warning('初始密码不能少于 8 位')
       return false
     }
     try {
