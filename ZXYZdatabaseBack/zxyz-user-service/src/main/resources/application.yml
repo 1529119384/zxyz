@@ -37,4 +37,7 @@ app:
   email-service:
     base-url: ${EMAIL_SERVICE_BASE_URL:http://zxyz-email-service}
   verification:
-    return-code-in-response: ${VERIFICATION_RETURN_CODE:true}
+    # 【安全默认】回显验证码 = 把验证码直接返回给调用方，属「有则必关」。
+    # 缺省与生产（prod profile）一律 false；仅本地 dev profile 显式置 true
+    # （见 application-dev.yml）。nacos-config/zxyz-user-service.yml 同口径。
+    return-code-in-response: ${VERIFICATION_RETURN_CODE:false}

@@ -49,6 +49,10 @@ export RABBITMQ_HOST="localhost"
 # .env 键名是 RABBITMQ_USER，而 application-common.yml 读取 RABBITMQ_USERNAME，做映射
 export RABBITMQ_USERNAME="${RABBITMQ_USER}"
 
+# 本地 dev 保留验证码回显（生产缺省为 false，见 nacos-config/zxyz-user-service.yml）。
+# 必须在此显式导出：Nacos 那份配置的默认值已是 false，且环境变量在占位符解析里优先。
+export VERIFICATION_RETURN_CODE="${VERIFICATION_RETURN_CODE:-true}"
+
 # ---- 3. 按服务映射 datasource 密码键（统一指向 MYSQL_ROOT_PASSWORD）----
 DB_PASS="${MYSQL_ROOT_PASSWORD:?✗ .env 缺少 MYSQL_ROOT_PASSWORD}"
 case "$SERVICE" in
