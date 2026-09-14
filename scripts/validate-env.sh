@@ -179,11 +179,23 @@ if [ "${TLS_ENABLED:-false}" = "true" ]; then
   else
     echo "  OK: TLS 已启用且 Cookie Secure 已开启"
   fi
-elif [ "${AUTH_COOKIE_SECURE:-false}" != "true" ]; then
-  echo "  WARN: AUTH_COOKIE_SECURE=false（站点走 HTTP，Cookie 无 Secure 属性，可被嗅探）。启用 TLS 后请置 true（不阻断部署）"
+elif [ "${AUTH_COOKIE_SECURE:-false}" = "true" ]; then
+  echo "  OK: AUTH_COOKIE_SECURE=true"
+elif [ "${ALLOW_INSECURE_HTTP:-false}" = "true" ]; then
+  # D1-#4：明文 HTTP 已由 .env 中的显式豁免键放行。仍每次部署打一条 WARN（提醒而非阻断），
+  # 避免「豁免一次之后就再也没人记得站点是明文」——豁免键的价值在于它必须被写下来。
+  echo "  WARN: 站点以明文 HTTP 运行（AUTH_COOKIE_SECURE=false），已由 ALLOW_INSECURE_HTTP=true 显式豁免"
+  echo "        残留风险：会话 Cookie 无 Secure 属性、流量可被嗅探/中间人篡改。"
+  echo "        建议启用容器内 TLS：TLS_ENABLED=true + AUTH_COOKIE_SECURE=true（见 docker-compose.tls.yml）"
   WARNINGS=$((WARNINGS + 1))
 else
-  echo "  OK: AUTH_COOKIE_SECURE=true"
+  # D1-#4 fail-closed：明文 HTTP 不得「默认」发生，必须由 .env 里一个显式的豁免键放行。
+  echo "  ERROR: 站点走 HTTP 且未显式豁免（AUTH_COOKIE_SECURE != true，ALLOW_INSECURE_HTTP 也非 true）"
+  echo "         这是刻意的默认拒绝：明文 HTTP 会让会话 Cookie 可被嗅探、流量可被篡改。请二选一："
+  echo "           ① 启用 TLS：TLS_ENABLED=true 且 AUTH_COOKIE_SECURE=true"
+  echo "           ② 确认接受明文（内网/临时环境）：在 .env 写入 ALLOW_INSECURE_HTTP=true"
+  echo "         注意 ALLOW_INSECURE_HTTP 是「豁免」而非「修复」——它放行部署，但不降低明文风险。"
+  ERRORS=$((ERRORS + 1))
 fi
 
 echo ""

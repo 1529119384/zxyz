@@ -172,7 +172,17 @@ if [ "$REPAIR_FLYWAY" = true ]; then
   #    没有 ZXYZdatabaseBack/*/src/main/resources/db/migration ⇒ 这一步当前**纠正不了校验和**，
   #    只能清理失败记录 / 标记缺失迁移。要真正生效需把迁移目录一并同步到部署目录（待拍板）。
   echo "（提示）部署目录无迁移文件 ⇒ repair 只能清理失败记录，无法重算 checksum"
-  if ! docker compose --profile tools run --rm flyway repair; then
+  #
+  # 🔴 必须带 --no-deps（2026-09-15 演练实测，此前遗漏）：
+  #    flyway 服务在 compose 里声明了 `depends_on: mysql: {condition: service_healthy}`，
+  #    因此 `compose run` 默认会把 mysql 一并纳入计划并「必要时重建」。实测：一次 repair 演练
+  #    导致 `zxyz-mysql Recreate → Started → Healthy` —— **生产 MySQL 被无谓重启一次**
+  #    （站点未中断，但这是一次本可完全避免的数据库抖动；业务容器全程未重启）。
+  #    加 --no-deps 后 dry-run 计划里 mysql 完全消失，只创建 flyway 一次性容器；
+  #    flyway 仍挂在 zxyz-net 上、仍能连到 `mysql:3306`，repair 功能不受影响。
+  #    这与部署主路径 `docker compose up -d --no-deps --no-build` 的纪律一致：
+  #    凡「一次性工具容器」都不得顺带重建基础设施。
+  if ! docker compose --profile tools run --rm --no-deps flyway repair; then
     echo "ERROR: flyway repair 执行失败"
     exit 1
   fi

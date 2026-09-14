@@ -22,6 +22,10 @@
 #   注：--env/--compose 也接受空格写法（--env PATH），两种写法等价。
 #
 # 幂等性：重复执行安全（CREATE USER IF NOT EXISTS + 重复 GRANT 均幂等）。
+#   另：模板内带一条 DROP 通配符（@'%'）账户行的语句 —— 这是 2026-09-15 把账户 host
+#   收窄到钉死子网（172.19.0.0/16 ⇒ '172.19.%'）后的收敛动作。因本脚本每次部署都会重跑，
+#   不带这条 DROP 的话，收窄会被下一次部署静默撤销。DROP 只影响通配行，不影响网段行的
+#   既有连接。
 # 回退语义：本脚本只「创建并授权」专用账户，绝不删除 root（root 的去留由 DBA 手动处置）。
 #   是否真正切到专用账户由 docker-compose.yml 是否引用 *_DB_* 变量决定；compose 现已写成
 #   fail-fast 形式（缺变量即启动前硬失败），因此不存在「静默回退 root」的路径。
@@ -93,6 +97,10 @@ fi
 
 # 审计 2.3.3：口令改走环境变量（MYSQL_PWD）传递，不再展开进宿主机 docker 客户端进程的 argv
 # （`docker exec ... mysql -uroot -p"$PW"` 会让同机任意进程从 /proc/<pid>/cmdline 读到口令）。
+# 账户来源网段：默认取 docker-compose.yml 已钉死的子网（172.19.0.0/16），
+# 可用 .env 的 DB_ACCOUNT_HOST 覆盖。改这个值必须与「维护窗口 + 网络重建」同批进行，
+# 否则会得到一批连不上库的账户（MySQL 无法就地修改既有账户的 host）。
+DB_ACCOUNT_HOST="${DB_ACCOUNT_HOST:-172.19.%}"
 export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"
 
 # --- 从 compose 解析 mysql 服务的 container_name ---
@@ -153,7 +161,7 @@ for entry in "${SERVICES[@]}"; do
     continue
   fi
   if [ "$username" = "root" ]; then
-    SUMMARY+=("SKIP  $username@'%'  ON  $db.*  (root 回退，不创建专用账户)")
+    SUMMARY+=("SKIP  $username@'$DB_ACCOUNT_HOST'  ON  $db.*  (root 回退，不创建专用账户)")
     continue
   fi
   if [ -z "$password" ] || echo "$password" | grep -qE '^CHANGE_ME'; then
@@ -168,9 +176,10 @@ for entry in "${SERVICES[@]}"; do
   # 密码仅含 [A-Za-z0-9]，不含 | 与 '，sed 替换安全。
   sql="$(sed -e "s|__USER__|$username|g" \
               -e "s|__PASSWORD__|$password|g" \
-              -e "s|__DB__|$db|g" "$TEMPLATE" | grep -v '^[[:space:]]*--' || true)"
+              -e "s|__DB__|$db|g" \
+              -e "s|__HOST__|$DB_ACCOUNT_HOST|g" "$TEMPLATE" | grep -v '^[[:space:]]*--' || true)"
   RENDERED+=("$sql")
-  SUMMARY+=("GRANT $username@'%'  ON  $db.*")
+  SUMMARY+=("GRANT $username@'$DB_ACCOUNT_HOST'  ON  $db.*")
 done
 
 if [ "$MISSING" -ne 0 ]; then
