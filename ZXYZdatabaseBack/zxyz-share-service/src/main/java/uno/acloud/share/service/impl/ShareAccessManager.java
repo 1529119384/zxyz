@@ -118,9 +118,9 @@ public class ShareAccessManager {
         if (share == null || StringUtils.isBlank(shareAccessToken)) {
             return false;
         }
-        byte[] expected = shareCookieManager.buildAccessToken(share, shareProperties.getCookieSecret()).getBytes(StandardCharsets.UTF_8);
-        byte[] actual = shareAccessToken.getBytes(StandardCharsets.UTF_8);
-        return MessageDigest.isEqual(expected, actual);
+        // 令牌自带签发时刻（v3|issuedAt|hmac），校验端据此复算摘要；
+        // 常量时间比较与格式判定都在 ShareTokenCodec 内完成。
+        return shareCookieManager.verifyAccessToken(share, shareProperties.getCookieSecret(), shareAccessToken);
     }
 
     private void validateSharePassword(Share share, String rawPassword) {

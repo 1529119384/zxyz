@@ -31,10 +31,12 @@
 | `zxyz-static.yml` | 9 个业务服务 | `false` | 与代码强耦合的静态配置（分页、限流、上传限制等） |
 | `zxyz-dynamic.yml` | **全部服务（含 gateway）** | **`true`** | 共享动态配置，**支持热更新** |
 | `zxyz-<svc>.yml` | 各自服务（admin/audit/email/file/im/project/share/team/user 共 9 份） | `false` | 服务专属配置 |
-| `zxyz-gateway.yml` | ⚠️ **无任何消费方** | — | **死配置**：gateway 只 import `dynamic`，不 import 本文件。改它**不会生效**（见 §6） |
 
-> `import.sh` 会把目录下**所有** `*.yml` 全量导入（含 `zxyz-gateway.yml`）。
-> 导入一份无人读取的配置本身无害，但**不要误以为改了它有用**。
+> **gateway 的配置从哪来**：`zxyz-dynamic.yml`（共享动态配置，`refreshEnabled=true`）**+ gateway 自己的本地
+> `application.yml`**（路由规则与 Gateway 版本强耦合，刻意不进 Nacos）。
+> 本目录历史上曾有一份 `zxyz-gateway.yml`，但 gateway **从未 import 它**（死配置）⇒ **已于 2026-09-14 删除**。
+
+> `import.sh` 会把目录下**所有** `*.yml` 全量导入（当前 **11 份**，每份都有明确消费方）。
 
 分组固定为 **`group=ZXYZ`**，命名空间为 **public**（`namespaceId` 为空；`NACOS_NAMESPACE` 可用于多环境隔离）。
 
@@ -74,6 +76,7 @@ bash ./import.sh "" 127.0.0.1:8848 127.0.0.1:18081
 
 1. **顶层重复 key**：SnakeYAML 视重复键为致命错误（服务直接起不来），检出即中止发布；无 `pyyaml` 时降级为文本层面扫描。
 2. **字面量机密**：`password`/`secret`/`token` 类键的值必须以 `${`（env 引用）或 `ENC(`（Jasypt 密文）开头，否则视为明文入库并中止。
+   ↳ 新增机密值的写法约定见 `docs/jasypt-key-management.md` **§5.0「向前 ENC 化」**（新增一律 `ENC()`，存量不追改）。
 3. **导入后 md5 回读校验**：逐份对比 Nacos 返回值与本地文件字节的 md5，不一致即失败退出 ——
    用于消除「导入返回 200 但其实没生效」这类静默故障（实测写入后可读视图有短暂滞后，故脚本内置退避重试）。
 
@@ -83,7 +86,7 @@ bash ./import.sh "" 127.0.0.1:8848 127.0.0.1:18081
 python3 scripts/check-nacos-config-sync.py     # 本地也能跑，需 pyyaml
 ```
 
-它把 `nacos-config/*.yml` 与**各消费方在非 dev 档的实际取值**逐键比对，输出 `[DIFF]`（阻断）/`[DEV-DRIFT]`/`[EXTRA]`/`[MISS]`/`[UNCONSUMED]`。当前基线：**PASS，0 阻断**，1 处 `[UNCONSUMED]`（即 `zxyz-gateway.yml`）。
+它把 `nacos-config/*.yml` 与**各消费方在非 dev 档的实际取值**逐键比对，输出 `[DIFF]`（阻断）/`[DEV-DRIFT]`/`[EXTRA]`/`[MISS]`/`[UNCONSUMED]`。当前基线：**PASS，0 阻断，0 `[UNCONSUMED]`**（原唯一一处 `[UNCONSUMED]` = `zxyz-gateway.yml`，已于 2026-09-14 随死配置一并删除）。
 
 ---
 
@@ -121,7 +124,7 @@ python3 scripts/check-nacos-config-sync.py     # 本地也能跑，需 pyyaml
 | `No endpoint POST /nacos/v1/auth/login` / 403 | **Nacos 3.x 已下线 v1 鉴权端点**。登录请用 console 端口（18081）的 `/v3/auth/user/login` |
 | 导入返回 200 但回读 `20004 resource not found` | ① 命名空间/分组口径不一致（本目录固定 `group=ZXYZ` + public）；② **写入后可读视图短暂滞后**，脚本已内置重试 |
 | `User nacos not found` | 用户表为空，跑 `scripts/init-nacos-auth.sh` |
-| 改完配置线上没变化 | 很可能是**没重启服务**（§4），或改的是 `zxyz-gateway.yml`（无人消费，§2） |
+| 改完配置线上没变化 | 很可能是**没重启服务**（§4）—— 除 `zxyz-dynamic.yml` 外的 11 份都是 `refreshEnabled=false`，**导入不等于生效** |
 
 ---
 
@@ -142,6 +145,8 @@ python3 scripts/check-nacos-config-sync.py     # 本地也能跑，需 pyyaml
 
 ## 变更记录
 
+* **2026-09-14** —— 删除无消费方的 `zxyz-gateway.yml`（死配置：改它不生效，却会让人以为改了有用）；
+  本目录由 12 份收敛为 **11 份**，等价性门禁基线回到 **PASS / 0 阻断 / 0 `[UNCONSUMED]`**。
 * **2026-09-13** —— 首次全量入库（12 份，逐份 md5 与仓库一致）；`import.sh` 修复 v3 端点与双通道鉴权、
   新增回读校验与退避重试、`pyyaml` 缺失降级；新增 `scripts/init-nacos-auth.sh`；新增 CI 作业 `nacos-import`
   把「改配置 ⇒ 导入」自动化；删除直写数据库的 `scripts/import_nacos_configs.py`。

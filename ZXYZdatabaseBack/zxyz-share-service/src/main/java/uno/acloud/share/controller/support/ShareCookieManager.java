@@ -8,24 +8,17 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
+import uno.acloud.share.common.ShareTokenCodec;
 import uno.acloud.share.config.ShareTimeSource;
 import uno.acloud.share.infrastructure.entity.Share;
 
-import java.nio.charset.StandardCharsets;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.HexFormat;
 import java.util.Objects;
-
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 
 @Component
 public class ShareCookieManager {
     private static final String COOKIE_PREFIX = "share_access_";
-    private static final String TOKEN_VERSION_PREFIX = "v2:";
 
     /** 时间基准与写入端（ShareManager）/ 过期判定（ShareStatusCalculator）同源，见 ShareTimeSource（审计 D3）。 */
     private final ShareTimeSource timeSource;
@@ -71,16 +64,25 @@ public class ShareCookieManager {
         return COOKIE_PREFIX + shareKey;
     }
 
+    /**
+     * 签发访问令牌（v3：把**签发时刻**也纳入签名输入）。
+     *
+     * <p>格式与签名实现在 {@link ShareTokenCodec}；本类只负责「时间从哪儿来」——
+     * 取注入的 {@link ShareTimeSource}，与 Cookie 的 {@code Max-Age} 用同一个基准（审计 D3）。
+     * 签发时刻随令牌一起下发，校验端才能复算出同一个摘要。</p>
+     */
     public String buildAccessToken(Share share, String cookieSecret) {
-        String raw = TOKEN_VERSION_PREFIX + share.getShareKey() + "|" + StringUtils.defaultString(share.getPassword()) + "|" + share.getUserId()
-                + "|" + share.getCreateTime();
-        try {
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(cookieSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-            return HexFormat.of().formatHex(mac.doFinal(raw.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException | InvalidKeyException e) {
-            throw new IllegalStateException("HmacSHA256 not available", e);
-        }
+        return ShareTokenCodec.buildToken(share, cookieSecret, timeSource.now());
+    }
+
+    /**
+     * 校验访问令牌（v3）。
+     *
+     * <p>常量时间比较等细节见 {@link ShareTokenCodec#verify}。令牌版本不是 v3
+     * （例如升级前签发的 v2 Cookie）一律判为不通过。</p>
+     */
+    public boolean verifyAccessToken(Share share, String cookieSecret, String accessToken) {
+        return ShareTokenCodec.verify(share, cookieSecret, accessToken);
     }
 
     private int resolveCookieMaxAge(LocalDateTime expireTime) {

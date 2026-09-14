@@ -229,6 +229,14 @@ echo "--- Jasypt ---"
 check_not_placeholder "JASYPT_PASSWORD"
 
 echo ""
+echo "--- 验证码 pepper（A4：与主密钥解耦的独立密钥） ---"
+# docker-compose.yml 以 ${VERIFY_CODE_PEPPER:?...} fail-closed 注入 user-service / email-service；
+# 缺该键时 compose 直接报错、部署中止 ⇒ 这里做同样的硬校验，把问题拦在部署之前而非上线时。
+# 说明：应用侧仍有 `${VERIFY_CODE_PEPPER:${JASYPT_PASSWORD:}}` 的回退，但 compose 层已不再允许缺省，
+# 故本项是 ERROR 而非 WARN。生成方式：scripts/init-secrets.sh（自动）或 openssl rand -base64 32。
+check_not_placeholder "VERIFY_CODE_PEPPER"
+
+echo ""
 echo "--- 前端地址 ---"
 if echo "${FRONTEND_BASE_URL:-}" | grep -qE "YOUR_SERVER_IP|CHANGE_ME|localhost"; then
   echo "  WARN: FRONTEND_BASE_URL 似乎是占位符: ${FRONTEND_BASE_URL}"
@@ -342,6 +350,17 @@ _oss_csp_check() {
 _oss_csp_check
 
 echo ""
+# D1-#1：初始管理员口令。留空且目标环境**尚无**该账号时，user-service 会拒绝创建管理员
+# （绝不回退到「随机生成 + 明文写日志」）。已上线环境账号已存在、bootstrap 幂等跳过，
+# 所以这里**只 WARN 不阻断** —— 阻断会让所有既有环境无法部署。
+if [ -z "${ADMIN_INIT_PASSWORD:-}" ]; then
+  echo "  WARN: ADMIN_INIT_PASSWORD 为空：若该环境尚无初始管理员，user-service 将拒绝创建该账号"
+  echo "        （应用照常启动，并在日志中打印含指引的 ERROR）。生成方式：scripts/init-secrets.sh"
+  WARNINGS=$((WARNINGS + 1))
+else
+  echo "  OK: ADMIN_INIT_PASSWORD 已设置（该口令不会写入任何日志）"
+fi
+
 echo "===== 结果 ====="
 if [ $ERRORS -gt 0 ]; then
   echo "ERROR: $ERRORS 个错误，$WARNINGS 个警告"

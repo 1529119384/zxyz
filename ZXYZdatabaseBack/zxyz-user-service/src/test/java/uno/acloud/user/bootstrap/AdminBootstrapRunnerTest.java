@@ -2,7 +2,6 @@ package uno.acloud.user.bootstrap;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import uno.acloud.user.config.ServiceProperties;
@@ -11,7 +10,6 @@ import uno.acloud.user.infrastructure.client.TeamServicePermissionClient;
 import uno.acloud.user.mapper.UserMapper;
 import uno.acloud.user.service.impl.AuthService;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
@@ -57,21 +55,28 @@ class AdminBootstrapRunnerTest {
     }
 
     @Test
-    void run_createsAdminAndAssignsRoleWhenMissing_withRandomPassword() {
+    void run_refusesToCreateAdminWhenPasswordNotConfigured() {
+        // D1-#1：不再「随机生成 + 明文打进日志」。未配置口令 => 拒绝创建（应用仍继续启动）。
+        // 这条用例同时锁死「绝不再出现随机口令」这一行为：只要有人把生成逻辑加回来，本用例即失败。
         ServiceProperties sp = buildProps(true, "admin", "");
         when(userMapper.getByLoginIdentifier("admin")).thenReturn(null);
-        when(authService.createBootstrapAdmin(anyString(), anyString())).thenReturn(42L);
 
         new AdminBootstrapRunner(userMapper, authService, teamServicePermissionClient, sp).run(null);
 
-        ArgumentCaptor<String> userCaptor = ArgumentCaptor.forClass(String.class);
-        ArgumentCaptor<String> passCaptor = ArgumentCaptor.forClass(String.class);
-        verify(authService).createBootstrapAdmin(userCaptor.capture(), passCaptor.capture());
-        assertEquals("admin", userCaptor.getValue());
-        assertEquals(16, passCaptor.getValue().length());
+        verify(authService, never()).createBootstrapAdmin(anyString(), anyString());
+        // 没有创建账号 => 也不应启动后台角色分配线程
+        verify(teamServicePermissionClient, never()).assignBootstrapAdminRoleStrict(any());
+    }
 
-        // 角色分配为后台线程异步执行
-        verify(teamServicePermissionClient, timeout(3000)).assignBootstrapAdminRoleStrict(42L);
+    @Test
+    void run_treatsBlankPasswordAsNotConfigured() {
+        // 只用空白字符同样视为未配置（避免 .env 里写了空格就"以为配好了"）
+        ServiceProperties sp = buildProps(true, "admin", "   ");
+        when(userMapper.getByLoginIdentifier("admin")).thenReturn(null);
+
+        new AdminBootstrapRunner(userMapper, authService, teamServicePermissionClient, sp).run(null);
+
+        verify(authService, never()).createBootstrapAdmin(anyString(), anyString());
     }
 
     @Test

@@ -27,7 +27,8 @@ const JoinTeam = () => import('@/views/join/team.vue')
 const SharePublic = () => import('@/views/share/index.vue')
 const NoTeam = () => import('@/views/no-team/index.vue')
 
-const publicRouteNames = new Set(['login', 'register', 'sharePublic'])
+// 导出以便 route-guard-coverage.spec.js 断言「白名单是显式且最小的」
+export const publicRouteNames = new Set(['login', 'register', 'sharePublic'])
 const legacySettingTabRouteNames = Object.freeze({
   profile: 'accountSettings',
   createTeam: 'teamAdminSettings',

@@ -16,6 +16,11 @@ on:
       # 所以纳入白名单以触发 nacos-config-check 作业（审计 D2）。
       - 'nacos-config/**'
       - 'scripts/check-nacos-config-sync.py'
+      # scripts/** 与 sql/**：本身不参与镜像构建，但纳入白名单以触发 lint-config 作业
+      # （shellcheck + 严格 YAML 校验）—— 审计 11 §7.12 / P2-13。
+      # 刻意**不**并入 any-change：纯脚本/校验类变更不需要重建任何镜像。
+      - 'scripts/**'
+      - 'sql/**'
   pull_request:
     branches: [dev, main]
     paths:
@@ -27,6 +32,8 @@ on:
       - '.gitleaks.toml'
       - 'nacos-config/**'
       - 'scripts/check-nacos-config-sync.py'
+      - 'scripts/**'
+      - 'sql/**'
   workflow_dispatch:
     inputs:
       tag:
@@ -202,11 +209,24 @@ jobs:
               - '.env.example'
             frontend:
               - 'ZXYZdatabaseFront/**'
+              # ⚠ deploy/nginx/** 必须并进来：ZXYZdatabaseFront/Dockerfile **直接 COPY**
+              #   了这些文件（default.conf / default-ssl.conf / snippets/*.conf / entrypoint.sh）。
+              #   此前本 filter 只匹配 'ZXYZdatabaseFront/**' ⇒ 改 nginx 配置**不会**重建
+              #   前端镜像 ⇒ 改了永远不生效（变更静默不上线）。CSP / 代理头一类的改动全走这里。
+              - 'deploy/nginx/default.conf'
+              - 'deploy/nginx/default-ssl.conf'
+              - 'deploy/nginx/entrypoint.sh'
+              - 'deploy/nginx/snippets/**'
             # nacos-config/**：不参与镜像构建，但它是 Nacos 的运行真源 ——
             # 改它必须 import 才对线上生效（由 nacos-import 作业自动完成）。
             # 刻意**不**并入 any-change：纯配置变更不需要重建任何镜像。
             nacos-config:
               - 'nacos-config/**'
+            # scripts-config：驱动 lint-config 作业。刻意**不**并入 any-change
+            # （纯脚本 / CI 校验类变更不需要重建任何镜像）。
+            scripts-config:
+              - 'scripts/**'
+              - 'sql/**'
 
       - name: Check if any backend changed
         id: backend-any
@@ -301,6 +321,40 @@ jobs:
           else
             echo "skip_quality=false" >> $GITHUB_OUTPUT
           fi
+
+  # ============================================================
+  # Job 1.4: 配置与脚本静态校验（审计 11 §7.12 / P2-13）
+  # ------------------------------------------------------------
+  # 覆盖此前**完全在 CI 之外**的 scripts/** 与 sql/**，外加全仓 YAML 配置：
+  #   1) shellcheck（仅 error 级）—— 抓真实缺陷（引号 / 命令替换 / 条件写法）；
+  #   2) 严格 YAML 校验 —— 拒绝「重复顶层键」：SnakeYAML 视其为致命错误，
+  #      命中时服务**直接起不来**；PyYAML 的 safe_load 看不出，故须专用 Loader。
+  # 为什么需要：部署与运维脚本此前既不触发 CI、也无任何静态检查，
+  #   而它们一旦写错只会在生产上暴露（例如 deploy-on-server.sh 的插值/顺序问题）。
+  # 本作业**不设 needs**：成本仅数秒，且"每次都查"才能覆盖首次引入的问题。
+  # ============================================================
+  lint-config:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: shellcheck (error level)
+        run: |
+          # 只报 error 级：warning/info 数量大且多为风格问题，全量会淹没信号。
+          # 排除 SC2296：scripts/setup-acr.sh 中写的是 GitHub Actions 的 ${{ }} 语法
+          #   （会被 Actions 引擎先行展开），shellcheck 不认 —— 属误报。
+          mapfile -t FILES < <(git ls-files '*.sh' | grep -E '^(scripts|sql|nacos-config|deploy)/' || true)
+          if [ "${#FILES[@]}" -eq 0 ]; then
+            echo "没有 shell 脚本，跳过。"
+            exit 0
+          fi
+          echo "待检查 ${#FILES[@]} 个脚本："
+          printf '  - %s\n' "${FILES[@]}"
+          shellcheck -S error -e SC2296 "${FILES[@]}"
+
+      - name: strict YAML validation (reject duplicate keys)
+        run: python3 scripts/check-yaml-strict.py
 
   # ============================================================
   # Job 1.5: Flyway 迁移门禁

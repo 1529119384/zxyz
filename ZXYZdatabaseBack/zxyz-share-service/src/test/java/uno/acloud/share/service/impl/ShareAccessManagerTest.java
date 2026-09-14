@@ -23,6 +23,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -126,7 +127,7 @@ class ShareAccessManagerTest {
         when(shareMapper.getByShareKey("abc123")).thenReturn(share);
         when(shareStatusCalculator.refreshStatusIfNeeded(share)).thenReturn(share);
         when(shareProperties.getCookieSecret()).thenReturn("test-secret");
-        when(shareCookieManager.buildAccessToken(share, "test-secret")).thenReturn("valid-token");
+        when(shareCookieManager.verifyAccessToken(share, "test-secret", "valid-token")).thenReturn(true);
 
         ShareVerifyResult result = shareAccessManager.verifyShare(request, "valid-token");
 
@@ -298,13 +299,22 @@ class ShareAccessManagerTest {
     }
 
     @Test
+    void hasValidAccessToken_isFalseForNullShareOrBlankTokenWithoutConsultingCodec() {
+        // 空白令牌必须在触达签名校验之前就短路：否则每次匿名访问都要白算一次 HMAC，
+        // 而且会把「没带 Cookie」与「Cookie 不对」两种情形混在同一处日志里。
+        assertFalse(shareAccessManager.hasValidAccessToken(null, "v3|x|y"));
+        assertFalse(shareAccessManager.hasValidAccessToken(createNormalShare(), "   "));
+        verify(shareCookieManager, never()).verifyAccessToken(any(), any(), any());
+    }
+
+    @Test
     void requireAccessibleShare_passesWhenHasValidToken() {
         Share share = createNormalShare();
         share.setPassword("$2a$10$hashed");
         when(shareMapper.getByShareKey("abc123")).thenReturn(share);
         when(shareStatusCalculator.refreshStatusIfNeeded(share)).thenReturn(share);
         when(shareProperties.getCookieSecret()).thenReturn("test-secret");
-        when(shareCookieManager.buildAccessToken(share, "test-secret")).thenReturn("valid-token");
+        when(shareCookieManager.verifyAccessToken(share, "test-secret", "valid-token")).thenReturn(true);
 
         Share result = shareAccessManager.requireAccessibleShare("abc123", "valid-token");
 

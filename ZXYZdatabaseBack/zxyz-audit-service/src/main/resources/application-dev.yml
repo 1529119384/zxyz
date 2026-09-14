@@ -14,3 +14,9 @@ app:
   # RemoteStpInterfaceAutoConfig 需要此属性进行服务间权限校验
   team-service:
     base-url: ${TEAM_SERVICE_BASE_URL:http://localhost:18086}
+# 本地开发保留 API 文档（生产默认关闭，见 zxyz-common 的 application-common.yml；D1-#3）
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true

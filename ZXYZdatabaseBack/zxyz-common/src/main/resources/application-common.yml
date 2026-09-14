@@ -200,11 +200,16 @@ resilience4j:
         wait-duration-in-open-state: 30s
 
 # SpringDoc + Knife4j API 文档配置
+# [安全默认] API 文档默认**关闭**（ISSUE/11 6.2-4 / D1-#3）：
+#   暴露全网 API 契约 = 把完整攻击面白送出去。此处 fail-closed —— 任何未显式开启的
+#   profile（含漏配 profile）都是「关」；dev 在各自的 application-dev.yml 里显式开。
+#   需要临时开启：设 SPRINGDOC_ENABLED=true（或在该服务 profile 文件里覆盖）。
+#   注：gateway 无 dev/prod profile 文件，故其 API 文档在各环境均为关；如需开启设 SPRINGDOC_ENABLED=true。
 springdoc:
   api-docs:
-    enabled: true
+    enabled: ${SPRINGDOC_ENABLED:false}
   swagger-ui:
-    enabled: true
+    enabled: ${SPRINGDOC_ENABLED:false}
   packages-to-scan: uno.acloud.*.controller
 knife4j:
   enable: ${KNIFE4J_ENABLE:false}

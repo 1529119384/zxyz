@@ -1,6 +1,7 @@
 package uno.acloud.file.service.impl;
 
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.stereotype.Service;
@@ -14,6 +15,7 @@ import uno.acloud.file.infrastructure.entity.Folder;
 import uno.acloud.file.infrastructure.entity.UsageLedger;
 import uno.acloud.file.infrastructure.mapper.FileMapper;
 import uno.acloud.file.infrastructure.mapper.UsageLedgerMapper;
+import uno.acloud.file.storage.StorageProviderRegistry;
 import uno.acloud.file.vo.BatchOperationDetailVO;
 
 import java.time.LocalDateTime;
@@ -43,6 +45,7 @@ public class FileCopyService {
     private final TransactionTemplate transactionTemplate;
     private final ProjectStorageCheckClient projectStorageCheckClient;
     private final UsageLedgerMapper usageLedgerMapper;
+    private final StorageProviderRegistry storageProviderRegistry;
     private final int maxCopyNodesPerTransaction;
 
     public FileCopyService(FileMapper fileMapper,
@@ -54,7 +57,8 @@ public class FileCopyService {
                            TransactionTemplate transactionTemplate,
                            @Value("${app.file.copy.max-nodes-per-tx:500}") int maxCopyNodesPerTransaction,
                            ProjectStorageCheckClient projectStorageCheckClient,
-                           UsageLedgerMapper usageLedgerMapper) {
+                           UsageLedgerMapper usageLedgerMapper,
+                           StorageProviderRegistry storageProviderRegistry) {
         this.fileMapper = fileMapper;
         this.fileDomainValidator = fileDomainValidator;
         this.filePathResolver = filePathResolver;
@@ -64,6 +68,7 @@ public class FileCopyService {
         this.transactionTemplate = transactionTemplate;
         this.projectStorageCheckClient = projectStorageCheckClient;
         this.usageLedgerMapper = usageLedgerMapper;
+        this.storageProviderRegistry = storageProviderRegistry;
         this.maxCopyNodesPerTransaction = maxCopyNodesPerTransaction;
     }
 
@@ -287,6 +292,29 @@ public class FileCopyService {
         return resolvedName;
     }
 
+    /**
+     * 解析副本行的 {@code storage_provider}。
+     *
+     * <p><b>为什么必须显式设置</b>：副本与源共享同一个物理对象（{@code uuid_name} 相同），
+     * 二者必须指向同一个存储后端。而 {@code FileMapper.insertFileItem} 的 INSERT 语句
+     * <b>显式列出了 storage_provider 列</b> ⇒ 实体字段为 null 时写入的是<b>字面量 NULL</b>，
+     * 列默认值 {@code 'oss'} <b>不会生效</b>。</p>
+     *
+     * <p><b>不修的后果</b>（用户报障：复制文件夹后副本相关操作失败）：副本行 provider 为 NULL，
+     * 该副本一旦再被复制，{@code FileObjectReferenceManager#retainReference} 会以
+     * 空 provider 直接抛 BusinessException ⇒ 副本无法再被复制；
+     * 同时物理删除只能依赖 {@code FileObjectPhysicalDeleteExecutor} 的 null 回退兜底。</p>
+     *
+     * <p>源列为 NULL/空白时回退到默认提供者，与 {@code file_node.storage_provider} 列默认值
+     * 及物理删除执行器的回退口径保持一致。<b>刻意不用 {@code resolveForFile}</b>（它会为
+     * 未注册的 provider 抛「存储提供者不存在」）：本处只做「补齐空值」，
+     * 不为已配置但未注册的 provider 引入新的失败面。</p>
+     */
+    private String resolveStorageProvider(FileItem source) {
+        String providerId = StringUtils.trimToNull(source.getStorageProvider());
+        return providerId != null ? providerId : storageProviderRegistry.getDefaultProvider().providerId();
+    }
+
     private FileItem cloneFileItem(FileItem source,
                                    Long targetParentId,
                                    SpaceTarget target,
@@ -295,6 +323,7 @@ public class FileCopyService {
                                    LocalDateTime now) {
         FileItem clone = FileItem.create();
         clone.setUuidName(source.getUuidName());
+        clone.setStorageProvider(resolveStorageProvider(source));
         clone.setOriginalName(resolvedName);
         clone.setCategory(source.getCategory());
         clone.setFileSize(source.getFileSize());
@@ -315,7 +344,7 @@ public class FileCopyService {
         if (insertedRows == null || insertedRows != 1 || clone.getId() == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "复制文件失败");
         }
-        fileObjectReferenceService.retainReference(clone.getUuidName(), source.getStorageProvider());
+        fileObjectReferenceService.retainReference(clone.getUuidName(), clone.getStorageProvider());
         return clone;
     }
 

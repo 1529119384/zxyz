@@ -99,6 +99,19 @@ public class ContactVerificationService {
         return new ContactVerificationCodeVO("email", null);
     }
 
+    /**
+     * 生成手机验证码。
+     *
+     * <p><b>⚠️ 当前生产不可用</b>：本项目未接入短信通道（见 {@code docs/known-limitations.md} §1），
+     * 本方法只生成并**哈希落库**，<b>没有任何发送动作</b>。生产环境下
+     * （{@code VERIFICATION_RETURN_CODE=false}）用户既拿不到返回、也收不到短信
+     * ⇒ <b>手机验证流程走不通</b>，且是静默失败（接口不报错）。</p>
+     *
+     * <p>TODO(短信通道) 接入时须三件事：① 实现真实发送（sms-service 或第三方 SMS API）；
+     * ② <b>发送成功后才返回</b>，失败要抛业务异常并释放冷却键（照抄 {@link #createEmailVerificationCode} 的写法）；
+     * ③ 视需要把静默失败改为响亮失败（未启用通道时直接抛"手机验证码暂未开放"）——
+     * 该改动会改变运行行为，需单独确认。</p>
+     */
     public ContactVerificationCodeVO createPhoneVerificationCode(Long userId) {
         User user = userQueryHelper.requireExistingUser(userId);
         if (!PHONE_PATTERN.matcher(requireText(user.getPhone(), "请先绑定手机号")).matches()) {

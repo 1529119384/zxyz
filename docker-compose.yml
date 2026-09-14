@@ -462,6 +462,11 @@ services:
       NACOS_SERVER_ADDR: nacos:8848
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
       JASYPT_PASSWORD: ${JASYPT_PASSWORD}
+      # A4（ISSUE/15）：验证码 pepper 与 Jasypt 主密钥**解耦** —— 独立密钥、可独立轮换，
+      #   不再复用主密钥（复用会让「轮换主密钥」连带把全站验证码摘要作废）。
+      #   缺失/为空时 compose 立即报错（fail-closed）：绝不静默回退到主密钥，
+      #   也绝不注入空串（空串会让 VerifyCodeHasher 拒绝启动，报错更难定位）。
+      VERIFY_CODE_PEPPER: ${VERIFY_CODE_PEPPER:?缺少 VERIFY_CODE_PEPPER，请先运行 scripts/init-secrets.sh}
       ADMIN_SERVICE_BASE_URL: ${ADMIN_SERVICE_BASE_URL:-http://zxyz-admin-service}
     networks:
       - zxyz-net
@@ -904,6 +909,11 @@ services:
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?缺少 CORS_ALLOWED_ORIGINS，请先运行 scripts/init-secrets.sh 或手工填写真实域名}
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
       AUTH_COOKIE_DOMAIN: ${AUTH_COOKIE_DOMAIN:-}
+      # A4（ISSUE/15）：验证码 pepper 与 Jasypt 主密钥**解耦** —— 独立密钥、可独立轮换，
+      #   不再复用主密钥（复用会让「轮换主密钥」连带把全站验证码摘要作废）。
+      #   缺失/为空时 compose 立即报错（fail-closed）：绝不静默回退到主密钥，
+      #   也绝不注入空串（空串会让 VerifyCodeHasher 拒绝启动，报错更难定位）。
+      VERIFY_CODE_PEPPER: ${VERIFY_CODE_PEPPER:?缺少 VERIFY_CODE_PEPPER，请先运行 scripts/init-secrets.sh}
       AUTH_TOKEN_TIMEOUT: ${AUTH_TOKEN_TIMEOUT:-43200}
       AUTH_LONG_LIVED_TIMEOUT: ${AUTH_LONG_LIVED_TIMEOUT:-604800}
       NACOS_SERVER_ADDR: nacos:8848
@@ -1193,4 +1203,12 @@ volumes:
 networks:
   zxyz-net:
     driver: bridge
+    # 钉死子网（ISSUE/15 C3 第 1 步；ISSUE/11 D4b 的硬前置）：
+    #   不钉时 Docker 动态分配网段 ⇒ 网络一重建就可能换段。
+    #   而最小权限 DB 账户一旦把 host 从 @'%' 收窄到网段（C3 第 2 步），换段即全站连不上库。
+    #   这里钉的值 = 线上实测现状（`zxyz_zxyz-net` = 172.19.0.0/16, gw 172.19.0.1），
+    #   故重建后网段不变 —— 本改动只是把「当前的巧合」变成「确定的事实」，行为等价。
+    ipam:
+      config:
+        - subnet: 172.19.0.0/16
 # 触发 CI 全量构建

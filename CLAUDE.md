@@ -176,7 +176,7 @@ WHEN 处理文件操作, DO 使用 `composables/` 中的组合函数，不直接
 WHEN 提交代码, DO 使用 conventional commits 格式（Husky + commitlint 强制）。
 WHEN 处理错误, DO 使用 `BusinessException` → `ErrorCode` → `Result` 模式。
 WHEN 添加 API 接口, DO 参考 `src/api/README.md` 中的模块规范。
-WHEN 添加 admin 页面, DO 放在 `src/views/setting/` 下，路由在 `src/router/index.js` 中配置。测试页面可不加 `beforeEnter` 权限守卫。
+WHEN 添加页面, DO 在 `src/router/index.js` 注册，并明确它的**访问控制来源**：默认受全局 `beforeEach` 登录检查保护；若 `meta` 声明了 `requiresAdmin` / `requiresSystemPermissionCenter`，则**必须**配对应的 `beforeEnter`（声明与执行必须一致 —— 否则导航里看不到，但直接输 URL 能进去）。需要免登录的页面**必须**加入 `publicRouteNames`，且该白名单是**显式且最小**的（新增必须同步改 `src/router/__tests__/route-guard-coverage.spec.js` 的断言）。WHEN 添加 admin 页面, DO 放在 `src/views/setting/` 下。**不再有「测试页面可不加 `beforeEnter`」的豁免**：未注册的路由不会被渲染，注册了就一定有明确的访问控制。
 WHEN 添加 setting 子路由, DO 确保 `route.name` 在 Setting 组件 watcher 的 `{ immediate: true }` 执行前已就绪，否则会被重定向到第一个可见 tab。
 
 ## Infrastructure & CI/CD

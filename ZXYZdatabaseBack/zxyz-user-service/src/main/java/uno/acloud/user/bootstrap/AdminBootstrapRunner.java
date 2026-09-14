@@ -11,8 +11,6 @@ import uno.acloud.user.infrastructure.client.TeamServicePermissionClient;
 import uno.acloud.user.mapper.UserMapper;
 import uno.acloud.user.service.impl.AuthService;
 
-import java.security.SecureRandom;
-
 /**
  * 部署时自动初始化初始管理员账号。
  *
@@ -22,14 +20,18 @@ import java.security.SecureRandom;
  * 同步调用会报 "Service Instance cannot be null"），异步重试既不阻塞启动，又能保证角色最终就绪。</p>
  *
  * <p>任何同步阶段异常都不会阻止应用启动——整体 try/catch，仅记日志。</p>
+ *
+ * <p><b>[安全默认 · D1-#1] 口令绝不落日志、也不自动生成。</b>
+ * 早期实现会在未配置口令时随机生成一个 16 位密码并把**明文**打进 WARN 日志；
+ * 而日志会被 promtail 采集进 Loki ⇒ 等于把管理员口令长期留存在日志系统里，
+ * 且「口令只存在于日志中」本身就意味着没有人真正持有一个可管理的凭据。
+ * 现在：未配置 {@code BOOTSTRAP_ADMIN_PASSWORD} 时**拒绝创建**并给出可执行的指引，
+ * 口令必须由部署者决定（scripts/init-secrets.sh 可生成并写入 .env）。</p>
  */
 @Slf4j
 @Component
 public class AdminBootstrapRunner implements ApplicationRunner {
 
-    private static final String PASSWORD_CHARS =
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    private static final int RANDOM_PASSWORD_LENGTH = 16;
     /** 角色分配后台重试次数与间隔（24 × 15s = 6 分钟，覆盖 team-service 慢启动场景） */
     private static final int ROLE_RETRY_ATTEMPTS = 24;
     private static final long ROLE_RETRY_INTERVAL_MS = 15_000L;
@@ -70,21 +72,22 @@ public class AdminBootstrapRunner implements ApplicationRunner {
             }
 
             String rawPassword = bootstrap.getPassword();
-            boolean generated = false;
-            if (rawPassword == null || rawPassword.isEmpty()) {
-                rawPassword = generateRandomPassword();
-                generated = true;
+            if (rawPassword == null || rawPassword.isBlank()) {
+                // [安全默认 · D1-#1] 不生成、不打印任何口令：
+                //   * 日志会被 promtail 采集进 Loki ⇒ 明文口令等于长期留存；
+                //   * 「随机生成 + 打进日志」还意味着没有人真正持有一个可管理的凭据。
+                // 因此宁可拒绝创建（应用照常启动），并要求部署者显式提供口令。
+                // 注意：此分支**不抛异常**，也不启动后台角色分配 —— 没有账号可分。
+                log.error("未配置初始管理员口令（BOOTSTRAP_ADMIN_PASSWORD 为空），"
+                        + "拒绝创建账号 {}。请先运行 scripts/init-secrets.sh 生成并写入 .env，"
+                        + "或在 .env 中显式设置 BOOTSTRAP_ADMIN_PASSWORD，然后重启本服务。"
+                        + "本次已跳过创建，应用继续启动。", LogMaskingUtil.maskUsername(username));
+                return;
             }
 
             Long userId = authService.createBootstrapAdmin(username, rawPassword);
-
-            if (generated) {
-                // 必须在角色分配之前打印：若角色分配失败（如 team-service 未就绪），密码也不能丢
-                log.warn("已创建初始管理员账号 {}，随机生成密码（明文，仅此一行，请立即登录修改密码！）: {}",
-                        LogMaskingUtil.maskUsername(username), rawPassword);
-            } else {
-                log.info("已创建初始管理员账号 {}", LogMaskingUtil.maskUsername(username));
-            }
+            log.info("已创建初始管理员账号 {}（口令来自 BOOTSTRAP_ADMIN_PASSWORD，不写入日志）",
+                    LogMaskingUtil.maskUsername(username));
 
             ensureRoleAsync(userId, username);
         } catch (Exception e) {
@@ -123,14 +126,5 @@ public class AdminBootstrapRunner implements ApplicationRunner {
         }, "admin-bootstrap-role");
         worker.setDaemon(true);
         worker.start();
-    }
-
-    private String generateRandomPassword() {
-        SecureRandom random = new SecureRandom();
-        StringBuilder sb = new StringBuilder(RANDOM_PASSWORD_LENGTH);
-        for (int i = 0; i < RANDOM_PASSWORD_LENGTH; i++) {
-            sb.append(PASSWORD_CHARS.charAt(random.nextInt(PASSWORD_CHARS.length())));
-        }
-        return sb.toString();
     }
 }

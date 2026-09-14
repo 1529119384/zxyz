@@ -162,6 +162,16 @@ gen_secret NACOS_AUTH_TOKEN base64_32
 gen_secret NACOS_AUTH_IDENTITY_VALUE
 gen_secret NACOS_PASSWORD
 gen_secret JASYPT_PASSWORD
+# A4：验证码摘要 pepper —— 与主密钥解耦的独立密钥。
+# 此前 user / email 两服务的 pepper 都写成 `${VERIFY_CODE_PEPPER:${JASYPT_PASSWORD:}}`，即缺省
+# 回退主密钥 ⇒ 轮换 JASYPT_PASSWORD 会连带作废所有在途验证码（用户重取即可，但体验受损）。
+# 现生成独立随机值写入 .env，轮换主密钥不再波及验证码校验。已存在真实值（运维单独配置过）的
+# 环境跳过，不回改历史 pepper —— 回改会让在途验证码立即失效。
+gen_secret VERIFY_CODE_PEPPER
+# D1-#1：初始管理员口令。与其它机密一样自动生成、写入 .env(600) —— 刻意不设默认值，
+# 也不回退到「随机生成 + 明文打进日志」（日志会进 Loki）。留空时 user-service 拒绝创建管理员。
+# 生成后请从 .env 读取，登录后立即改成只有自己知道的口令。
+gen_secret ADMIN_INIT_PASSWORD
 gen_secret GRAFANA_ADMIN_PASSWORD
 gen_secret EMAIL_CONFIG_SECRET
 # P2-A2: 服务级白名单矩阵每服务独立密钥（互不相同，且与 INTERNAL_SERVICE_TOKEN 不同）

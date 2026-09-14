@@ -41,6 +41,25 @@ DEPLOY_DIR="${DEPLOY_PATH:-/www/zxyz}"
 : "${IMAGE_TAG:?CI 必须通过 envs 注入 IMAGE_TAG（=github.sha）}"
 : "${IMAGE_PREFIX:?CI 必须通过 envs 注入 IMAGE_PREFIX}"
 
+# --- 记录已部署版本（审计 11 §7.16）---
+# 为什么不能只靠 .env：`.env` 里的 APP_IMAGE_TAG 在**手工重建**时会被 docker-compose.yml
+#   的兜底值覆盖（实测：手工 `docker compose up -d` 会落到 compose 里写死的旧 sha，
+#   该 tag 本地不存在、GHCR 也拉不到 ⇒ 重建中止）。故用独立文件记录
+#   「本次部署实际消费的不可变 tag」，作为判断线上跑的是哪一版的**唯一可信来源**。
+write_deployed_revision() {
+  local tag="$1"
+  local rollback="${2:-false}"
+  {
+    echo "DEPLOYED_REVISION=${tag}"
+    echo "DEPLOYED_AT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    echo "DEPLOY_ENV=${DEPLOY_ENV:-unknown}"
+    echo "DEPLOYED_BY=${GITHUB_ACTOR:-local}"
+    echo "ROLLBACK=${rollback}"
+  } > "${DEPLOY_DIR}/DEPLOYED_REVISION"
+  chmod 644 "${DEPLOY_DIR}/DEPLOYED_REVISION" 2>/dev/null || true
+  echo "已记录部署版本：${tag} → ${DEPLOY_DIR}/DEPLOYED_REVISION"
+}
+
 # --- 归一化 IMAGE_PREFIX 并 export（必须在任何 compose 调用之前）---
 # 为什么必须在这里做、而不是只写进 .env：
 #   docker-compose.yml 里是「裸拼接」—— ${IMAGE_PREFIX:-}zxyz-frontend-nginx:${APP_IMAGE_TAG:-latest}
@@ -515,6 +534,7 @@ else
 
         if [ "$ROLLBACK_OK" = true ]; then
           echo "===== Rollback successful: services restored to $PREV_TAG ====="
+          write_deployed_revision "$PREV_TAG" "true"
           docker compose ps
           echo "::notice::AUTO_ROLLBACK_SUCCESS: reverted to $PREV_TAG"
           exit 0
@@ -533,6 +553,8 @@ else
     fi
   fi
 fi
+
+write_deployed_revision "$IMAGE_TAG" "false"
 
 echo "===== Container status ====="
 docker compose ps

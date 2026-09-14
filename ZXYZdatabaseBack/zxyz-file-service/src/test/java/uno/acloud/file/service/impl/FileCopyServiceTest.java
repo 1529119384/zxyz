@@ -15,6 +15,8 @@ import uno.acloud.file.infrastructure.entity.FileNode;
 import uno.acloud.file.infrastructure.entity.Folder;
 import uno.acloud.file.infrastructure.mapper.FileMapper;
 import uno.acloud.file.infrastructure.mapper.UsageLedgerMapper;
+import uno.acloud.file.storage.StorageProvider;
+import uno.acloud.file.storage.StorageProviderRegistry;
 import uno.acloud.file.vo.BatchOperationDetailVO;
 
 import java.util.ArrayList;
@@ -55,6 +57,9 @@ class FileCopyServiceTest {
     @Mock
     private UsageLedgerMapper usageLedgerMapper;
 
+    @Mock
+    private StorageProviderRegistry storageProviderRegistry;
+
     private FileCopyService fileCopyService;
 
     @BeforeEach
@@ -62,7 +67,7 @@ class FileCopyServiceTest {
         fileCopyService = new FileCopyService(
                 fileMapper, fileDomainValidator, filePathResolver,
                 fileAccessGuardService, fileObjectReferenceService, helper, transactionTemplate, 500,
-                projectStorageCheckClient, usageLedgerMapper);
+                projectStorageCheckClient, usageLedgerMapper, storageProviderRegistry);
         // Mock TransactionTemplate to execute lambdas directly
         lenient().doAnswer(invocation -> {
             java.util.function.Consumer<?> callback = invocation.getArgument(0);
@@ -131,8 +136,11 @@ class FileCopyServiceTest {
                 List.of(fileNodeId), targetParentId, teamId, userId);
 
         assertNotNull(result);
-        verify(fileMapper).insertFileItem(any(FileItem.class));
-        verify(fileObjectReferenceService).retainReference(eq("uuid-test.txt"), anyString());
+        // 副本行必须带非空 storage_provider：insertFileItem 的 INSERT 显式绑定该列，
+        // 实体字段为 null 会落库为字面量 NULL（列默认值 'oss' 不生效）。
+        verify(fileMapper).insertFileItem(argThat(item -> "oss".equals(item.getStorageProvider())));
+        // 引用计数用的 provider 必须与落库值同源，两者不得再分叉。
+        verify(fileObjectReferenceService).retainReference(eq("uuid-test.txt"), eq("oss"));
     }
 
     // ============ copyFiles — 复制后必须失效用量缓存（用户报障：容量未及时刷新） ============
@@ -217,6 +225,11 @@ class FileCopyServiceTest {
             item.setTeamId(teamId);
             item.setSpaceType(2);
             item.setFileSize(10L);
+            // 必须设置 uuidName + storageProvider：真实文件行必然有物理对象（uuid_name 非空）
+            // 与存储后端；cloneFileItem 用它们做引用计数，空 provider 在生产路径上是 fail-fast
+            // （FileObjectReferenceManager 会直接抛 BusinessException，不是静默跳过）。
+            item.setUuidName("uuid-f" + i + ".txt");
+            item.setStorageProvider("oss");
             topLevel.add(item);
         }
 
@@ -363,7 +376,7 @@ class FileCopyServiceTest {
         // Verify the cloned file has the renamed original name
         verify(fileMapper).insertFileItem(argThat(item ->
                 "doc(1).txt".equals(item.getOriginalName())));
-        verify(fileObjectReferenceService).retainReference(eq("uuid-doc.txt"), anyString());
+        verify(fileObjectReferenceService).retainReference(eq("uuid-doc.txt"), eq("oss"));
     }
 
     // ==================== copyFiles — empty file list should reject ====================
@@ -516,5 +529,125 @@ class FileCopyServiceTest {
                 fileCopyService.copyFiles(List.of(folderId), targetParentId, teamId, userId));
         assertEquals(ErrorCode.BAD_REQUEST, ex.getErrorCode());
         assertTrue(ex.getMessage().contains("501")); // 1 top-level + 500 children
+    }
+
+    // ============ 回归：副本必须继承源的 storage_provider，不能落库为 NULL ============
+    //
+    // 背景：FileMapper.insertFileItem 的 INSERT 语句显式列出了 storage_provider 列，
+    // 因此实体字段为 null 时写入的是字面量 NULL，列默认值 'oss' 不会生效。
+    // 该副本一旦再被复制，FileObjectReferenceManager#retainReference 会以
+    // 「storageProvider 不能为空」直接抛 BusinessException ⇒ 副本无法再被复制
+    // （用户报障：#121 复制文件夹后副本相关操作失败）。
+    // 这组用例在修复前必然失败 —— 因为单元测试里 fileObjectReferenceService 是 mock，
+    // 空 provider 不会抛异常，缺陷被静默吞掉。
+
+    @Test
+    void copyFiles_cloneInheritsSourceStorageProviderInsteadOfNull() {
+        Long userId = 1L;
+        Long fileNodeId = 100L;
+        Long targetParentId = 200L;
+        Long teamId = 10L;
+
+        FileItem sourceFile = FileItem.create();
+        sourceFile.setId(fileNodeId);
+        sourceFile.setOriginalName("a.txt");
+        sourceFile.setStorePath("/a.txt");
+        sourceFile.setUploadUserId(userId);
+        sourceFile.setTeamId(teamId);
+        sourceFile.setSpaceType(2);
+        sourceFile.setUuidName("uuid-a.txt");
+        sourceFile.setFileSize(1L);
+        // 刻意用非默认值：证明副本继承的是「源」的 provider，而不是被默认值覆盖
+        sourceFile.setStorageProvider("local");
+
+        Folder targetFolder = Folder.create();
+        targetFolder.setId(targetParentId);
+        targetFolder.setStorePath("/target");
+        targetFolder.setTeamId(teamId);
+        targetFolder.setSpaceType(2);
+        SpaceTarget spaceTarget = new SpaceTarget(teamId, 2, null);
+
+        when(fileDomainValidator.requireMovableNodes(anyList())).thenReturn(List.of(sourceFile));
+        when(fileDomainValidator.requireTargetFolder(targetParentId)).thenReturn(targetFolder);
+        when(helper.resolveOperationTarget(targetParentId, teamId, null, null, targetFolder))
+                .thenReturn(spaceTarget);
+        when(helper.resolveCopyName(eq(sourceFile), any(FileOperationHelper.CopyTargetContext.class), eq(userId)))
+                .thenReturn("a.txt");
+        when(helper.isRenamed(sourceFile, "a.txt")).thenReturn(false);
+        when(helper.buildDetail(any(FileNode.class), anyString(), anyString(), anyBoolean(),
+                anyString(), anyInt(), anyString()))
+                .thenReturn(new BatchOperationDetailVO.ItemDetail(
+                        fileNodeId, "a.txt", FileNodeType.FILE, "copied",
+                        false, "a.txt", "success", ErrorCode.SUCCESS, "success"));
+        when(helper.buildBatchResult(anyList(), eq(targetParentId)))
+                .thenReturn(new BatchOperationDetailVO(1, 1, 0, 0, 0, targetParentId, List.of()));
+        when(fileMapper.insertFileItem(any(FileItem.class))).thenAnswer(invocation -> {
+            FileItem item = invocation.getArgument(0);
+            ReflectionTestUtils.setField(item, "id", 1000L);
+            return 1;
+        });
+
+        fileCopyService.copyFiles(List.of(fileNodeId), targetParentId, teamId, userId);
+
+        verify(fileMapper).insertFileItem(argThat(item -> "local".equals(item.getStorageProvider())));
+        verify(fileObjectReferenceService).retainReference(eq("uuid-a.txt"), eq("local"));
+    }
+
+    @Test
+    void copyFiles_nullSourceStorageProviderFallsBackToDefaultProvider() {
+        Long userId = 1L;
+        Long fileNodeId = 101L;
+        Long targetParentId = 200L;
+        Long teamId = 10L;
+
+        // 存量行，或由旧版本克隆出来的副本：storage_provider 为 NULL
+        FileItem legacySource = FileItem.create();
+        legacySource.setId(fileNodeId);
+        legacySource.setOriginalName("legacy.txt");
+        legacySource.setStorePath("/legacy.txt");
+        legacySource.setUploadUserId(userId);
+        legacySource.setTeamId(teamId);
+        legacySource.setSpaceType(2);
+        legacySource.setUuidName("uuid-legacy.txt");
+        legacySource.setFileSize(1L);
+        legacySource.setStorageProvider(null);
+
+        StorageProvider defaultProvider = mock(StorageProvider.class);
+        when(defaultProvider.providerId()).thenReturn("oss");
+        when(storageProviderRegistry.getDefaultProvider()).thenReturn(defaultProvider);
+
+        Folder targetFolder = Folder.create();
+        targetFolder.setId(targetParentId);
+        targetFolder.setStorePath("/target");
+        targetFolder.setTeamId(teamId);
+        targetFolder.setSpaceType(2);
+        SpaceTarget spaceTarget = new SpaceTarget(teamId, 2, null);
+
+        when(fileDomainValidator.requireMovableNodes(anyList())).thenReturn(List.of(legacySource));
+        when(fileDomainValidator.requireTargetFolder(targetParentId)).thenReturn(targetFolder);
+        when(helper.resolveOperationTarget(targetParentId, teamId, null, null, targetFolder))
+                .thenReturn(spaceTarget);
+        when(helper.resolveCopyName(eq(legacySource), any(FileOperationHelper.CopyTargetContext.class), eq(userId)))
+                .thenReturn("legacy.txt");
+        when(helper.isRenamed(legacySource, "legacy.txt")).thenReturn(false);
+        when(helper.buildDetail(any(FileNode.class), anyString(), anyString(), anyBoolean(),
+                anyString(), anyInt(), anyString()))
+                .thenReturn(new BatchOperationDetailVO.ItemDetail(
+                        fileNodeId, "legacy.txt", FileNodeType.FILE, "copied",
+                        false, "legacy.txt", "success", ErrorCode.SUCCESS, "success"));
+        when(helper.buildBatchResult(anyList(), eq(targetParentId)))
+                .thenReturn(new BatchOperationDetailVO(1, 1, 0, 0, 0, targetParentId, List.of()));
+        when(fileMapper.insertFileItem(any(FileItem.class))).thenAnswer(invocation -> {
+            FileItem item = invocation.getArgument(0);
+            ReflectionTestUtils.setField(item, "id", 1001L);
+            return 1;
+        });
+
+        fileCopyService.copyFiles(List.of(fileNodeId), targetParentId, teamId, userId);
+
+        // 修复前：副本 provider 落库为 NULL 且 retainReference 收到 null（真跑时直接抛异常）
+        verify(fileMapper).insertFileItem(argThat(item -> "oss".equals(item.getStorageProvider())));
+        verify(fileObjectReferenceService).retainReference(eq("uuid-legacy.txt"), eq("oss"));
+        verify(storageProviderRegistry).getDefaultProvider();
     }
 }
