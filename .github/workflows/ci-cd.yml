@@ -342,8 +342,11 @@ jobs:
       - name: shellcheck (error level)
         run: |
           # 只报 error 级：warning/info 数量大且多为风格问题，全量会淹没信号。
-          # 排除 SC2296：scripts/setup-acr.sh 中写的是 GitHub Actions 的 ${{ }} 语法
-          #   （会被 Actions 引擎先行展开），shellcheck 不认 —— 属误报。
+          # 排除 SC2296：scripts/setup-acr.sh 中写的是 GitHub Actions 的表达式插值语法
+          #   （双花括号，会被 Actions 引擎先行展开），shellcheck 不认 —— 属误报。
+          # ⚠️ 本块注释刻意**不写出**那个两对花括号的字面量：`run:` 是块标量，GitHub 会把
+          #   注释一并当模板串扫描，一旦出现「空表达式」就会判定整个 workflow 无效
+          #   （症状：run 以文件路径为名、0 个 job、created==updated 立即 failure）。
           mapfile -t FILES < <(git ls-files '*.sh' | grep -E '^(scripts|sql|nacos-config|deploy)/' || true)
           if [ "${#FILES[@]}" -eq 0 ]; then
             echo "没有 shell 脚本，跳过。"
