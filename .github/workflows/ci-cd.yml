@@ -654,6 +654,14 @@ jobs:
           # 仓库根是 `.gitleaks.toml`（带点），而 action 的自动探测只认 `gitleaks.toml`，
           # 故必须显式指定；否则会静默退回默认配置 —— 豁免失效、文档示例变误报红。
           GITLEAKS_CONFIG: .gitleaks.toml
+          # ⚠️ 必须显式指定 gitleaks 版本（2026-09-14 实测定位）：
+          #   action 的 dist 里写的是 `process.env.GITLEAKS_VERSION || "8.24.3"` —— 未设时回退到
+          #   它**内置的旧默认值 8.24.3**，而 8.24.3 只认顶层单数 `[allowlist]`(map)、不认
+          #   `[[allowlists]]`(复数数组)，会把整个 `.gitleaks.toml` 的豁免**静默忽略**（无报错无警告）。
+          #   后果：全历史扫描（workflow_dispatch / force_deploy）恒报 5 处「已核实的历史命中」⇒
+          #   secret-scan 成为 deploy 的永久阻断点，且豁免形同不存在（真写入新密钥也拦不住）。
+          #   8.30.1 已本地实测：同一份配置下 `no leaks found`。升级本值请同步复核配置语法。
+          GITLEAKS_VERSION: 8.30.1
 
   # ============================================================
   # Job 2: 后端质量检查
