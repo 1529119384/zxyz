@@ -14,6 +14,7 @@ import uno.acloud.im.config.TeamServiceProperties;
 import uno.acloud.im.infrastructure.client.MemberRequest;
 import uno.acloud.im.infrastructure.client.PermissionCheckRequest;
 import uno.acloud.im.infrastructure.client.RoleGrantRequest;
+import uno.acloud.common.permission.TeamPermissionLocalCache;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,11 +35,13 @@ public class TeamPermissionService {
     private final String internalServiceToken;
     private final String selfServiceKey;
     private final String sourceService;
+    private final TeamPermissionLocalCache localCache;
 
     public TeamPermissionService(RestClient restClient,
                                  ObjectMapper objectMapper,
                                  TeamServiceProperties teamServiceProperties,
                                  ServiceProperties serviceProperties,
+                                 TeamPermissionLocalCache localCache,
                                  @org.springframework.beans.factory.annotation.Value("${spring.application.name:unknown}") String sourceService,
                                  @org.springframework.beans.factory.annotation.Value("${app.internal-service-key:}") String selfServiceKey) {
         this.restClient = restClient;
@@ -47,26 +50,48 @@ public class TeamPermissionService {
         this.internalServiceToken = serviceProperties.getInternalServiceToken();
         this.sourceService = sourceService;
         this.selfServiceKey = selfServiceKey;
+        this.localCache = localCache;
     }
 
     // ==================== 权限检查 ====================
 
-    /** 检查成员是否有某团队权限 */
+    /**
+     * 检查成员是否有某团队权限。
+     * <p>
+     * 走 {@link TeamPermissionLocalCache} 做进程内缓存：一次业务请求里往往要问十几次权限，
+     * 此前每次都是一次跨服务 HTTP。命中即返回，未命中才走远程并回填。
+     * <p>
+     * 注意这里<b>只缓存 {@code /check} 的布尔返回值</b>，不缓存 {@code /list-permissions}
+     * 的结果集 —— 两个端点语义未必等价（前者可能额外考虑团队所有者/系统管理员），
+     * 为不悄悄改变鉴权语义，保持「一次 code 一个条目」。
+     * <p>
+     * 失效由 team-service 在权限/角色变更时通过 Redis Pub/Sub 广播
+     * （见 {@link TeamPermissionLocalCache#INVALIDATION_TOPIC}）；TTL 5 分钟仅作兜底。
+     */
     public boolean hasPermission(Long teamId, Long userId, String permissionCode) {
+        Boolean cached = localCache.getIfPresent(teamId, userId, permissionCode);
+        if (cached != null) {
+            return cached;
+        }
+        boolean result;
         try {
             String responseBody = postToTeamService("/api/internal/permissions/team/check",
                     new PermissionCheckRequest(teamId, userId, permissionCode));
             JsonNode root = objectMapper.readTree(responseBody);
             if (root.path("code").asInt() != ErrorCode.SUCCESS) {
-                return false;
+                result = false;
+            } else {
+                result = root.path("data").asBoolean(false);
             }
-            return root.path("data").asBoolean(false);
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
             log.error("检查团队权限失败: teamId={}, userId={}, permissionCode={}", teamId, userId, permissionCode, e);
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "检查团队权限失败");
         }
+        // 仅在成功拿到结果后回填；异常路径不回填，避免把失败结果缓存住
+        localCache.put(teamId, userId, permissionCode, result);
+        return result;
     }
 
     /** 要求成员有某权限，无权限则抛出异常 */
