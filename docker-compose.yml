@@ -1203,12 +1203,29 @@ volumes:
 networks:
   zxyz-net:
     driver: bridge
-    # 钉死子网（ISSUE/15 C3 第 1 步；ISSUE/11 D4b 的硬前置）：
-    #   不钉时 Docker 动态分配网段 ⇒ 网络一重建就可能换段。
-    #   而最小权限 DB 账户一旦把 host 从 @'%' 收窄到网段（C3 第 2 步），换段即全站连不上库。
-    #   这里钉的值 = 线上实测现状（`zxyz_zxyz-net` = 172.19.0.0/16, gw 172.19.0.1），
-    #   故重建后网段不变 —— 本改动只是把「当前的巧合」变成「确定的事实」，行为等价。
-    ipam:
-      config:
-        - subnet: 172.19.0.0/16
+    # ⚠️【C3 第 1 步「钉死子网」：代码已备，但**必须与维护窗口同批执行**，不可随普通部署上线】
+    #   （2026-09-14 实测事故：run 34843948467）
+    #
+    #   【为什么要钉】不钉时 Docker 动态分配网段 ⇒ 网络一重建就可能换段；而最小权限 DB 账户
+    #     一旦把 host 从 @'%' 收窄到网段（C3 第 2 步），换段即全站连不上库。目标值与线上现状一致：
+    #     `zxyz_zxyz-net` = 172.19.0.0/16（网关 172.19.0.1）。写法即下方被注释掉的 ipam 块。
+    #
+    #   【为什么不能直接写在这里】compose 会把网络配置哈希记在网络标签
+    #     `com.docker.compose.config-hash` 上；**声明 ipam 会改变该哈希** ⇒ 每次 `compose up`
+    #     都判定「网络需重建」⇒ 先停掉 11 个业务容器并把它们从网络断开，再尝试 `docker network rm`。
+    #     而 mysql / redis / rabbitmq / nacos 仍挂在该网络上（部署固定用 `--no-deps`，从不重建 infra）
+    #     ⇒ 删除网络失败 ⇒ compose 中止。**实测后果：11 个业务容器停机且网络挂载为空 ⇒ 全站不可用**
+    #     （容器 Up 但解析不到 mysql/gateway 等，frontend-nginx 直接 crash-loop）。
+    #     注意：钉的值虽与现状一致，但「哈希不同」这一点与值无关 —— 行为**并不**等价。
+    #
+    #   【窗口里怎么做】全栈重建，让 compose 自己创建网络（带上正确哈希）：
+    #       cd /www/zxyz && docker compose down          # 全栈停止并移除容器（数据在 volume 内，不受影响）
+    #       docker network rm zxyz_zxyz-net              # 此时已无 endpoint，删除成功
+    #       放开下面的 ipam 块 → docker compose up -d    # compose 重建网络（含子网）+ 全部容器
+    #     顺序不可颠倒：先 up 只会再次撞上「网络有 active endpoints」而失败。
+    #
+    #   【窗口执行前保持裸 bridge】—— 与既有网络的配置哈希一致 ⇒ 部署不会重建网络。
+    # ipam:
+    #   config:
+    #     - subnet: 172.19.0.0/16
 # 触发 CI 全量构建
