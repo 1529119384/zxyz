@@ -8,7 +8,7 @@ import uno.acloud.file.infrastructure.entity.FileItem;
 import uno.acloud.file.infrastructure.entity.UsageLedger;
 import uno.acloud.file.infrastructure.mapper.FileMapper;
 import uno.acloud.file.infrastructure.mapper.UsageLedgerMapper;
-import uno.acloud.file.util.TransactionUtils;
+import uno.acloud.common.util.TransactionUtils;
 
 import java.util.List;
 import java.util.Optional;

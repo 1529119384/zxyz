@@ -13,7 +13,7 @@ import uno.acloud.file.infrastructure.mapper.FileMapper;
 import uno.acloud.file.infrastructure.mapper.UsageLedgerMapper;
 import uno.acloud.file.service.FileLifecyclePort;
 import uno.acloud.common.util.TransactionHelper;
-import uno.acloud.file.util.TransactionUtils;
+import uno.acloud.common.util.TransactionUtils;
 
 import java.util.HashMap;
 import java.util.HashSet;

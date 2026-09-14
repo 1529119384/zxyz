@@ -3,9 +3,8 @@ package uno.acloud.im.application;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.util.TransactionUtils;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.domain.enums.MessageType;
 import uno.acloud.im.infrastructure.persistence.entity.ImMessage;
@@ -102,12 +101,7 @@ public class TeamNotificationConversationService {
         ImMessageVO updated = imMessageService.getMessageVOById(messageId);
         // Netty push deferred to afterCommit to avoid holding DB connection during remote I/O
         List<Long> memberUserIds = conversationMapper.listActiveMemberUserIds(conversationId);
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                realtimePushService.pushMessageReceived(memberUserIds, updated);
-            }
-        });
+        TransactionUtils.runAfterCommit(() -> realtimePushService.pushMessageReceived(memberUserIds, updated));
         return updated;
     }
 
@@ -123,12 +117,7 @@ public class TeamNotificationConversationService {
         ImMessageVO messageVO = imMessageService.getMessageVOById(message.getId());
         // Netty push deferred to afterCommit to avoid holding DB connection during remote I/O
         List<Long> memberUserIds = conversationMapper.listActiveMemberUserIds(conversationId);
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                realtimePushService.pushMessageReceived(memberUserIds, messageVO);
-            }
-        });
+        TransactionUtils.runAfterCommit(() -> realtimePushService.pushMessageReceived(memberUserIds, messageVO));
         return messageVO;
     }
 

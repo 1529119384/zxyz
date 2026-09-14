@@ -9,7 +9,7 @@ import uno.acloud.exception.BusinessException;
 import uno.acloud.file.infrastructure.entity.FileNode;
 import uno.acloud.file.infrastructure.entity.Folder;
 import uno.acloud.file.infrastructure.mapper.FileMapper;
-import uno.acloud.file.util.TransactionUtils;
+import uno.acloud.common.util.TransactionUtils;
 import uno.acloud.file.vo.BatchOperationDetailVO;
 
 import java.util.ArrayList;

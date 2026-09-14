@@ -3,13 +3,12 @@ package uno.acloud.im.application;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.TeamErrorCode;
 import uno.acloud.common.TeamPermissionCodes;
 import uno.acloud.common.TeamRoleCodes;
+import uno.acloud.common.util.TransactionUtils;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.domain.enums.SystemNotificationType;
 import uno.acloud.im.domain.enums.TeamMemberStatus;
@@ -104,17 +103,13 @@ public class JoinRequestService {
         Long teamId = request.getTeamId();
         Long requestId = request.getId();
         Long linkId = request.getLinkId();
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                domainEventPublisher.publish(ImDomainEventType.TEAM_JOIN_REQUEST_SUBMITTED, Map.of(
+        TransactionUtils.runAfterCommit(() -> domainEventPublisher.publish(
+                ImDomainEventType.TEAM_JOIN_REQUEST_SUBMITTED, Map.of(
                         "teamId", teamId,
                         "userId", userId,
                         "requestId", requestId,
                         "linkId", linkId
-                ));
-            }
-        });
+                )));
         return toJoinRequestVO(request);
     }
 
@@ -157,29 +152,26 @@ public class JoinRequestService {
         // Remote calls (HTTP + MQ) deferred to afterCommit to avoid holding DB connection
         Long teamId = request.getTeamId();
         Long userId = request.getUserId();
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                // 审计 2.2.2：afterCommit 里抛异常会让接口返回 500，但 join_request 早已提交为 APPROVED
-                // ——用户看到「失败」却已被批准，且 MEMBER 角色永久未授予。这里逐个 catch：
-                // 授权失败只记日志并保留 requestId 作为人工补偿线索，不再把已提交的事务伪装成失败。
-                // （更完整的补偿表/对账方案需结合运维告警渠道落地，已在审计文档中列为待决策项。）
-                try {
-                    teamPermissionService.grantBuiltInRole(teamId, userId, TeamRoleCodes.MEMBER);
-                } catch (Exception e) {
-                    log.error("加入申请已通过但授予 MEMBER 角色失败（需人工补偿）: teamId={}, userId={}, requestId={}",
-                            teamId, userId, requestId, e);
-                }
-                try {
-                    domainEventPublisher.publish(ImDomainEventType.TEAM_JOIN_REQUEST_APPROVED, Map.of(
-                            "teamId", teamId,
-                            "operatorUserId", operatorUserId,
-                            "userId", userId,
-                            "requestId", requestId
-                    ));
-                } catch (Exception e) {
-                    log.error("发布加入申请通过事件失败（事务已提交，不可回滚）: requestId={}", requestId, e);
-                }
+        TransactionUtils.runAfterCommit(() -> {
+            // 审计 2.2.2：afterCommit 里抛异常会让接口返回 500，但 join_request 早已提交为 APPROVED
+            // ——用户看到「失败」却已被批准，且 MEMBER 角色永久未授予。这里逐个 catch：
+            // 授权失败只记日志并保留 requestId 作为人工补偿线索，不再把已提交的事务伪装成失败。
+            // （更完整的补偿表/对账方案需结合运维告警渠道落地，已在审计文档中列为待决策项。）
+            try {
+                teamPermissionService.grantBuiltInRole(teamId, userId, TeamRoleCodes.MEMBER);
+            } catch (Exception e) {
+                log.error("加入申请已通过但授予 MEMBER 角色失败（需人工补偿）: teamId={}, userId={}, requestId={}",
+                        teamId, userId, requestId, e);
+            }
+            try {
+                domainEventPublisher.publish(ImDomainEventType.TEAM_JOIN_REQUEST_APPROVED, Map.of(
+                        "teamId", teamId,
+                        "operatorUserId", operatorUserId,
+                        "userId", userId,
+                        "requestId", requestId
+                ));
+            } catch (Exception e) {
+                log.error("发布加入申请通过事件失败（事务已提交，不可回滚）: requestId={}", requestId, e);
             }
         });
         request.setStatus(JOIN_REQUEST_APPROVED);
@@ -205,17 +197,13 @@ public class JoinRequestService {
         // MQ publish deferred to afterCommit to avoid holding DB connection during remote I/O
         Long teamId = request.getTeamId();
         Long userId = request.getUserId();
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                domainEventPublisher.publish(ImDomainEventType.TEAM_JOIN_REQUEST_REJECTED, Map.of(
+        TransactionUtils.runAfterCommit(() -> domainEventPublisher.publish(
+                ImDomainEventType.TEAM_JOIN_REQUEST_REJECTED, Map.of(
                         "teamId", teamId,
                         "operatorUserId", operatorUserId,
                         "userId", userId,
                         "requestId", requestId
-                ));
-            }
-        });
+                )));
         request.setStatus(JOIN_REQUEST_REJECTED);
         return toJoinRequestVO(request);
     }

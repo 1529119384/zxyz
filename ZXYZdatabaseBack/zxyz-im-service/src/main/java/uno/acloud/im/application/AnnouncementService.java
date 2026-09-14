@@ -3,11 +3,10 @@ package uno.acloud.im.application;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.TeamErrorCode;
 import uno.acloud.common.TeamPermissionCodes;
+import uno.acloud.common.util.TransactionUtils;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.domain.enums.MessageType;
 import uno.acloud.im.domain.event.ImDomainEventType;
@@ -70,17 +69,13 @@ public class AnnouncementService {
         teamNotificationConversationService.appendAnnouncement(teamId, operatorUserId, title, content);
         // MQ publish deferred to afterCommit to avoid holding DB connection during remote I/O
         Long messageId = message.getId();
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                domainEventPublisher.publish(ImDomainEventType.TEAM_ANNOUNCEMENT_PUBLISHED, Map.of(
+        TransactionUtils.runAfterCommit(() -> domainEventPublisher.publish(
+                ImDomainEventType.TEAM_ANNOUNCEMENT_PUBLISHED, Map.of(
                         "teamId", teamId,
                         "operatorUserId", operatorUserId,
                         "messageId", messageId,
                         "title", title
-                ));
-            }
-        });
+                )));
         ImMessageVO messageVO = imMessageService.getMessageVOById(message.getId());
         return new ImMessageService.StoreMessageResult(message.getId(), messageVO, conversationMapper.listActiveMemberUserIds(conversationId));
     }
