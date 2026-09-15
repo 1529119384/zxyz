@@ -1,0 +1,543 @@
+{
+  "endpoints" : [ {
+    "method" : "GET",
+    "path" : "/api/email/internal/records",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "uno.acloud.email.dto.EmailRecordPageVO"
+  }, {
+    "method" : "GET",
+    "path" : "/api/email/internal/records/{id}",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "uno.acloud.email.vo.EmailRecordVO"
+  }, {
+    "method" : "GET",
+    "path" : "/api/email/internal/runtime-status",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "uno.acloud.email.dto.EmailRuntimeStatusVO"
+  }, {
+    "method" : "POST",
+    "path" : "/api/email/internal/scheduled-batches",
+    "requestBodyType" : "uno.acloud.email.dto.BatchSendEmailRequest",
+    "requestBodyJsonFields" : [ "businessId", "businessType", "contentHtml", "recipients", "scheduledTime", "subject" ],
+    "responseDataType" : "java.util.List<java.lang.Long>"
+  }, {
+    "method" : "POST",
+    "path" : "/api/email/internal/send",
+    "requestBodyType" : "uno.acloud.email.dto.SendEmailRequest",
+    "requestBodyJsonFields" : [ "businessId", "businessType", "contentHtml", "recipient", "scheduledTime", "subject" ],
+    "responseDataType" : "java.lang.Long"
+  }, {
+    "method" : "POST",
+    "path" : "/api/email/internal/send-batch",
+    "requestBodyType" : "uno.acloud.email.dto.BatchSendEmailRequest",
+    "requestBodyJsonFields" : [ "businessId", "businessType", "contentHtml", "recipients", "scheduledTime", "subject" ],
+    "responseDataType" : "java.util.List<java.lang.Long>"
+  }, {
+    "method" : "POST",
+    "path" : "/api/email/internal/send-template",
+    "requestBodyType" : "uno.acloud.email.dto.SendTemplateEmailRequest",
+    "requestBodyJsonFields" : [ "businessId", "businessType", "recipient", "scheduledTime", "templateCode", "variables" ],
+    "responseDataType" : "java.lang.Long"
+  }, {
+    "method" : "POST",
+    "path" : "/api/email/internal/send-template-batch",
+    "requestBodyType" : "uno.acloud.email.dto.BatchSendTemplateEmailRequest",
+    "requestBodyJsonFields" : [ "businessId", "businessType", "recipients", "scheduledTime", "templateCode", "variables" ],
+    "responseDataType" : "java.util.List<java.lang.Long>"
+  }, {
+    "method" : "GET",
+    "path" : "/api/email/internal/server-configs",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.util.List<uno.acloud.email.vo.EmailServerConfigVO>"
+  }, {
+    "method" : "POST",
+    "path" : "/api/email/internal/server-configs",
+    "requestBodyType" : "uno.acloud.email.dto.EmailServerConfigRequest",
+    "requestBodyJsonFields" : [ "configName", "fromAddress", "host", "password", "port", "transportStrategy", "username" ],
+    "responseDataType" : "uno.acloud.email.vo.EmailServerConfigVO"
+  }, {
+    "method" : "GET",
+    "path" : "/api/email/internal/server-configs/current",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "uno.acloud.email.vo.EmailServerConfigVO"
+  }, {
+    "method" : "PUT",
+    "path" : "/api/email/internal/server-configs/{id}",
+    "requestBodyType" : "uno.acloud.email.dto.EmailServerConfigRequest",
+    "requestBodyJsonFields" : [ "configName", "fromAddress", "host", "password", "port", "transportStrategy", "username" ],
+    "responseDataType" : "uno.acloud.email.vo.EmailServerConfigVO"
+  }, {
+    "method" : "POST",
+    "path" : "/api/email/internal/server-configs/{id}/activate",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "uno.acloud.email.vo.EmailServerConfigVO"
+  }, {
+    "method" : "POST",
+    "path" : "/api/email/internal/server-configs/{id}/test",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "uno.acloud.email.dto.EmailConnectivityTestVO"
+  }, {
+    "method" : "POST",
+    "path" : "/api/email/internal/verify-codes/check",
+    "requestBodyType" : "uno.acloud.email.dto.CheckVerifyCodeRequest",
+    "requestBodyJsonFields" : [ "code", "email", "scene" ],
+    "responseDataType" : "java.lang.Void"
+  }, {
+    "method" : "POST",
+    "path" : "/api/email/internal/verify-codes/send",
+    "requestBodyType" : "uno.acloud.email.dto.SendVerifyCodeRequest",
+    "requestBodyJsonFields" : [ "email", "requestIp", "scene" ],
+    "responseDataType" : "java.lang.Void"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/files/batch-share-children-projection",
+    "requestBodyType" : "uno.acloud.file.dto.InternalBatchParentIdsRequest",
+    "requestBodyJsonFields" : [ "parentIds" ],
+    "responseDataType" : "java.util.Map<java.lang.Long, java.util.List<uno.acloud.file.controller.model.ShareFileProjectionVO>>"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/files/batch-share-projection",
+    "requestBodyType" : "uno.acloud.file.dto.InternalBatchFileIdsRequest",
+    "requestBodyJsonFields" : [ "fileIds" ],
+    "responseDataType" : "java.util.List<uno.acloud.file.controller.model.ShareFileProjectionVO>"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/files/batch-share-projection-with-deleted",
+    "requestBodyType" : "uno.acloud.file.dto.InternalBatchFileIdsRequest",
+    "requestBodyJsonFields" : [ "fileIds" ],
+    "responseDataType" : "java.util.List<uno.acloud.file.controller.model.ShareFileProjectionVO>"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/files/share-access-check",
+    "requestBodyType" : "uno.acloud.file.dto.InternalShareAccessCheckRequest",
+    "requestBodyJsonFields" : [ "fileIds", "userId" ],
+    "responseDataType" : "java.lang.Void"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/files/{fileId}/share-download-url",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.lang.String"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/files/{fileId}/share-projection",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "uno.acloud.file.controller.model.ShareFileProjectionVO"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/files/{fileId}/stream",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "void"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/files/{fileId}/stream-info",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.lang.String"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/files/{parentId}/share-children-projection",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.util.List<uno.acloud.file.controller.model.ShareFileProjectionVO>"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/im-file-cards/resolve",
+    "requestBodyType" : "uno.acloud.file.dto.im.FileCardResolveRequest",
+    "requestBodyJsonFields" : [ "entries", "entryCount", "ownerUserId", "parentId", "shareType" ],
+    "responseDataType" : "uno.acloud.file.vo.im.FileCardResolveVO"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/im-file-cards/snapshot",
+    "requestBodyType" : "uno.acloud.file.dto.im.FileCardSnapshotRequest",
+    "requestBodyJsonFields" : [ "fileIds" ],
+    "responseDataType" : "uno.acloud.file.vo.im.FileCardSnapshotVO"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/im/system-notifications/batch",
+    "requestBodyType" : "uno.acloud.im.dto.InternalBatchSystemNotificationRequest",
+    "requestBodyJsonFields" : [ "businessId", "businessType", "content", "teamId", "title", "type", "userIds" ],
+    "responseDataType" : "java.lang.Void"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/im/team-sync",
+    "requestBodyType" : "uno.acloud.im.dto.InternalTeamSyncRequest",
+    "requestBodyJsonFields" : [ "avatar", "description", "name", "ownerEmail", "ownerName", "ownerUserId", "ownerUsername", "teamId" ],
+    "responseDataType" : "java.lang.Void"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/im/team-sync/members",
+    "requestBodyType" : "uno.acloud.im.dto.InternalTeamMemberSyncRequest",
+    "requestBodyJsonFields" : [ "avatar", "email", "name", "roleCode", "teamId", "userId", "username" ],
+    "responseDataType" : "java.lang.Void"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/im/team-sync/members/remove",
+    "requestBodyType" : "uno.acloud.im.dto.InternalTeamMemberRemovalRequest",
+    "requestBodyJsonFields" : [ "teamId", "userId" ],
+    "responseDataType" : "java.lang.Void"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/im/team-sync/profile",
+    "requestBodyType" : "uno.acloud.im.dto.InternalTeamSyncRequest",
+    "requestBodyJsonFields" : [ "avatar", "description", "name", "ownerEmail", "ownerName", "ownerUserId", "ownerUsername", "teamId" ],
+    "responseDataType" : "java.lang.Void"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/im/user-profiles",
+    "requestBodyType" : "uno.acloud.im.dto.InternalUserProfileSyncRequest",
+    "requestBodyJsonFields" : [ "avatar", "email", "name", "userId", "username" ],
+    "responseDataType" : "java.lang.Void"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/permissions/assign-bootstrap-admin",
+    "requestBodyType" : "uno.acloud.team.dto.permission.UserIdRequest",
+    "requestBodyJsonFields" : [ "userId" ],
+    "responseDataType" : "java.lang.Void"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/permissions/check",
+    "requestBodyType" : "uno.acloud.team.dto.permission.PermissionCheckRequest",
+    "requestBodyJsonFields" : [ "permissionCode", "teamId", "userId" ],
+    "responseDataType" : "java.lang.Void"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/permissions/ensure-default-role",
+    "requestBodyType" : "uno.acloud.team.dto.permission.EnsureDefaultRoleRequest",
+    "requestBodyJsonFields" : [ "userId", "username" ],
+    "responseDataType" : "java.lang.Void"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/permissions/has",
+    "requestBodyType" : "uno.acloud.team.dto.permission.PermissionCheckRequest",
+    "requestBodyJsonFields" : [ "permissionCode", "teamId", "userId" ],
+    "responseDataType" : "java.lang.Boolean"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/permissions/system-audit",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.util.List<uno.acloud.team.vo.permission.PermissionAuditVO>"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/permissions/system-permissions",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.util.List<uno.acloud.team.vo.permission.PermissionItemVO>"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/permissions/system-roles",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.util.List<uno.acloud.team.vo.permission.RoleItemVO>"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/permissions/system-roles",
+    "requestBodyType" : "uno.acloud.team.dto.permission.InternalRoleSaveRequest",
+    "requestBodyJsonFields" : [ "description", "ipAddress", "operatorId", "roleCode", "roleId", "roleName" ],
+    "responseDataType" : "uno.acloud.team.vo.permission.RoleItemVO"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/permissions/system-roles/assign",
+    "requestBodyType" : "uno.acloud.team.dto.permission.InternalRoleAssignRequest",
+    "requestBodyJsonFields" : [ "ipAddress", "operatorId", "roleCode", "userId" ],
+    "responseDataType" : "java.lang.Void"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/permissions/team-roles",
+    "requestBodyType" : "uno.acloud.team.dto.permission.SaveTeamRoleRequest",
+    "requestBodyJsonFields" : [ "description", "roleCode", "roleName", "teamId" ],
+    "responseDataType" : "uno.acloud.team.vo.permission.TeamRoleVO"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/permissions/team-roles/assign",
+    "requestBodyType" : "uno.acloud.team.dto.permission.AssignTeamMemberRoleRequest",
+    "requestBodyJsonFields" : [ "roleCode", "teamId", "userId" ],
+    "responseDataType" : "java.lang.Void"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/permissions/team-roles/{teamId}",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.util.List<uno.acloud.team.vo.permission.TeamRoleVO>"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/permissions/team/check",
+    "requestBodyType" : "uno.acloud.team.dto.permission.PermissionCheckRequest",
+    "requestBodyJsonFields" : [ "permissionCode", "teamId", "userId" ],
+    "responseDataType" : "java.lang.Boolean"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/permissions/team/clear-role",
+    "requestBodyType" : "uno.acloud.team.dto.permission.TeamMemberRequest",
+    "requestBodyJsonFields" : [ "teamId", "userId" ],
+    "responseDataType" : "java.lang.Void"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/permissions/team/grant-role",
+    "requestBodyType" : "uno.acloud.team.dto.permission.GrantRoleRequest",
+    "requestBodyJsonFields" : [ "roleCode", "teamId", "userId" ],
+    "responseDataType" : "java.lang.Void"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/permissions/team/initialize",
+    "requestBodyType" : "uno.acloud.team.dto.permission.InitializeRolesRequest",
+    "requestBodyJsonFields" : [ "ownerUserId", "teamId" ],
+    "responseDataType" : "java.lang.Void"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/permissions/team/list-permissions",
+    "requestBodyType" : "uno.acloud.team.dto.permission.TeamMemberRequest",
+    "requestBodyJsonFields" : [ "teamId", "userId" ],
+    "responseDataType" : "java.util.List<java.lang.String>"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/permissions/team/role-code",
+    "requestBodyType" : "uno.acloud.team.dto.permission.TeamMemberRequest",
+    "requestBodyJsonFields" : [ "teamId", "userId" ],
+    "responseDataType" : "java.lang.String"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/permissions/user/system-admin-ids",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.util.List<java.lang.Long>"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/permissions/user/system-permissions/{userId}",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.util.List<java.lang.String>"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/permissions/user/system-roles/{userId}",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.util.List<java.lang.String>"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/permissions/user/team-permissions/{teamId}/{userId}",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.util.List<java.lang.String>"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/permissions/user/team-roles/{teamId}/{userId}",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.util.List<java.lang.String>"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/projects/team/{teamId}/quota-sum",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.lang.Long"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/projects/{projectId}/access-check",
+    "requestBodyType" : "uno.acloud.project.dto.internal.ProjectAccessCheckRequest",
+    "requestBodyJsonFields" : [ "userId" ],
+    "responseDataType" : "java.lang.Void"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/projects/{userId}/active-projects-led-count",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.lang.Integer"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/shares/cleanup-by-files",
+    "requestBodyType" : "uno.acloud.share.controller.InternalShareController$FileIdsRequest",
+    "requestBodyJsonFields" : [ "fileIds" ],
+    "responseDataType" : "java.lang.Integer"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/storage/check-quota",
+    "requestBodyType" : "uno.acloud.project.dto.internal.CheckUploadQuotaRequest",
+    "requestBodyJsonFields" : [ "projectId", "spaceType", "teamId", "totalSize", "userId" ],
+    "responseDataType" : "java.lang.Long"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/storage/personal-usage-list",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.util.List<uno.acloud.dto.PersonalStorageUsage>"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/storage/personal-usage-list",
+    "requestBodyType" : "uno.acloud.file.dto.InternalStorageQueryRequest",
+    "requestBodyJsonFields" : [ "projectId", "spaceType", "teamId", "teamIds", "userId", "userIds" ],
+    "responseDataType" : "java.util.List<uno.acloud.dto.PersonalStorageUsage>"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/storage/sum-active",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.lang.Long"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/storage/sum-active",
+    "requestBodyType" : "uno.acloud.file.dto.InternalStorageQueryRequest",
+    "requestBodyJsonFields" : [ "projectId", "spaceType", "teamId", "teamIds", "userId", "userIds" ],
+    "responseDataType" : "java.lang.Long"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/storage/sum-personal",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.lang.Long"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/storage/sum-personal",
+    "requestBodyType" : "uno.acloud.file.dto.InternalStorageQueryRequest",
+    "requestBodyJsonFields" : [ "projectId", "spaceType", "teamId", "teamIds", "userId", "userIds" ],
+    "responseDataType" : "java.lang.Long"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/storage/team-usage-list",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.util.List<uno.acloud.dto.TeamStorageUsage>"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/storage/team-usage-list",
+    "requestBodyType" : "uno.acloud.file.dto.InternalStorageQueryRequest",
+    "requestBodyJsonFields" : [ "projectId", "spaceType", "teamId", "teamIds", "userId", "userIds" ],
+    "responseDataType" : "java.util.List<uno.acloud.dto.TeamStorageUsage>"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/teams/ids/by-user/{userId}",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.util.List<java.lang.Long>"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/teams/{teamId}",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "uno.acloud.team.vo.team.TeamVO"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/teams/{teamId}/member-count",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.lang.Integer"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/teams/{teamId}/members",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.util.List<java.lang.Long>"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/teams/{teamId}/members/{userId}",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "uno.acloud.team.vo.team.TeamMemberDetailVO"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/teams/{teamId}/members/{userId}/active",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.lang.Boolean"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/teams/{teamId}/members/{userId}/role",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.lang.String"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/teams/{teamId}/members/{userId}/storage-limit",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.lang.Long"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/teams/{teamId}/owner-id",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.lang.Long"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/teams/{teamId}/quota",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "uno.acloud.team.vo.team.TeamQuotaVO"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/users/all-ids",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.util.List<java.lang.Long>"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/users/batch",
+    "requestBodyType" : "uno.acloud.user.dto.InternalBatchUserRequest",
+    "requestBodyJsonFields" : [ "userIds" ],
+    "responseDataType" : "java.util.List<uno.acloud.user.vo.UserInfoVO>"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/users/create-team-user",
+    "requestBodyType" : "uno.acloud.user.dto.InternalCreateTeamUserRequest",
+    "requestBodyJsonFields" : [ "defaultTeamId", "email", "name", "password", "phone", "username" ],
+    "responseDataType" : "uno.acloud.user.vo.UserInfoVO"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/users/search",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.util.List<uno.acloud.user.vo.UserSearchItemVO>"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/users/verified-emails",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.util.List<java.lang.String>"
+  }, {
+    "method" : "DELETE",
+    "path" : "/api/internal/users/{id}",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.lang.Void"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/users/{id}",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "uno.acloud.user.vo.UserInfoVO"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/users/{id}/clear-permission-cache",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.lang.Void"
+  }, {
+    "method" : "PUT",
+    "path" : "/api/internal/users/{id}/default-team",
+    "requestBodyType" : "uno.acloud.user.dto.DefaultTeamRequest",
+    "requestBodyJsonFields" : [ "teamId" ],
+    "responseDataType" : "java.lang.Void"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/users/{id}/quota",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "uno.acloud.user.vo.UserQuotaVO"
+  }, {
+    "method" : "GET",
+    "path" : "/api/internal/users/{userId}/info",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "uno.acloud.vo.InternalUserInfoVO"
+  } ]
+}
