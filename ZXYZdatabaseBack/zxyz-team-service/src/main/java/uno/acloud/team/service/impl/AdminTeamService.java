@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.PageResult;
 import uno.acloud.common.TeamErrorCode;
+import uno.acloud.common.util.TransactionUtils;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.team.dto.system.BroadcastSystemMessageRequest;
 import uno.acloud.team.dto.system.ScheduledEmailBatchRequest;
@@ -145,15 +146,18 @@ public class AdminTeamService implements AdminTeamPort {
         self.doUpdateTeamQuota(teamId, memberLimit, storageLimit);
 
         // Phase 3: Post-transaction HTTP calls
-        imSystemNotificationClient.sendBatch(
-                teamMapper.listAdminUserIds(teamId),
-                TEAM_QUOTA_NOTIFICATION_TYPE,
-                "团队配额已更新",
-                buildQuotaUpdateContent(team.getName(), memberLimit, storageLimit),
-                TEAM_QUOTA_NOTIFICATION_BUSINESS,
-                teamId,
-                teamId
-        );
+        // 批次 3：配额已经改完，通知发不出去不该让这个接口报失败 —— 否则管理员重试会再改一次配额，
+        // 且第二次通知仍会发出（同一件事被做两遍）。只告警 + 带 teamId 便于人工补通知。
+        TransactionUtils.runAfterCommit("团队配额变更后通知管理员 teamId=" + teamId, () ->
+                imSystemNotificationClient.sendBatch(
+                        teamMapper.listAdminUserIds(teamId),
+                        TEAM_QUOTA_NOTIFICATION_TYPE,
+                        "团队配额已更新",
+                        buildQuotaUpdateContent(team.getName(), memberLimit, storageLimit),
+                        TEAM_QUOTA_NOTIFICATION_BUSINESS,
+                        teamId,
+                        teamId
+                ));
 
         return buildTeamOverview(teamId);
     }

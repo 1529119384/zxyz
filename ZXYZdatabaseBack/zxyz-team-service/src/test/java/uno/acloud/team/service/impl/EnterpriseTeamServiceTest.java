@@ -11,6 +11,8 @@ import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uno.acloud.common.ErrorCode;
 import static uno.acloud.common.TeamErrorCode.*;
 import uno.acloud.common.UserErrorCode;
@@ -355,6 +357,117 @@ class EnterpriseTeamServiceTest {
         // Verify user was created via HTTP call
         verify(userServiceClient).createTeamUser(eq("newuser"), eq("encoded_password"),
                 isNull(), isNull(), isNull(), eq(teamId));
+    }
+
+    // ============ createMember · 批次 3（ISSUE/16）：提交后远程写不得把成功操作报成失败 ============
+
+    @Test
+    void createMember_shouldStillSucceedWhenMemberAddedEventCannotBePublished() throws Exception {
+        // 成员行已经落库 ⇒ 事件发不出去（RabbitMQ 抖动 / TeamEventPublisher 重试耗尽后是 throw）
+        // 只能降级为告警。若让它冒泡，用户看到「加成员失败」去重试，只会撞「用户名已存在」。
+        Long teamId = 10L;
+        Long operatorUserId = 1L;
+        Long newUserId = 2L;
+        CreateTeamMemberRequest request = newTeamMemberRequest();
+
+        stubSuccessfulCreateMember(teamId, operatorUserId, newUserId, request);
+        doThrow(new BusinessException(ErrorCode.SYSTEM_ERROR, "MQ事件发布失败: team.member.added"))
+                .when(teamEventPublisher).publishMemberCreated(any(), any(), any());
+
+        TeamMemberVO result = assertDoesNotThrow(
+                () -> enterpriseTeamService.createMember(teamId, request, operatorUserId));
+
+        assertEquals(newUserId, result.getUserId());
+        verify(teamEventPublisher).publishMemberCreated(eq(teamId), any(), any());
+    }
+
+    // ============ createMember · 批次 3（ISSUE/16）缺口 ②/③：回滚补偿 ============
+
+    @Test
+    void createMember_shouldCompensateRemoteUserOnRollback_andSwallowCompensationFailure() throws Exception {
+        // 「建团队」(doCreateTeam) 早就有 afterCompletion 回滚补偿，「加成员」此前没有 ⇒ 同类操作不对称：
+        // 本地事务回滚后，user-service 里这个新用户既无团队成员行也无角色绑定，成为孤儿账号。
+        Long teamId = 10L;
+        Long operatorUserId = 1L;
+        Long newUserId = 2L;
+        CreateTeamMemberRequest request = newTeamMemberRequest();
+
+        stubSuccessfulCreateMember(teamId, operatorUserId, newUserId, request);
+
+        // 真实开启事务同步：registerSynchronization 只在活动同步下可用
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            enterpriseTeamService.createMember(teamId, request, operatorUserId);
+
+            List<TransactionSynchronization> synchronizations =
+                    TransactionSynchronizationManager.getSynchronizations();
+            assertFalse(synchronizations.isEmpty(), "加成员必须注册回滚补偿（与建团队同形态）");
+
+            // 缺口 ③：补偿自身失败也必须吞掉 —— afterCompletion 抛出的异常会被 Spring 重抛，
+            // 从而顶掉原始业务异常，调用方看到的是「补偿删除失败」而不是真正的失败原因。
+            doThrow(new RuntimeException("user-service down")).when(userServiceClient).deleteUser(any());
+
+            assertDoesNotThrow(() -> synchronizations.forEach(
+                    synchronization -> synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK)));
+
+            verify(userServiceClient).deleteUser(newUserId);
+            // 回滚路径上绝不能发「成员已加入」事件：那会让 im 侧出现一个并不存在的成员
+            verify(teamEventPublisher, never()).publishMemberCreated(any(), any(), any());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    private CreateTeamMemberRequest newTeamMemberRequest() {
+        CreateTeamMemberRequest request = new CreateTeamMemberRequest();
+        request.setUsername("newuser");
+        request.setPassword("password123");
+        request.setRoleCode("team_member");
+        return request;
+    }
+
+    private void stubSuccessfulCreateMember(Long teamId, Long operatorUserId, Long newUserId,
+                                            CreateTeamMemberRequest request) throws Exception {
+        doNothing().when(teamFileAccessService).check(operatorUserId, teamId, TeamPermissionCodes.TEAM_MEMBER_CREATE);
+
+        Team team = new Team();
+        team.setId(teamId);
+        team.setName("TestTeam");
+        team.setOwnerUserId(operatorUserId);
+        team.setStatus(0);
+        when(teamMapper.selectById(teamId)).thenReturn(team);
+
+        when(redissonClient.getLock("zxyz:team:member:" + teamId)).thenReturn(rLock);
+        when(rLock.tryLock(5L, 30L, TimeUnit.SECONDS)).thenReturn(true);
+        when(rLock.isHeldByCurrentThread()).thenReturn(true);
+
+        RLock userLock = mock(RLock.class);
+        when(redissonClient.getLock("zxyz:team:member:user:" + newUserId)).thenReturn(userLock);
+        when(userLock.tryLock(5L, 30L, TimeUnit.SECONDS)).thenReturn(true);
+        when(userLock.isHeldByCurrentThread()).thenReturn(true);
+
+        TeamQuota quota = new TeamQuota();
+        quota.setTeamId(teamId);
+        quota.setMemberLimit(100);
+        when(quotaMapper.getByTeamId(teamId)).thenReturn(quota);
+        when(teamMapper.countOccupiedMembers(teamId)).thenReturn(5);
+
+        when(passwordEncoder.encode("password123")).thenReturn("encoded_password");
+
+        UserInfoDTO newUser = new UserInfoDTO();
+        newUser.setId(newUserId);
+        newUser.setUsername("newuser");
+        when(userServiceClient.createTeamUser(eq("newuser"), eq("encoded_password"),
+                isNull(), isNull(), isNull(), eq(teamId))).thenReturn(newUser);
+
+        TeamMember createdMember = new TeamMember();
+        createdMember.setTeamId(teamId);
+        createdMember.setUserId(newUserId);
+        createdMember.setRoleCode("team_member");
+        createdMember.setStatus(0);
+        when(teamMapper.getActiveMember(teamId, newUserId)).thenReturn(createdMember);
+        when(teamEntityMapper.toMemberVO(eq(createdMember), any())).thenReturn(
+                new TeamMemberVO(newUserId, "newuser", null, null, null, "team_member", 0, LocalDateTime.now()));
     }
 
     // ==================== createMember — lock acquisition failure ====================

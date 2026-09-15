@@ -131,4 +131,36 @@ class TransactionUtilsTest {
             synchronization.afterCommit();
         }
     }
+
+    // ==================== 重载：带业务主键的 context 不得改变任何一条语义 ====================
+
+    @Test
+    void runAfterCommitWithContext_keepsDeferSemantics() {
+        AtomicInteger hits = new AtomicInteger();
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            TransactionUtils.runAfterCommit("成员创建后发布事件 teamId=10, userId=2", hits::incrementAndGet);
+
+            assertEquals(0, hits.get(), "带 context 的重载必须与不带 context 时一样：提交前不执行");
+            assertEquals(1, TransactionSynchronizationManager.getSynchronizations().size(),
+                    "带 context 也只注册一个回调");
+
+            invokeAfterCommitOnRegisteredSynchronizations();
+
+            assertEquals(1, hits.get());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    void runAfterCommitWithContext_stillSwallowsActionException() {
+        // 这是本次新增重载的**唯一目的**：让调用方既能带上可人工补偿的业务主键，
+        // 又不必自己写 try/catch —— 若这里会抛，调用方就又被迫回到「要日志还是要不冒泡」的二选一。
+        assertDoesNotThrow(() -> TransactionUtils.runAfterCommit(
+                "逻辑删除后清理分享条目 fileIds(size)=3",
+                () -> {
+                    throw new IllegalStateException("模拟远程调用失败");
+                }));
+    }
 }

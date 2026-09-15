@@ -138,6 +138,32 @@ class FileLifecycleServiceTest {
         verify(shareCleanupClient).deleteShareItemsByFileIds(allIds);
     }
 
+    // ============ 批次 3（ISSUE/16）：提交后远程写失败不得把已落库的删除报成失败 ============
+
+    @Test
+    void logicalDelete_shouldStillSucceedWhenShareCleanupFails() {
+        // share 侧清理失败若冒泡，前端会看到 500 而文件其实已删；重试只会撞「文件已被彻底删除」。
+        // 正确口径是：以本地事务结果为准，远程残留靠对账收敛，日志留下规模与业务主键。
+        FileItem node = fileNode(1L, FileDeleteStatus.NORMAL);
+        List<Long> fileIds = List.of(1L);
+        List<Long> allIds = List.of(1L);
+
+        when(fileDomainValidator.normalizeFileIds(fileIds)).thenReturn(fileIds);
+        when(fileDomainValidator.requireNodes(fileIds)).thenReturn(List.of(node));
+        when(fileConverter.toFileInfoDTO(node)).thenReturn(
+                new uno.acloud.dto.FileInfoDTO(1L, 1, "uuid-abc", "test.txt", null, null,
+                        "/test.txt", null, null, FileDeleteStatus.NORMAL, null, null));
+        when(fileMapper.collectDescendantIds(fileIds)).thenReturn(allIds);
+        when(fileMapper.logicalDeleteByIds(allIds, 100L)).thenReturn(1);
+        when(fileMapper.getFileNodesByIds(fileIds)).thenReturn(List.of());
+        doThrow(new RuntimeException("share-service down")).when(shareCleanupClient)
+                .deleteShareItemsByFileIds(allIds);
+
+        int rows = assertDoesNotThrow(() -> service.logicalDelete(fileIds, 100L));
+
+        assertEquals(1, rows, "分享条目清理失败不得改变「文件已逻辑删除」这个已经落库的结果");
+    }
+
     // ---- reallyDelete tests ----
 
     @Test
@@ -175,6 +201,32 @@ class FileLifecycleServiceTest {
 
         verify(fileObjectReferenceService).releaseReferences(ossKeys);
         verify(shareCleanupClient).deleteShareItemsByFileIds(allIds);
+    }
+
+    @Test
+    void reallyDelete_shouldStillSucceedWhenShareCleanupFails() {
+        // 物理删除不可逆：这里若让 share 清理失败冒泡，用户拿到 500 却无法用「重试」修正，
+        // 而 share 侧还会留下永久指向不存在文件的条目 —— 两者都比「只告警」更糟。
+        FileItem node = fileNode(1L, FileDeleteStatus.RECYCLE);
+        node.setUuidName("uuid-abc");
+        List<Long> fileIds = List.of(1L);
+        List<Long> allIds = List.of(1L);
+        List<String> ossKeys = List.of("uuid-abc");
+
+        when(fileDomainValidator.normalizeFileIds(fileIds)).thenReturn(fileIds);
+        when(fileDomainValidator.requireNodes(fileIds)).thenReturn(List.of(node));
+        when(fileConverter.toFileInfoDTO(node)).thenReturn(
+                new uno.acloud.dto.FileInfoDTO(1L, 1, "uuid-abc", "test.txt", null, null,
+                        "/test.txt", null, null, FileDeleteStatus.RECYCLE, null, null));
+        when(fileMapper.collectDescendantIds(fileIds)).thenReturn(allIds);
+        when(fileMapper.getOssKeysByIds(allIds)).thenReturn(ossKeys);
+        when(fileMapper.reallyDeleteByIds(allIds, 100L)).thenReturn(1);
+        doThrow(new RuntimeException("share-service down")).when(shareCleanupClient)
+                .deleteShareItemsByFileIds(allIds);
+
+        int rows = assertDoesNotThrow(() -> service.reallyDelete(fileIds, 100L));
+
+        assertEquals(1, rows, "分享条目清理失败不得把已完成的物理删除对外报成失败");
     }
 
     @Test

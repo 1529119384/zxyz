@@ -35,30 +35,51 @@ public final class TransactionUtils {
     private TransactionUtils() {
     }
 
+    /** 未标注业务主键时的日志占位（见 {@link #runAfterCommit(String, Runnable)}）。 */
+    private static final String UNKEYED_CONTEXT = "（未标注业务主键）";
+
     /**
      * 若当前线程有活动事务，则把 {@code action} 注册为提交后回调；否则退化为同步执行。
      * 两条路径的语义一致：<b>失败只记 ERROR 日志，不冒泡</b>。
      */
     public static void runAfterCommit(Runnable action) {
+        runAfterCommit(UNKEYED_CONTEXT, action);
+    }
+
+    /**
+     * 与 {@link #runAfterCommit(Runnable)} 语义完全相同，只是额外带上 {@code context} 用于日志。
+     *
+     * <p><b>为什么需要这个重载</b>：本类注释里对调用方的约定是「若内部还有多个互不影响的远程调用，
+     * 请各自再套一层 try/catch <i>并带上可人工补偿的业务主键</i>」。此前调用方只能自己写 try/catch
+     * 才能做到这一点，于是「吞异常」与「带主键」两件事被迫二选一 —— 结果是不少调用点干脆不吞异常。
+     * 把主键作为参数传进来，就能同时满足两条：既不冒泡，又能在日志里直接定位需要人工补偿的那条业务数据
+     * （teamId / userId / fileIds…）。</p>
+     *
+     * <p>{@code context} 应当是一段**已经被拼装好的、规模恒定**的短文本（如
+     * {@code "成员创建后发布事件 teamId=" + teamId + ", userId=" + userId}）。
+     * 刻意不做惰性求值：字符串拼接的成本远低于一次远程调用，而日志一旦缺失就失去了补偿线索。</p>
+     */
+    public static void runAfterCommit(String context, Runnable action) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    safeRun(action);
+                    safeRun(context, action);
                 }
             });
             return;
         }
         // 无活动事务时该动作退化为「同步执行」，但调用方的意图同样是「副作用不影响主流程」，
         // 因此两条路径语义保持一致：失败只记日志。
-        safeRun(action);
+        safeRun(context, action);
     }
 
-    private static void safeRun(Runnable action) {
+    private static void safeRun(String context, Runnable action) {
         try {
             action.run();
         } catch (Exception e) {
-            log.error("事务后置动作执行失败（业务结果已提交，不影响本次操作返回）", e);
+            // 占位符先吃 context、末位 Throwable 作堆栈：一条日志同时给出「哪条业务数据」与「为什么失败」
+            log.error("事务后置动作执行失败（业务结果已提交，不影响本次操作返回）: {}", context, e);
         }
     }
 }

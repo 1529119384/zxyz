@@ -332,6 +332,41 @@ class AdminTeamServiceTest {
         verify(teamQuotaMapper, times(1)).upsertQuota(any());
     }
 
+    // ============ updateTeamQuota · 批次 3（ISSUE/16）：配额后通知失败不得让改配额报失败 ============
+
+    @Test
+    void updateTeamQuota_shouldStillSucceedWhenQuotaNotificationFails() {
+        // 配额已经写进库了，此时站内通知发不出去只是「通知丢了」。
+        // 若让它冒泡：管理员看到失败 → 重试 → 又改一次配额并再发一次通知（同一件事做两遍）。
+        Team team = new Team();
+        team.setId(1L);
+        team.setName("Team A");
+        team.setStatus(0);
+        when(teamMapper.selectById(1L)).thenReturn(team);
+        when(teamMapper.countOccupiedMembers(1L)).thenReturn(2);
+        when(fileServiceClient.sumActiveFileSize(null, 1L, 2, null)).thenReturn(0L);
+        org.mockito.Mockito.doReturn(0L).when(projectServiceClient).sumProjectQuota(1L);
+
+        UpdateTeamQuotaRequest request = new UpdateTeamQuotaRequest();
+        request.setMemberLimit(10);
+        request.setStorageLimit(1L * 1024 * 1024 * 1024);
+
+        AdminTeamOverviewVO vo = new AdminTeamOverviewVO(
+                1L, "Team A", null, null, null, 0, 0, 0L, null, null);
+        when(teamMapper.getAdminTeamOverview(1L)).thenReturn(vo);
+        when(teamQuotaMapper.upsertQuota(any())).thenReturn(1);
+
+        doThrow(new RuntimeException("im-service down")).when(imSystemNotificationClient)
+                .sendBatch(anyList(), any(), any(), any(), any(), any(), any());
+
+        var result = assertDoesNotThrow(() -> adminTeamService.updateTeamQuota(1L, request));
+
+        assertNotNull(result);
+        verify(teamQuotaMapper, times(1)).upsertQuota(any());
+        verify(imSystemNotificationClient, times(1))
+                .sendBatch(anyList(), any(), any(), any(), any(), any(), any());
+    }
+
     /**
      * 回归守卫：改单个团队的配额必须走「单条查询」。
      *

@@ -81,7 +81,12 @@ public class FileLifecycleService implements FileLifecyclePort {
             log.info("逻辑删除文件 roots={}, allIds={}", normalizedFileIds, allIds);
             return rows;
         });
-        shareCleanupClient.deleteShareItemsByFileIds(allIds);
+        // 批次 3：share 侧清理是**事务已提交之后**的远程写。
+        // 旧的裸调用会让「本地已删成功、只是分享条目清不掉」变成对用户报 500，
+        // 用户据此重试只会撞「文件已被彻底删除」；而 share 侧其实只需一次对账即可收敛。
+        // 统一走 TransactionUtils 的「吞异常 + 带业务主键 ERROR 日志」语义（本仓唯一写法）。
+        TransactionUtils.runAfterCommit("逻辑删除后清理分享条目 fileIds(size)=" + allIds.size(),
+                () -> shareCleanupClient.deleteShareItemsByFileIds(allIds));
         return updatedRows;
     }
 
@@ -112,7 +117,11 @@ public class FileLifecycleService implements FileLifecyclePort {
             log.info("彻底删除文件 roots={}, allIds={}", normalizedFileIds, allIds);
             return rows;
         });
-        shareCleanupClient.deleteShareItemsByFileIds(allIds);
+        // 同 logicalDelete：物理删除**不可逆**，若让 share 清理失败冒泡，用户会看到一个 500，
+        // 但文件其实已经删掉了 —— 重试必失败，且 share 侧留下永久指向不存在文件的条目。
+        // 这里只告警（带规模，便于人工对账），不再影响本次操作的返回值。
+        TransactionUtils.runAfterCommit("彻底删除后清理分享条目 fileIds(size)=" + allIds.size(),
+                () -> shareCleanupClient.deleteShareItemsByFileIds(allIds));
         return updatedRows;
     }
 

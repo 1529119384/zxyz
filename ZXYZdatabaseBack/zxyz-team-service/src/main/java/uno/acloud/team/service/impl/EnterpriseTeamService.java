@@ -12,6 +12,7 @@ import org.springframework.transaction.support.TransactionSynchronizationAdapter
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import uno.acloud.common.util.TransactionHelper;
+import uno.acloud.common.util.TransactionUtils;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.UserErrorCode;
 import uno.acloud.common.TeamErrorCode;
@@ -191,8 +192,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
                     @Override
                     public void afterCompletion(int status) {
                         if (status == TransactionSynchronization.STATUS_ROLLED_BACK) {
-                            log.warn("团队创建本地事务回滚，补偿删除用户 userId={}", ownerId);
-                            userServiceClient.deleteUser(ownerId);
+                            compensateCreatedUser(ownerId, "团队创建(team=" + teamName + ")");
                         }
                     }
                 });
@@ -241,8 +241,11 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
         });
 
         // Event — after transaction commit
+        // 批次 3：团队已经建好了，事件发不出去（RabbitMQ 抖动 / 重试耗尽）不该把创建操作报成失败。
+        // TeamEventPublisher 在重试 3 次后是 **throw** 而不是吞掉，所以这里必须兜住。
         Team teamResult = teamMapper.selectById(teamId);
-        teamEventPublisher.publishTeamCreated(teamResult, owner, request);
+        TransactionUtils.runAfterCommit("团队创建后发布事件 teamId=" + teamId,
+                () -> teamEventPublisher.publishTeamCreated(teamResult, owner, request));
 
         return toTeamVO(teamResult, ownerId);
     }
@@ -280,7 +283,9 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
         if (teamMapper.updateTeamProfile(team) != 1) {
             throw new NotFoundException(TeamErrorCode.TEAM_NOT_FOUND.getCode(), "团队不存在");
         }
-        teamEventPublisher.publishTeamUpdated(team, owner);
+        // 批次 3：资料已落库，事件发布失败只告警（重试改资料不会因此变成「失败」）
+        TransactionUtils.runAfterCommit("团队更新后发布事件 teamId=" + teamId,
+                () -> teamEventPublisher.publishTeamUpdated(team, owner));
         return toTeamVO(team, operatorUserId);
     }
 
@@ -333,10 +338,31 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
             Long userId = user.getId();
 
             // DB operations — inside transaction via TransactionHelper
-            TeamMemberVO result = transactionHelper.execute(status ->
-                    createMemberInTransaction(teamId, userId, user, request));
+            TeamMemberVO result = transactionHelper.execute(status -> {
+                // P2-A4: 跨服务写孤儿数据补偿框架 —— 与 doCreateTeam 完全同一形态。
+                // createTeamUser 在事务外已调用；若本地事务回滚（例如 upsertMember 判「一个账号只能属于
+                // 一个团队」、或创建后读回成员失败），user-service 里这个新用户既没有团队成员行也没有角色
+                // 绑定，会成为孤儿账号。此前只有「建团队」注册了补偿、「加成员」没有 —— 同类操作两处不对称。
+                try {
+                    TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
+                        @Override
+                        public void afterCompletion(int status) {
+                            if (status == TransactionSynchronization.STATUS_ROLLED_BACK) {
+                                compensateCreatedUser(userId, "成员创建(teamId=" + teamId + ")");
+                            }
+                        }
+                    });
+                } catch (IllegalStateException e) {
+                    // mock 测试或无事务环境，registerSynchronization 不可用，静默降级
+                    log.debug("TransactionSynchronizationManager 无活动事务，跳过成员创建补偿注册", e);
+                }
+                return createMemberInTransaction(teamId, userId, user, request);
+            });
             // MQ publish after transaction commit
-            teamEventPublisher.publishMemberCreated(teamId, user, request);
+            // 批次 3：成员已经落库，事件发不出去不该把「加成员」报成失败 ——
+            // 用户重试只会撞「用户名已存在」，反而更难理解。
+            TransactionUtils.runAfterCommit("成员创建后发布事件 teamId=" + teamId + ", userId=" + userId,
+                    () -> teamEventPublisher.publishMemberCreated(teamId, user, request));
             return result;
         } finally {
             if (acquired && lock.isHeldByCurrentThread()) {
@@ -427,7 +453,9 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
                 teamPermissionService.clearMemberRole(teamId, targetUserId);
             });
             // MQ publish after transaction commit
-            teamEventPublisher.publishMemberRemoved(teamId, targetUserId);
+            // 批次 3：成员已从库里移除，im 侧同步事件失败不该让接口报失败
+            TransactionUtils.runAfterCommit("成员移除后发布事件 teamId=" + teamId + ", userId=" + targetUserId,
+                    () -> teamEventPublisher.publishMemberRemoved(teamId, targetUserId));
         } finally {
             if (acquired && lock.isHeldByCurrentThread()) {
                 lock.unlock();
@@ -467,7 +495,9 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
                 teamPermissionService.clearMemberRole(team.getId(), userId);
             });
             // MQ publish after transaction commit
-            teamEventPublisher.publishMemberRemoved(teamId, userId);
+            // 批次 3：同 removeMember —— 退出动作已落库，事件失败只告警
+            TransactionUtils.runAfterCommit("成员退出后发布事件 teamId=" + teamId + ", userId=" + userId,
+                    () -> teamEventPublisher.publishMemberRemoved(teamId, userId));
         } finally {
             if (acquired && lock.isHeldByCurrentThread()) {
                 lock.unlock();
@@ -519,6 +549,26 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
             throw new NotFoundException(TeamErrorCode.TEAM_NOT_FOUND.getCode(), "团队不存在");
         }
         return team;
+    }
+
+    /**
+     * 批次 3（缺口 ③）：跨服务写补偿的**唯一写法** —— 补偿路径自身必须吞异常。
+     *
+     * <p><b>为什么必须吞</b>：{@code afterCompletion} 回调里抛出的异常会被 Spring 记录并<b>重抛</b>，
+     * 从而<b>顶掉原始的业务异常</b> —— 调用方最终看到的是「补偿删除用户失败」，
+     * 而不是真正的失败原因（例如「一个账号只能属于一个团队」），排查方向会被彻底带偏；
+     * 与此同时孤儿用户仍然留在 user-service。</p>
+     *
+     * <p>补偿失败必须带上人工处置所需的主键（userId + 场景）：这条路径<b>没有自动重放</b>
+     * —— 「补偿表 + 定时重放」属于批次 4，按既定口径要等批次 3 观测到真实失败后再批 DDL。</p>
+     */
+    private void compensateCreatedUser(Long userId, String scene) {
+        log.warn("{} 本地事务回滚，开始补偿删除 user-service 用户 userId={}", scene, userId);
+        try {
+            userServiceClient.deleteUser(userId);
+        } catch (Exception e) {
+            log.error("{} 补偿删除用户失败（孤儿用户需人工处置）userId={}", scene, userId, e);
+        }
     }
 
     private void upsertMember(Long teamId, Long userId, String roleCode, Integer status, LocalDateTime now) {
