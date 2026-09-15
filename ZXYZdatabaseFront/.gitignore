@@ -52,3 +52,10 @@ coverage/
 
 # Lock file — 不忽略，确保 npm ci 在 CI 和 Docker 构建中正常工作
 # package-lock.json
+
+# Playwright（E2E）：报告与运行中间产物不入库
+e2e-report/
+playwright-report/
+test-results/
+blob-report/
+.playwright/
