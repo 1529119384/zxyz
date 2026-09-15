@@ -9,6 +9,7 @@ import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import uno.acloud.common.permission.TeamPermissionLocalCache;
+import uno.acloud.satoken.PermissionCache;
 
 import java.util.function.Supplier;
 
@@ -105,6 +106,9 @@ class TeamPermissionCacheServiceTest {
         service.evictTeam(42L);
 
         verify(redisTemplate).convertAndSend(TeamPermissionLocalCache.INVALIDATION_TOPIC, "42");
+        // 角色定义/权限分配变更影响面无法按 userId 枚举 ⇒ 用户级缓存全量失效
+        verify(redisTemplate).convertAndSend(PermissionCache.INVALIDATION_TOPIC,
+                PermissionCache.INVALIDATE_ALL);
     }
 
     @SuppressWarnings("unchecked")
@@ -117,6 +121,8 @@ class TeamPermissionCacheServiceTest {
         service.evictMember(42L, 101L);
 
         verify(redisTemplate).convertAndSend(TeamPermissionLocalCache.INVALIDATION_TOPIC, "42:101");
+        // 成员角色变更只影响该用户 ⇒ 用户级缓存按 userId 精确失效
+        verify(redisTemplate).convertAndSend(PermissionCache.INVALIDATION_TOPIC, "101");
     }
 
     @Test

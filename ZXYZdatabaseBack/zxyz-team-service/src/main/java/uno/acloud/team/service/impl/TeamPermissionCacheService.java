@@ -5,6 +5,7 @@ import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import uno.acloud.common.permission.TeamPermissionLocalCache;
+import uno.acloud.satoken.PermissionCache;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -76,6 +77,10 @@ public class TeamPermissionCacheService {
         String pattern = CACHE_PREFIX + teamId + ":*";
         evictByPattern(pattern);
         publishInvalidation(String.valueOf(teamId));
+        // 角色定义 / 角色→权限分配变更会影响「持有该角色的所有用户」的系统权限，
+        // 而用户级缓存的 key 只有 userId:loginType、不含 teamId ⇒ 无从枚举受影响用户
+        // ⇒ 直接全量失效（这类管理操作低频，代价只是下次鉴权回源一次）。
+        publishUserPermissionInvalidation(PermissionCache.INVALIDATE_ALL);
         log.info("已清除团队权限缓存: teamId={}", teamId);
     }
 
@@ -88,6 +93,8 @@ public class TeamPermissionCacheService {
         String pattern = CACHE_PREFIX + teamId + ":" + userId + ":*";
         evictByPattern(pattern);
         publishInvalidation(teamId + ":" + userId);
+        // 成员角色变更只影响该用户 ⇒ 精确失效他的用户级权限缓存
+        publishUserPermissionInvalidation(String.valueOf(userId));
         log.info("已清除成员权限缓存: teamId={}, userId={}", teamId, userId);
     }
 
@@ -104,6 +111,28 @@ public class TeamPermissionCacheService {
             redisTemplate.convertAndSend(TeamPermissionLocalCache.INVALIDATION_TOPIC, payload);
         } catch (Exception e) {
             log.warn("广播团队权限缓存失效消息失败（本地缓存将依赖 TTL 过期）: payload={}", payload, e);
+        }
+    }
+
+    /**
+     * 广播「用户级」权限缓存（Sa-Token 的 {@link PermissionCache}）失效消息。
+     * <p>
+     * 与 {@link #publishInvalidation} 的区别：那个是<b>团队粒度</b>的团队权限缓存
+     * （key 含 teamId）；这个是<b>用户粒度</b>的系统权限/角色缓存
+     * （key 只有 {@code userId:loginType}，供 {@code RemoteStpInterfaceImpl} 用它做
+     * {@code @SaCheckPermission} 鉴权）。
+     * <p>
+     * ⚠️ 在本类修复之前，{@link PermissionCache#INVALIDATION_TOPIC} <b>全仓没有任何发布方</b>，
+     * 那条链路是彻底断的（缓存只能等 5 分钟 TTL）。所以发布方与监听方必须成对存在，
+     * 且对应的监听器已改为在 10 个服务全部注册（此前只有 gateway 注册成功）。
+     *
+     * @param payload 用户 id，或 {@link PermissionCache#INVALIDATE_ALL}
+     */
+    private void publishUserPermissionInvalidation(String payload) {
+        try {
+            redisTemplate.convertAndSend(PermissionCache.INVALIDATION_TOPIC, payload);
+        } catch (Exception e) {
+            log.warn("广播用户权限缓存失效消息失败（将依赖 TTL 过期）: payload={}", payload, e);
         }
     }
 

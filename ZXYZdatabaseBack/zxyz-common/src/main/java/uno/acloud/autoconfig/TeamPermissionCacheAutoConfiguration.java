@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
@@ -103,7 +104,7 @@ public class TeamPermissionCacheAutoConfiguration {
     @Bean
     @ConditionalOnBean(RedisConnectionFactory.class)
     public ApplicationListener<ContextRefreshedEvent> teamPermissionCacheListenerStarter(
-            RedisMessageListenerContainer teamPermissionCacheListener) {
+            @Qualifier("teamPermissionCacheListener") RedisMessageListenerContainer teamPermissionCacheListener) {
         return event -> {
             try {
                 teamPermissionCacheListener.start();

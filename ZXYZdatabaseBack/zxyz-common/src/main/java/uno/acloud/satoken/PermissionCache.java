@@ -24,6 +24,9 @@ public class PermissionCache {
     /** Redis Pub/Sub 失效频道名（team-service 变更用户权限/角色后发布 userId） */
     public static final String INVALIDATION_TOPIC = "zxyz:permission:changed";
 
+    /** 全量失效的约定消息体：发布该值表示「清空所有服务的全部用户权限缓存」 */
+    public static final String INVALIDATE_ALL = "*";
+
     private final Cache<String, List<String>> permissionCache;
     private final Cache<String, List<String>> roleCache;
 
@@ -70,5 +73,18 @@ public class PermissionCache {
         String prefix = String.valueOf(loginId) + ":";
         permissionCache.asMap().keySet().removeIf(k -> k.startsWith(prefix));
         roleCache.asMap().keySet().removeIf(k -> k.startsWith(prefix));
+    }
+
+    /**
+     * 清空全部缓存。
+     * <p>
+     * 用于「角色定义 / 角色→权限分配」这类<b>影响面无法按 userId 枚举</b>的变更：
+     * 本缓存的 key 是 {@code userId:loginType}、不含 teamId，收到 teamId 也无从推断
+     * 受影响的用户集合。这类变更本身是低频管理操作，直接全量清空的代价（下次鉴权
+     * 回源 team-service 一次）远小于「漏失效导致权限变更不生效」的代价。
+     */
+    public void invalidateAll() {
+        permissionCache.invalidateAll();
+        roleCache.invalidateAll();
     }
 }
