@@ -1,3 +1,5 @@
+// @ts-check
+
 import { TEAM } from '@/constants/conversationTypes'
 import { STORED } from '@/constants/messageStatus'
 import { normalizePositiveId } from '@/utils/id'
@@ -6,6 +8,19 @@ export const READ_SYNC_DELAY_MS = 300
 export const IM_ACCESS_DENIED_CODES = new Set([4030, 4400, 4401])
 export const DEFAULT_TEAM_ID_KEY = 'defaultTeamId'
 
+/**
+ * 后端 / 缓存里的「原始行」。
+ *
+ * 刻意用 `Record<string, any>` 而不是逐字段 typedef：这些结构来自**后端契约**，
+ * 前端既不能保证字段齐全，也不能保证多出来的字段不被别处直接读取
+ * （例如 `normalizeConversation` 就读了 `teamName` 这种只在新版接口出现的别名）。
+ * 逐字段声明会立刻变成「后端一加字段、前端就要改类型」的维护负担，
+ * 而这里真正要钉住的是**归一化函数的返回值形状**（由函数体推断），不是入参。
+ *
+ * @typedef {Record<string, any>} RawRow
+ */
+
+/** @param {any} [value] 团队 ID（数字/数字字符串/空值） */
 export function requireTeamId(value) {
   const teamId = normalizePositiveId(value)
   if (!teamId) {
@@ -14,6 +29,7 @@ export function requireTeamId(value) {
   return teamId
 }
 
+/** @param {RawRow} [raw] */
 export function normalizeConversation(raw = {}) {
   return {
     id: raw.id ?? raw.conversationId ?? null,
@@ -31,6 +47,7 @@ export function normalizeConversation(raw = {}) {
   }
 }
 
+/** @param {RawRow} [raw] */
 export function normalizeTeam(raw = {}) {
   return {
     id: raw.id ?? null,
@@ -44,6 +61,7 @@ export function normalizeTeam(raw = {}) {
   }
 }
 
+/** @param {RawRow} [raw] */
 export function normalizeTeamMember(raw = {}) {
   return {
     userId: raw.userId ?? null,
@@ -55,6 +73,10 @@ export function normalizeTeamMember(raw = {}) {
   }
 }
 
+/**
+ * @param {RawRow} [raw]
+ * @param {RawRow} [overrides] 局部覆盖（乐观更新时先写本地状态，等后端回执再落定）
+ */
 export function normalizeMessage(raw = {}, overrides = {}) {
   return {
     messageId: raw.messageId ?? raw.id ?? null,
@@ -79,6 +101,12 @@ export function normalizeMessage(raw = {}, overrides = {}) {
   }
 }
 
+/**
+ * 消息排序：先按时间、再按 messageId、最后按 clientMessageId 兜底，
+ * 保证同一毫秒内的多条消息有稳定顺序（否则列表会抖动）。
+ * @param {any} [left]
+ * @param {any} [right]
+ */
 export function compareMessages(left, right) {
   const leftTime = left?.createTime ? new Date(left.createTime).getTime() : 0
   const rightTime = right?.createTime ? new Date(right.createTime).getTime() : 0

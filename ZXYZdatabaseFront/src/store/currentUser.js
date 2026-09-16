@@ -1,3 +1,5 @@
+// @ts-check
+
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useLocalStorage } from '@vueuse/core'
@@ -8,6 +10,24 @@ import { clearToken } from '@/utils/auth'
 
 const DISPLAY_USER_KEY = 'displayUser'
 
+/**
+ * 当前用户数据。所有字段都可选：本结构有三个来源（登录接口、`fetchCurrentUser`、
+ * localStorage 里读出来的旧缓存），三者都不保证字段齐全，缺字段由 normalize 兜底。
+ * @typedef {object} CurrentUserPayload
+ * @property {number|null} [id]
+ * @property {string} [username]
+ * @property {string} [name]
+ * @property {string} [avatar]
+ * @property {string} [email]
+ * @property {string} [phone]
+ * @property {boolean} [emailVerified]
+ * @property {boolean} [phoneVerified]
+ * @property {number|null} [defaultTeamId]
+ * @property {string[]} [roles]
+ * @property {string[]} [permissions]
+ */
+
+/** @param {CurrentUserPayload} [data] */
 function normalizeCurrentUser(data = {}) {
   return {
     id: data.id ?? null,
@@ -25,6 +45,7 @@ function normalizeCurrentUser(data = {}) {
 }
 
 // 仅返回显示层字段，不含 email、phone、roles、permissions 等敏感数据
+/** @param {CurrentUserPayload} [data] */
 function normalizeDisplayUser(data = {}) {
   return {
     id: data.id ?? null,
@@ -78,6 +99,7 @@ export const useCurrentUserStore = defineStore('currentUser', () => {
       permissions.value.includes(SYSTEM_PERMISSIONS.systemAuditRead),
   )
 
+  /** @param {CurrentUserPayload|null} [data] */
   function setProfile(data) {
     const nextProfile = data ? normalizeCurrentUser(data) : null
     profile.value = nextProfile
@@ -108,6 +130,7 @@ export const useCurrentUserStore = defineStore('currentUser', () => {
     }
   }
 
+  /** @param {{force?: boolean}} [options] */
   async function ensureProfileLoaded(options = {}) {
     const { force = false } = options
 
@@ -119,6 +142,7 @@ export const useCurrentUserStore = defineStore('currentUser', () => {
     return loadProfile()
   }
 
+  /** @param {any} payload */
   async function login(payload) {
     try {
       await loginByPassword(payload)
@@ -139,10 +163,12 @@ export const useCurrentUserStore = defineStore('currentUser', () => {
     clearProfile()
   }
 
+  /** @param {string} code */
   function hasSystemPermission(code) {
     return permissions.value.includes(code)
   }
 
+  /** @param {string[]} [codes] */
   function hasAnySystemPermission(codes = []) {
     return Array.isArray(codes) && codes.some((code) => hasSystemPermission(code))
   }

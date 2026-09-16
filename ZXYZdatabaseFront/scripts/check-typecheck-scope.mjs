@@ -26,8 +26,22 @@ import { join, posix } from 'node:path'
 
 const SRC_DIR = 'src'
 
-/** 棘轮基线：已点亮文件数不得低于此值。上调后方可收紧。 */
-const CHECKJS_BASELINE = 33
+/**
+ * 棘轮基线：已点亮文件数不得低于此值。上调后方可收紧。
+ *
+ * 2026-09-16：33 → 36（`src/store/im/permissionDomain.js`、`src/store/currentUser.js`、
+ * `src/store/im/normalizers.js` 三个文件点亮，一次性修掉 97 条类型报错）。
+ *
+ * ⚠️ 下一批的实测规模（勿重新摸底，直接照这个数排期）——以下 5 个 store 文件
+ * **已试过点亮、当时共 170 条报错，已撤回**，报错形态高度同构
+ * （`createXDomain(state, deps)` 的入参默认 `{}` ⇒ 一片 TS2339 + TS7006）：
+ *   chat.js 29 ｜ im/conversationDomain.js 37 ｜ im/messageDomain.js 27
+ *   im/realtimeDomain.js 43 ｜ im/teamDomain.js 34
+ * ⇒ 每个文件 ≈ 2 个 typedef（state / deps）+ 若干 `@param`，与本轮同法即可收敛。
+ * 待这 5 个文件也点亮后，才可以把 `src/store/` 加进 `FULLY_LIT_DIRS`
+ * （该目录下还有 9 个 `__tests__/*.spec.js` 需要一并点亮）。
+ */
+const CHECKJS_BASELINE = 36
 
 /**
  * 声明式规则：这些目录下的 .js 必须全部带 // @ts-check（相对仓库根，含尾斜杠）。
