@@ -1034,7 +1034,7 @@ services:
       - zxyz-net
 
   loki:
-    image: grafana/loki:3.0.0@sha256:757b5fadf816a1396f1fea598152947421fa49cb8b2db1ddd2a6e30fae003253
+    image: grafana/loki:3.7.7@sha256:d70e4659623f3e109af669cae76fe2a5dd5be54e2298fe8aed380d982fbc2500
     container_name: zxyz-loki
     restart: unless-stopped
     deploy:
