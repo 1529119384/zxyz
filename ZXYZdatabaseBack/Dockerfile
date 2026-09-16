@@ -24,7 +24,7 @@
 
 # builder 直接使用官方 maven:3.9-eclipse-temurin-17，不再依赖个人私有镜像
 # （原 aclouda/zxyz-maven-base:latest 为可变 tag，构建不可复现，已移除）。
-FROM maven:3.9-eclipse-temurin-17@sha256:a8746f15d5bb26b5b8bacb056cc76211553850f4c71d16aff845cfa004cbc197 AS builder
+FROM maven:3-eclipse-temurin-26@sha256:d365e243b03243295d4f5100f9918cb6a8fdf21b9012b5737bae1ff9fb0a8d67 AS builder
 
 WORKDIR /workspace
 
