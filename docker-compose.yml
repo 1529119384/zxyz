@@ -1098,7 +1098,7 @@ services:
   # 生产经宿主机 Nginx 反代并加来源限制，切勿直接暴露公网。
   # ---------------------------------------------------------------------------
   prometheus:
-    image: prom/prometheus:v2.53.0@sha256:075b1ba2c4ebb04bc3a6ab86c06ec8d8099f8fda1c96ef6d104d9bb1def1d8bc
+    image: prom/prometheus:v3.14.0@sha256:5ce7540c3c00ef4ab0c9d2c995c6a5b9c421f44b4a115d97a2c7af3b1c21cbb0
     container_name: zxyz-prometheus
     restart: unless-stopped
     deploy:
