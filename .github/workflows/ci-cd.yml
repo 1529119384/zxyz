@@ -997,8 +997,10 @@ jobs:
 
   # ============================================================
   # Job 3.5: 镜像安全扫描（Trivy，仅扫描实际构建的镜像）
-  # 在 build-and-push 之后对所有后端镜像执行 SCA 漏洞扫描。
-  # HIGH/CRITICAL 漏洞会导致本 job 失败，从而整条 run 变红。
+  # 在 build-and-push 之后对**所有实际构建的镜像**执行 SCA 漏洞扫描：
+  # 10 个后端服务 + frontend-nginx（入口容器，2026-09-16 补扫，此前从未被扫）。
+  # HIGH/CRITICAL（可修复）漏洞会导致本 job 失败，从而整条 run 变红，并因
+  # deploy.needs 含本 job 而阻断部署 —— 这是刻意的 fail-closed 语义。
   # 说明：
   #   - ignore-unfixed: true 只告警可修复漏洞，避免噪音
   #   - 若某个已知漏洞已在外部组件修复但尚无新镜像，可在必要时通过
@@ -1049,8 +1051,15 @@ jobs:
           - name: gateway
             change: ${{ needs.detect-changes.outputs.gateway }}
             is_backend: true
+          # 前端入口容器（nginx + 静态资源）：此前**从未被扫过**（矩阵只含 10 个后端服务）。
+          # is_backend: false ⇒ 不随 backend-common 变更触发，只在「前端自身变更」或
+          # 「docker-config 变更」时扫描 —— 与 build-and-push 的 should-build 逐字一致，
+          # 保证「被构建的镜像必被扫描」。
+          - name: frontend-nginx
+            change: ${{ needs.detect-changes.outputs.frontend }}
+            is_backend: false
     steps:
-      # 仅当该服务真实构建过才扫描（与 build-and-push 的 should-build 逻辑一致）
+      # 仅当该镜像真实构建过才扫描（与 build-and-push 的 should-build 逻辑一致）
       - name: Check if image was built
         id: was-built
         run: |
