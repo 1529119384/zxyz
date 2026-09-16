@@ -174,7 +174,7 @@ function submitSearch() {
 
 .more-section {
   padding-bottom: 16px;
-  border-bottom: 1px solid #e4e7ed;
+  border-bottom: 1px solid var(--el-border-color-light);
 }
 
 .more-section h3 {
@@ -191,7 +191,7 @@ function submitSearch() {
 }
 
 .section-title-row span {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 13px;
 }
 
@@ -218,7 +218,7 @@ function submitSearch() {
 }
 
 .member-card-trigger:hover {
-  background: #f5f7fa;
+  background: var(--zxyz-color-bg-page);
 }
 
 .member-card-trigger span {
@@ -234,7 +234,7 @@ function submitSearch() {
   display: grid;
   gap: 4px;
   padding: 12px 0;
-  border-bottom: 1px solid #e4e7ed;
+  border-bottom: 1px solid var(--el-border-color-light);
 }
 
 .search-result-item p {

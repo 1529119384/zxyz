@@ -73,6 +73,6 @@ function updateFormField(field, value) {
 .quota-tip {
   display: block;
   margin-top: 8px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 </style>

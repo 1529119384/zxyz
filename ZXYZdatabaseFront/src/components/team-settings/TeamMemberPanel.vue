@@ -168,7 +168,7 @@ const memberRoleCode = computed({
 
 .permission-tip {
   margin: 0;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 13px;
 }
 </style>

@@ -387,9 +387,9 @@ useEventListener(document, 'contextmenu', (event) => {
   z-index: 3000;
   min-width: 180px;
   padding: 4px 0;
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--el-border-color-light);
   border-radius: 0;
-  background: #fff;
+  background: var(--zxyz-color-bg-surface);
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.15);
 }
 
@@ -401,7 +401,7 @@ useEventListener(document, 'contextmenu', (event) => {
   border-radius: 0;
   text-align: left;
   background: transparent;
-  color: #303133;
+  color: var(--el-text-color-primary);
   cursor: pointer;
 }
 
@@ -414,11 +414,11 @@ useEventListener(document, 'contextmenu', (event) => {
 }
 
 .context-menu__item:hover:not(:disabled) {
-  background: #f5f7fa;
+  background: var(--zxyz-color-bg-page);
 }
 
 .context-menu__item:disabled {
-  color: #c0c4cc;
+  color: var(--el-text-color-disabled);
   cursor: not-allowed;
 }
 </style>

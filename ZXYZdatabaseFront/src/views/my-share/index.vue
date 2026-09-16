@@ -128,12 +128,12 @@ function resolveStatusType(status) {
 
 .page-title {
   font-size: 24px;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 
 .page-subtitle {
   margin-top: 4px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 13px;
 }
 
@@ -144,12 +144,12 @@ function resolveStatusType(status) {
 }
 
 .share-link {
-  color: #303133;
+  color: var(--el-text-color-primary);
   word-break: break-all;
 }
 
 .share-link-meta {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 

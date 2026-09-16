@@ -53,7 +53,7 @@ async function logout() {
   padding: 28px;
   border: 1px solid #e6eaf0;
   border-radius: 8px;
-  background: #fff;
+  background: var(--zxyz-color-bg-surface);
   box-shadow: 0 12px 32px rgb(15 23 42 / 8%);
 }
 

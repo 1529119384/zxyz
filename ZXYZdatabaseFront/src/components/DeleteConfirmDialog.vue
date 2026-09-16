@@ -114,7 +114,7 @@ function handleVisibleChange(visible) {
 
 .delete-confirm-title {
   margin: 0;
-  color: #303133;
+  color: var(--el-text-color-primary);
   font-size: 16px;
   line-height: 24px;
   word-break: break-all;
@@ -122,7 +122,7 @@ function handleVisibleChange(visible) {
 
 .delete-confirm-tip {
   margin: 12px 0 0;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 13px;
   line-height: 20px;
 }

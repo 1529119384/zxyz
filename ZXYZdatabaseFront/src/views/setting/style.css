@@ -27,9 +27,9 @@
 
 .settings-nav {
   margin-bottom: 16px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--zxyz-color-border);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--zxyz-color-bg-surface);
 }
 
 .settings-nav.el-menu--horizontal {
@@ -50,9 +50,9 @@
 .settings-panel {
   min-height: 280px;
   padding: 20px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--zxyz-color-border);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--zxyz-color-bg-surface);
 }
 
 .create-team-panel {
@@ -99,7 +99,7 @@
   gap: 12px;
   margin-bottom: 16px;
   padding: 14px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--zxyz-color-border);
   border-radius: 8px;
   background: #f9fafb;
 }
@@ -118,7 +118,7 @@
 .email-server-summary-item strong {
   display: block;
   overflow: hidden;
-  color: #111827;
+  color: var(--zxyz-color-text-primary);
   font-size: 14px;
   font-weight: 600;
   text-overflow: ellipsis;
@@ -156,7 +156,7 @@
   gap: 12px;
   margin-bottom: 16px;
   padding: 14px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--zxyz-color-border);
   border-radius: 8px;
   background: #f9fafb;
 }
@@ -175,7 +175,7 @@
 .database-maintenance-summary-item strong {
   display: block;
   overflow: hidden;
-  color: #111827;
+  color: var(--zxyz-color-text-primary);
   font-size: 14px;
   font-weight: 600;
   text-overflow: ellipsis;
@@ -220,7 +220,7 @@
 
 .email-record-preview-title {
   margin-bottom: 8px;
-  color: #111827;
+  color: var(--zxyz-color-text-primary);
   font-size: 14px;
   font-weight: 600;
 }
@@ -228,9 +228,9 @@
 .email-record-preview {
   width: 100%;
   min-height: 320px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--zxyz-color-border);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--zxyz-color-bg-surface);
 }
 
 .profile-panel {
@@ -245,7 +245,7 @@
 
 .panel-title h2 {
   margin: 0;
-  color: #111827;
+  color: var(--zxyz-color-text-primary);
   font-size: 18px;
   font-weight: 700;
 }
@@ -282,7 +282,7 @@
 }
 
 .upload-progress {
-  color: #409eff;
+  color: var(--el-color-primary);
   font-size: 13px;
 }
 
@@ -304,7 +304,7 @@
 .quota-helper {
   display: block;
   margin-top: 8px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 

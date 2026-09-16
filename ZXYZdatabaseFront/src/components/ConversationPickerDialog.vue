@@ -76,9 +76,9 @@ function handleSelect(conversation) {
   align-items: center;
   gap: 12px;
   padding: 12px;
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
-  background: #fff;
+  background: var(--zxyz-color-bg-surface);
   cursor: pointer;
   text-align: left;
 }
@@ -103,6 +103,6 @@ function handleSelect(conversation) {
 }
 
 .conversation-option__content small {
-  color: #667085;
+  color: var(--zxyz-color-text-secondary);
 }
 </style>

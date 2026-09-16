@@ -172,7 +172,7 @@ const emailRecordPagination = reactive({ page: 1, pageSize: 10, total: 0 })
 const emailRecordPreviewHtml = computed(() => {
   const rawContent = emailRecordDetail.value?.contentHtml || '<p style="color:#909399;">无内容</p>'
   const cleanContent = DOMPurify.sanitize(rawContent)
-  return `<!doctype html><html><head><meta charset="UTF-8"><style>body{margin:0;padding:16px;font-family:Arial,'Microsoft YaHei',sans-serif;color:#111827;line-height:1.6;word-break:break-word;}img{max-width:100%;height:auto;}table{max-width:100%;border-collapse:collapse;}</style></head><body>${cleanContent}</body></html>`
+  return `<!doctype html><html><head><meta charset="UTF-8"><style>body{margin:0;padding:16px;font-family:Arial,'Microsoft YaHei',sans-serif;color: var(--zxyz-color-text-primary);line-height:1.6;word-break:break-word;}img{max-width:100%;height:auto;}table{max-width:100%;border-collapse:collapse;}</style></head><body>${cleanContent}</body></html>`
 })
 
 onMounted(loadEmailRecords)

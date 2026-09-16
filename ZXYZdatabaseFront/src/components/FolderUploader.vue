@@ -181,7 +181,7 @@ defineExpose({
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
-  color: #606266;
+  color: var(--el-text-color-regular);
   font-size: 13px;
 }
 
@@ -189,7 +189,7 @@ defineExpose({
   margin-left: auto;
   padding-left: 12px;
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 
 .upload-progress {
@@ -202,6 +202,6 @@ defineExpose({
   justify-content: space-between;
   gap: 12px;
   font-size: 13px;
-  color: #606266;
+  color: var(--el-text-color-regular);
 }
 </style>

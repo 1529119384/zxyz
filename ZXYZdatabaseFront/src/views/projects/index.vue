@@ -167,7 +167,7 @@ watch(selectedTeamId, loadProjects)
 
 .toolbar p {
   margin: 6px 0 0;
-  color: #606266;
+  color: var(--el-text-color-regular);
   font-size: 13px;
 }
 </style>

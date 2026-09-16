@@ -111,9 +111,9 @@ onMounted(() => {
   padding: 20px;
 }
 .health-ok {
-  color: #67c23a;
+  color: var(--el-color-success);
 }
 .health-err {
-  color: #f56c6c;
+  color: var(--el-color-danger);
 }
 </style>

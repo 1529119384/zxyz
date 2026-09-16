@@ -236,7 +236,7 @@ function formatQuota(value) {
   max-width: min(720px, 78%);
   padding: 10px 12px;
   border-radius: 8px;
-  background: #f5f7fa;
+  background: var(--zxyz-color-bg-page);
 }
 
 .message-item.mine .message-bubble {
@@ -253,7 +253,7 @@ function formatQuota(value) {
 }
 
 .message-meta {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 
@@ -274,13 +274,13 @@ function formatQuota(value) {
 
 .project-create-request-card {
   padding: 12px;
-  border: 1px solid #dcdfe6;
-  background: #fff;
+  border: 1px solid var(--el-border-color);
+  background: var(--zxyz-color-bg-surface);
 }
 
 .project-create-request-card small,
 .project-create-request-card__status {
-  color: #606266;
+  color: var(--el-text-color-regular);
 }
 
 .project-create-request-card__actions {
@@ -295,7 +295,7 @@ function formatQuota(value) {
 
 .file-card--broken,
 .recalled-message {
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 
 .recalled-message {

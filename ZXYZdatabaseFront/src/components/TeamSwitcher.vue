@@ -172,7 +172,7 @@ async function doSwitchAccount(accountId) {
 <style scoped>
 .team-switcher {
   padding: 12px;
-  border-top: 1px solid #ebeef5;
+  border-top: 1px solid var(--el-border-color-lighter);
 }
 
 .team-switcher__button,
@@ -183,9 +183,9 @@ async function doSwitchAccount(accountId) {
   gap: 8px;
   min-width: 0;
   padding: 8px;
-  border: 1px solid #dcdfe6;
+  border: 1px solid var(--el-border-color);
   border-radius: 6px;
-  background: #fff;
+  background: var(--zxyz-color-bg-surface);
 }
 
 .team-switcher__button {
@@ -202,7 +202,7 @@ async function doSwitchAccount(accountId) {
 
 .trust-tip {
   margin: 0 0 12px;
-  color: #606266;
+  color: var(--el-text-color-regular);
   line-height: 1.5;
 }
 </style>

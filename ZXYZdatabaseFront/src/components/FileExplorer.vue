@@ -417,7 +417,7 @@ defineExpose({
 
 .search-result-info {
   padding: 12px 0 0;
-  color: #606266;
+  color: var(--el-text-color-regular);
   font-size: 13px;
   user-select: text;
   -webkit-user-select: text;
@@ -442,7 +442,7 @@ defineExpose({
 }
 
 .sort-header--active {
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 
 .sort-header__icon {
@@ -461,7 +461,7 @@ defineExpose({
 
 .store-path-cell {
   font-size: 13px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   word-break: break-all;
 }
 

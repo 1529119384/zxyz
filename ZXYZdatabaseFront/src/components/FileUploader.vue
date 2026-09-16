@@ -190,7 +190,7 @@ defineExpose({
 
 .file-list {
   margin-top: 16px;
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
   max-height: 200px;
   overflow-y: auto;
@@ -208,7 +208,7 @@ defineExpose({
 }
 
 .file-item:hover {
-  background-color: #fafafa;
+  background-color: var(--el-fill-color-lighter);
 }
 
 .file-item:last-child {
@@ -228,7 +228,7 @@ defineExpose({
 
 .predicted-name {
   font-size: 12px;
-  color: #e6a23c;
+  color: var(--el-color-warning);
   word-break: break-all;
 }
 
@@ -236,18 +236,18 @@ defineExpose({
   margin-left: auto;
   padding-left: 12px;
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 
 .remove-btn {
   cursor: pointer;
-  color: #f56c6c;
+  color: var(--el-color-danger);
   transition: color 0.3s ease;
   margin-left: 12px;
 }
 
 .remove-btn:hover {
-  color: #ff4141;
+  color: var(--zxyz-color-danger);
 }
 
 .upload-summary {
@@ -257,7 +257,7 @@ defineExpose({
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
-  color: #606266;
+  color: var(--el-text-color-regular);
   font-size: 13px;
 }
 
@@ -271,6 +271,6 @@ defineExpose({
   justify-content: space-between;
   gap: 12px;
   font-size: 13px;
-  color: #606266;
+  color: var(--el-text-color-regular);
 }
 </style>

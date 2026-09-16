@@ -253,7 +253,7 @@ defineExpose({
 
 .store-path-cell {
   font-size: 13px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   word-break: break-all;
 }
 

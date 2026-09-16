@@ -157,11 +157,11 @@ function handleRowDblClick(row) {
 }
 
 .folder-name {
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 
 .file-name {
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 
 .actions {

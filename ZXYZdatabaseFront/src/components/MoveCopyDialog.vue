@@ -278,12 +278,12 @@ const {
 }
 
 .move-copy-dialog__summary {
-  color: #606266;
+  color: var(--el-text-color-regular);
   font-size: 14px;
 }
 
 .move-copy-dialog__path {
-  color: #303133;
+  color: var(--el-text-color-primary);
   font-weight: 500;
 }
 

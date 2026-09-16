@@ -114,12 +114,12 @@ const profileDescription = computed({
 .avatar-tip,
 .upload-progress {
   margin: 0;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 
 .upload-progress {
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 
 .inline-form {
@@ -130,7 +130,7 @@ const profileDescription = computed({
 
 .permission-tip {
   margin: 0;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 13px;
 }
 </style>

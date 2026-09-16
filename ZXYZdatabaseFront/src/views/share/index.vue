@@ -202,7 +202,7 @@ async function handleArchiveDownload(archiveName) {
 }
 
 .password-panel__tip {
-  color: #606266;
+  color: var(--el-text-color-regular);
   line-height: 22px;
 }
 

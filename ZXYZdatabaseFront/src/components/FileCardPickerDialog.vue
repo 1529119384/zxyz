@@ -171,7 +171,7 @@ function handleConfirm() {
 }
 
 .picker-summary {
-  color: #667085;
+  color: var(--zxyz-color-text-secondary);
   font-size: 12px;
 }
 

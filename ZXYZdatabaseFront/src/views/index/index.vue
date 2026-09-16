@@ -444,8 +444,8 @@ watch([spaceTeamId, spaceType, spaceProjectId], () => {
 .storage-usage {
   margin: 16px 20px 0;
   padding: 12px 14px;
-  border: 1px solid #ebeef5;
-  background: #fff;
+  border: 1px solid var(--el-border-color-lighter);
+  background: var(--zxyz-color-bg-surface);
   display: grid;
   gap: 8px;
 }
@@ -454,6 +454,6 @@ watch([spaceTeamId, spaceType, spaceProjectId], () => {
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 </style>

@@ -317,14 +317,14 @@ function formatQueryKeyValue(value) {
   margin-left: auto;
   max-width: 72px;
   overflow: hidden;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .ws-status.connected {
-  color: #67c23a;
+  color: var(--el-color-success);
 }
 
 /* 复用 .ws-status 的定位与字号，仅覆盖按钮自带的高度/内边距 */

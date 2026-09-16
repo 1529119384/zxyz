@@ -346,9 +346,9 @@ async function removeRole(row) {
   display: grid;
   gap: 14px;
   padding: 18px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--zxyz-color-border);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--zxyz-color-bg-surface);
 }
 
 .role-panel-header {
@@ -360,7 +360,7 @@ async function removeRole(row) {
 
 .role-panel-header h3 {
   margin: 0;
-  color: #111827;
+  color: var(--zxyz-color-text-primary);
   font-size: 18px;
   font-weight: 700;
 }
@@ -368,7 +368,7 @@ async function removeRole(row) {
 .role-panel-header p,
 .permission-tip {
   margin: 6px 0 0;
-  color: #667085;
+  color: var(--zxyz-color-text-secondary);
   font-size: 13px;
 }
 
@@ -393,7 +393,7 @@ async function removeRole(row) {
 }
 
 .empty-inline {
-  color: #98a2b3;
+  color: var(--zxyz-color-text-tertiary);
   font-size: 13px;
 }
 
@@ -406,7 +406,7 @@ async function removeRole(row) {
   max-height: 360px;
   overflow: auto;
   padding: 12px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--zxyz-color-border);
   border-radius: 8px;
   background: #f9fafb;
 }
@@ -417,7 +417,7 @@ async function removeRole(row) {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 8px;
-  color: #667085;
+  color: var(--zxyz-color-text-secondary);
   font-size: 13px;
 }
 

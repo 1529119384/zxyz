@@ -44,15 +44,15 @@ const emit = defineEmits(['update:modelValue', 'submit'])
 <style scoped>
 .chat-editor {
   padding: 14px 18px;
-  border-top: 1px solid #e4e7ed;
+  border-top: 1px solid var(--el-border-color-light);
   display: grid;
   gap: 10px;
 }
 
 .system-readonly-tip {
   padding: 12px 18px;
-  border-top: 1px solid #e4e7ed;
-  color: #909399;
+  border-top: 1px solid var(--el-border-color-light);
+  color: var(--el-text-color-secondary);
   font-size: 13px;
   text-align: center;
 }
@@ -63,6 +63,6 @@ const emit = defineEmits(['update:modelValue', 'submit'])
   gap: 10px;
   flex-wrap: wrap;
   justify-content: space-between;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 </style>

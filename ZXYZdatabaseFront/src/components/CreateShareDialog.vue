@@ -222,16 +222,16 @@ watch(accessMode, (mode) => {
   margin-bottom: 20px;
   padding: 12px 14px;
   border-radius: 8px;
-  background: #f5f7fa;
+  background: var(--zxyz-color-bg-page);
 }
 
 .share-target__label {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   margin-right: 12px;
 }
 
 .share-target__value {
-  color: #303133;
+  color: var(--el-text-color-primary);
   word-break: break-all;
 }
 
@@ -249,7 +249,7 @@ watch(accessMode, (mode) => {
 
 .form-tip {
   margin-top: 8px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
   line-height: 18px;
 }

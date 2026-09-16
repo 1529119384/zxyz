@@ -51,7 +51,7 @@ function handleVisibleChange(value) {
 
 .success-tip {
   margin-bottom: 6px;
-  color: #606266;
+  color: var(--el-text-color-regular);
   font-size: 14px;
 }
 </style>

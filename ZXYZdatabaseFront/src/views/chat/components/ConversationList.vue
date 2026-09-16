@@ -75,8 +75,8 @@ const emit = defineEmits(['select', 'contextmenu'])
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: #fff;
-  border-right: 1px solid #e4e7ed;
+  background: var(--zxyz-color-bg-surface);
+  border-right: 1px solid var(--el-border-color-light);
 }
 
 .panel-header {
@@ -85,7 +85,7 @@ const emit = defineEmits(['select', 'contextmenu'])
   align-items: center;
   gap: 12px;
   padding: 16px 18px;
-  border-bottom: 1px solid #e4e7ed;
+  border-bottom: 1px solid var(--el-border-color-light);
 }
 
 .panel-header h1,
@@ -94,7 +94,7 @@ const emit = defineEmits(['select', 'contextmenu'])
 }
 
 .panel-header p {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 
@@ -141,7 +141,7 @@ const emit = defineEmits(['select', 'contextmenu'])
 }
 
 .conversation-content small {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 </style>

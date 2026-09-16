@@ -383,7 +383,7 @@ async function openPermissionSettings() {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: #fff;
+  background: var(--zxyz-color-bg-surface);
 }
 
 .message-header {
@@ -392,7 +392,7 @@ async function openPermissionSettings() {
   align-items: center;
   gap: 12px;
   padding: 16px 18px;
-  border-bottom: 1px solid #e4e7ed;
+  border-bottom: 1px solid var(--el-border-color-light);
 }
 
 .message-header h2,
@@ -401,7 +401,7 @@ async function openPermissionSettings() {
 }
 
 .message-header p {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 
@@ -430,7 +430,7 @@ async function openPermissionSettings() {
 }
 
 .member-profile-card__main span {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 13px;
 }
 
@@ -439,9 +439,9 @@ async function openPermissionSettings() {
   z-index: 3000;
   min-width: 120px;
   padding: 6px;
-  border: 1px solid #dcdfe6;
+  border: 1px solid var(--el-border-color);
   border-radius: 6px;
-  background: #fff;
+  background: var(--zxyz-color-bg-surface);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
@@ -455,6 +455,6 @@ async function openPermissionSettings() {
 }
 
 .context-menu button:hover {
-  background: #f5f7fa;
+  background: var(--zxyz-color-bg-page);
 }
 </style>
