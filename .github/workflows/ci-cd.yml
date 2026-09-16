@@ -771,6 +771,14 @@ jobs:
       - name: Typecheck scope
         run: npm run typecheck:scope
 
+      # 硬编码颜色棘轮（2026-09-16）：`src/styles/tokens.css` 建立了 Design Token 层，但
+      # 「token 层存在」不等于「有人在用」—— 建立当天实际使用数是 0。没有门禁的迁移会在
+      # 下次随手写样式时退回硬编码，所以这里把「只能减少、不许新增」变成硬断言。
+      # 口径：`.vue` 的 <style> 块 + `.css/.scss`，先剥注释，不含 `.js`
+      # （JS 里的色值可能被交给 canvas / 字符串拼接，换成 var() 会坏），tokens.css 自身豁免。
+      - name: Hardcoded colors
+        run: npm run colors:check
+
       # 产物体积预算门禁（ISSUE/08 §5.6）：Vite 自带的 "chunks are larger than 500 kB"
       # 只是控制台提示，既不看 gzip 后的真实传输量，也不会让 CI 变红 —— 又一处
       # "看起来有告警其实没有"。本步把"体积不回归"变成硬断言（棘轮，见 bundle-budget.json）。
