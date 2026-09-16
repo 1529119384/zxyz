@@ -110,18 +110,44 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ⚠️ 本步的 force.on 被 OR 进本 job 的**每一行** outputs（见上方 mapping）
+      # ⇒ 「是否需要忽略变更检测、按全量处理」集中在这一个输出上，一处生效即可覆盖
+      #   矩阵里逐条读取 needs.detect-changes.outputs.<service> 的全部消费者。
       - name: Resolve force_deploy flag
         id: force
         # 审计 2.3.6：github.event.inputs.* 一律经 env 中转再进 shell（表达式注入面）
         env:
           EVENT_NAME: ${{ github.event_name }}
           FORCE_DEPLOY_INPUT: ${{ github.event.inputs.force_deploy }}
+          BEFORE: ${{ github.event.before }}
         run: |
+          # ① force_deploy=true（手动 dispatch）：换服务器 / 灾后首次部署用。
           if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$FORCE_DEPLOY_INPUT" = "true" ]; then
+            echo "force_deploy=true ⇒ 忽略变更检测，按全量处理"
             echo "on=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "on=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          # ② 🔴 before 为全零：git 里该 ref 此前不存在（新建分支首推 / 全新仓库首推）。
+          #    上一步 paths-filter 的 base 此时会回退成空串、走它自己的默认逻辑 ——
+          #    「拿【默认分支】与本分支的 merge-base」做 diff：
+          #      默认分支原本是长期停滞的 master ⇒ merge-base 很旧 ⇒ diff 覆盖整条 dev 历史
+          #      ⇒ 全量（这正是旧注释所依赖的「宁可全量，不可漏建」）。
+          #    但 2026-09-16 默认分支已改为 dev（目的是让 Dependabot 能读到它只认的
+          #    .github/dependabot.yml）⇒ 默认逻辑变成 merge-base(dev, dev) = dev HEAD
+          #    ⇒ diff 为空 ⇒ 所有 filter 全 false ⇒ **静默不构建、不部署**（漏建且毫无提示）。
+          #    ⇒ 把「全零 before ⇒ 全量」写成显式判断，不再依赖「默认分支是谁」这个隐含前提。
+          if [ "$EVENT_NAME" = "push" ]; then
+            case "$BEFORE" in
+              ""|"0000000000000000000000000000000000000000")
+                echo "::notice::github.event.before 为全零（该 ref 此前不存在）⇒ 忽略变更检测，按全量处理"
+                echo "on=true" >> "$GITHUB_OUTPUT"
+                exit 0
+                ;;
+            esac
+          fi
+
+          echo "on=false" >> "$GITHUB_OUTPUT"
 
       - name: Verify sub-repo sync consistency
         if: github.event_name == 'push'
@@ -177,13 +203,18 @@ jobs:
         id: filter
         with:
           # 关键：显式指定 diff 基线为「本次推送之前的那个提交」。
-          # 不设 base 时，dorny/paths-filter 默认拿「默认分支(master) 与本分支(dev) 的
-          # merge-base」做 diff。master 长期停滞 → merge-base 停在很早的提交 →
-          # diff 范围覆盖整条 dev 历史 → 所有 filter 全 true → 11 个镜像全量重建
-          # （实测 run #108：日志打印 "Changes will be detected between master and dev"，
-          #   merge-base=5b99fa9，13 个 Filter 全 true）。设了 base 才是真·选择性构建。
-          # 新分支首推 / force-push 时 github.event.before 为全零，此时回退空串让 action
-          # 走默认逻辑（宁可全量，不可漏建）；pull_request 事件无 before，同样回退默认。
+          # 不设 base 时，dorny/paths-filter 会拿「**默认分支**与本分支的 merge-base」做 diff。
+          # 历史上默认分支是长期停滞的 master ⇒ merge-base 停在很早的提交 ⇒ diff 覆盖整条
+          # dev 历史 ⇒ 所有 filter 全 true ⇒ 全量重建（实测 run #108：日志打印
+          # "Changes will be detected between master and dev"，merge-base=5b99fa9，
+          # 13 个 Filter 全 true）。设了 base 才是真·选择性构建。
+          # ⚠️ 2026-09-16 默认分支已由 master 改为 dev（目的是让 Dependabot 能读到
+          #    .github/dependabot.yml —— 它只读默认分支上的配置）。这**同时改变**了下面的
+          #    回退语义：merge-base(dev, dev) = dev HEAD ⇒ diff 为空 ⇒ 所有 filter 全 false。
+          #    即「before 为全零时回退空串 ⇒ 走默认逻辑 ⇒ 全量」这个假设**不再成立**。
+          #    因此「宁可全量、不可漏建」已改为在 `Resolve force_deploy flag` 步里显式兜底
+          #    （before 全零 ⇒ force.on=true），不再依赖默认分支是谁。
+          # pull_request 事件无 before，回退默认逻辑（此时 merge-base 恰是 PR 的 fork 点，正确）。
           base: ${{ github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000' && github.event.before || '' }}
           filters: |
             backend-common:
@@ -237,6 +268,11 @@ jobs:
       - name: Check if any backend changed
         id: backend-any
         run: |
+          # ⚠️ 「before 为全零（首推 / force-push）⇒ 全量」**不在本步处理**：
+          # 本步只产出 changed / any 两个聚合值，而真正决定「哪个镜像重建」的是
+          # needs.detect-changes.outputs.<service>（矩阵逐条读取）⇒ 只把 any 置 true
+          # 会让 build-and-push 跑起来却一个镜像都不建（更糟）。
+          # 统一由 "Resolve force_deploy flag" 步的 force.on=true 覆盖（见那里的注释）。
           BACKEND=false
           if [ "${{ steps.filter.outputs.backend-common }}" = "true" ] || \
              [ "${{ steps.filter.outputs.project-service }}" = "true" ] || \
