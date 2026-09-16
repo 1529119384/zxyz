@@ -209,7 +209,7 @@ jobs:
           fi
           echo "===== 同步检查通过 ====="
 
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           # 关键：显式指定 diff 基线为「本次推送之前的那个提交」。
