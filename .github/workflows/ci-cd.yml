@@ -758,7 +758,7 @@ jobs:
 
       - name: Upload backend coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backend-jacoco-report
           path: ZXYZdatabaseBack/**/target/site/jacoco/
@@ -872,7 +872,7 @@ jobs:
       # 失败时也要把报告捞出来，否则只能看日志里的截断输出
       - name: Upload Playwright report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: |
@@ -1153,7 +1153,7 @@ jobs:
 
       - name: Upload Trivy report (SARIF output with HIGH/CRITICAL summary)
         if: always() && steps.was-built.outputs.built == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: trivy-${{ matrix.name }}
           path: trivy-${{ matrix.name }}.txt
