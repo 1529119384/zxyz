@@ -1160,7 +1160,7 @@ services:
         max-file: "3"
 
   grafana:
-    image: grafana/grafana:11.1.0@sha256:079600c9517b678c10cda6006b4487d3174512fd4c6cface37df7822756ed7a5
+    image: grafana/grafana:13.2.2@sha256:ac461fb352abc50da10a51c7d02462e9c05488f11f53f14b3ad79a8145f638a0
     container_name: zxyz-grafana
     restart: unless-stopped
     deploy:
