@@ -7,7 +7,7 @@
 
 # 前端构建阶段使用官方 node:22-alpine（版本 tag + 不可变 @sha256 digest 双重钉住，非 :latest）。
 # digest 刷新方式见后端 Dockerfile 顶部说明。
-FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS builder
+FROM node:26-alpine@sha256:ef24c5053d50fdc3e4e56eb4e7ddb7861874ab0fdc797046ba897581deb8e868 AS builder
 
 WORKDIR /workspace
 
