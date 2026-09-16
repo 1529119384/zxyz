@@ -30,6 +30,16 @@ on:
       - 'docker-compose.yml'
       - '.env.example'
       - '.gitleaks.toml'
+      # ⚠️ 必须与上面的 push.paths 对齐：Dependabot 的 github-actions 生态**直接改**
+      #    .github/workflows/*.yml 里的 `uses:` 版本行（本仓现就有 dorny/paths-filter v3→v4、
+      #    actions/checkout v4→v7 等分支）。这类 PR 如果不在 PR 白名单里，就会**一条 CI 都不跑**，
+      #    而 dorny/paths-filter 正是「选择性构建」所依赖的 diff 基线实现，其大版本升级
+      #    只能在合并之后才暴露 —— 届时已直接进入 dev 分支的部署链路。
+      #    纳入白名单后，PR 上会真跑一遍 detect-changes/quality-check，用**新版本**的 action
+      #    验证兼容性。纯 workflow 变更不做任何镜像构建（build-and-push 只认 push/dispatch），
+      #    因此代价仅一次轻量 run。
+      #    语义校验（含「0 个 job」陷阱）由独立的 lint-workflows.yml 承担，两者互补。
+      - '.github/workflows/**'
       - 'nacos-config/**'
       - 'scripts/check-nacos-config-sync.py'
       - 'scripts/**'

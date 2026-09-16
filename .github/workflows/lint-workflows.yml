@@ -1,0 +1,77 @@
+name: Lint Workflows (actionlint)
+
+# ============================================================
+# 为什么需要这个 workflow —— 以及为什么它必须独立于 ci-cd.yml
+# ------------------------------------------------------------
+# 本仓真实踩过的坑：`run: |` 块标量里一旦出现「空的表达式插值」，GitHub 会把**整个**
+# workflow 判为无效。症状很隐蔽：run 名变成文件路径、jobs total=0、created==updated
+# 立即 failure，而本地 YAML 校验器（含 scripts/check-yaml-strict.py 的重复键检查）
+# **完全抓不到** —— 它是「YAML 合法、GitHub 语义非法」。
+#
+# ⚠️ 关键推论：这类「整个文件被判无效」的故障，**不可能**由 ci-cd.yml 自己的某个 job
+#    兜住 —— 文件无效时该文件里 0 个 job 会运行，连报错的机会都没有。
+#    ⇒ 所以 actionlint 门禁必须是**另一个 workflow 文件**，才具备兜底能力。
+#    这也是本仓既有的手动纪律（「改完必须 actionlint 预检」）被自动化的方式。
+#
+# 与 lint-config 的分工（刻意不重复、不打架）：
+#   - lint-config（在 ci-cd.yml 内）：shellcheck（-S error，且只扫
+#     scripts|sql|nacos-config|deploy 下的 *.sh，排除 SC2296）+ 严格 YAML 重复键检查
+#     （由 git ls-files '*.yml' '*.yaml' 覆盖，本来就含本目录）。
+#   - 本 workflow：只做「GitHub Actions 语义」校验（表达式 / 上下文 / 事件与输入 /
+#     job 依赖 / 缩进语义）。刻意用 -shellcheck= -pyflakes= **关掉** actionlint 自带的
+#     shell 集成：那边已有既定口径（error 级、特定排除项），这边若用另一版本、另一
+#     默认级别重扫，只会产生互相矛盾的信号。
+#
+# 版本策略：**钉死 1.7.7 + sha256**（见 ACTIONLINT_SHA256，取自官方发布的
+#   actionlint_1.7.7_checksums.txt，已比对一致）。不跟随 latest：actionlint 新版本会
+#   引入新检查，可能在零代码改动时把流水线刷红。升级 = 显式改版本号 + 同步改校验和。
+# ============================================================
+
+on:
+  push:
+    paths:
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # 纯静态检查、无副作用 ⇒ 同 ref 重复触发直接取消前一次（与 ci-cd.yml 刻意相反的取舍：
+  # 那边含部署，不能取消，否则 docker compose up 半途被杀会留下半更新状态）。
+  group: lint-workflows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 下载并校验 actionlint（钉死版本 + sha256）
+        env:
+          ACTIONLINT_VERSION: '1.7.7'
+          # 官方 actionlint_1.7.7_checksums.txt 中 linux_amd64 一行，逐字符一致。
+          ACTIONLINT_SHA256: '023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757'
+        run: |
+          set -euo pipefail
+          URL="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL --retry 3 --retry-delay 5 -o /tmp/actionlint.tgz "$URL"
+          echo "${ACTIONLINT_SHA256}  /tmp/actionlint.tgz" | sha256sum -c -
+          tar -xzf /tmp/actionlint.tgz -C /tmp actionlint
+          /tmp/actionlint -version
+
+      - name: 列出待校验的 workflow 文件
+        run: |
+          set -euo pipefail
+          echo "仓库内 workflow 文件："
+          ls -1 .github/workflows/ | sed 's/^/  - /'
+
+      - name: 校验 workflow 语义（无参数 = 自动发现 .github/workflows）
+        # 用自动发现而不是显式 glob：新增 workflow 文件自动纳入，且不会因为
+        # 「glob 没匹配到任何文件」而把字面量当路径传进去。
+        run: /tmp/actionlint -no-color -shellcheck= -pyflakes=
