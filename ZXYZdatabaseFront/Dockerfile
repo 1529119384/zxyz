@@ -24,7 +24,19 @@ FROM nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef
 ENV TZ=Asia/Shanghai
 
 # envsubst 用于启动时将环境变量注入 nginx 配置模板（如 OSS 域名）。
-RUN apk add --no-cache gettext
+#
+# 构建期把运行时基础镜像（nginx:1.27-alpine）内【已安装】的 OS 包升级到最新安全修复版。
+# 为什么必须这么做（2026-09-16 实测，见 ISSUE/22 §4.4）：
+#   FROM 行的 @sha256 digest 把构建当时的 Alpine 包版本一并冻死了 —— 本镜像是 Alpine 3.21.3，
+#   带 openssl 3.3.3-r0 / c-ares 1.34.5-r0 / libexpat 2.7.0-r0 / libpng 1.6.47-r0，
+#   而 Alpine 3.21 分支早已发布修复包（3.3.7-r0 / 1.34.8-r0 / 2.8.4-r0 / 1.6.57-r0）
+#   ⇒ Trivy 判 37 条 HIGH/CRITICAL（含 CRITICAL CVE-2026-31789）并作为 deploy 硬前置阻断上线。
+#   刷新 digest 解决不了：nginx:1.27-alpine 上游最后一次更新是 2025-04-16，digest 至今未变
+#   （1.27.5 是 1.27 线最后一个版本，该 tag 不会再被重建）。
+# 仅升级已安装包、不引入新包，也不动 FROM 行的 @sha256 digest 钉定策略
+# —— 与 ZXYZdatabaseBack/Dockerfile:70 采用同一做法，保持前后端一致（此前只有前端漏了这一步，
+#    因为前端镜像在 F-2 之前从未被 Trivy 扫过）。
+RUN apk add --no-cache gettext && apk upgrade --no-cache
 
 # 站点配置作为模板，启动时由 entrypoint.sh 用 envsubst 替换变量。
 COPY deploy/nginx/default.conf /etc/nginx/templates/default.conf.template
