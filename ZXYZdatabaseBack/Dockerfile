@@ -61,7 +61,7 @@ RUN mvn -B -T 1C -pl zxyz-common -am install -Dmaven.test.skip=false -DskipTests
 # 不再使用会随上游滚动的裸 17-jre-alpine（tag 可被上游覆盖，digest 不可变）。
 # digest 取自 docker inspect 的 RepoDigests（多架构 manifest list digest），
 # 已用最小构建（FROM <image>:<tag>@<digest>）实测解析通过，不会因 digest 写错导致 build 失败。
-FROM eclipse-temurin:17.0.14_7-jre-alpine@sha256:865cca6d0b31f284a5fc4e8cbd8f9375f470fd07cf6e909cea62f2790d4187fe
+FROM eclipse-temurin:24.0.2_12-jre-alpine@sha256:4044b6c87cb088885bcd0220f7dc7a8a4aab76577605fa471945d2e98270741f
 
 # 在构建期把运行时基础镜像（eclipse-temurin:17-jre-alpine）内已安装的 OS 包
 # 升级到最新安全修复版，以修复 Trivy 扫描会判定 FAIL 的 HIGH/CRITICAL 漏洞
