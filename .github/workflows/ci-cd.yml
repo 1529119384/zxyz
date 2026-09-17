@@ -1015,7 +1015,7 @@ jobs:
 
       - name: Login to GHCR
         if: steps.should-build.outputs.build == 'true'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -1130,7 +1130,7 @@ jobs:
 
       - name: Login to GHCR
         if: steps.was-built.outputs.built == 'true'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
