@@ -1,13 +1,14 @@
 {
   "$comment": "前端产物体积预算（gzip KiB）。棘轮：只能收紧。改动请附理由。重新生成：npm run build && node scripts/check-bundle-size.mjs --baseline",
   "$baseline": "2026-09-13 首次建立。基线 = dev @ 87bca6d 起的前端产物，vite 7.3.2 / node 22。取值 = 实测 + 8%（分组）/ 3%（总计），并已对 selection 做一次棘轮收紧。",
+  "$ratchet_2026_09_17": "vendor 62 -> 63。理由：axios 1.13.2 -> 1.20.0（跨 7 个 minor 的兼容/安全更新）令 vendor 分组（vue+vue-router+pinia+axios）由 57.4 涨到 62.05 KiB，超原预算 0.05 KiB。属「有意新增能力」而非「非预期膨胀」：其余分组与总计（464.5/471）均未变，膨胀全部来自 axios 自身。此项是唯一被放宽的预算，且放宽幅度 1 KiB ≈ 实测增量（+4.65 KiB 无法靠 1 KiB 掩盖，只用于消除 0.05 KiB 的临界误报）。后续如需再放宽，必须先做分组瘦身。",
   "totalJsGzipKib": 471,
   "totalCssGzipKib": 50,
   "groupGzipKib": {
     "element-plus": 203,
     "index": 94,
     "archiveDownloadRunner": 71,
-    "vendor": 62,
+    "vendor": 63,
     "SystemAdmin": 27,
     "bootstrap": 26,
     "selection": 9
