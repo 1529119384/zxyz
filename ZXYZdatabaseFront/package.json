@@ -25,7 +25,7 @@
     "@vueuse/core": "^14.3.0",
     "@zip.js/zip.js": "^2.8.26",
     "axios": "^1.13.2",
-    "dompurify": "^3.4.5",
+    "dompurify": "^3.4.13",
     "element-plus": "^2.11.7",
     "pinia": "^3.0.4",
     "vue": "^3.5.32",
