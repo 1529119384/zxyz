@@ -22,7 +22,7 @@
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
-    "@vueuse/core": "^14.3.0",
+    "@vueuse/core": "^14.4.0",
     "@zip.js/zip.js": "^2.8.26",
     "axios": "^1.13.2",
     "dompurify": "^3.4.13",
