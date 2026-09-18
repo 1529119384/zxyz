@@ -83,3 +83,8 @@ sql/schema_*.sql
 # 本地 CI 轮询产物（记录上次 run id）；未忽略会令 pre-push 的子仓库同步检查
 # 把工作区视为"脏"从而拒推。
 .last_ci_run
+
+# ===== .qoder：只保留 rules，AI 生成的 repowiki 不再入库 =====
+# repowiki = 311 文件 / 5.88 MB，纯 AI 生成的代码 wiki，且曾因"整目录豁免"造成 Gitleaks 311 文件盲区。
+# 文件仍保留在本地磁盘，只是不再被 git 跟踪（见 ISSUE/24 §五 D-5）。
+.qoder/repowiki/
