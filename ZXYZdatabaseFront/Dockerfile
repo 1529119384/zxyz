@@ -19,7 +19,7 @@ RUN npm run build
 
 # 运行时基础镜像使用官方 nginx:1.27-alpine（minor 版本 tag + 不可变 @sha256 digest 双重钉住，非 :latest）。
 # digest 刷新方式见后端 Dockerfile 顶部说明。
-FROM nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
+FROM nginx:1.29-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de
 
 ENV TZ=Asia/Shanghai
 
