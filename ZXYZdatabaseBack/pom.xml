@@ -142,6 +142,14 @@
                 <artifactId>mybatis-plus-extension</artifactId>
                 <version>${mybatis-plus.version}</version>
             </dependency>
+            <!-- 3.5.9 起 MybatisSqlSessionFactoryBean 等 Spring 集成类从 mybatis-plus-extension
+                 拆到 mybatis-plus-spring（包名 com.baomidou.mybatisplus.spring）；
+                 mybatis-plus-spring 传递依赖 mybatis-plus-extension，故两者同时可得。 -->
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-spring</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
             <dependency>
                 <groupId>com.baomidou</groupId>
                 <artifactId>mybatis-plus-jsqlparser</artifactId>
