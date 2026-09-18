@@ -218,6 +218,15 @@ if [ -d "$REPO_DIR" ]; then
   if [ -f "$REPO_DIR/docker-compose.tls.yml" ]; then
     cp "$REPO_DIR/docker-compose.tls.yml" "$DEPLOY_DIR/docker-compose.tls.yml"
   fi
+  # 【可观测性栈（N-4 方案 A，2026-09-19）】必须一并同步，否则 DEPLOYMENT.md §11.8
+  # 的《infra 手工升级手册》在服务器上必然失败：手册要求 `cd /www/zxyz` 后执行
+  # `docker compose -f docker-compose.observability.yml ...`，而本脚本此前只 cp 上面两个文件
+  # ⇒ 服务器上根本没有这个文件 ⇒ 报 "no such file or directory"。
+  # 注意：它**不参与**本次部署（没有 profiles 就不会被 up 拉起），同步只是为了让人
+  # 在服务器上能按手册手工起/升级该栈；与本文件「只描述真实在跑的栈」的定位不冲突。
+  if [ -f "$REPO_DIR/docker-compose.observability.yml" ]; then
+    cp "$REPO_DIR/docker-compose.observability.yml" "$DEPLOY_DIR/docker-compose.observability.yml"
+  fi
   # scripts/ 已在流程最前面（init-secrets 之前）同步过，此处不再重复。
   # backup.sh 仍从 $DEPLOY_DIR 侧执行：它按自身位置写 ../backups，
   # 若改从 $REPO_DIR 调用会污染克隆工作区、触发下一轮漂移检测。
@@ -553,7 +562,20 @@ else
 
         # 重启服务
         echo "===== Restarting with previous version ====="
-        docker compose up -d "${UPDATE_SVC[@]}"
+        # 🔴 必须带 --no-deps --no-build（2026-09-19 修复；与主部署路径 :433 同款纪律）：
+        #   此前这里漏了 --no-deps，是主部署路径修好之后**遗留的同类缺陷**。
+        #   为什么在回滚路径上尤其危险：UPDATE_SVC 里含 frontend-nginx，而
+        #   frontend-nginx 声明了 `depends_on: gateway`（docker-compose.yml:1017）。
+        #   不带 --no-deps 时 compose 会把 gateway 一并纳入计划（连带其自身的
+        #   nacos/redis/rabbitmq 依赖），于是回滚一个前端会顺带重建网关 ——
+        #   而此时 .env 的 APP_IMAGE_TAG 已被改成**上一版 sha**，重建时若本地缺失该 sha
+        #   的镜像，compose 会退化走 compose 里的 build: 段 ⇒ 服务器上没有源码目录
+        #   ⇒ 报 lstat .../ZXYZdatabaseBack 之类与真实原因无关的错误（主路径已实测过该形态）。
+        #   更要命的是：rollback.sh / 本段都**没有 rollback-of-rollback** 兜底，
+        #   回滚过程中的连带重建一旦失败，站点会停在「新旧混合」状态且无自动恢复路径。
+        #   --no-build 同理：服务器只有 docker-compose.yml，没有 ZXYZdatabaseBack/Front 源码，
+        #   构建永远不可能成功，只会把真实错误替换成 lstat 噪声。
+        docker compose up -d --no-deps --no-build "${UPDATE_SVC[@]}"
 
         # 回滚同样重建了容器（IP 变化），需再次热重载 nginx，否则前端仍 502
         if docker ps --format '{{.Names}}' | grep -qx 'zxyz-frontend-nginx'; then

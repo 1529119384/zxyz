@@ -192,11 +192,17 @@ fi
 
 # --- 重启容器 ---
 echo "===== Restarting ====="
+# 两个分支都必须带 --no-deps：默认服务集（--all 时）含 frontend-nginx，
+# 而它 depends_on gateway（docker-compose.yml:1017）⇒ 不带 --no-deps 时
+# compose 会把 gateway（连带 nacos/redis/rabbitmq）一并纳入「必要时重建」的计划。
+# 本分支（不构建、直接拉 GHCR 镜像）尤其危险：连带重建 gateway 时用的仍是 .env 里的
+# APP_IMAGE_TAG，若该 sha 的镜像本地缺失就会退化走 compose 的 build: 段 ⇒ lstat 报错。
+# 与 CI 主部署路径（deploy-on-server.sh:442）以及本脚本 --build 分支保持同一纪律。
 if [ "$BUILD_FIRST" = true ]; then
   # 本地构建后仅重启自身，不重启依赖服务
   docker compose up -d --no-deps "${SERVICES[@]}"
 else
-  docker compose up -d "${SERVICES[@]}"
+  docker compose up -d --no-deps "${SERVICES[@]}"
 fi
 
 # --- 等待容器 running 状态（非健康） ---

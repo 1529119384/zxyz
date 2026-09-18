@@ -111,7 +111,15 @@ fi
 
 # --- 重启容器 ---
 echo "===== Restarting ====="
-docker compose up -d "${SERVICES[@]}"
+# 🔴 必须带 --no-deps（2026-09-19 修复）：默认回滚的服务集含 frontend-nginx，
+#   而它声明了 `depends_on: gateway`（docker-compose.yml:1017）。不带 --no-deps 时
+#   compose 会把 gateway（连带其 nacos/redis/rabbitmq 依赖）一并纳入「必要时重建」的计划。
+#   回滚场景下这尤其危险：本脚本刚把 .env 的 APP_IMAGE_TAG 改成**上一版 sha**，
+#   连带重建 gateway 时若该 sha 的镜像本地已不存在，compose 会退化走 compose 里的 build: 段，
+#   而服务器上没有 ZXYZdatabaseBack 源码 ⇒ 报 lstat 之类与真实原因无关的错误。
+#   且本脚本**没有 rollback-of-rollback** 兜底，连带重建失败会让站点停在「新旧混合」状态。
+#   点名服务 + --no-deps 也正是 CI 主部署路径的纪律（deploy-on-server.sh:442）。
+docker compose up -d --no-deps "${SERVICES[@]}"
 
 # --- 等待容器 running 状态（非健康） ---
 echo "===== Waiting for containers to start ====="

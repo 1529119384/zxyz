@@ -19,6 +19,8 @@
 - [9. 常见问题排查](#9-常见问题排查)
 - [10. 生产环境部署建议](#10-生产环境部署建议)
 - [11. 维护与更新操作](#11-维护与更新操作)
+  - [11.8 infra 手工升级手册（2026-09-18）](#118-infra-手工升级手册2026-09-18)
+  - [11.9 部署目录会同步哪些文件（2026-09-19 新增）](#119-部署目录会同步哪些文件2026-09-19-新增)
 - [12. 阿里云 ACR 镜像仓库配置](#12-阿里云-acr-镜像仓库配置)
 
 ---
@@ -1090,11 +1092,15 @@ docker compose -f docker-compose.observability.yml --profile observability down
 
 ⚠️ **三点必须注意**：
 
-1. **网络与卷的归属**：该文件末尾写有 `name: xyz`（即 `name: zxyz`），
+1. **网络与卷的归属**：该文件末尾写有 `name: zxyz`，
    使它与主 compose 归属**同一个 compose 项目**，从而复用同一个 `zxyz_zxyz-net`
    网络与同名命名卷（`zxyz_prometheus_data` / `zxyz_grafana_data`）。
    与部署脚本口径一致。**不要**删掉这个 `name:`，否则会另起一套网络
    （`<项目名>_zxyz-net`），被监控的服务与监控组件将不在同一网络，Prometheus 抓不到目标。
+   ⚠️ 该文件由 `deploy-on-server.sh` 与主 compose 一并同步到 `/www/zxyz/`
+   （2026-09-19 补齐；此前只同步 `docker-compose.yml` 与 `docker-compose.tls.yml`，
+   导致本节手册在服务器上必然报 `no such file or directory`），因此可直接 `cd /www/zxyz` 使用。
+   详见 §11.9《部署目录会同步哪些文件》。
 2. **该文件刻意不声明 `ipam`**：主 compose 已把 `zxyz-net` 子网钉死为 172.19.0.0/16。
    此处再声明一份会改变网络 `config-hash` ⇒ 一旦 compose 判定「网络需重建」，
    它会尝试删除一个仍挂着 17 个生产容器的网络而失败（2026-09-14 实测事故：11 容器停机，
@@ -1152,6 +1158,34 @@ docker logs --tail 100 zxyz-mysql
 Trivy 矩阵**四层，属一次**部署系统升级**；收益是「infra 升级终于能生效且被扫」，
 风险是 infra 一旦被自动重建，连接会指向死 IP、数据格式迁移不可回滚。
 **当前判断：先不做**，用本手册覆盖真实需求；确有必要时再立项。
+
+---
+
+### 11.9 部署目录会同步哪些文件（2026-09-19 新增）
+
+> **为什么单列一节**：部署目录 `/www/zxyz/` **不是仓库副本**，而是由
+> `deploy-on-server.sh` 按**白名单**逐个 `cp` 过去的「运行时目录」。
+> 因此「仓库里有这个文件」≠「服务器上有这个文件」——
+> 本文档、`ISSUE/`、`docs/`、`deploy/` 下的绝大多数文件都**不在**服务器上。
+> 写运维手册时若不核对这张表，就会出现「照着文档敲命令，报 no such file」的假文档。
+
+**同步白名单**（`deploy-on-server.sh` 内 `REPO_DIR` → `DEPLOY_DIR`）：
+
+| 仓库内路径 | 是否同步到 `/www/zxyz/` | 说明 |
+|---|:---:|---|
+| `docker-compose.yml` | ✅ | 主 compose（部署核心） |
+| `docker-compose.tls.yml` | ✅ | TLS 覆盖层（`TLS_ENABLED=true` 时叠加） |
+| `docker-compose.observability.yml` | ✅ | 可观测性栈（2026-09-19 补齐；**默认不启动**，见 §11.8 二） |
+| `scripts/*.sh` | ✅ | 部署/维护脚本（流程最早处整目录同步） |
+| `docker-compose.dev.yml` | ❌ | 仅本地开发用 |
+| `deploy/**`（nginx/grafana/prometheus/loki 配置、`*.tmpl`） | ❌ | **渲染脚本从 `$REPO_DIR` 读取模板**，产物写到 `$DEPLOY_DIR`，故无需同步 |
+| `ZXYZdatabaseBack/**` / `ZXYZdatabaseFront/**` | ❌ | 服务器不做构建（部署固定 `--no-build`） |
+| `ISSUE/**`、`docs/**`、`*.md` | ❌ | 文档，仅在仓库侧 |
+
+⚠️ **推论（排障时最容易踩）**：服务器上**没有源码目录**，所以任何会退化到
+`build:` 段的命令都必然报 `lstat .../ZXYZdatabaseBack: no such file or directory`。
+⇒ 凡在对服务器执行 `docker compose up`，一律点名服务并加
+**`--no-deps --no-build`**（主路径、回滚路径、`deploy-fast.sh` 均已统一，见各脚本注释）。
 
 ---
 
