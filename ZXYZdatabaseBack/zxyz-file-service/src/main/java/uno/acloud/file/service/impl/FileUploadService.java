@@ -649,51 +649,14 @@ public class FileUploadService implements FileUploadPort {
         String clientOriginalName = request == null ? null : request.getOriginalName();
         Long parentId = request == null ? null : request.getParentId();
         try {
-            validateConfirmUploadItem(request);
-            // 审计 12-2.1.2：确认前必须证明「这个 objectKey 就是本次用户申请过签名的那一个」
-            requireUploadOwnership(request.getObjectKey(), userId);
-            // 存储 HEAD 请求校验实际文件大小，防止客户端篡改 fileSize
-            Long ossSize = registry.getDefaultProvider().getObjectSize(request.getObjectKey());
-            if (ossSize == null) {
-                // fail-closed：拿不到真实 ossSize 时拒绝确认，要求客户端重新上传
-                throw new BusinessException(ErrorCode.SYSTEM_ERROR, "存储服务不可用，请重新上传");
-            }
-            Long reportedSize = request.getFileSize();
-            if (reportedSize != null && !reportedSize.equals(ossSize)) {
-                // 客户端自报 fileSize 与真实 ossSize 不一致，拒绝确认防止绕过校验
-                log.warn("上传大小与存储实际不符，拒绝确认 objectKey={}, originalName={}, reportedFileSize={}, actualOssSize={}",
-                        request.getObjectKey(), request.getOriginalName(), reportedSize, ossSize);
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "文件大小校验失败，请重新上传");
-            }
-            if (ossSize > maxFileSizeBytes()) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST,
-                        "文件大小超过限制（最大 " + formatFileSize(maxFileSizeBytes()) + "）");
-            }
+            // ① 校验（结构 / 归属凭证 / 存储实际大小）
+            long ossSize = validateAndProbeUpload(request, userId);
+            // ② 定位目标空间并授权
             SpaceTarget target = resolveUploadTarget(request, userId);
             requireUploadAccess(target, userId);
+            // ③ 选一个未占用的最终文件名（并发下最多重试 MAX_NAME_RETRY_ATTEMPTS 次）
             Set<String> reservedNames = reservedNamesByParent.computeIfAbsent(request.getParentId(), key -> new HashSet<>());
-            FileItem fileItem;
-            for (int attempt = 0; ; attempt++) {
-                String finalName = fileDomainValidator.resolveAvailableName(
-                        request.getParentId(),
-                        target,
-                        FileNodeType.FILE,
-                        request.getOriginalName(),
-                        reservedNames,
-                        target.ownerUserId(userId)
-                );
-                reservedNames.add(finalName);
-                try {
-                    String fileUrl = registry.getDefaultProvider().generateDownloadInfo(request.getObjectKey(), request.getOriginalName()).getDownloadUrl();
-                    fileItem = saveFileInfo(request.getObjectKey(), finalName, ossSize, request.getParentId(), target, userId, fileUrl);
-                    break;
-                } catch (DuplicateKeyException e) {
-                    if (attempt >= MAX_NAME_RETRY_ATTEMPTS - 1) {
-                        throw e;
-                    }
-                    // 并发下同名被先提交者占用，重试下一个序号名
-                }
-            }
+            FileItem fileItem = persistWithUniqueName(request, userId, ossSize, target, reservedNames);
             // 确认成功后才消费归属凭证：保证「一个凭证只能确认一次」，同时允许失败重试（审计 12-2.1.2）
             consumeUploadOwnership(request.getObjectKey());
             log.info("确认上传成功 objectKey={}, originalName={}, finalName={}, fileUrl={}",
@@ -727,6 +690,79 @@ public class FileUploadService implements FileUploadPort {
                     e.getMessage()
             );
         }
+    }
+
+    /**
+     * 确认上传的「校验 + 探测」步骤（原 {@code confirmSingleFile} 前半段，拆分不改语义）。
+     *
+     * <p>依次做四件事，任一不通过即抛 {@link BusinessException}（由调用方按项回传）：
+     * <ol>
+     *   <li>结构校验 —— objectKey / originalName / parentId 非空、扩展名合法（{@code validateConfirmUploadItem}）；</li>
+     *   <li>归属校验 —— 这个 objectKey 必须是本次用户申请过签名的那个（审计 12-2.1.2）；</li>
+     *   <li>探测真实大小 —— 向存储发 HEAD，防止客户端篡改 {@code fileSize}；</li>
+     *   <li>限额校验 —— 客户端自报值与真实值必须一致，且真实值不得超过上限。</li>
+     * </ol>
+     *
+     * @return 存储侧的真实对象大小（已确认非 null 且不超限）
+     */
+    private long validateAndProbeUpload(ConfirmUploadRequest request, Long userId) {
+        validateConfirmUploadItem(request);
+        // 审计 12-2.1.2：确认前必须证明「这个 objectKey 就是本次用户申请过签名的那一个」
+        requireUploadOwnership(request.getObjectKey(), userId);
+        // 存储 HEAD 请求校验实际文件大小，防止客户端篡改 fileSize
+        Long ossSize = registry.getDefaultProvider().getObjectSize(request.getObjectKey());
+        if (ossSize == null) {
+            // fail-closed：拿不到真实 ossSize 时拒绝确认，要求客户端重新上传
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "存储服务不可用，请重新上传");
+        }
+        Long reportedSize = request.getFileSize();
+        if (reportedSize != null && !reportedSize.equals(ossSize)) {
+            // 客户端自报 fileSize 与真实 ossSize 不一致，拒绝确认防止绕过校验
+            log.warn("上传大小与存储实际不符，拒绝确认 objectKey={}, originalName={}, reportedFileSize={}, actualOssSize={}",
+                    request.getObjectKey(), request.getOriginalName(), reportedSize, ossSize);
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "文件大小校验失败，请重新上传");
+        }
+        if (ossSize > maxFileSizeBytes()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                    "文件大小超过限制（最大 " + formatFileSize(maxFileSizeBytes()) + "）");
+        }
+        return ossSize;
+    }
+
+    /**
+     * 确认上传的「选名 + 落库」步骤（原 {@code confirmSingleFile} 中段，拆分不改语义）。
+     *
+     * <p>在 {@code reservedNames} 上依次尝试候选名，命中唯一键冲突时换下一个序号名重试；
+     * 调用方负责在返回后消费归属凭证（保证「凭证只消费一次」且失败可重试）。
+     */
+    private FileItem persistWithUniqueName(ConfirmUploadRequest request,
+                                           Long userId,
+                                           long ossSize,
+                                           SpaceTarget target,
+                                           Set<String> reservedNames) {
+        FileItem fileItem;
+        for (int attempt = 0; ; attempt++) {
+            String finalName = fileDomainValidator.resolveAvailableName(
+                    request.getParentId(),
+                    target,
+                    FileNodeType.FILE,
+                    request.getOriginalName(),
+                    reservedNames,
+                    target.ownerUserId(userId)
+            );
+            reservedNames.add(finalName);
+            try {
+                String fileUrl = registry.getDefaultProvider().generateDownloadInfo(request.getObjectKey(), request.getOriginalName()).getDownloadUrl();
+                fileItem = saveFileInfo(request.getObjectKey(), finalName, ossSize, request.getParentId(), target, userId, fileUrl);
+                break;
+            } catch (DuplicateKeyException e) {
+                if (attempt >= MAX_NAME_RETRY_ATTEMPTS - 1) {
+                    throw e;
+                }
+                // 并发下同名被先提交者占用，重试下一个序号名
+            }
+        }
+        return fileItem;
     }
 
     private void validateConfirmUploadItem(ConfirmUploadRequest request) {
