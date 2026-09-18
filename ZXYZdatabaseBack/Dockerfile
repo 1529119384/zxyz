@@ -67,6 +67,17 @@ FROM eclipse-temurin:17.0.14_7-jre-alpine@sha256:865cca6d0b31f284a5fc4e8cbd8f937
 # 升级到最新安全修复版，以修复 Trivy 扫描会判定 FAIL 的 HIGH/CRITICAL 漏洞
 # （openssl/gnutls/sqlite-libs/gnupg 等）。仅升级已安装包、不引入新包，
 # 也不动 FROM 行的 @sha256 digest 钉定策略。
+#
+# ⚠️ 2026-09-18 补充（本行是必需的，不是可选的）：
+#   GHA 构建缓存（`cache-from/to: type=gha, mode=max`）会把本 RUN 层整体复用 ——
+#   实测本 RUN 层命中 `CACHED` 时**根本不会重新下载 Alpine 索引**，因此 `apk upgrade`
+#   退化为 no-op，镜像里仍是旧包 ⇒ 等 Alpine 再发新补丁时，镜像里还停在旧版
+#   ⇒ Trivy 判 HIGH ⇒ deploy 被静默阻断（且只在「该镜像恰好被重建」时才暴露）。
+#   2026-09-18 实测：frontend-nginx 因本层 CACHED 而带 openssl 3.3.7-r0
+#   （修复版 3.3.7-r1 已发布）⇒ 2 条 HIGH ⇒ deploy 被跳过。后端同款写法同样有此风险。
+#   ⇒ 用 APK_UPGRADE_CACHE_BUST 打破该层缓存：CI 每轮传不同的值（github.run_id），
+#      本 RUN 层因此每轮都真实执行、每次都拉到最新安全修复。
+ARG APK_UPGRADE_CACHE_BUST=0
 RUN apk add --no-cache curl && apk upgrade --no-cache
 
 WORKDIR /app

@@ -1048,7 +1048,9 @@ jobs:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           push: true
-          build-args: MODULE=${{ matrix.module }}
+          build-args: |
+            MODULE=${{ matrix.module }}
+            APK_UPGRADE_CACHE_BUST=${{ github.run_id }}
           labels: |
             zxyz.ci.quality-check-skipped=${{ needs.detect-changes.outputs.skip_quality }}
             zxyz.ci.run-id=${{ github.run_id }}

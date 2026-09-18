@@ -36,6 +36,17 @@ ENV TZ=Asia/Shanghai
 # 仅升级已安装包、不引入新包，也不动 FROM 行的 @sha256 digest 钉定策略
 # —— 与 ZXYZdatabaseBack/Dockerfile:70 采用同一做法，保持前后端一致（此前只有前端漏了这一步，
 #    因为前端镜像在 F-2 之前从未被 Trivy 扫过）。
+#
+# ⚠️ 2026-09-18 补充（本行是必需的，不是可选的）：
+#   GHA 构建缓存（`cache-from/to: type=gha, mode=max`）会把本 RUN 层整体复用 ——
+#   实测本 RUN 层命中 `CACHED` 时**根本不会重新下载 Alpine 索引**，因此 `apk upgrade`
+#   退化为 no-op，镜像里仍是旧包。症状：2026-09-16 的修复首次生效，之后每次构建都
+#   复用旧层；等 Alpine 再发新补丁（如 openssl 3.3.7-r1 修 CVE-2026-45447）时，
+#   镜像里还停在 3.3.7-r0 ⇒ Trivy 判 HIGH ⇒ deploy 被静默阻断（且只在「该镜像恰好
+#   被重建」时才暴露，极易误判为偶发）。
+#   ⇒ 用 APK_UPGRADE_CACHE_BUST 打破该层缓存：CI 每轮传不同的值（github.run_id），
+#      本 RUN 层因此每轮都真实执行、每次都拉到最新安全修复。
+ARG APK_UPGRADE_CACHE_BUST=0
 RUN apk add --no-cache gettext && apk upgrade --no-cache
 
 # 站点配置作为模板，启动时由 entrypoint.sh 用 envsubst 替换变量。
