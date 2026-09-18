@@ -1,0 +1,228 @@
+# ---------------------------------------------------------------------------
+# 可观测性栈（observability）—— **默认不启动、不属于主部署链路**
+#
+# 【为什么独立成文件（N-4 方案 A，2026-09-18）】
+#   本文件里的 6 个服务（loki / promtail / prometheus / alertmanager / grafana）
+#   在 2026-09-18 实测中**从未在生产服务器上被创建过**（`docker ps -a` 里连 Exited 都没有），
+#   即：它们此前虽写在 docker-compose.yml 里，却**从未真正运行**。
+#   但 docker-compose.yml 的任何改动（哪怕只改一个注释）都会置 `DOCKER_CFG=true`
+#   ⇒ 触发**全部 11 个业务服务 + frontend-nginx 的全量重建**。
+#   于是出现了一个纯付成本、零收益的结构性陷阱：
+#     「升级一个从来没运行过的服务的基础镜像」会连带把整条生产业务栈重建一遍。
+#   把「声明了但没跑」的服务移出主 compose，语义才正确：
+#     docker-compose.yml = **只描述真实在跑的栈**。
+#
+# 【怎么用】
+#   启动（需要时，手工执行；不随 CI 部署）：
+#     cd /www/zxyz && docker compose -f docker-compose.observability.yml --profile observability up -d
+#   停止：
+#     cd /www/zxyz && docker compose -f docker-compose.observability.yml --profile observability down
+#   查看状态：
+#     cd /www/zxyz && docker compose -f docker-compose.observability.yml --profile observability ps
+#
+#   ⚠️ profiles 语义：`profiles: ["observability"]` 意味着**不显式指定 --profile 时这些服务
+#      不会被 `docker compose up` 拉起**。这与主 compose 的 `flyway`（profiles: ["tools"]）
+#      是同一套机制，用途一致：把「可选组件」与「默认栈」在文件层面分开。
+#
+# 【与原 docker-compose.yml 的关系】
+#   - 网络沿用同一个外部栈名 `zxyz-net`。**必须用 `name: zxyz`**（见文件末尾）——
+#     两个 compose 项目若各自建网，会得到 `zxyz_zxyz-net` 与 `<项目名>_zxyz-net` 两个不同的网络，
+#     被监控的服务与监控组件就不在同一网络里，Prometheus 抓取会直接解析不到目标。
+#   - 命名卷 prometheus_data / grafana_data 同样随本项目创建（`zxyz_prometheus_data` 等）。
+#     这与主 compose 时代创建的卷名一致，故**不会**丢失历史 TSDB / Grafana 数据。
+#   - 环境变量沿用同目录 `.env`（compose 自动读取），无需额外配置。
+#
+# 【与主部署链路的关系（重要）】
+#   scripts/deploy-on-server.sh 只 `cp` 同步 docker-compose.yml 与 docker-compose.tls.yml，
+#   **不同步本文件**。因此：
+#     - 本文件的任何改动都不会被 CI 部署，也不会触发业务栈重建（这正是方案 A 的目的）；
+#     - 升级本文件里的镜像 = **手工运维动作**，请照 DEPLOYMENT.md《infra 手工升级手册》执行。
+#   ⚠️ 若将来要让本文件也进 CI，必须先给 detect-changes 加路径 + 给部署脚本加独立
+#      同步与 `UPDATE_INFRA` 通道（= N-4 方案 B，属一次部署系统升级，工作量与风险都高一档）。
+# ---------------------------------------------------------------------------
+
+services:
+  loki:
+    image: grafana/loki:3.0.0@sha256:757b5fadf816a1396f1fea598152947421fa49cb8b2db1ddd2a6e30fae003253
+    container_name: zxyz-loki
+    restart: unless-stopped
+    profiles: ["observability"]
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+    volumes:
+      - ${DATA_DIR:-./data}/loki:/loki
+      - ./deploy/loki-config.yml:/etc/loki/loki-config.yml:ro
+    command:
+      - -config.file=/etc/loki/loki-config.yml
+    networks:
+      - zxyz-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  promtail:
+    image: grafana/promtail:3.0.0@sha256:d3de3da9431cfbe74a6a94555050df5257f357e827be8e63f8998d509c37af8b
+    container_name: zxyz-promtail
+    restart: unless-stopped
+    profiles: ["observability"]
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
+    # 为什么：原 promtail 无 healthcheck，编排无法感知其异常。promtail 3.x ready 端点为 /ready，端口 9080（见 deploy/promtail-config.yml server.http_listen_port）。
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9080/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./deploy/promtail-config.yml:/etc/promtail/config.yml:ro
+      # 为什么：positions 持久化到宿主机，避免容器重启后从 /tmp 丢失、导致 promtail 重推全部历史日志。路径与 deploy/promtail-config.yml positions.filename 对应。
+      - ./data/promtail:/data/promtail
+    networks:
+      - zxyz-net
+    depends_on:
+      loki:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # 监控栈（P1-D3）：Prometheus 抓取各服务 micrometer /actuator/prometheus 端点，
+  # Alertmanager 接告警，Grafana 做可视化。三者仅绑定 127.0.0.1（与 nacos/rabbitmq 管理端口一致），
+  # 生产经宿主机 Nginx 反代并加来源限制，切勿直接暴露公网。
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.53.0@sha256:075b1ba2c4ebb04bc3a6ab86c06ec8d8099f8fda1c96ef6d104d9bb1def1d8bc
+    container_name: zxyz-prometheus
+    restart: unless-stopped
+    profiles: ["observability"]
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    # 为什么：挂载配置与规则为只读，数据卷持久化 TSDB，避免容器重建丢失历史指标。
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+    ports:
+      # 仅绑定回环地址，避免监控数据裸奔到公网
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    networks:
+      - zxyz-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0@sha256:e13b6ed5cb929eeaee733479dce55e10eb3bc2e9c4586c705a4e8da41e5eacf5
+    container_name: zxyz-alertmanager
+    restart: unless-stopped
+    profiles: ["observability"]
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+    volumes:
+      - ./deploy/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+    ports:
+      - "127.0.0.1:${ALERTMANAGER_PORT:-9093}:9093"
+    networks:
+      - zxyz-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9093/-/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  grafana:
+    image: grafana/grafana:11.1.0@sha256:079600c9517b678c10cda6006b4487d3174512fd4c6cface37df7822756ed7a5
+    container_name: zxyz-grafana
+    restart: unless-stopped
+    profiles: ["observability"]
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    # 为什么：安全红线——Grafana 默认 admin/admin 极危险；缺失 GRAFANA_ADMIN_PASSWORD 直接启动失败（:? 硬失败），
+    # 严禁回退弱默认。GRAFANA_ADMIN_PASSWORD 已由 init-secrets.sh 生成，validate-env 亦拦截 CHANGE_ME 占位符。
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD 必须设置，禁止弱默认 admin}
+      GF_SERVER_HTTP_PORT: "3000"
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    networks:
+      - zxyz-net
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+# 命名数据卷：compose 自动创建，用于监控组件持久化
+volumes:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  zxyz-net:
+    driver: bridge
+    # 🔒 与主 compose **必须**同名同栈：`name: zxyz` 让本项目与 docker-compose.yml 归属同一个
+    #   compose 项目，从而复用同一个 `zxyz_zxyz-net` 网络与同名卷，而不是另起一套。
+    #   ⚠️ 本网络**刻意不声明 ipam**：主 compose 的网络已声明并钉死 172.19.0.0/16，
+    #      此处再声明一份会改变 config-hash ⇒ 一旦有人执行 `--profile observability up`
+    #      且 compose 判定「网络需重建」，就会去删一个仍有 17 个生产容器挂着的网络而失败
+    #      （详见 docker-compose.yml 末尾关于此事故的完整记录，2026-09-14 实测全站停机）。
+    #      复用既有网络即可，子网由主 compose 保证。
+
+name: zxyz

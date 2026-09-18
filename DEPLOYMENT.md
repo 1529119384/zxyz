@@ -55,6 +55,13 @@
 | `zxyz-audit-service` | `zxyz-audit-service` | 18087 | 无 | mysql, redis, rabbitmq, nacos |
 | `zxyz-gateway` | `zxyz-gateway` | 18000 | 无 | nacos |
 | `zxyz-frontend-nginx` | `zxyz-frontend-nginx` | 80 | `${HTTP_PORT:-80}` | gateway |
+| `zxyz-nacos-log-cleanup` | `alpine:3.20` | - | 无 | nacos（仅清理其日志卷） |
+
+> ⚠️ **可观测性栈不在此表内**（2026-09-18 迁移）：`zxyz-loki` / `zxyz-promtail` /
+> `zxyz-prometheus` / `zxyz-alertmanager` / `zxyz-grafana` 已从 `docker-compose.yml`
+> 移入 **`docker-compose.observability.yml`**（`profiles: ["observability"]`，默认不启动）。
+> 它们在生产上从未被创建过，独立后不再随主部署链路重建。升级方法见
+> [§11.8《infra 手工升级手册》](#118-infra-手工升级手册2026-09-18)。
 
 ### 2.2 请求流向
 
@@ -1039,6 +1046,112 @@ cd nacos-config
 ssh -L 8080:localhost:8080 user@your-server
 # 本地浏览器访问 http://localhost:8080/next/
 ```
+
+### 11.8 infra 手工升级手册（2026-09-18）
+
+> **为什么需要这一节**：本仓的 CI 部署链路是**面向 11 个业务服务**设计的，
+> 它对 infra（mysql / nacos / redis / rabbitmq / 可观测性栈）**既不构建、也不更新容器**。
+> 因此「改 compose 里 infra 的镜像 tag」这个动作，在 CI 上**永远不会生效**，
+> 却会照样触发一次全站业务服务的重建 —— 纯付成本、零收益。
+> 本节把「infra 怎么升级」这件事写清楚，替代此前那种「改一行 compose 以为就升级了」的假安全感。
+
+#### 一、先认清：CI 不会升级 infra
+
+| 事实 | 机制 | 后果 |
+|---|---|---|
+| CI **不构建** infra 镜像 | `build-and-push` 的矩阵只含 11 个业务服务 | infra 升级不会被 CI 打包 |
+| CI **不更新** infra 容器 | `deploy-on-server.sh` 的 `UPDATE_SVC` 只有 11 个业务服务；`up -d` 固定带 `--no-deps --no-build` | 即便 compose 里改了 infra tag，`up` 也**不会**重建 infra 容器 |
+| 但 CI **会因此重建全站** | 改 `docker-compose.yml`（哪怕只改注释）⇒ `DOCKER_CFG=true` ⇒ `UPDATE_SVC` 覆盖为全部 11 个服务 + frontend-nginx | 付了一次全量重建的成本，infra 却纹丝不动 |
+
+⇒ **结论**：infra 升级 = **手工运维动作**，必须走下面的手册。
+
+#### 二、可观测性栈（已独立，默认不部署）
+
+`loki` / `promtail` / `prometheus` / `alertmanager` / `grafana` 已迁入
+`docker-compose.observability.yml`，带 `profiles: ["observability"]`：
+**不带 `--profile` 时不会被 `docker compose up` 拉起**（与主 compose 的 `flyway` 用 `profiles: ["tools"]` 是同一机制）。
+
+```bash
+cd /www/zxyz
+
+# 查看当前状态（未部署时应无任何容器）
+docker compose -f docker-compose.observability.yml --profile observability ps
+
+# 启动整栈
+docker compose -f docker-compose.observability.yml --profile observability up -d
+
+# 只升级其中某一个（示例：grafana）
+docker compose -f docker-compose.observability.yml --profile observability pull grafana
+docker compose -f docker-compose.observability.yml --profile observability up -d grafana
+
+# 停止（保留数据卷）
+docker compose -f docker-compose.observability.yml --profile observability down
+```
+
+⚠️ **三点必须注意**：
+
+1. **网络与卷的归属**：该文件末尾写有 `name: xyz`（即 `name: zxyz`），
+   使它与主 compose 归属**同一个 compose 项目**，从而复用同一个 `zxyz_zxyz-net`
+   网络与同名命名卷（`zxyz_prometheus_data` / `zxyz_grafana_data`）。
+   与部署脚本口径一致。**不要**删掉这个 `name:`，否则会另起一套网络
+   （`<项目名>_zxyz-net`），被监控的服务与监控组件将不在同一网络，Prometheus 抓不到目标。
+2. **该文件刻意不声明 `ipam`**：主 compose 已把 `zxyz-net` 子网钉死为 172.19.0.0/16。
+   此处再声明一份会改变网络 `config-hash` ⇒ 一旦 compose 判定「网络需重建」，
+   它会尝试删除一个仍挂着 17 个生产容器的网络而失败（2026-09-14 实测事故：11 容器停机，
+   详见 `docker-compose.yml` 末尾的完整记录）。
+3. **`alertmanager` 配置渲染已加守卫**：`deploy-on-server.sh` 只在
+   `zxyz-alertmanager` **正在运行**时才渲染告警配置（与热重载段同一口径）。
+   手工起了 observability 栈之后再跑部署，渲染与热重载都会照常生效。
+
+#### 三、mysql / nacos / redis / rabbitmq（仍在主 compose）
+
+这四个是**真实在跑**的 infra，仍在 `docker-compose.yml` 里。升级必须手工执行，
+**且必须先备份、能回滚**：
+
+```bash
+cd /www/zxyz
+
+# 0) 前置：备份（数据安全的第一道防线）
+bash scripts/backup.sh                 # 全量；或 backup.sh --mysql-only
+
+# 1) 记录当前镜像（回滚用）
+docker inspect zxyz-mysql  --format '{{.Config.Image}}'
+docker inspect zxyz-redis  --format '{{.Config.Image}}'
+
+# 2) 改镜像 tag（在 /www/zxyz/docker-compose.yml 里改，改完先校验语法）
+docker compose config >/dev/null && echo "compose OK"
+
+# 3) 拉取新镜像
+docker compose pull mysql
+
+# 4) 只重建目标容器（--no-deps！否则会连带重建依赖它的全部业务服务）
+docker compose up -d --no-deps mysql
+
+# 5) 验证
+docker ps --filter name=zxyz-mysql
+docker logs --tail 100 zxyz-mysql
+```
+
+⚠️ **风险与红线**：
+
+- **数据格式迁移不可回滚**：Redis 的 RDB/AOF、MySQL 的 datadir 一旦被新版本改写，
+  **降级回旧镜像可能直接起不来**。MySQL 大版本升级（8.4 → 9.x）必须先做
+  `mysqldump` 逻辑备份 + 在**克隆环境**演练，绝不在生产直接试。
+- **连接会短暂中断**：infra 重建期间，业务服务会拿不到库/缓存而报错
+  （连接池会重连，`restart: unless-stopped` 不重启容器，通常自愈）。
+  仍然建议在维护窗口做，别在业务高峰。
+- **不要用 `docker compose up -d`（不带服务名）**：那等于让 compose 去「确保全部服务在跑」，
+  会用源码构建、会动到不属于本次变更的容器。**永远点名服务 + `--no-deps`**。
+- **改完记得提交**：手工升级后 `docker-compose.yml` 与线上不一致，
+  下一次 CI 部署会把 `docker-compose.yml` 从仓库 `cp` 覆盖回 `$DEPLOY_DIR`
+  ⇒ **手工改动会被静默冲掉**。所以要么把新 tag 提交回仓库，要么在升级记录里写明。
+
+#### 四、为什么不做「B 方案」（给 infra 建独立更新通道）
+
+给 infra 建独立的变更检测 + 更新通道需要同时改 **CI filter / envs / 部署脚本 `UPDATE_INFRA` /
+Trivy 矩阵**四层，属一次**部署系统升级**；收益是「infra 升级终于能生效且被扫」，
+风险是 infra 一旦被自动重建，连接会指向死 IP、数据格式迁移不可回滚。
+**当前判断：先不做**，用本手册覆盖真实需求；确有必要时再立项。
 
 ---
 

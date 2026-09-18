@@ -21,6 +21,13 @@ on:
       # 刻意**不**并入 any-change：纯脚本/校验类变更不需要重建任何镜像。
       - 'scripts/**'
       - 'sql/**'
+      # ⚠️ docker-compose.observability.yml（N-4 方案 A）**刻意只进 lint、不进构建**：
+      #    它承载可观测性栈（默认不启动、不在部署链路上），改它不需要重建任何业务镜像。
+      #    但**必须**让它触发 lint-config —— 否则「只改这一行」的 PR 会一条检查都不跑，
+      #    重演 .gitignore 那种「零检查合并」的盲区。故纳入白名单以跑 YAML 严格校验。
+      #    它与 docker-compose.yml 是**两个文件**：后者的 glob 不会匹配到它，
+      #    这正是我们要的（后者命中 docker-config ⇒ 全量重建，前者只 lint）。
+      - 'docker-compose.observability.yml'
   pull_request:
     branches: [dev, main]
     paths:
@@ -44,6 +51,9 @@ on:
       - 'scripts/check-nacos-config-sync.py'
       - 'scripts/**'
       - 'sql/**'
+      # ⚠️ 与 push.paths 对齐（漏一处 ⇒ 该类 PR 一条 CI 都不跑）。见上方说明：
+      #    observability compose 只进 lint、不进构建。
+      - 'docker-compose.observability.yml'
   workflow_dispatch:
     inputs:
       tag:

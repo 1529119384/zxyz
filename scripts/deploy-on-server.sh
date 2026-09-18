@@ -372,18 +372,29 @@ echo "Pull finished"
 # 渲染脚本取自 $REPO_DIR（每次部署都会 git pull，必为最新版本）。
 # 优雅降级：ALERT_WEBHOOK_URL 与 ALERT_EMAIL_TO 皆未配置时，渲染为
 # 静默丢弃的合法 no-op receiver，Alertmanager 仍正常启动，监控不中断。
-if [ -f "$REPO_DIR/scripts/render-alertmanager.sh" ]; then
-  echo "===== Rendering Alertmanager config ====="
-  if ! bash "$REPO_DIR/scripts/render-alertmanager.sh" \
-         "$DEPLOY_DIR/.env" \
-         "$DEPLOY_DIR/deploy/alertmanager/alertmanager.yml" \
-         "$REPO_DIR/deploy/alertmanager/alertmanager.yml.tmpl"; then
-    echo "::error::RENDER_ALERTMANAGER_FAILED: 渲染 Alertmanager 配置失败，已中止部署"
-    exit 1
+#
+# 【守卫（N-4 方案 A，2026-09-18）】Alertmanager 已随整个可观测性栈迁出主 compose，
+# 移入 docker-compose.observability.yml（profiles: ["observability"]，默认不启动）。
+# 因此这一步在**主部署链路上已经没有任何消费者**：不守卫的话，每次部署都会白渲染一份
+# 没人读的配置（纯噪音，且一旦 tmpl 改动会在部署日志里冒出与本次部署无关的失败）。
+# 判据用「容器是否在跑」——与下方热重载段同一口径，语义即「这份配置是否真有消费者」。
+# 这也顺带覆盖了「有人手工用 observability profile 起了栈」的场景（此时照常渲染）。
+if docker ps --format '{{.Names}}' | grep -qx 'zxyz-alertmanager'; then
+  if [ -f "$REPO_DIR/scripts/render-alertmanager.sh" ]; then
+    echo "===== Rendering Alertmanager config ====="
+    if ! bash "$REPO_DIR/scripts/render-alertmanager.sh" \
+           "$DEPLOY_DIR/.env" \
+           "$DEPLOY_DIR/deploy/alertmanager/alertmanager.yml" \
+           "$REPO_DIR/deploy/alertmanager/alertmanager.yml.tmpl"; then
+      echo "::error::RENDER_ALERTMANAGER_FAILED: 渲染 Alertmanager 配置失败，已中止部署"
+      exit 1
+    fi
+    echo "::notice::ALERTMANAGER_RENDERED: 告警投递配置已渲染"
+  else
+    echo "::warning::跳过 Alertmanager 渲染（render-alertmanager.sh 不存在，将沿用仓库内置占位配置）"
   fi
-  echo "::notice::ALERTMANAGER_RENDERED: 告警投递配置已渲染"
 else
-  echo "::warning::跳过 Alertmanager 渲染（render-alertmanager.sh 不存在，将沿用仓库内置占位配置）"
+  echo "::notice::跳过 Alertmanager 渲染（zxyz-alertmanager 未运行；该栈已迁入 docker-compose.observability.yml，默认不部署）"
 fi
 
 # 渲染后热重载：Alertmanager 支持 SIGHUP 重载配置，否则新告警渠道要等容器重启才生效。
@@ -420,6 +431,40 @@ echo "===== Restarting services ====="
 # 所以「构建」在这里永远不可能成功，只会把真实错误替换成 lstat 之类的噪声。
 # 直接禁止构建，让缺镜像以明确报错暴露（配合上方 pull 后的镜像存在性预检，双保险）。
 docker compose up -d --no-deps --no-build $UP_FLAGS "${UPDATE_SVC[@]}"
+
+# --- 确保 nacos 日志清理 sidecar 处于运行状态（N-5，2026-09-18）---
+# 【为什么单独一步、不进 UPDATE_SVC】
+#   nacos-log-cleanup 是**旁挂 sidecar**，与 11 个业务服务有三点本质不同：
+#     ① 它没有 build: 段，镜像直接取自公共 `alpine:3.20@sha256:…`（不是 IMAGE_PREFIX 下的产物）；
+#     ② 因此上方「镜像存在性预检」（`${IMAGE_PREFIX}zxyz-$svc:$IMAGE_TAG`）与
+#        `docker compose pull` 对它**都不成立** —— 拉它等于拉 public 镜像，与本次 sha 无关；
+#     ③ 它没有健康检查、不对外提供端口，属于「起一次就一直后台跑」的形态。
+#   把它塞进 UPDATE_SVC 会同时污染 pull 与 up 两条路径（还要额外为它开一个镜像例外分支），
+#   得不偿失。单独一步是更小、更直白的改动。
+#
+# 【为什么必须做这一步】
+#   此前它**从未在任何部署路径里**（`UPDATE_SVC` 不含它，`up -d` 又总是点名服务），
+#   所以生产上**从来没有这个容器**（2026-09-18 实测：`docker ps -a` 里连 Exited 都没有）。
+#   后果实测：nacos 日志目录 **125 MB 且在无限增长** —— 单是 plugin-control-connection.log
+#   就 **~11 MB/天**（compose 的清理逻辑正是要把它 `-mtime +7 -delete` + >100M truncate）。
+#   磁盘当前 59%（21 GB 空闲），不紧急，但这是一个**真实的、会持续恶化的部署缺口**。
+#
+# 【为什么是幂等的】
+#   `up -d --no-deps` 对已在运行的容器是 no-op（除非定义变更，届时才重建）；
+#   首次部署则创建它。两种情况都安全，故无条件执行、不加判断分支。
+#   ⚠️ 刻意**不带** $UP_FLAGS（--force-recreate）：它跑在后台循环里，重建没有意义，
+#      反而会在每次「compose 变更」时连带多做一次无谓的重启。
+#   ⚠️ `--no-deps` 同主部署语义：nacos 已在跑，绝不能让这步去动 nacos。
+if docker compose config --services 2>/dev/null | grep -qx 'nacos-log-cleanup'; then
+  if docker compose up -d --no-deps --no-build nacos-log-cleanup >/dev/null 2>&1; then
+    echo "::notice::NACOS_LOG_CLEANUP_ENSURED: nacos 日志清理 sidecar 已就绪"
+  else
+    # 不阻断部署：它只是日志清理，失败不应让整个发布回滚。
+    echo "::warning::NACOS_LOG_CLEANUP_FAILED: nacos-log-cleanup 未能启动（不影响业务，但 nacos 日志将继续无限增长，请人工检查）"
+  fi
+else
+  echo "::warning::NACOS_LOG_CLEANUP_ABSENT: compose 中未定义 nacos-log-cleanup，已跳过（nacos 日志将无限增长）"
+fi
 
 # --- 热重载 nginx：重新解析后端 upstream 容器 IP ---
 # nginx 的 proxy_pass http://<service>:<port> 依赖 Docker 内置 DNS，
