@@ -709,4 +709,130 @@ class FileUploadServiceTest {
         assertTrue(ex.getMessage().contains("文件大小超过限制"));
         verify(defaultProvider).deleteObject(anyString());
     }
+
+    // ==================== P1-3 拆分回归：confirmSingleFile 的四个步骤契约 ====================
+    // 2026-09-18 按 ISSUE/24 §六 G-5 的 P1-3 把 85 行的 confirmSingleFile 拆成
+    // confirmSingleFile 编排 + validateAndProbeUpload + persistWithUniqueName。
+    // 拆分**不改语义**，以下用例逐条钉住「拆分后的边界」——这些边界原本是隐式嵌在一段
+    // 长方法里的，拆开后若不显式断言，很容易在下一次改动中静默漂移。
+
+    /** 步骤①的 fail-closed 契约：拿不到真实 ossSize（null）时必须拒绝确认，且不得落库、不得消费凭证。 */
+    @Test
+    void confirmUpload_ossSizeUnavailable_shouldFailClosed() {
+        ConfirmUploadRequest item = new ConfirmUploadRequest();
+        item.setObjectKey("files/uuid-probe-null.txt");
+        item.setOriginalName("probe-null.txt");
+        item.setFileSize(1024L);
+        item.setParentId(100L);
+        item.setTeamId(10L);
+        item.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+
+        BatchConfirmUploadRequest request = new BatchConfirmUploadRequest();
+        request.setTeamId(10L);
+        request.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+        request.setFiles(List.of(item));
+
+        // HEAD 拿不到大小 ⇒ 必须 fail-closed
+        when(defaultProvider.getObjectSize("files/uuid-probe-null.txt")).thenReturn(null);
+
+        BatchUploadConfirmResultVO result = fileUploadService.confirmUpload(request, 1L);
+
+        assertEquals(1, result.getTotalCount());
+        assertEquals(0, result.getSuccessCount());
+        assertEquals(1, result.getFailCount());
+        // 关键：探测失败时既不能落库，也不能消费归属凭证（否则用户重试会被"凭证已用完"挡住）
+        verify(fileUploadPersistenceService, never()).saveFileItem(any(FileItem.class));
+        verify(redisTemplate, never()).delete(anyString());
+    }
+
+    /** 步骤③的选名重试契约：唯一键冲突时应换下一个序号名重试，而不是直接失败。 */
+    @Test
+    void confirmUpload_duplicateName_shouldRetryWithNextName() {
+        ConfirmUploadRequest item = new ConfirmUploadRequest();
+        item.setObjectKey("files/uuid-dup.txt");
+        item.setOriginalName("dup.txt");
+        item.setFileSize(1024L);
+        item.setParentId(100L);
+        item.setTeamId(10L);
+        item.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+
+        BatchConfirmUploadRequest request = new BatchConfirmUploadRequest();
+        request.setTeamId(10L);
+        request.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+        request.setFiles(List.of(item));
+
+        Folder parentFolder = Folder.create();
+        parentFolder.setId(100L);
+        parentFolder.setTeamId(10L);
+        parentFolder.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+        when(fileDomainValidator.requireFolder(100L)).thenReturn(parentFolder);
+
+        // 第一次给的候选名落库撞唯一键，第二次给的候选名成功
+        when(fileDomainValidator.resolveAvailableName(
+                eq(100L), any(SpaceTarget.class), eq(FileNodeType.FILE),
+                eq("dup.txt"), anySet(), any()))
+                .thenReturn("dup.txt")
+                .thenReturn("dup(1).txt");
+        when(defaultProvider.getObjectSize("files/uuid-dup.txt")).thenReturn(1024L);
+        when(defaultProvider.generateDownloadInfo(eq("files/uuid-dup.txt"), eq("dup.txt")))
+                .thenReturn(new DownloadInfo("oss", "https://oss.example.com/u", "dup.txt", true));
+
+        FileItem saved = FileItem.create();
+        saved.setId(3000L);
+        saved.setOriginalName("dup(1).txt");
+        saved.setFileUrl("https://oss.example.com/u");
+        when(fileUploadPersistenceService.saveFileItem(any(FileItem.class)))
+                .thenThrow(new org.springframework.dao.DuplicateKeyException("dup.txt 已存在"))
+                .thenReturn(saved);
+
+        BatchUploadConfirmResultVO result = fileUploadService.confirmUpload(request, 1L);
+
+        assertEquals(1, result.getSuccessCount(), "撞名后应重试成功，而不是按项失败");
+        // 选名被调用两次（第一次撞名、第二次成功）
+        verify(fileDomainValidator, times(2)).resolveAvailableName(
+                eq(100L), any(SpaceTarget.class), eq(FileNodeType.FILE),
+                eq("dup.txt"), anySet(), any());
+        verify(redisTemplate).delete("file:upload-owner:files/uuid-dup.txt");
+    }
+
+    /** 编排契约：全部步骤成功后，归属凭证必须被消费（保证一个凭证只能确认一次）。 */
+    @Test
+    void confirmUpload_success_shouldConsumeOwnershipExactlyOnce() {
+        ConfirmUploadRequest item = new ConfirmUploadRequest();
+        item.setObjectKey("files/uuid-once.txt");
+        item.setOriginalName("once.txt");
+        item.setFileSize(2048L);
+        item.setParentId(100L);
+        item.setTeamId(10L);
+        item.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+
+        BatchConfirmUploadRequest request = new BatchConfirmUploadRequest();
+        request.setTeamId(10L);
+        request.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+        request.setFiles(List.of(item));
+
+        Folder parentFolder = Folder.create();
+        parentFolder.setId(100L);
+        parentFolder.setTeamId(10L);
+        parentFolder.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
+        when(fileDomainValidator.requireFolder(100L)).thenReturn(parentFolder);
+        when(fileDomainValidator.resolveAvailableName(
+                eq(100L), any(SpaceTarget.class), eq(FileNodeType.FILE),
+                eq("once.txt"), anySet(), any()))
+                .thenReturn("once.txt");
+        when(defaultProvider.getObjectSize("files/uuid-once.txt")).thenReturn(2048L);
+        when(defaultProvider.generateDownloadInfo(anyString(), anyString()))
+                .thenReturn(new DownloadInfo("oss", "https://oss.example.com/once", "once.txt", true));
+
+        FileItem saved = FileItem.create();
+        saved.setId(4000L);
+        saved.setOriginalName("once.txt");
+        saved.setFileUrl("https://oss.example.com/once");
+        when(fileUploadPersistenceService.saveFileItem(any(FileItem.class))).thenReturn(saved);
+
+        fileUploadService.confirmUpload(request, 1L);
+
+        // 精确一次：多了会误伤并发重试，少了会让同一凭证可用两次
+        verify(redisTemplate, times(1)).delete("file:upload-owner:files/uuid-once.txt");
+    }
 }
