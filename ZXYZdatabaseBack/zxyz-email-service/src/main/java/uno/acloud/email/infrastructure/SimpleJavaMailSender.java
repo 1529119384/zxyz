@@ -1,6 +1,8 @@
 package uno.acloud.email.infrastructure;
 
+import jakarta.mail.Message;
 import org.simplejavamail.api.email.Email;
+import org.simplejavamail.api.email.Recipient;
 import org.simplejavamail.api.mailer.Mailer;
 import org.simplejavamail.api.mailer.config.TransportStrategy;
 import org.simplejavamail.email.EmailBuilder;
@@ -21,6 +23,9 @@ import java.util.Locale;
 @Component
 public class SimpleJavaMailSender {
 
+    /** 发件人显示名。 */
+    private static final String SENDER_DISPLAY_NAME = "指绣云章";
+
     private final EmailProperties emailProperties;
     private final EmailServerConfigService emailServerConfigService;
     private volatile MailerCacheEntry mailerCacheEntry;
@@ -37,14 +42,26 @@ public class SimpleJavaMailSender {
             throw new BusinessException(ErrorCode.BAD_REQUEST, EmailSendingAvailabilityService.SEND_DISABLED_MESSAGE);
         }
         EmailServerConfig config = emailServerConfigService.requireActiveConfig();
-        Email email = EmailBuilder.startingBlank()
-                .from("指绣云章", resolveFromAddress(config))
-                .to(record.getRecipient())
+        Email email = buildEmail(record, config);
+        getMailer(config).sendMail(email);
+        return new EmailSenderSnapshot(config.getId(), config.getConfigName(), config.getUsername());
+    }
+
+    /**
+     * 组装待发送邮件（不建立任何连接）。
+     * <p>抽成包级可见方法，便于单测直接断言「收件人 / 主题 / 正文 / 发件人」，无需真实 SMTP。</p>
+     * <p><b>simple-java-mail 9.x 迁移点</b>：{@code EmailPopulatingBuilder#to(String)} 及其整个
+     * {@code to(...)} 重载族已被移除，收件人只能经
+     * {@link EmailPopulatingBuilder#withRecipients(Recipient...)} 传入 ⇒ 这里显式构造
+     * {@link Recipient} 并指定 {@link Message.RecipientType#TO}。</p>
+     */
+    Email buildEmail(EmailRecord record, EmailServerConfig config) {
+        return EmailBuilder.startingBlank()
+                .from(SENDER_DISPLAY_NAME, resolveFromAddress(config))
+                .withRecipients(new Recipient(null, record.getRecipient(), Message.RecipientType.TO, null))
                 .withSubject(record.getSubject())
                 .withHTMLText(record.getContentHtml())
                 .buildEmail();
-        getMailer(config).sendMail(email);
-        return new EmailSenderSnapshot(config.getId(), config.getConfigName(), config.getUsername());
     }
 
     private Mailer getMailer(EmailServerConfig config) {
@@ -55,19 +72,26 @@ public class SimpleJavaMailSender {
         synchronized (this) {
             current = mailerCacheEntry;
             if (current == null || !current.matches(config)) {
-                Mailer mailer = MailerBuilder
-                        .withSMTPServer(
-                                config.getHost(),
-                                config.getPort(),
-                                config.getUsername(),
-                                emailServerConfigService.decryptPassword(config)
-                        )
-                        .withTransportStrategy(resolveTransportStrategy(config))
-                        .buildMailer();
-                mailerCacheEntry = new MailerCacheEntry(config.getId(), config.getUpdateTime(), mailer);
+                mailerCacheEntry = new MailerCacheEntry(config.getId(), config.getUpdateTime(), createMailer(config));
             }
             return mailerCacheEntry.mailer();
         }
+    }
+
+    /**
+     * 构建 {@link Mailer}（{@code MailerBuilder} 只做配置，不建连；建连发生在
+     * {@code testConnection()} / {@code sendMail()} 时）。抽成包级可见方法以便单测注入替身。
+     */
+    Mailer createMailer(EmailServerConfig config) {
+        return MailerBuilder
+                .withSMTPServer(
+                        config.getHost(),
+                        config.getPort(),
+                        config.getUsername(),
+                        emailServerConfigService.decryptPassword(config)
+                )
+                .withTransportStrategy(resolveTransportStrategy(config))
+                .buildMailer();
     }
 
     private String resolveFromAddress(EmailServerConfig config) {
@@ -76,7 +100,8 @@ public class SimpleJavaMailSender {
                 : config.getFromAddress();
     }
 
-    private TransportStrategy resolveTransportStrategy(EmailServerConfig config) {
+    /** 传输策略映射；包级可见以便单测覆盖四种取值。 */
+    TransportStrategy resolveTransportStrategy(EmailServerConfig config) {
         String strategy = config.getTransportStrategy() == null
                 ? "SMTP_TLS"
                 : config.getTransportStrategy().toUpperCase(Locale.ROOT);
