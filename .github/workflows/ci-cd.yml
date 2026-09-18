@@ -2,8 +2,10 @@ name: CI/CD - Selective Build & Deploy
 
 on:
   push:
-    branches: [dev, main]
-    tags: ['v*']
+    # 2026-09-18（ISSUE/24 §五 D-3）：远程**不存在** `main` 分支、0 个 tag、无 `production`
+    # environment，`PROD_DEPLOY_HOST` / `PROD_SSH_KEY` 也都不存在 ⇒ 原先保留 `main` 与
+    # `tags: ['v*']` 等于留一条「一触发就以空主机 ssh 必失败」的死路。故只保留 `dev`。
+    branches: [dev]
     paths:
       - 'ZXYZdatabaseBack/**'
       - 'ZXYZdatabaseFront/**'
@@ -22,7 +24,8 @@ on:
       - 'scripts/**'
       - 'sql/**'
   pull_request:
-    branches: [dev, main]
+    # 同上（D-3）：只覆盖 dev。Dependabot 的 PR base 本就是 dev。
+    branches: [dev]
     paths:
       - 'ZXYZdatabaseBack/**'
       - 'ZXYZdatabaseFront/**'
@@ -51,7 +54,7 @@ on:
         required: true
         default: 'latest'
       skip_quality:
-        description: '跳过质量检查（仅限非保护分支，main/dev 强制检查）'
+        description: '跳过质量检查（仅限非保护分支；dev 强制检查）'
         required: false
         type: boolean
         default: false
@@ -159,56 +162,18 @@ jobs:
 
           echo "on=false" >> "$GITHUB_OUTPUT"
 
-      - name: Verify sub-repo sync consistency
-        if: github.event_name == 'push'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "===== 子仓库同步一致性检查 ====="
-          DRIFT=0
-          for sub in ZXYZdatabaseBack ZXYZdatabaseFront; do
-            echo "--- Checking $sub ---"
-            git clone --depth 1 --single-branch \
-              "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository_owner }}/${sub}.git" \
-              "/tmp/${sub}" 2>/dev/null || {
-              echo "::warning::无法克隆 ${sub}，跳过同步检查"
-              continue
-            }
-
-            # 根仓库 HEAD 中该子目录的文件 blob hash
-            git ls-tree -r HEAD -- "${sub}/" \
-              | awk '{print $3, $4}' \
-              | sed "s| ${sub}/| |" \
-              | sort -k2 > /tmp/root_${sub}.txt
-
-            # 子仓库 HEAD 的文件 blob hash
-            git -C "/tmp/${sub}" ls-tree -r HEAD \
-              | awk '{print $3, $4}' \
-              | sort -k2 > /tmp/sub_${sub}.txt
-
-            if ! diff -q /tmp/root_${sub}.txt /tmp/sub_${sub}.txt >/dev/null 2>&1; then
-              DRIFT=1
-              DIFF_COUNT=$(diff /tmp/root_${sub}.txt /tmp/sub_${sub}.txt | grep -c '^[<>]' || true)
-              echo "::error::${sub} 不同步！共 ${DIFF_COUNT} 处差异"
-              echo "不同步文件列表（前 20 条）:"
-              diff /tmp/root_${sub}.txt /tmp/sub_${sub}.txt | grep '^[<>]' | head -20 || true
-              echo ""
-              echo "修复命令:"
-              echo "  cd ${sub} && git add -A && git commit -m 'sync: 同步根仓库变更' && git push"
-              echo "  cd .. && git add ${sub}/ && git commit -m 'sync: 更新 ${sub} 引用' && git push"
-            else
-              echo "[OK] ${sub} 同步一致"
-            fi
-            rm -rf "/tmp/${sub}" /tmp/root_${sub}.txt /tmp/sub_${sub}.txt
-          done
-
-          if [ "$DRIFT" -ne 0 ]; then
-            echo ""
-            echo "::error::SUBREPO_SYNC_DRIFT: 子仓库与根仓库内容不一致，请同步后重新推送"
-            exit 1
-          fi
-          echo "===== 同步检查通过 ====="
-
+      # ---------------------------------------------------------------
+      # 2026-09-18（ISSUE/24 §五 D-2）：此处原有一步「Verify sub-repo sync consistency」，
+      # 已删除。它是**死代码**，留着只会给假的安全感：
+      #   1) 它用 `secrets.GITHUB_TOKEN` 去 clone 兄弟仓 `ZXYZdatabaseFront`，而那是 private 仓
+      #      ⇒ 必然 clone 失败、`::warning::无法克隆 … 跳过`，从不真正比对；
+      #   2) 比对的后端目标 `ZXYZdatabaseBack` 是**已废弃**的远端（根仓与之共享 .git）；
+      #   3) 该步 `if: github.event_name == 'push'` ⇒ PR 阶段整步跳过。
+      # ⇒ 真·同步门禁只有本机 pre-push hook `scripts/check-subrepo-sync.sh`（它比 committed tree）。
+      #    推前请确保工作区干净，否则根仓/子仓会漂移。
+      # 若要把它搬进 CI，前提是先引入一个**有跨仓读权限**的 token/App（新增密钥面），
+      # 收益只是把本机已有能力复制一份 —— 故当前结论：删除，不修。
+      # ---------------------------------------------------------------
       - uses: dorny/paths-filter@v4
         id: filter
         with:
@@ -326,13 +291,8 @@ jobs:
               exit 1
             fi
             echo "tag=$INPUT_TAG" >> $GITHUB_OUTPUT
-          elif [ "$REF_NAME" = "refs/heads/dev" ]; then
-            echo "tag=dev" >> $GITHUB_OUTPUT
-          elif [ "$REF_NAME" = "refs/heads/main" ]; then
-            echo "tag=latest" >> $GITHUB_OUTPUT
-          elif [[ "$REF_NAME" == refs/tags/v* ]]; then
-            echo "tag=${REF_NAME#refs/tags/}" >> $GITHUB_OUTPUT
           else
+            # 当前无生产通路（D-3）：能到达这里的 ref 只有 dev 与 workflow_dispatch。
             echo "tag=dev" >> $GITHUB_OUTPUT
           fi
 
@@ -352,8 +312,8 @@ jobs:
           BRANCH="$BRANCH_NAME"
           ACTOR="$ACTOR_NAME"
 
-          # 保护分支（main/dev）永远不允许跳过质量检查
-          if [ "$BRANCH" = "main" ] || [ "$BRANCH" = "dev" ]; then
+          # 保护分支（dev）永远不允许跳过质量检查
+          if [ "$BRANCH" = "dev" ]; then
             if [ "$REQUESTED" = "true" ]; then
               echo "::warning::[AUDIT] skip_quality=true was requested by '${ACTOR}' on protected branch '${BRANCH}' — DENIED. Quality checks are mandatory for protected branches."
             fi
@@ -598,34 +558,26 @@ jobs:
     concurrency:
       group: nacos-import-${{ github.ref }}
       cancel-in-progress: false
-    environment: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && 'production' || 'development' }}
+    # 当前无生产通路（D-3）：固定 development。原表达式会在 main/tag 上选 `production`，
+    # 而该 environment 与 PROD_* secret 均不存在 ⇒ 触发即必失败。
+    environment: development
     steps:
       - name: Determine deploy target
         id: target
         run: |
-          if [ "${{ github.ref }}" = "refs/heads/main" ] || [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            echo "host=${{ secrets.PROD_DEPLOY_HOST }}" >> $GITHUB_OUTPUT
-          else
-            echo "host=${{ (secrets.DEV_DEPLOY_HOST || secrets.DEPLOY_HOST) }}" >> $GITHUB_OUTPUT
-          fi
+          # 当前无生产通路（D-3）。
+          echo "host=${{ (secrets.DEV_DEPLOY_HOST || secrets.DEPLOY_HOST) }}" >> $GITHUB_OUTPUT
 
       - name: Determine SSH key
         id: ssh-key
         run: |
           # 私钥是多行 PEM，必须用 heredoc 定界符写进 GITHUB_ENV（单行 name=value 会报 Invalid format）
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]] || [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            {
-              echo "ssh_key<<GH_SSH_KEY_EOF"
-              echo "${{ secrets.PROD_SSH_KEY }}"
-              echo "GH_SSH_KEY_EOF"
-            } >> "$GITHUB_ENV"
-          else
-            {
-              echo "ssh_key<<GH_SSH_KEY_EOF"
-              echo "${{ (secrets.DEV_SSH_KEY || secrets.DEPLOY_SSH_KEY) }}"
-              echo "GH_SSH_KEY_EOF"
-            } >> "$GITHUB_ENV"
-          fi
+          # 当前无生产通路（D-3）：不再有 PROD_SSH_KEY 分支。
+          {
+            echo "ssh_key<<GH_SSH_KEY_EOF"
+            echo "${{ (secrets.DEV_SSH_KEY || secrets.DEPLOY_SSH_KEY) }}"
+            echo "GH_SSH_KEY_EOF"
+          } >> "$GITHUB_ENV"
 
       - name: Import nacos-config into Nacos
         uses: appleboy/ssh-action@v1
@@ -1185,37 +1137,28 @@ jobs:
     concurrency:
       group: deploy-${{ github.ref }}
       cancel-in-progress: false
-    environment: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && 'production' || 'development' }}
+    # 当前无生产通路（D-3）：固定 development。原表达式会在 main/tag 上选 `production`，
+    # 而该 environment 与 PROD_* secret 均不存在 ⇒ 触发即必失败。
+    environment: development
     steps:
       - name: Determine deploy target
         id: target
         run: |
-          if [ "${{ github.ref }}" = "refs/heads/main" ] || [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            echo "host=${{ secrets.PROD_DEPLOY_HOST }}" >> $GITHUB_OUTPUT
-            echo "env=production" >> $GITHUB_OUTPUT
-          else
-            echo "host=${{ (secrets.DEV_DEPLOY_HOST || secrets.DEPLOY_HOST) }}" >> $GITHUB_OUTPUT
-            echo "env=development" >> $GITHUB_OUTPUT
-          fi
+          # 当前无生产通路（D-3）：只有 dev / workflow_dispatch 会执行到这里。
+          echo "host=${{ (secrets.DEV_DEPLOY_HOST || secrets.DEPLOY_HOST) }}" >> $GITHUB_OUTPUT
+          echo "env=development" >> $GITHUB_OUTPUT
 
       - name: Determine SSH key
         id: ssh-key
         run: |
           # SSH 私钥是多行 PEM，GITHUB_ENV 单行 name=value 格式无法承载
           # （会报 Invalid format），必须用 heredoc 定界符语法写入多行值。
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]] || [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            {
-              echo "ssh_key<<GH_SSH_KEY_EOF"
-              echo "${{ secrets.PROD_SSH_KEY }}"
-              echo "GH_SSH_KEY_EOF"
-            } >> "$GITHUB_ENV"
-          else
-            {
-              echo "ssh_key<<GH_SSH_KEY_EOF"
-              echo "${{ (secrets.DEV_SSH_KEY || secrets.DEPLOY_SSH_KEY) }}"
-              echo "GH_SSH_KEY_EOF"
-            } >> "$GITHUB_ENV"
-          fi
+          # 当前无生产通路（D-3）：不再有 PROD_SSH_KEY 分支。
+          {
+            echo "ssh_key<<GH_SSH_KEY_EOF"
+            echo "${{ (secrets.DEV_SSH_KEY || secrets.DEPLOY_SSH_KEY) }}"
+            echo "GH_SSH_KEY_EOF"
+          } >> "$GITHUB_ENV"
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
