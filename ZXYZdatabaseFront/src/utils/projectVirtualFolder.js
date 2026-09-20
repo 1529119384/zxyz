@@ -1,5 +1,5 @@
 export const PROJECT_ROOT_ID = '__project_root__'
-export const PROJECT_ROOT_NAME = '项目组'
+const PROJECT_ROOT_NAME = '项目组'
 export const PROJECT_ROOT_PATH = `/${PROJECT_ROOT_NAME}`
 
 export function isProjectRootId(value) {

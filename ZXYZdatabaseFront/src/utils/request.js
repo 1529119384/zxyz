@@ -1,7 +1,7 @@
 import { createApiClient } from '@/utils/createApiClient'
 import { requireViteEnv } from '@/utils/env'
 
-export const DEFAULT_REQUEST_TIMEOUT = 15000
+const DEFAULT_REQUEST_TIMEOUT = 15000
 export const UPLOAD_REQUEST_TIMEOUT = 30000
 
 function getApiBaseUrl() {

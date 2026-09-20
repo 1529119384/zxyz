@@ -2,7 +2,7 @@ import { BlobWriter, ZipWriter } from '@zip.js/zip.js'
 
 import { assertNotHtmlResponse, triggerDownloadByBlob } from '@/utils/download'
 
-export function resolveArchiveEntryName(entry, index) {
+function resolveArchiveEntryName(entry, index) {
   const rawPath = entry?.archivePath || entry?.fileName || `file-${index + 1}`
 
   // 过滤空段与 . / .. 段：阻止 zip 内出现 `../` 路径穿越（解压方可能据此写到目标目录之外）。

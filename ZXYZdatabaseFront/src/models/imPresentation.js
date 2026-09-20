@@ -95,7 +95,7 @@ export function getMessageStatusText(status) {
  * @param {RawImMessage} [message]
  * @returns {StructuredMessagePayload}
  */
-export function parseStructuredMessagePayload(message = {}) {
+function parseStructuredMessagePayload(message = {}) {
   const rawContent = message.content || ''
   if (!rawContent) return {}
   try {

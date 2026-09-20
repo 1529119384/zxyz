@@ -18,7 +18,7 @@ function createFileNode(id, file) {
   }
 }
 
-export function sortTree(nodes) {
+function sortTree(nodes) {
   nodes.sort((a, b) => {
     if (a.isLeaf === b.isLeaf) {
       return a.name.localeCompare(b.name)

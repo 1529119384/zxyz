@@ -56,7 +56,7 @@ export function joinArchivePath(basePath, fileName) {
   return joinPath(basePath, fileName, { leadingSlash: false, decode: false })
 }
 
-export async function collectFileEntry(file, basePath) {
+async function collectFileEntry(file, basePath) {
   const response = await getFileDownloadUrl(file.id)
   const downloadUrl = response?.data?.downloadUrl
   const directDownload = response?.data?.directDownload
@@ -78,7 +78,7 @@ export async function collectFileEntry(file, basePath) {
   }
 }
 
-export async function collectFolderEntries(folder, basePath) {
+async function collectFolderEntries(folder, basePath) {
   const currentPath = joinArchivePath(basePath, folder.fileName)
   const spaceParams = {
     teamId: folder.teamId || null,

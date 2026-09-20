@@ -9,7 +9,7 @@ import { useTeamStore } from '@/store/team'
 import { normalizePositiveId } from '@/utils/id'
 import { isProjectRootId } from '@/utils/projectVirtualFolder'
 
-export const currentSpaceContextKey = Symbol('currentSpaceContext')
+const currentSpaceContextKey = Symbol('currentSpaceContext')
 
 function resolveValue(value) {
   return typeof value === 'function' ? value() : unref(value)

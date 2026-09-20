@@ -44,7 +44,7 @@ const SHARE_PASSWORD_PATTERN = /^[A-Za-z0-9]{4}$/
  * `undefined` 仍会落到不存在的键（由 `|| '-'` 兜底），不会被误当成 0 号「生效中」。
  * @type {Readonly<Record<string, string>>}
  */
-export const SHARE_STATUS_MAP = {
+const SHARE_STATUS_MAP = {
   [SHARE_STATUS.ACTIVE]: '生效中',
   [SHARE_STATUS.CANCELLED]: '已取消',
   [SHARE_STATUS.EXPIRED]: '已过期',
@@ -133,7 +133,7 @@ export function formatShareExpireText(record = {}) {
 /**
  * @param {RawShareRecord} [item]
  */
-export function mapMyShareRecord(item = {}) {
+function mapMyShareRecord(item = {}) {
   return {
     shareId: item.shareId,
     shareKey: item.shareKey || '',
@@ -162,7 +162,7 @@ export function mapMyShareRecords(data = {}) {
 /**
  * @param {RawShareFileRecord} [item]
  */
-export function mapShareFileEntry(item = {}) {
+function mapShareFileEntry(item = {}) {
   const type = normalizeFileType({
     type: item.isFolder || item.fileType === 0 ? 0 : 1,
     isFolder: item.isFolder,

@@ -139,7 +139,7 @@ export function normalizeFileType({ type, isFolder } = {}) {
  * }} [options]
  * @returns {number|null}
  */
-export function resolveFileCategory(options = {}) {
+function resolveFileCategory(options = {}) {
   const {
     fileName = '',
     category = null,

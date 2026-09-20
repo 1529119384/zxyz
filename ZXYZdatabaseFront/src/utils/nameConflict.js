@@ -45,7 +45,7 @@ function createFileName(baseName, extension, index) {
   return `${baseName}(${index})${extension}`
 }
 
-export function collectExistingNames(entries = [], targetType) {
+function collectExistingNames(entries = [], targetType) {
   const nameSet = new Set()
 
   entries.forEach((entry) => {

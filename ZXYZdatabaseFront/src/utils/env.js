@@ -2,7 +2,7 @@
 // 这些变量在 request.js / publicRequest.js / imRequest.js / imWebSocket.js 的模块加载期
 // 经 requireViteEnv 读取，缺失会直接 throw 导致整个 SPA 启动崩溃白屏。
 // 新增加载期必需变量时务必在此同步登记，否则入口友好提示会漏报。
-export const REQUIRED_ENV_VARS = [
+const REQUIRED_ENV_VARS = [
   'VITE_API_BASE_URL',
   'VITE_IM_API_BASE_URL',
   'VITE_IM_WS_URL',

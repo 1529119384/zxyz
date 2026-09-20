@@ -8,7 +8,7 @@ import { normalizePositiveId } from '@/utils/id'
 const DEFAULT_STORAGE_LIMIT_GB = 10
 const BYTES_PER_GB = 1024 * 1024 * 1024
 
-export function createDefaultProjectForm(leaderUserId = null) {
+function createDefaultProjectForm(leaderUserId = null) {
   return {
     name: '',
     description: '',
