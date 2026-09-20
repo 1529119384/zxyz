@@ -13,6 +13,7 @@ import java.time.LocalDateTime;
 
 import static uno.acloud.common.InputNormalizer.optionalText;
 import static uno.acloud.common.InputNormalizer.requireText;
+import uno.acloud.project.common.ProjectStatus;
 
 @Component
 public class ProjectCreationCommand {
@@ -59,7 +60,7 @@ public class ProjectCreationCommand {
         project.setName(requireText(request == null ? null : request.getName(), "项目名称不能为空"));
         project.setDescription(optionalText(request == null ? null : request.getDescription()));
         project.setLeaderUserId(leaderUserId);
-        project.setStatus(0);
+        project.setStatus(ProjectStatus.NORMAL);
         project.setCreateTime(now);
         project.setUpdateTime(now);
         projectMapper.insert(project);

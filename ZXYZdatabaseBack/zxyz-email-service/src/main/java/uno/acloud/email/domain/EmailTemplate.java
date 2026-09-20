@@ -30,6 +30,6 @@ public class EmailTemplate implements Serializable {
 
     /** 模板是否可用（status = 0 表示启用）。 */
     public boolean isUsable() {
-        return this.status != null && this.status == 0;
+        return this.status != null && this.status == EmailTemplateStatus.ENABLED;
     }
 }

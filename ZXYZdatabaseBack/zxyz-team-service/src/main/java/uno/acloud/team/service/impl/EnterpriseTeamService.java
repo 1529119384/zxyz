@@ -6,7 +6,6 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationAdapter;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import uno.acloud.common.lock.DistributedLockTemplate;
@@ -56,6 +55,8 @@ import java.util.stream.Collectors;
 
 import static uno.acloud.common.InputNormalizer.optionalText;
 import static uno.acloud.common.InputNormalizer.requireText;
+import uno.acloud.common.TeamMemberStatus;
+import uno.acloud.common.TeamStatus;
 
 @Service
 @RefreshScope
@@ -179,7 +180,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
             // registerSynchronization 需要活动事务；mock 测试中 TransactionTemplate 可能未创建事务，静默降级
             // 放在 lambda 开头，确保 DB 操作提前抛异常时补偿也已注册（全流程覆盖）
             try {
-                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                     @Override
                     public void afterCompletion(int status) {
                         if (status == TransactionSynchronization.STATUS_ROLLED_BACK) {
@@ -200,12 +201,12 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
             ));
             team.setDescription(optionalText(request == null ? null : request.getDescription()));
             team.setOwnerUserId(ownerId);
-            team.setStatus(0);
+            team.setStatus(TeamStatus.ACTIVE);
             team.setCreateTime(now);
             team.setUpdateTime(now);
             teamMapper.insert(team);
 
-            upsertMember(team.getId(), ownerId, TeamRoleCodes.OWNER, 0, now);
+            upsertMember(team.getId(), ownerId, TeamRoleCodes.OWNER, TeamMemberStatus.ACTIVE, now);
             teamPermissionService.initializeBuiltInRoles(team.getId(), ownerId);
 
             TeamQuota quota = new TeamQuota();
@@ -326,7 +327,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
                 // 一个团队」、或创建后读回成员失败），user-service 里这个新用户既没有团队成员行也没有角色
                 // 绑定，会成为孤儿账号。此前只有「建团队」注册了补偿、「加成员」没有 —— 同类操作两处不对称。
                 try {
-                    TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
+                    TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                         @Override
                         public void afterCompletion(int status) {
                             if (status == TransactionSynchronization.STATUS_ROLLED_BACK) {
@@ -351,7 +352,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
 
     private TeamMemberVO createMemberInTransaction(Long teamId, Long userId, UserInfoDTO user, CreateTeamMemberRequest request) {
         String roleCode = normalizeRoleCode(request == null ? null : request.getRoleCode());
-        upsertMember(teamId, userId, roleCode, 0, LocalDateTime.now());
+        upsertMember(teamId, userId, roleCode, TeamMemberStatus.ACTIVE, LocalDateTime.now());
         teamPermissionService.assignMemberRole(teamId, userId, roleCode);
 
         TeamMember member = teamMapper.getActiveMember(teamId, userId);
@@ -366,8 +367,9 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
         teamFileAccessService.check(operatorUserId, teamId, TeamPermissionCodes.TEAM_MEMBER_REMOVE);
 
         return lockTemplate.withLock("zxyz:team:member:" + teamId, LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS, () -> {
-            int status = request == null || request.getStatus() == null ? 0 : request.getStatus();
-            if (status != 0 && status != 1) {
+            int status = request == null || request.getStatus() == null
+                    ? TeamMemberStatus.ACTIVE : request.getStatus();
+            if (status != TeamMemberStatus.ACTIVE && status != TeamMemberStatus.DISABLED) {
                 throw new ValidationException("成员状态只能为 0 或 1");
             }
             if (teamMapper.updateMemberStatus(teamId, targetUserId, status) != 1) {

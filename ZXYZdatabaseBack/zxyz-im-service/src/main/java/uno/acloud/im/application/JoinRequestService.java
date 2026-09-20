@@ -11,7 +11,7 @@ import uno.acloud.common.TeamRoleCodes;
 import uno.acloud.common.util.TransactionUtils;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.domain.enums.SystemNotificationType;
-import uno.acloud.im.domain.enums.TeamMemberStatus;
+import uno.acloud.common.TeamMemberStatus;
 import uno.acloud.im.domain.event.ImDomainEventType;
 import uno.acloud.im.infrastructure.persistence.entity.TeamInviteLink;
 import uno.acloud.im.infrastructure.persistence.entity.TeamJoinRequest;

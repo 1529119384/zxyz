@@ -14,6 +14,7 @@ import uno.acloud.project.service.ProjectCatalogPort;
 import uno.acloud.project.vo.project.ProjectVO;
 
 import java.util.List;
+import uno.acloud.project.common.ProjectStatus;
 
 @Service
 public class ProjectCatalogService implements ProjectCatalogPort {
@@ -66,7 +67,7 @@ public class ProjectCatalogService implements ProjectCatalogPort {
         self.doArchiveProject(projectId);
         // Phase 3: Post-transaction HTTP calls
         collaborationService.archiveProjectConversation(projectId);
-        project.setStatus(1);
+        project.setStatus(ProjectStatus.ARCHIVED);
         return viewAssembler.toProjectVO(project, operatorUserId);
     }
 

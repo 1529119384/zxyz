@@ -11,6 +11,7 @@ import uno.acloud.im.vo.TeamInviteLinkVO;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
+import uno.acloud.im.domain.enums.TeamInviteLinkStatus;
 
 @Service
 public class TeamManagementService {
@@ -46,7 +47,7 @@ public class TeamManagementService {
         link.setExpireTime(now.plusHours(expireHours));
         link.setMaxUses(maxUses);
         link.setUsedCount(0);
-        link.setStatus(0);
+        link.setStatus(TeamInviteLinkStatus.ACTIVE);
         link.setCreateTime(now);
         link.setUpdateTime(now);
         managementMapper.insertInviteLink(link);

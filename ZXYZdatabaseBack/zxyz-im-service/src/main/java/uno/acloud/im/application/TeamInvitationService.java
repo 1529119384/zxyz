@@ -11,7 +11,7 @@ import uno.acloud.im.domain.event.ImDomainEventType;
 import uno.acloud.im.domain.enums.ConversationType;
 import uno.acloud.im.domain.enums.InvitationStatus;
 import uno.acloud.im.domain.enums.SystemNotificationType;
-import uno.acloud.im.domain.enums.TeamMemberStatus;
+import uno.acloud.common.TeamMemberStatus;
 import uno.acloud.im.infrastructure.persistence.entity.ImConversation;
 import uno.acloud.im.infrastructure.persistence.entity.TeamInvitation;
 import uno.acloud.im.infrastructure.persistence.entity.TeamMember;

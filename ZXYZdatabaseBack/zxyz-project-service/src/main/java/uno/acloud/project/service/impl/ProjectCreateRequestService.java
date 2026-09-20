@@ -23,6 +23,7 @@ import java.util.List;
 
 import static uno.acloud.common.InputNormalizer.optionalText;
 import static uno.acloud.common.InputNormalizer.requireText;
+import uno.acloud.project.common.ProjectCreateRequestStatus;
 
 @Service
 public class ProjectCreateRequestService implements ProjectCreateRequestPort {
@@ -84,7 +85,7 @@ public class ProjectCreateRequestService implements ProjectCreateRequestPort {
         entity.setDescription(optionalText(request == null ? null : request.getDescription()));
         entity.setLeaderUserId(leaderUserId);
         entity.setStorageLimit(commandSupport.normalizeStorageLimit(request == null ? null : request.getStorageLimit()));
-        entity.setStatus(0);
+        entity.setStatus(ProjectCreateRequestStatus.PENDING);
         entity.setCreateTime(now);
         entity.setUpdateTime(now);
         projectCreateRequestMapper.insert(entity);
