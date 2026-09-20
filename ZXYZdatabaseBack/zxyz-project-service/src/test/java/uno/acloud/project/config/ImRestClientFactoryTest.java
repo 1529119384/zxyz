@@ -7,6 +7,7 @@ import org.springframework.boot.context.properties.source.MapConfigurationProper
 import org.springframework.http.HttpMethod;
 import org.springframework.web.client.RestClient;
 import uno.acloud.common.InternalServiceHeaders;
+import uno.acloud.starter.RestClientProperties;
 
 import com.sun.net.httpserver.HttpServer;
 
@@ -42,7 +43,7 @@ class ImRestClientFactoryTest {
                     "app.im.base-url", "http://localhost:" + port + "/"
             ));
             RestClient restClient = new ImRestClientFactory().imRestClient(
-                    RestClient.builder(), properties);
+                    RestClient.builder(), properties, new RestClientProperties());
 
             restClient.post()
                     .uri("/api/internal/im/team-sync/members/remove")

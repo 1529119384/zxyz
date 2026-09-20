@@ -215,3 +215,16 @@ knife4j:
   enable: ${KNIFE4J_ENABLE:false}
   setting:
     language: zh_cn
+
+# 服务间 RestClient 的基础设施层超时（P2-2）
+# 提取前这段「建 HttpClient 设连接超时 → 包 JdkClientHttpRequestFactory 设读取超时」
+# 在**三处**各抄了一份：zxyz-starter 的 RestClientAutoConfiguration、
+# project-service 的 EmailRestClientFactory 与 ImRestClientFactory。
+# 三份副本一旦漂移，同一条链路里不同客户端超时不同，极难排查 ⇒ 收敛到 zxyz-starter 的 RestClients。
+# 默认值与提取前逐字一致（连接 3s / 读取 10s）⇒ 不改任何现存行为，只是由硬编码变为可配。
+# 属基础设施参数，不接入 ConfigGetter 热配置；改动后需重启对应服务生效。
+# ⚠️ 本文件顶层键不可与已有键重名（SnakeYAML 会因 duplicate key 让所有服务启动失败）。
+zxyz:
+  http-client:
+    connect-timeout-seconds: ${HTTP_CLIENT_CONNECT_TIMEOUT_SECONDS:3}
+    read-timeout-seconds: ${HTTP_CLIENT_READ_TIMEOUT_SECONDS:10}

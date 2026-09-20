@@ -75,6 +75,28 @@ class RestClientAutoConfigurationTest {
         });
     }
 
+    @Test
+    void properties_bindFromZxyzHttpClientPrefix_andKeepExtractedDefaults() {
+        // P2-2：超时从三处硬编码提取为 zxyz.http-client 配置项。
+        // 这里把两件事一起钉死：①默认值仍是提取前的 3s/10s（否则有人顺手改默认值
+        // 会**静默**改变所有服务间调用的超时语义）；②外部确实能覆盖。
+        runner.run(ctx -> {
+            assertThat(ctx).hasSingleBean(RestClientProperties.class);
+            RestClientProperties defaults = ctx.getBean(RestClientProperties.class);
+            assertThat(defaults.getConnectTimeoutSeconds()).isEqualTo(3);
+            assertThat(defaults.getReadTimeoutSeconds()).isEqualTo(10);
+        });
+
+        runner.withPropertyValues(
+                        "zxyz.http-client.connect-timeout-seconds=7",
+                        "zxyz.http-client.read-timeout-seconds=25")
+                .run(ctx -> {
+                    RestClientProperties custom = ctx.getBean(RestClientProperties.class);
+                    assertThat(custom.getConnectTimeoutSeconds()).isEqualTo(7);
+                    assertThat(custom.getReadTimeoutSeconds()).isEqualTo(25);
+                });
+    }
+
     // ==================== 测试用配置 ====================
 
     @Configuration(proxyBeanMethods = false)

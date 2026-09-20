@@ -4,24 +4,20 @@ import org.springframework.cloud.client.loadbalancer.LoadBalanced;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.client.RestClient;
-import org.springframework.http.client.JdkClientHttpRequestFactory;
-
-import java.net.http.HttpClient;
-import java.time.Duration;
+import uno.acloud.starter.RestClientProperties;
+import uno.acloud.starter.RestClients;
 
 @Configuration
 public class ImRestClientFactory {
 
     @Bean("imRestClient")
-    public RestClient imRestClient(@LoadBalanced RestClient.Builder builder, AppImProperties properties) {
-        var httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(3))
-                .build();
-        var factory = new JdkClientHttpRequestFactory(httpClient);
-        factory.setReadTimeout(Duration.ofSeconds(10));
+    public RestClient imRestClient(@LoadBalanced RestClient.Builder builder,
+                                   AppImProperties properties,
+                                   RestClientProperties restClientProperties) {
+        // 超时统一取自 zxyz.http-client（P2-2）：原为就地硬编码 3s/10s
         return builder
                 .baseUrl(properties.normalizedBaseUrl())
-                .requestFactory(factory)
+                .requestFactory(RestClients.requestFactory(restClientProperties))
                 .build();
     }
 }
