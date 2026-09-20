@@ -3,11 +3,15 @@ package uno.acloud.file.mapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import org.apache.ibatis.builder.xml.XMLMapperBuilder;
 import org.apache.ibatis.io.Resources;
+import org.apache.ibatis.mapping.Discriminator;
 import org.apache.ibatis.mapping.MappedStatement;
+import org.apache.ibatis.mapping.ResultMap;
 import org.apache.ibatis.mapping.SqlCommandType;
 import org.apache.ibatis.session.Configuration;
 import org.junit.jupiter.api.Test;
+import uno.acloud.file.infrastructure.entity.FileItem;
 import uno.acloud.file.infrastructure.entity.FileNode;
+import uno.acloud.file.infrastructure.entity.Folder;
 import uno.acloud.file.infrastructure.mapper.FileMapper;
 
 import java.io.IOException;
@@ -18,6 +22,7 @@ import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -251,6 +256,72 @@ class FileMapperWiringTest {
             return false;
         }
         return parameterized.getActualTypeArguments()[0] == FileNode.class;
+    }
+
+    /**
+     * {@link ResultMap#getMappedColumns()} 返回的是<b>大写</b>列名
+     * （MyBatis 在 ResultMap 构造里统一 {@code toUpperCase}）⇒ 比对前必须归一，
+     * 否则会得到「明明映射了却报缺列」的假红。
+     */
+    private static Set<String> mappedColumnsUpper(ResultMap resultMap) {
+        Set<String> upper = new LinkedHashSet<>();
+        for (String column : resultMap.getMappedColumns()) {
+            upper.add(column.toUpperCase(Locale.ROOT));
+        }
+        return upper;
+    }
+
+    /**
+     * 批次 3：{@code fileNodeResultMap} 本体（含判别器）迁入 XML，形状必须逐项不变。
+     *
+     * <p>这是整轮迁移里**唯一无法用「SQL 文本等价」来证明**的一步 —— SQL 一个字没改，
+     * 但 {@code @Results} + {@code @TypeDiscriminator} 换成了 {@code <resultMap>} + {@code <discriminator>}。
+     * 故此处把形状钉死：顶层 15 条映射、判别列 {@code file_type}、两个分支分别落
+     * {@link FileItem} / {@link Folder}，且 {@code file_type = 1} 那一支的 4 条追加列不能丢。</p>
+     */
+    @Test
+    void fileNodeResultMapKeepsItsShapeAfterMovingToXml() {
+        Configuration configuration = assemble();
+
+        ResultMap resultMap = configuration.getResultMap(NS + ".fileNodeResultMap");
+        assertNotNull(resultMap, "fileNodeResultMap 未注册 ⇒ XML 没被扫到，或 id / namespace 写错");
+        assertEquals(FileNode.class, resultMap.getType());
+        // 迁移前（注解 @Results）实测为 15 条顶层映射：1 个 <id> + 14 个 <result>。
+        assertEquals(15, resultMap.getResultMappings().size(), "顶层结果映射条数变了");
+
+        Discriminator discriminator = resultMap.getDiscriminator();
+        assertNotNull(discriminator, "判别器丢了 ⇒ 抽象类 FileNode 无法实例化，查到行即 500");
+        assertEquals("file_type", discriminator.getResultMapping().getColumn());
+        assertEquals(2, discriminator.getDiscriminatorMap().size(),
+                "判别分支应为 file_type=1 → FileItem、file_type=0 → Folder");
+
+        // Discriminator 只暴露「case 值 → 结果映射 id」；case 的类型要回 Configuration 里查
+        // （XML 的每个 <case> 会各自生成一个嵌套 resultMap）。
+        String fileItemCaseMapId = discriminator.getMapIdFor("1");
+        String folderCaseMapId = discriminator.getMapIdFor("0");
+        assertNotNull(fileItemCaseMapId, "缺少 file_type=1 分支");
+        assertNotNull(folderCaseMapId, "缺少 file_type=0 分支");
+
+        ResultMap fileItemCase = configuration.getResultMap(fileItemCaseMapId);
+        assertEquals(FileItem.class, fileItemCase.getType());
+        assertEquals(Folder.class, configuration.getResultMap(folderCaseMapId).getType());
+
+        // ⚠️ 判别分支的嵌套 resultMap 会**整份替换**父 resultMap 参与映射
+        //    （见 DefaultResultSetHandler#getDiscriminatedResultMap），
+        //    因此它必须自带父的全部列，再加本分支的追加列 —— 少一条就会静默丢字段。
+        //    （实测：file_type=1 分支的 resultMappings 为 15 + 4 = 19 条。）
+        Set<String> expectedForFileItem = mappedColumnsUpper(resultMap);
+        for (String extraColumn : List.of("uuid_name", "category", "file_size", "file_url")) {
+            expectedForFileItem.add(extraColumn.toUpperCase(Locale.ROOT));
+        }
+        expectedForFileItem.removeAll(mappedColumnsUpper(fileItemCase));
+        assertTrue(expectedForFileItem.isEmpty(),
+                "file_type=1 分支缺列（会静默丢字段）：" + expectedForFileItem);
+
+        Set<String> missingForFolder = mappedColumnsUpper(resultMap);
+        missingForFolder.removeAll(mappedColumnsUpper(configuration.getResultMap(folderCaseMapId)));
+        assertTrue(missingForFolder.isEmpty(),
+                "file_type=0 分支缺列（会静默丢字段）：" + missingForFolder);
     }
 
     // ==========================================================================

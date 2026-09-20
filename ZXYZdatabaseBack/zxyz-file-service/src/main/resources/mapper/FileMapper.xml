@@ -20,6 +20,41 @@
 -->
 <mapper namespace="uno.acloud.file.infrastructure.mapper.FileMapper">
 
+    <!--
+      ===== 判别式结果映射 =====
+      FileNode 是**抽象类**（子类 FileItem / Folder），只能靠 file_type 判别器落地；
+      缺了它 MyBatis 会拿抽象类去实例化并抛 InstantiationException —— 「查到行」反而比「查不到行」更糟。
+
+      ⚠️ 本文件是 fileNodeResultMap 的**唯一源**，接口侧以 @ResultMap("fileNodeResultMap") 引用（11 条语句）。
+      ⚠️ 反向引用不可用：XML 先于注解解析，XML 引用注解里定义的 resultMap 只能靠延迟重试兜底，脆弱。
+    -->
+    <resultMap id="fileNodeResultMap" type="uno.acloud.file.infrastructure.entity.FileNode">
+        <id column="id" property="id"/>
+        <result column="file_type" property="fileType"/>
+        <result column="original_name" property="originalName"/>
+        <result column="store_path" property="storePath"/>
+        <result column="upload_user_id" property="uploadUserId"/>
+        <result column="shared_user_id" property="sharedUserId"/>
+        <result column="team_id" property="teamId"/>
+        <result column="space_type" property="spaceType"/>
+        <result column="project_id" property="projectId"/>
+        <result column="deleted_user_id" property="deletedUserId"/>
+        <result column="parent_id" property="parentId"/>
+        <result column="create_time" property="createTime"/>
+        <result column="modify_time" property="modifyTime"/>
+        <result column="deleted" property="deleted"/>
+        <result column="storage_provider" property="storageProvider"/>
+        <discriminator javaType="int" column="file_type">
+            <case value="1" resultType="uno.acloud.file.infrastructure.entity.FileItem">
+                <result column="uuid_name" property="uuidName"/>
+                <result column="category" property="category"/>
+                <result column="file_size" property="fileSize"/>
+                <result column="file_url" property="fileUrl"/>
+            </case>
+            <case value="0" resultType="uno.acloud.file.infrastructure.entity.Folder"/>
+        </discriminator>
+    </resultMap>
+
     <!-- ===== 标量返回：计数 / 取单列 ===== -->
 
     <select id="countActiveChildren" resultType="java.lang.Integer">

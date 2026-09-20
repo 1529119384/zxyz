@@ -1,6 +1,5 @@
 package uno.acloud.file.infrastructure.mapper;
 
-import org.apache.ibatis.annotations.Case;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Options;
@@ -9,7 +8,6 @@ import org.apache.ibatis.annotations.Result;
 import org.apache.ibatis.annotations.ResultMap;
 import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
-import org.apache.ibatis.annotations.TypeDiscriminator;
 import uno.acloud.file.infrastructure.entity.FileItem;
 import uno.acloud.file.infrastructure.entity.FileNode;
 import uno.acloud.file.infrastructure.entity.Folder;
@@ -24,44 +22,15 @@ import java.util.Map;
 @Mapper
 public interface FileMapper {
 
-    @Results(
-            id = "fileNodeResultMap",
-            value = {
-                    @Result(column = "id", property = "id", id = true),
-                    @Result(column = "file_type", property = "fileType"),
-                    @Result(column = "original_name", property = "originalName"),
-                    @Result(column = "store_path", property = "storePath"),
-                    @Result(column = "upload_user_id", property = "uploadUserId"),
-                    @Result(column = "shared_user_id", property = "sharedUserId"),
-                    @Result(column = "team_id", property = "teamId"),
-                    @Result(column = "space_type", property = "spaceType"),
-                    @Result(column = "project_id", property = "projectId"),
-                    @Result(column = "deleted_user_id", property = "deletedUserId"),
-                    @Result(column = "parent_id", property = "parentId"),
-                    @Result(column = "create_time", property = "createTime"),
-                    @Result(column = "modify_time", property = "modifyTime"),
-                    @Result(column = "deleted", property = "deleted"),
-                    @Result(column = "storage_provider", property = "storageProvider")
-            }
-    )
-    @TypeDiscriminator(
-            column = "file_type",
-            javaType = Integer.class,
-            cases = {
-                    @Case(
-                            value = "1",
-                            type = FileItem.class,
-                            results = {
-                                    @Result(column = "uuid_name", property = "uuidName"),
-                                    @Result(column = "category", property = "category"),
-                                    @Result(column = "file_size", property = "fileSize"),
-                                    @Result(column = "file_url", property = "fileUrl")
-                            }
-                    ),
-                    @Case(value = "0", type = Folder.class)
-            }
-    )
+    /**
+     * 按 id 取节点（含已删除行）。
+     *
+     * <p>结果映射 {@code fileNodeResultMap}（含 {@code file_type} 判别器）由
+     * {@code mapper/FileMapper.xml} 承载 —— 它是**抽象类** {@link FileNode} 能落到
+     * {@link FileItem} / {@link Folder} 的唯一途径，本仓 11 条返回 {@code FileNode} 的语句共用它。</p>
+     */
     @Select("SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider FROM file_node WHERE id = #{fileId}")
+    @ResultMap("fileNodeResultMap")
     FileNode getFileNodeById(Long fileId);
 
     /**
