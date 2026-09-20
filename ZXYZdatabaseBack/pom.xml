@@ -54,7 +54,7 @@
         <testcontainers.version>1.21.4</testcontainers.version>
         <!-- 2025.0.0 -> 2025.0.3：gateway-server(-webflux) 4.3.0 -> 4.3.5，修复 CVE-2025-41253（HIGH，需 ≥4.3.2）与 CVE-2025-41243（CRITICAL，需 ≥4.3.1）；同 train patch 升级，SCA 2025.0.0.0 兼容 -->
         <spring-cloud.version>2025.0.3</spring-cloud.version>
-        <spring-cloud-alibaba.version>2025.0.0.0</spring-cloud-alibaba.version>
+        <spring-cloud-alibaba.version>2025.1.0.0</spring-cloud-alibaba.version>
         <resilience4j.version>2.2.0</resilience4j.version>
         <jasypt.version>3.0.5</jasypt.version>
         <!-- D5 架构约束测试（路线 B：只钉现状 + FreezingArchRule 冻结存量违规）：
