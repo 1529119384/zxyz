@@ -127,4 +127,117 @@
         WHERE store_path LIKE CONCAT(#{oldPrefix}, '/%') AND deleted IN (0, 1)
     </update>
 
+    <!-- ===== 批量 UPDATE / DELETE（沿用 <foreach>，<script> 包裹层已按 XML 语义摘除） ===== -->
+
+    <update id="batchRenameByIds">
+        UPDATE file_node
+        SET original_name = CASE id
+        <foreach collection="renameMap" index="fileId" item="originalName">
+            WHEN #{fileId} THEN #{originalName}
+        </foreach>
+        END, modify_time = NOW()
+        WHERE id IN
+        <foreach collection="renameMap" index="fileId" item="originalName" open="(" separator="," close=")">
+            #{fileId}
+        </foreach>
+    </update>
+
+    <update id="logicalDeleteByIds">
+        UPDATE file_node
+        SET deleted = 1, modify_time = NOW(), deleted_user_id = #{userId}
+        WHERE deleted IN (0, 1) AND id IN
+        <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
+            #{fileId}
+        </foreach>
+    </update>
+
+    <update id="restoreByIds">
+        UPDATE file_node
+        SET deleted = 0, modify_time = NOW()
+        WHERE deleted = 1 AND id IN
+        <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
+            #{fileId}
+        </foreach>
+    </update>
+
+    <update id="reallyDeleteByIds">
+        UPDATE file_node
+        SET deleted = 2, modify_time = NOW(), deleted_user_id = #{userId}
+        WHERE deleted IN (0, 1) AND id IN
+        <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
+            #{fileId}
+        </foreach>
+    </update>
+
+    <delete id="deleteTombstoneRows">
+        DELETE FROM file_node WHERE id IN
+        <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
+            #{fileId}
+        </foreach>
+    </delete>
+
+    <!-- ===== 存储聚合与过期扫描 ===== -->
+
+    <select id="sumActiveFileSize" resultType="java.lang.Long">
+        SELECT COALESCE(SUM(file_size), 0)
+        FROM file_node
+        WHERE deleted IN (0, 1) AND file_type = 1
+        <choose>
+            <when test="spaceType != null and spaceType == 3">AND space_type = 3 AND project_id = #{projectId}</when>
+            <when test="spaceType != null and spaceType == 2">AND space_type = 2 AND team_id = #{teamId}</when>
+            <otherwise>AND (space_type IS NULL OR space_type = 1) AND team_id IS NULL AND upload_user_id = #{userId}</otherwise>
+        </choose>
+    </select>
+
+    <select id="sumPersonalStorageByUsers" resultType="java.lang.Long">
+        SELECT COALESCE(SUM(file_size), 0)
+        FROM file_node
+        WHERE deleted IN (0, 1) AND file_type = 1
+        AND (space_type IS NULL OR space_type = 1)
+        AND team_id IS NULL
+        AND upload_user_id IN
+        <foreach collection="userIds" item="userId" open="(" separator="," close=")">
+            #{userId}
+        </foreach>
+    </select>
+
+    <select id="sumDeletedFileBytesByScopeKey" resultType="java.util.Map">
+        SELECT scope_key AS scopeKey, COALESCE(SUM(file_size), 0) AS totalBytes
+        FROM file_node
+        WHERE id IN
+        <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
+            #{fileId}
+        </foreach>
+          AND file_size IS NOT NULL
+        GROUP BY scope_key
+    </select>
+
+    <!-- 对账用：按作用域聚合存活文件字节（quota 口径 deleted IN (0,1)）。 -->
+    <select id="selectScopeUsageAll" resultType="java.util.Map">
+        SELECT scope_key AS scopeKey, COALESCE(SUM(file_size), 0) AS totalBytes
+        FROM file_node
+        WHERE deleted IN (0, 1) AND file_size IS NOT NULL
+        GROUP BY scope_key
+    </select>
+
+    <!-- 回收站过期根节点。⚠️ 比较符在 XML 里必须转义：`<` 要写 &lt; -->
+    <select id="selectRecycleExpiredRootIds" resultType="java.lang.Long">
+        SELECT f.id
+        FROM file_node f
+        WHERE f.deleted = 1
+          AND f.modify_time &lt; #{cutoff}
+          AND NOT EXISTS (
+                SELECT 1 FROM file_node p
+                WHERE p.id = f.parent_id AND p.deleted = 1
+          )
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectTombstoneExpiredIds" resultType="java.lang.Long">
+        SELECT id FROM file_node
+        WHERE deleted = 2
+          AND modify_time &lt; #{cutoff}
+        LIMIT #{limit}
+    </select>
+
 </mapper>

@@ -1,7 +1,6 @@
 package uno.acloud.file.infrastructure.mapper;
 
 import org.apache.ibatis.annotations.Case;
-import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Options;
@@ -11,7 +10,6 @@ import org.apache.ibatis.annotations.ResultMap;
 import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.TypeDiscriminator;
-import org.apache.ibatis.annotations.Update;
 import uno.acloud.file.infrastructure.entity.FileItem;
 import uno.acloud.file.infrastructure.entity.FileNode;
 import uno.acloud.file.infrastructure.entity.Folder;
@@ -376,88 +374,24 @@ public interface FileMapper {
 
     int renameDescendantStorePaths(@Param("oldPrefix") String oldPrefix, @Param("newPrefix") String newPrefix);
 
-    @Update({
-            "<script>",
-            "UPDATE file_node",
-            "SET original_name = CASE id",
-            "<foreach collection='renameMap' index='fileId' item='originalName'>",
-            "WHEN #{fileId} THEN #{originalName}",
-            "</foreach>",
-            "END, modify_time = NOW()",
-            "WHERE id IN",
-            "<foreach collection='renameMap' index='fileId' item='originalName' open='(' separator=',' close=')'>",
-            "#{fileId}",
-            "</foreach>",
-            "</script>"
-    })
+    // 以下 4 条批量 UPDATE 已迁至 mapper/FileMapper.xml（P2-7 批次 2）
+
     int batchRenameByIds(@Param("renameMap") Map<Long, String> renameMap);
 
-    @Update({
-            "<script>",
-            "UPDATE file_node",
-            "SET deleted = 1, modify_time = NOW(), deleted_user_id = #{userId}",
-            "WHERE deleted IN (0, 1) AND id IN",
-            "<foreach collection='fileIds' item='fileId' open='(' separator=',' close=')'>",
-            "#{fileId}",
-            "</foreach>",
-            "</script>"
-    })
     int logicalDeleteByIds(@Param("fileIds") List<Long> fileIds, @Param("userId") Long userId);
 
-    @Update({
-            "<script>",
-            "UPDATE file_node",
-            "SET deleted = 0, modify_time = NOW()",
-            "WHERE deleted = 1 AND id IN",
-            "<foreach collection='fileIds' item='fileId' open='(' separator=',' close=')'>",
-            "#{fileId}",
-            "</foreach>",
-            "</script>"
-    })
     int restoreByIds(@Param("fileIds") List<Long> fileIds);
 
-    @Update({
-            "<script>",
-            "UPDATE file_node",
-            "SET deleted = 2, modify_time = NOW(), deleted_user_id = #{userId}",
-            "WHERE deleted IN (0, 1) AND id IN",
-            "<foreach collection='fileIds' item='fileId' open='(' separator=',' close=')'>",
-            "#{fileId}",
-            "</foreach>",
-            "</script>"
-    })
     int reallyDeleteByIds(@Param("fileIds") List<Long> fileIds, @Param("userId") Long userId);
 
-    @Select({
-            "<script>",
-            "SELECT COALESCE(SUM(file_size), 0)",
-            "FROM file_node",
-            "WHERE deleted IN (0, 1) AND file_type = 1",
-            "<choose>",
-            "  <when test='spaceType != null and spaceType == 3'>AND space_type = 3 AND project_id = #{projectId}</when>",
-            "  <when test='spaceType != null and spaceType == 2'>AND space_type = 2 AND team_id = #{teamId}</when>",
-            "  <otherwise>AND (space_type IS NULL OR space_type = 1) AND team_id IS NULL AND upload_user_id = #{userId}</otherwise>",
-            "</choose>",
-            "</script>"
-    })
+    // sumActiveFileSize / sumPersonalStorageByUsers 已迁至 mapper/FileMapper.xml（P2-7 批次 2）
+
+    /** 个人/团队/项目三种作用域的存活字节数（quota 口径 {@code deleted IN (0,1)}、仅文件行）。 */
     long sumActiveFileSize(@Param("userId") Long userId,
                            @Param("teamId") Long teamId,
                            @Param("spaceType") Integer spaceType,
                            @Param("projectId") Long projectId);
 
-    @Select({
-            "<script>",
-            "SELECT COALESCE(SUM(file_size), 0)",
-            "FROM file_node",
-            "WHERE deleted IN (0, 1) AND file_type = 1",
-            "AND (space_type IS NULL OR space_type = 1)",
-            "AND team_id IS NULL",
-            "AND upload_user_id IN",
-            "<foreach collection='userIds' item='userId' open='(' separator=',' close=')'>",
-            "#{userId}",
-            "</foreach>",
-            "</script>"
-    })
     long sumPersonalStorageByUsers(@Param("userIds") List<Long> userIds);
 
     @Select({
@@ -504,52 +438,17 @@ public interface FileMapper {
     /** 个人空间哨兵根节点（parent_id = -1）的 id 列表（已迁至 mapper/FileMapper.xml）。 */
     List<Long> getPersonalRootFileIds(@Param("userId") Long userId);
 
-    @Select("""
-            SELECT f.id
-            FROM file_node f
-            WHERE f.deleted = 1
-              AND f.modify_time < #{cutoff}
-              AND NOT EXISTS (
-                    SELECT 1 FROM file_node p
-                    WHERE p.id = f.parent_id AND p.deleted = 1
-              )
-            LIMIT #{limit}
-            """)
+    // 以下 5 条（2 条过期扫描 + 1 条墓碑删除 + 2 条作用域聚合）已迁至 mapper/FileMapper.xml（P2-7 批次 2）
+
+    /** 回收站中「已过期、且父节点未一并进回收站」的根节点 id（父节点也删的由父那层负责）。 */
     List<Long> selectRecycleExpiredRootIds(@Param("cutoff") java.sql.Timestamp cutoff, @Param("limit") int limit);
 
-    @Select("""
-            SELECT id FROM file_node
-            WHERE deleted = 2
-              AND modify_time < #{cutoff}
-            LIMIT #{limit}
-            """)
     List<Long> selectTombstoneExpiredIds(@Param("cutoff") java.sql.Timestamp cutoff, @Param("limit") int limit);
 
-    @Delete("""
-            <script>
-            DELETE FROM file_node WHERE id IN
-            <foreach collection='fileIds' item='fileId' open='(' separator=',' close=')'>
-                #{fileId}
-            </foreach>
-            </script>
-            """)
     int deleteTombstoneRows(@Param("fileIds") List<Long> fileIds);
 
-    @Select("""
-            <script>
-            SELECT scope_key AS scopeKey, COALESCE(SUM(file_size), 0) AS totalBytes
-            FROM file_node
-            WHERE id IN
-            <foreach collection='fileIds' item='fileId' open='(' separator=',' close=')'>
-                #{fileId}
-            </foreach>
-              AND file_size IS NOT NULL
-            GROUP BY scope_key
-            </script>
-            """)
     List<Map<String, Object>> sumDeletedFileBytesByScopeKey(@Param("fileIds") List<Long> fileIds);
 
     /** 对账用：按作用域聚合存活文件字节（quota 口径 deleted IN (0,1)）。 */
-    @Select("SELECT scope_key AS scopeKey, COALESCE(SUM(file_size), 0) AS totalBytes FROM file_node WHERE deleted IN (0, 1) AND file_size IS NOT NULL GROUP BY scope_key")
     List<Map<String, Object>> selectScopeUsageAll();
 }

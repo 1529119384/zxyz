@@ -170,6 +170,30 @@ class FileMapperWiringTest {
         assertBackedByXml(configuration, "renameDescendantStorePaths", SqlCommandType.UPDATE);
     }
 
+    /**
+     * 批次 2 迁入 {@code mapper/FileMapper.xml} 的 11 条：
+     * 动态 UPDATE/DELETE（{@code <foreach>} / {@code CASE id WHEN}）、存储聚合、过期扫描。
+     * <p>这一批踩的是「{@code <script>} 包裹层忘删」与「{@code <} 未转义」两个坑 ——
+     * 两者都会让 XML 解析直接失败，本用例因此是它们的第一道拦截。</p>
+     */
+    @Test
+    void batchTwoStatementsAreBackedByXml() {
+        Configuration configuration = assemble();
+
+        assertBackedByXml(configuration, "batchRenameByIds", SqlCommandType.UPDATE);
+        assertBackedByXml(configuration, "logicalDeleteByIds", SqlCommandType.UPDATE);
+        assertBackedByXml(configuration, "restoreByIds", SqlCommandType.UPDATE);
+        assertBackedByXml(configuration, "reallyDeleteByIds", SqlCommandType.UPDATE);
+        assertBackedByXml(configuration, "deleteTombstoneRows", SqlCommandType.DELETE);
+
+        assertBackedByXml(configuration, "sumActiveFileSize", SqlCommandType.SELECT);
+        assertBackedByXml(configuration, "sumPersonalStorageByUsers", SqlCommandType.SELECT);
+        assertBackedByXml(configuration, "sumDeletedFileBytesByScopeKey", SqlCommandType.SELECT);
+        assertBackedByXml(configuration, "selectScopeUsageAll", SqlCommandType.SELECT);
+        assertBackedByXml(configuration, "selectRecycleExpiredRootIds", SqlCommandType.SELECT);
+        assertBackedByXml(configuration, "selectTombstoneExpiredIds", SqlCommandType.SELECT);
+    }
+
     private static void assertBackedByXml(Configuration configuration, String id, SqlCommandType expected) {
         MappedStatement statement = require(configuration, id);
         assertEquals(expected, statement.getSqlCommandType(), id + " 的语句类型不符");
