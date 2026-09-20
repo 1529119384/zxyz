@@ -18,8 +18,8 @@
       <el-table-column prop="leaderUserId" label="负责人" width="120" />
       <el-table-column label="状态" width="110">
         <template #default="{ row }">
-          <el-tag :type="row.status === 0 ? 'success' : 'info'">{{
-            row.status === 0 ? '进行中' : '已归档'
+          <el-tag :type="row.status === PROJECT_STATUS.NORMAL ? 'success' : 'info'">{{
+            row.status === PROJECT_STATUS.NORMAL ? '进行中' : '已归档'
           }}</el-tag>
         </template>
       </el-table-column>
@@ -33,7 +33,7 @@
             size="small"
             type="danger"
             plain
-            :disabled="!canCreateProject || row.status !== 0"
+            :disabled="!canCreateProject || row.status !== PROJECT_STATUS.NORMAL"
             @click="archive(row)"
             >归档</el-button
           >
@@ -64,6 +64,7 @@ defineOptions({ name: 'Projects' })
 import { archiveProject, fetchTeamProjects } from '@/api/project'
 import CreateProjectDialog from '@/components/CreateProjectDialog.vue'
 import { useProjectManagement } from '@/composables/project/useProjectManagement'
+import { PROJECT_STATUS } from '@/constants/projectStatus'
 import { useCurrentUserStore } from '@/store/currentUser'
 import { useTeamStore } from '@/store/team'
 import { handleBusinessError } from '@/utils/error'

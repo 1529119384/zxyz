@@ -1,4 +1,5 @@
 // @ts-check
+import { SHARE_STATUS } from '@/constants/shareStatus'
 import { createDisplayFileEntry, normalizeFileType } from '@/models/filePresentation'
 import { fmtTime } from '@/utils/format'
 import { parseCrumbs } from '@/utils/pathUtils'
@@ -38,15 +39,16 @@ const SHARE_BRAND_NAME = '指绣云章'
 const SHARE_PASSWORD_PATTERN = /^[A-Za-z0-9]{4}$/
 
 /**
- * 分享状态编号 → 文案。JS 取对象属性恒按字符串匹配，查找处统一 String() 归一：
+ * 分享状态编号 → 文案，编号取自 `@/constants/shareStatus` 的 `SHARE_STATUS`（唯一权威来源）。
+ * JS 取对象属性恒按字符串匹配，查找处统一 String() 归一：
  * `undefined` 仍会落到不存在的键（由 `|| '-'` 兜底），不会被误当成 0 号「生效中」。
  * @type {Readonly<Record<string, string>>}
  */
 export const SHARE_STATUS_MAP = {
-  0: '生效中',
-  1: '已取消',
-  2: '已过期',
-  3: '次数用尽',
+  [SHARE_STATUS.ACTIVE]: '生效中',
+  [SHARE_STATUS.CANCELLED]: '已取消',
+  [SHARE_STATUS.EXPIRED]: '已过期',
+  [SHARE_STATUS.EXHAUSTED]: '次数用尽',
 }
 
 export const SHARE_EXPIRE_OPTIONS = [

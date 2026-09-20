@@ -54,7 +54,7 @@
           <el-button
             link
             type="danger"
-            :disabled="row.status !== 0"
+            :disabled="row.status !== SHARE_STATUS.ACTIVE"
             @click="cancelShareRecord(row)"
           >
             取消分享
@@ -81,6 +81,7 @@
 <script setup>
 import { defineOptions } from 'vue'
 
+import { SHARE_STATUS } from '@/constants/shareStatus'
 import { formatShareExpireText } from '@/models/share'
 import { useMyShareList } from '@/composables/useMyShareList'
 import { fmtTime } from '@/utils/format'
@@ -101,11 +102,11 @@ const {
 } = useMyShareList()
 
 function resolveStatusType(status) {
-  if (status === 0) {
+  if (status === SHARE_STATUS.ACTIVE) {
     return 'success'
   }
 
-  if (status === 1) {
+  if (status === SHARE_STATUS.CANCELLED) {
     return 'info'
   }
 
