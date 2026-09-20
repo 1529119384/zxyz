@@ -46,7 +46,7 @@
         <commons-lang3.version>3.20.0</commons-lang3.version>
         <lombok.version>1.18.42</lombok.version>
         <!-- 4.0.5 与 Jakarta EE 10（Spring Boot 3.x）兼容；2.3.x 使用 javax 命名空间，不可用于 Spring Boot 3 -->
-        <jaxb-runtime.version>4.0.5</jaxb-runtime.version>
+        <jaxb-runtime.version>4.0.9</jaxb-runtime.version>
         <simple-java-mail.version>9.3.4</simple-java-mail.version>
 <!-- m54: MapStruct — 对象映射框架，逐步替代手动字段拷贝 -->
         <mapstruct.version>1.6.3</mapstruct.version>
