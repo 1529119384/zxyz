@@ -87,6 +87,14 @@ export function useFileSearch(options) {
       }
 
       const data = response?.data || EMPTY_SEARCH_RESULT
+      // 搜索信封自 07-P2-4 起也带 page / pageSize（此前只有 total/list）。
+      // 采纳后端生效的**页长** —— 它可能被上限钳过，不采纳会让总页数算错、中后段翻不到。
+      // 刻意不采纳 page（后端只做 `< 1 → 1` 归一，回声值恒等于请求值，采纳反而是耦合）。
+      // 缺字段（旧后端）时保持本地值。
+      const serverPageSize = Number(data.pageSize)
+      if (Number.isFinite(serverPageSize) && serverPageSize >= 1) {
+        pageSize.value = normalizePageSize(serverPageSize)
+      }
       results.value = {
         total: Number(data.total) || 0,
         list: Array.isArray(data.list) ? data.list : [],

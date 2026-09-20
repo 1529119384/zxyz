@@ -7,7 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.TeamErrorCode;
-import uno.acloud.common.InternalServiceHeaders;
+import uno.acloud.client.AbstractServiceClient;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.config.ServiceProperties;
 import uno.acloud.im.config.TeamServiceProperties;
@@ -21,36 +21,43 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * 团队权限 HTTP 客户端
+ * 团队权限 HTTP 客户端。
  * 通过 HTTP 调用 Team Service 的内部 API 获取权限数据，
  * 不再直接访问 zxyz_im 数据库的权限表。
+ *
+ * <p>07-B-2：并入 {@link AbstractServiceClient}。此前本类自己又实现了一遍
+ * 「每服务独立密钥优先、回退共享 token」与「写 X-Internal-Caller-Service」的请求头逻辑，
+ * 并且<b>没有传播 {@code X-Request-Id}</b> —— 团队服务侧的日志因此无法与 IM 侧的同一次请求对齐。
+ * 继承基类后请求头（含链路 ID）由 {@code internalHeaders} 统一处理，HTTP 失败也归一成
+ * {@code BusinessException}。</p>
+ *
+ * <p>重试口径按端点幂等性区分，与基类 {@code postJson} / {@code postJsonWithRetry} 的约定一致：
+ * {@code /check}、{@code /list-permissions}、{@code /role-code} 是查询，允许重试；
+ * {@code /initialize}、{@code /grant-role}、{@code /clear-role} 是写操作，不重试
+ * （读超时时服务端可能已经执行，重试会产生重复副作用）。</p>
  */
 @Slf4j
 @Service
-public class TeamPermissionService {
+public class TeamPermissionService extends AbstractServiceClient {
 
-    private final RestClient restClient;
-    private final ObjectMapper objectMapper;
-    private final TeamServiceProperties teamServiceProperties;
-    private final String internalServiceToken;
-    private final String selfServiceKey;
-    private final String sourceService;
     private final TeamPermissionLocalCache localCache;
 
     public TeamPermissionService(RestClient restClient,
                                  ObjectMapper objectMapper,
                                  TeamServiceProperties teamServiceProperties,
                                  ServiceProperties serviceProperties,
-                                 TeamPermissionLocalCache localCache,
-                                 @org.springframework.beans.factory.annotation.Value("${spring.application.name:unknown}") String sourceService,
-                                 @org.springframework.beans.factory.annotation.Value("${app.internal-service-key:}") String selfServiceKey) {
-        this.restClient = restClient;
-        this.objectMapper = objectMapper;
-        this.teamServiceProperties = teamServiceProperties;
-        this.internalServiceToken = serviceProperties.getInternalServiceToken();
-        this.sourceService = sourceService;
-        this.selfServiceKey = selfServiceKey;
+                                 TeamPermissionLocalCache localCache) {
+        // baseUrl 在构造期解析：application.yml 给 app.team-service.base-url 配了非空默认值
+        // （${TEAM_SERVICE_BASE_URL:http://zxyz-team-service}），normalizedBaseUrl() 不会抛
+        // IllegalStateException；与同模块的 FileCardClient 保持同一种失败时机。
+        super(restClient, teamServiceProperties.normalizedBaseUrl(),
+                serviceProperties.getInternalServiceToken(), objectMapper);
         this.localCache = localCache;
+    }
+
+    @Override
+    protected String serviceName() {
+        return "团队服务";
     }
 
     // ==================== 权限检查 ====================
@@ -75,9 +82,8 @@ public class TeamPermissionService {
         }
         boolean result;
         try {
-            String responseBody = postToTeamService("/api/internal/permissions/team/check",
+            JsonNode root = postJsonWithRetry("/api/internal/permissions/team/check",
                     new PermissionCheckRequest(teamId, userId, permissionCode));
-            JsonNode root = objectMapper.readTree(responseBody);
             if (root.path("code").asInt() != ErrorCode.SUCCESS) {
                 result = false;
             } else {
@@ -119,9 +125,8 @@ public class TeamPermissionService {
     /** 列出成员所有权限 code */
     public List<String> listMemberPermissions(Long teamId, Long userId) {
         try {
-            String responseBody = postToTeamService("/api/internal/permissions/team/list-permissions",
+            JsonNode root = postJsonWithRetry("/api/internal/permissions/team/list-permissions",
                     new MemberRequest(teamId, userId));
-            JsonNode root = objectMapper.readTree(responseBody);
             if (root.path("code").asInt() != ErrorCode.SUCCESS) {
                 return List.of();
             }
@@ -141,9 +146,8 @@ public class TeamPermissionService {
     /** 获取成员角色 code */
     public Optional<String> getMemberRoleCode(Long teamId, Long userId) {
         try {
-            String responseBody = postToTeamService("/api/internal/permissions/team/role-code",
+            JsonNode root = postJsonWithRetry("/api/internal/permissions/team/role-code",
                     new MemberRequest(teamId, userId));
-            JsonNode root = objectMapper.readTree(responseBody);
             if (root.path("code").asInt() != ErrorCode.SUCCESS) {
                 return Optional.empty();
             }
@@ -161,7 +165,7 @@ public class TeamPermissionService {
     /** 初始化团队内置角色 */
     public void initializeBuiltInRoles(Long teamId, Long ownerUserId) {
         try {
-            postToTeamService("/api/internal/permissions/team/initialize",
+            postJson("/api/internal/permissions/team/initialize",
                     new MemberRequest(teamId, ownerUserId));
         } catch (BusinessException e) {
             throw e;
@@ -174,7 +178,7 @@ public class TeamPermissionService {
     /** 授权内置角色 */
     public void grantBuiltInRole(Long teamId, Long userId, String roleCode) {
         try {
-            postToTeamService("/api/internal/permissions/team/grant-role",
+            postJson("/api/internal/permissions/team/grant-role",
                     new RoleGrantRequest(teamId, userId, roleCode));
         } catch (BusinessException e) {
             throw e;
@@ -187,7 +191,7 @@ public class TeamPermissionService {
     /** 清除成员角色 */
     public void clearMemberRole(Long teamId, Long userId) {
         try {
-            postToTeamService("/api/internal/permissions/team/clear-role",
+            postJson("/api/internal/permissions/team/clear-role",
                     new MemberRequest(teamId, userId));
         } catch (BusinessException e) {
             throw e;
@@ -197,17 +201,4 @@ public class TeamPermissionService {
         }
     }
 
-    // ==================== HTTP 工具 ====================
-
-    private String postToTeamService(String path, Object body) {
-        String url = teamServiceProperties.normalizedBaseUrl() + path;
-        String token = (selfServiceKey != null && !selfServiceKey.isBlank()) ? selfServiceKey : internalServiceToken;
-        return restClient.post()
-                .uri(url)
-                .header(InternalServiceHeaders.TOKEN_HEADER, token)
-                .header(InternalServiceHeaders.CALLER_SERVICE_HEADER, sourceService)
-                .body(body)
-                .retrieve()
-                .body(String.class);
-    }
 }

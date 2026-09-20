@@ -68,6 +68,9 @@ export interface RecycleFileItem extends ApiFileItem {
 /** 分页搜索结果（对应 mapSearchFileEntries 输出）。 */
 export interface PagedFileResult {
   total: number
+  /** 后端实际生效的页码 / 页长；0 表示后端未回传（旧后端），调用方保持本地值。 */
+  page: number
+  pageSize: number
   list: ApiFileItem[]
 }
 
@@ -215,10 +218,58 @@ const buildFileListParams = (
   return params
 }
 
+/** 分页信封里需要提升到 ApiResult 同级的字段（data 被拍平成数组后就取不到它们了）。 */
+export interface HoistedPaging {
+  total?: number
+  page?: number
+  pageSize?: number
+}
+
+const toOptionalNumber = (value: unknown): number | undefined => {
+  if (value == null) return undefined
+  const num = Number(value)
+  return Number.isFinite(num) ? num : undefined
+}
+
+/**
+ * 把后端分页信封的 `list` 拍平成 `data` 数组，并把 total / page / pageSize 提升到信封同级。
+ *
+ * 为什么必须提升：`data` 被替换成数组后，调用方无法再从 `data` 里取到它们。
+ * 其中 page / pageSize 是**后端实际生效值**（可能被 `PageResult.MAX_PAGE_SIZE` 钳过），
+ * 分页器采纳它才不会出现「前端按 200 算总页数、后端按 100 分页」的错位 ——
+ * 那种错位会让每翻一页跳掉一批数据，中后段永远看不到。
+ *
+ * 裸数组返回（旧后端）时不提升，调用方各自保持本地值（本仓既有的降级习惯）。
+ */
+const hoistPagedEnvelope = <T>(
+  response: ApiResult<unknown>,
+  mapList: (rawList: unknown[]) => T,
+): ApiResult<T> & HoistedPaging => {
+  const rawData = response?.data
+  const rawList = Array.isArray(rawData)
+    ? rawData
+    : Array.isArray((rawData as { list?: unknown } | null)?.list)
+      ? (rawData as { list: unknown[] }).list
+      : []
+  const envelope = Array.isArray(rawData) ? null : (rawData as Record<string, unknown> | null)
+
+  const total = toOptionalNumber(envelope?.total)
+  const page = toOptionalNumber(envelope?.page)
+  const pageSize = toOptionalNumber(envelope?.pageSize)
+
+  return {
+    ...response,
+    data: mapList(rawList),
+    ...(total === undefined ? {} : { total }),
+    ...(page === undefined ? {} : { page }),
+    ...(pageSize === undefined ? {} : { pageSize }),
+  }
+}
+
 export const fetchFileList = async (
   parentId: string | number,
   sortOptions: FileListSortOptions = {},
-): Promise<ApiResult<ApiFileItem[]> & { total?: number }> => {
+): Promise<ApiResult<ApiFileItem[]> & HoistedPaging> => {
   const { page, pageSize, signal, ...restSortOptions } = sortOptions
   const response = await request.get<Record<string, unknown>>('/api/files', {
     params: {
@@ -229,25 +280,9 @@ export const fetchFileList = async (
     signal,
   })
 
-  // 后端可能返回分页信封 { list, total } 或裸数组；这里统一拍平为 data 数组，
-  // 并把分页 total 提升到信封同级 —— 因为 data 被替换成数组后，调用方无法再从
-  // data.total 取到总数（useSpaceFileList 的分页器需要它）。
-  const rawData = response?.data
-  const rawList = Array.isArray(rawData)
-    ? rawData
-    : Array.isArray((rawData as { list?: unknown } | null)?.list)
-      ? (rawData as { list: unknown[] }).list
-      : []
-  const rawTotal = Array.isArray(rawData)
-    ? null
-    : ((rawData as { total?: unknown } | null)?.total ?? null)
-  const total = rawTotal == null ? undefined : Number(rawTotal)
-
-  return {
-    ...response,
-    data: mapSpaceFileEntries(rawList as import('@/models/file').RawFileRecord[]) as ApiFileItem[],
-    ...(total === undefined ? {} : { total }),
-  }
+  return hoistPagedEnvelope(response, (rawList) =>
+    mapSpaceFileEntries(rawList as import('@/models/file').RawFileRecord[]) as ApiFileItem[],
+  )
 }
 
 export const searchFiles = async (
@@ -470,8 +505,9 @@ export const logicalDeleteFiles = (
  *
  * 后端自 07-P0-2 起改为返回分页信封 `{ page, pageSize, total, list }`
  * （此前是无分页、无上限的裸数组）。这里沿用 `fetchFileList` 的处理方式：
- * 把 `list` 拍平成 `data` 数组、把 `total` 提升到信封同级 —— 因为 `data` 被替换成
- * 数组后，调用方无法再从 `data.total` 取到总数（`useRecycleBinList` 的分页器需要它）。
+ * 把 `list` 拍平成 `data` 数组、把 `total` / `page` / `pageSize` 提升到信封同级 ——
+ * `data` 被替换成数组后调用方再也取不到它们（`useRecycleBinList` 的分页器需要 total，
+ * 而 pageSize 是**后端生效值**，不采纳会让总页数算错）。
  *
  * 仍兼容裸数组返回：万一后端版本回退，前端不会整页空白。
  */
@@ -483,7 +519,7 @@ export const fetchRecycleList = async (
     page?: number
     pageSize?: number
   } = {},
-): Promise<ApiResult<RecycleFileItem[]> & { total?: number }> => {
+): Promise<ApiResult<RecycleFileItem[]> & HoistedPaging> => {
   const { page, pageSize, ...spaceOptions } = options
   const response = await request.get<Record<string, unknown>>('/api/trash/files', {
     params: {
@@ -495,24 +531,9 @@ export const fetchRecycleList = async (
     },
   })
 
-  const rawData = response?.data
-  const rawList = Array.isArray(rawData)
-    ? rawData
-    : Array.isArray((rawData as { list?: unknown } | null)?.list)
-      ? (rawData as { list: unknown[] }).list
-      : []
-  const rawTotal = Array.isArray(rawData)
-    ? null
-    : ((rawData as { total?: unknown } | null)?.total ?? null)
-  const total = rawTotal == null ? undefined : Number(rawTotal)
-
-  return {
-    ...response,
-    data: mapRecycleFileEntries(
-      rawList as import('@/models/file').RawFileRecord[],
-    ) as RecycleFileItem[],
-    ...(total === undefined ? {} : { total }),
-  }
+  return hoistPagedEnvelope(response, (rawList) =>
+    mapRecycleFileEntries(rawList as import('@/models/file').RawFileRecord[]) as RecycleFileItem[],
+  )
 }
 
 export const restoreFiles = (

@@ -20,7 +20,13 @@ export function useMyShareList() {
       const response = await fetchMyShareList({ page, pageSize })
 
       // 后端信封的归一化在 models/share.js（list 优先、兼容旧的 rows）里做完了。
-      return { list: response?.data?.list, total: response?.data?.total }
+      // page / pageSize 一并回传：后端可能按页长上限钳过请求值，交给 usePagedList 校准。
+      return {
+        list: response?.data?.list,
+        total: response?.data?.total,
+        page: response?.data?.page,
+        pageSize: response?.data?.pageSize,
+      }
     },
     {
       context: 'myShare',

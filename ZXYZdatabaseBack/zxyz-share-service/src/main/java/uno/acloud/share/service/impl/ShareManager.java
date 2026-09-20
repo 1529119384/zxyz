@@ -121,7 +121,7 @@ public class ShareManager {
     public PageResult<ShareMyListItemVO> getMyShares(Long userId, Integer page, Integer pageSize) {
         shareValidator.validateUserId(userId);
         int safePage = PageResult.normalizePage(page);
-        int safePageSize = normalizeSharePageSize(pageSize);
+        int safePageSize = PageResult.normalizePageSize(pageSize, DEFAULT_PAGE_SIZE);
         int total = shareMapper.countByUserId(userId);
         if (total <= 0) {
             return PageResult.of(safePage, safePageSize, 0, List.<ShareMyListItemVO>of());
@@ -140,24 +140,11 @@ public class ShareManager {
         return PageResult.of(safePage, safePageSize, total, rows);
     }
 
-    /**
-     * 我的分享列表的 pageSize 归一化。
-     *
-     * <p><b>为什么不直接用 PageResult.normalizePageSize</b>：它把「未指定」落成
-     * PageResult.DEFAULT_PAGE_SIZE（20），而本接口的历史默认值是 10
-     * （见 ShareController#getMyShares 的 defaultValue）。直接复用会把每页条数从 10
-     * 悄悄改成 20，属于契约外变更。</p>
-     *
-     * <p><b>上限是本接口原先缺的闸门</b>：旧实现只判 pageSize &lt; 1，调用方传一个极大的
-     * pageSize 就等于把分页接口恢复成「全表查询」（与 07-P0-2 里 admin 侧修的同一类问题）。
-     * 这里统一钳制到 PageResult.MAX_PAGE_SIZE。</p>
-     */
-    private static int normalizeSharePageSize(Integer pageSize) {
-        if (pageSize == null || pageSize < 1) {
-            return DEFAULT_PAGE_SIZE;
-        }
-        return Math.min(pageSize, PageResult.MAX_PAGE_SIZE);
-    }
+    // pageSize 归一化自 07-P2-4 起改用 PageResult.normalizePageSize(pageSize, 默认值)：
+    // 本接口的历史默认值是 10（见 ShareController#getMyShares 的 defaultValue），
+    // 而 PageResult.DEFAULT_PAGE_SIZE 是 20，两者语义不同、不能互相顶替；
+    // 上限则必须全库唯一（PageResult.MAX_PAGE_SIZE），因此把默认值当参数传进去。
+    // 此前的私有 normalizeSharePageSize 与本方法逐字同构，已删除。
 
     public ShareMyListItemVO getShareDetail(Long shareId, Long userId) {
         shareValidator.validateUserId(userId);

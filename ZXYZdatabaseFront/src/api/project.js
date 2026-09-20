@@ -2,6 +2,22 @@
 import request from '@/utils/request'
 
 /**
+ * 项目域 API。
+ *
+ * 07-A-3 复核（2026-09-21）：下面四个函数指向**真实存在的后端端点**，但**前端暂无消费者**，
+ * 刻意保留而非删除（删了以后要做对应 UI 就得把请求契约重写一遍）：
+ *   · `fetchPendingProjectCreateRequests` → `GET  /api/project-create-requests/teams/{teamId}/pending`
+ *   · `fetchProjectMembers`               → `GET  /api/project-members/projects/{projectId}/members`
+ *   · `addProjectMember`                  → `POST /api/project-members/projects/{projectId}/members`
+ *   · `transferProjectLeader`             → `PATCH /api/project-members/projects/{projectId}/leader`
+ * 前者的后端是 `zxyz-project-service` 的 `ProjectCreateRequestController`，后三者在
+ * `ProjectMemberController`；网关路由 id `project-service` 覆盖了这两个前缀。
+ *
+ * 本文件其余函数都有消费方（`useSpaceFileList`、`views/*`）。
+ * ⚠️ 本文件**没有单测**（`src/api/__tests__/` 未覆盖），改动只能靠人眼核对。
+ */
+
+/**
  * @param {string|number} teamId - 团队 ID
  * @param {{signal?: AbortSignal}} [options] - 可选中止信号
  */

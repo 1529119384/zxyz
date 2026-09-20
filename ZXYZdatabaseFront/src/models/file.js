@@ -81,13 +81,17 @@ export function mapRecycleFileEntries(data = []) {
 }
 
 /**
- * @param {{ list?: RawFileRecord[], total?: number }} [data]
+ * @param {{ list?: RawFileRecord[], total?: number|string, page?: number|string, pageSize?: number|string }} [data]
  */
 export function mapSearchFileEntries(data = {}) {
   const list = Array.isArray(data?.list) ? data.list : []
 
   return {
     total: Number(data?.total) || 0,
+    // 搜索信封自 07-P2-4 起也带 page / pageSize（此前只有 total/list）。
+    // 0 表示「后端没回传」，useFileSearch 会保持本地值而不是把页长改成 0。
+    page: Number(data?.page) || 0,
+    pageSize: Number(data?.pageSize) || 0,
     list: list.map(mapSearchFileEntry),
   }
 }

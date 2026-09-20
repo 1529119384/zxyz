@@ -110,13 +110,40 @@ const globalStubs = {
   'el-tag': { name: 'ElTag', props: ['type', 'size', 'effect'], template: '<span class="stub-tag"><slot /></span>' },
 }
 
-function mountPanel(props = {}) {
+// 07-P1-7：面板把「文案」聚合成 `labels`、把「行为」聚合成 `actions`。
+// 本函数**如实构造这两个对象**，只是让每条用例仍按「键」书写而不必写三层字面量。
+// 映射集中在这一处，且每条用例断言的是**渲染出来的文字 / 回调收到的参数**，
+// 所以这里若漏搬某个键，断言会立刻红（不会静默通过）。
+const PANEL_LABEL_KEYS = [
+  'title',
+  'subtitle',
+  'roleTypeLabel',
+  'createLabel',
+  'noAccessText',
+  'readonlyText',
+  'emptyText',
+]
+const PANEL_ACTION_KEYS = ['isBuiltinRole', 'formatPermission', 'saveRole', 'deleteRole']
+
+function mountPanel(options = {}) {
+  const labels = {}
+  const actions = {}
+  const rest = {}
+  for (const [key, value] of Object.entries(options)) {
+    if (PANEL_LABEL_KEYS.includes(key)) labels[key] = value
+    else if (PANEL_ACTION_KEYS.includes(key)) actions[key] = value
+    else rest[key] = value
+  }
+
   return mount(RoleManagementPanel, {
     props: {
-      title: '角色权限',
-      saveRole: vi.fn().mockResolvedValue(undefined),
-      deleteRole: vi.fn().mockResolvedValue(undefined),
-      ...props,
+      labels: { title: '角色权限', ...labels },
+      actions: {
+        saveRole: vi.fn().mockResolvedValue(undefined),
+        deleteRole: vi.fn().mockResolvedValue(undefined),
+        ...actions,
+      },
+      ...rest,
     },
     global: { stubs: globalStubs },
   })

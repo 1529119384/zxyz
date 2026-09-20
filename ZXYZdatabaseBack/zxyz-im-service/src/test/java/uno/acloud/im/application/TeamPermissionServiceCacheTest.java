@@ -3,6 +3,8 @@ package uno.acloud.im.application;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -10,8 +12,11 @@ import org.springframework.http.client.ClientHttpRequest;
 import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.mock.http.client.MockClientHttpResponse;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestClient;
+import uno.acloud.common.InternalServiceHeaders;
 import uno.acloud.common.permission.TeamPermissionLocalCache;
+import uno.acloud.exception.BusinessException;
 import uno.acloud.im.config.ServiceProperties;
 import uno.acloud.im.config.TeamServiceProperties;
 
@@ -24,6 +29,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -39,16 +45,22 @@ import static org.mockito.Mockito.when;
  */
 class TeamPermissionServiceCacheTest {
 
-    /** 统计真实发出的 HTTP 次数，并按测试需要返回固定响应体 */
+    /** 统计真实发出的 HTTP 次数、按测试需要返回固定响应体/状态码，并留存最后一次请求供查请求头 */
     static class StubRequestFactory implements ClientHttpRequestFactory {
         final AtomicInteger callCount = new AtomicInteger();
         // 注意：ErrorCode.SUCCESS = 1（不是 0），桩响应必须用 1 才是「成功」
         volatile String responseJson = "{\"code\":1,\"data\":true}";
+        /** 07-B-2：默认 200；置为非 2xx 可验证基类的重试与错误归一。 */
+        volatile HttpStatus responseStatus = HttpStatus.OK;
+        /** 最后一次真实构造的请求 —— 断言「实际发出去的请求头」用。 */
+        volatile StubHttpRequest lastRequest;
 
         @Override
         public ClientHttpRequest createRequest(URI uri, HttpMethod httpMethod) {
             callCount.incrementAndGet();
-            return new StubHttpRequest(uri, httpMethod, responseJson);
+            StubHttpRequest request = new StubHttpRequest(uri, httpMethod, responseJson, responseStatus);
+            lastRequest = request;
+            return request;
         }
     }
 
@@ -56,12 +68,14 @@ class TeamPermissionServiceCacheTest {
         private final URI uri;
         private final HttpMethod method;
         private final String responseJson;
-        private final org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+        private final HttpStatus responseStatus;
+        private final HttpHeaders headers = new HttpHeaders();
 
-        StubHttpRequest(URI uri, HttpMethod method, String responseJson) {
+        StubHttpRequest(URI uri, HttpMethod method, String responseJson, HttpStatus responseStatus) {
             this.uri = uri;
             this.method = method;
             this.responseJson = responseJson;
+            this.responseStatus = responseStatus;
         }
 
         @Override
@@ -81,13 +95,13 @@ class TeamPermissionServiceCacheTest {
 
         @Override
         public ClientHttpResponse execute() {
-            return new MockClientHttpResponse(responseJson.getBytes(StandardCharsets.UTF_8), HttpStatus.OK) {
+            return new MockClientHttpResponse(responseJson.getBytes(StandardCharsets.UTF_8), responseStatus) {
                 private final ByteArrayInputStream stream =
                         new ByteArrayInputStream(responseJson.getBytes(StandardCharsets.UTF_8));
 
                 @Override
                 public HttpStatusCode getStatusCode() {
-                    return HttpStatus.OK;
+                    return responseStatus;
                 }
 
                 @Override
@@ -132,8 +146,10 @@ class TeamPermissionServiceCacheTest {
         ServiceProperties serviceProperties = mock(ServiceProperties.class);
         when(serviceProperties.getInternalServiceToken()).thenReturn("internal-token");
 
+        // 07-B-2：sourceService / selfServiceKey 改由 AbstractServiceClient 的 @Value 字段注入，
+        // 不再是构造参数（纯净单测里它们是 null，internalHeaders 会回退到 internalServiceToken）。
         service = new TeamPermissionService(restClient, new ObjectMapper(), teamServiceProperties,
-                serviceProperties, localCache, "im-service", "self-key");
+                serviceProperties, localCache);
     }
 
     @Test
@@ -194,5 +210,48 @@ class TeamPermissionServiceCacheTest {
         service.hasPermission(1L, 3L, "a");
 
         assertEquals(2, requestFactory.callCount.get());
+    }
+
+    @Test
+    void 请求头带内部鉴权与调用方_并传播X_Request_Id() {
+        // 07-B-2：并入 AbstractServiceClient 的核心收益 —— 这套头以前这里只自己写了两件（token、
+        // caller），而 X-Request-Id 完全没传，团队服务侧日志因此与 IM 侧的同一次请求对不上。
+        // sourceService / selfServiceKey 现在是基类的 @Value 字段（单测不跑 Spring 容器，用
+        // ReflectionTestUtils 注入，等价于容器给值）。
+        ReflectionTestUtils.setField(service, "sourceService", "im-service");
+        ReflectionTestUtils.setField(service, "selfServiceKey", "self-key");
+        MDC.put("requestId", "req-abc-123");
+        try {
+            assertTrue(service.hasPermission(9L, 10L, "team:member:view"));
+        } finally {
+            MDC.remove("requestId");
+        }
+
+        HttpHeaders sent = requestFactory.lastRequest.getHeaders();
+        assertEquals("self-key", sent.getFirst(InternalServiceHeaders.TOKEN_HEADER),
+                "每服务独立密钥优先于共享 token");
+        assertEquals("im-service", sent.getFirst(InternalServiceHeaders.CALLER_SERVICE_HEADER));
+        assertEquals("req-abc-123", sent.getFirst(InternalServiceHeaders.REQUEST_ID_HEADER),
+                "X-Request-Id 必须由基类从 MDC 传播出去");
+    }
+
+    @Test
+    void 未配置本服务密钥时回退共享token() {
+        assertTrue(service.hasPermission(11L, 12L, "x"));
+
+        assertEquals("internal-token",
+                requestFactory.lastRequest.getHeaders().getFirst(InternalServiceHeaders.TOKEN_HEADER));
+    }
+
+    @Test
+    void 幂等查询遇5xx重试到上限() {
+        // 07-B-2：/check 是幂等查询 ⇒ 走基类的 postJsonWithRetry（maxAttempts=3，间隔 500ms）。
+        // 这条钉住「重试口径按端点幂等性区分」这一约定：写端点（initialize/grant-role/clear-role）
+        // 走的是不重试的 postJson，不要顺手改成 WithRetry。
+        requestFactory.responseStatus = HttpStatus.INTERNAL_SERVER_ERROR;
+
+        assertThrows(BusinessException.class, () -> service.hasPermission(21L, 22L, "z"));
+
+        assertEquals(3, requestFactory.callCount.get(), "5xx 应重试到 maxAttempts=3 才放弃");
     }
 }

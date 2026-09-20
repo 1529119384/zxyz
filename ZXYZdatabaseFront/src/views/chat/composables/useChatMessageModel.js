@@ -2,6 +2,7 @@ import {
   formatChatTime,
   getStructuredMessageSearchContent,
   getMessageStatusText,
+  getSenderDisplayName,
   parseAnnouncementPayload,
   parseSystemNotificationPayload,
 } from '@/models/imPresentation'
@@ -11,11 +12,9 @@ export function useChatMessageModel({ currentUserId }) {
     return getMessageStatusText(status)
   }
 
+  // 07-P1-7：实现提到 models/imPresentation 并显式接收 currentUserId，这里只做转发。
   function displayName(message) {
-    if (message.messageType === 'SYSTEM_NOTIFICATION' || message.senderUserId == null)
-      return '系统消息'
-    if (message.senderUserId === currentUserId.value) return '我'
-    return message.senderName || message.senderUsername || `用户 ${message.senderUserId}`
+    return getSenderDisplayName(message, currentUserId.value)
   }
 
   function recallText(message) {

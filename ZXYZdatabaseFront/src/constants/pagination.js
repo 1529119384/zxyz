@@ -9,7 +9,17 @@
 /** 后端 PageResult.DEFAULT_PAGE_SIZE 的镜像：请求不带 pageSize 时后端用它。 */
 export const DEFAULT_PAGE_SIZE = 20
 
-/** 后端 PageResult.MAX_PAGE_SIZE 的镜像：超限会被后端钳制（钳后与前端算的总页数会不一致）。 */
+/**
+ * 后端 PageResult.MAX_PAGE_SIZE 的镜像。
+ *
+ * 07-P2-4 之前只有 file-service / email-service 之外的接口走这个上限，file-service 自己
+ * 硬编码 100、搜索硬编码 50、邮件记录硬编码 100 ⇒ 用户在上面的选项里选 200 时，
+ * 后端只按 100 或 50 分页、前端却按 200 算总页数，**每翻一页跳掉一批数据**。
+ * 现在三处都改走 {@code PageResult.normalizePageSize}，上限与这里的 200 一致。
+ *
+ * 第二道防线是「按响应回传的 pageSize 校准」（usePagedList / useSpaceFileList /
+ * useFileSearch / EmailRecordPanel 都做了），后端万一再漂也能自愈。
+ */
 export const MAX_PAGE_SIZE = 200
 
 /** 我的分享 / 回收站这类小列表的 el-pagination 页长选项。 */
@@ -35,6 +45,8 @@ export const PAGE_SIZE_BY_CONTEXT = Object.freeze({
   spaceFiles: 50,
   /** 文件搜索：与后端默认值对齐。 */
   fileSearch: DEFAULT_PAGE_SIZE,
+  /** 历史邮件记录：前端原本写死 10（后端默认 20，但前端总是显式传页长）。 */
+  emailRecord: 10,
 })
 
 /**

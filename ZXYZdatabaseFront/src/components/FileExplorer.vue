@@ -108,7 +108,7 @@
       />
       <el-pagination
         v-else
-        :current-page="currentPage"
+        :current-page="page"
         :page-size="pageSize"
         :page-sizes="SPACE_PAGE_SIZE_OPTIONS"
         :total="total"
@@ -200,8 +200,8 @@ const spaceFileList = useSpaceFileList({
   spaceContext,
 })
 
-const { currentPage, pageSize, total, resetPage, handleCurrentChange, handleSizeChange } =
-  spaceFileList
+// 页码 ref 自 07-P2-4 起叫 page（useSpaceFileList 原来叫 currentPage，是全仓唯一的例外）。
+const { page, pageSize, total, resetPage, handleCurrentChange, handleSizeChange } = spaceFileList
 
 const fileSearch = useFileSearch({
   searchText: computed(() => props.searchText),

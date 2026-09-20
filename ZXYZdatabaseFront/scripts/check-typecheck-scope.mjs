@@ -41,7 +41,7 @@ const SRC_DIR = 'src'
  * 待这 5 个文件也点亮后，才可以把 `src/store/` 加进 `FULLY_LIT_DIRS`
  * （该目录下还有 9 个 `__tests__/*.spec.js` 需要一并点亮）。
  */
-const CHECKJS_BASELINE = 39
+const CHECKJS_BASELINE = 41
 
 /**
  * 声明式规则：这些目录下的 .js 必须全部带 // @ts-check（相对仓库根，含尾斜杠）。

@@ -72,6 +72,15 @@ describe('useMyShareList', () => {
   })
 
   it('resets to the first page when the page size changes', async () => {
+    // 回声必须跟随请求：后端只会在**超限**时把 pageSize 钳小（分享列表默认 10、上限 200，
+    // 50 既非超限也不会被钳），正常情况原样回传。用固定值当回声等于宣称「用户选的 50 是错的」，
+    // 测出来的不是真实行为 —— 真实后端收到 50 就回 50。
+    fetchMyShareList.mockImplementation((params) =>
+      Promise.resolve({
+        data: { page: params.page, pageSize: params.pageSize, total: 100, list: [] },
+      }),
+    )
+
     const c = createComposable()
     await c.handleCurrentChange(4)
     expect(c.page.value).toBe(4)

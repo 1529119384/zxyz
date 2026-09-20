@@ -6,7 +6,7 @@ import {
   resolveMessageFileCard,
   searchConversationMessages,
 } from '@/api/im'
-import { STORED } from '@/constants/messageStatus'
+import { SENDING, STORED } from '@/constants/messageStatus'
 
 import { compareMessages, normalizeMessage } from './normalizers'
 
@@ -48,7 +48,7 @@ export function createMessageDomain(state, deps = {}) {
       .filter((id) => {
         if (id === activeId) return false
         const bucket = messagesByConversation.value[id]
-        if (bucket?.some((msg) => msg.status === 'SENDING')) return false
+        if (bucket?.some((msg) => msg.status === SENDING)) return false
         return true
       })
       .sort((a, b) => (recentAccess.get(a) || 0) - (recentAccess.get(b) || 0))

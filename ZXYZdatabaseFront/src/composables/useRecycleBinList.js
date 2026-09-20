@@ -39,6 +39,9 @@ export function useRecycleBinList(options) {
       return {
         list: Array.isArray(recycleList.data) ? recycleList.data : [],
         total: recycleList.total,
+        // fetchRecycleList 已把信封里的 page / pageSize 提升到同级（见 api/files.ts）。
+        page: recycleList.page,
+        pageSize: recycleList.pageSize,
       }
     },
     {

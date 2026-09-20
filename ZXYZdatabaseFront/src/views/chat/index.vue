@@ -76,22 +76,20 @@
       @confirm="actions.handleFilePickerConfirm"
     />
 
+    <!-- 07-P1-7：props 15 → 10。5 个格式化函数与 2 个会话类型布尔（is-team-conversation /
+         is-member-list-conversation）改由组件自己拿 —— 见 components/ChatMoreDrawer.vue 的
+         defineProps 注释。这里只留父级才知道的权限/成员状态。 -->
     <ChatMoreDrawer
       v-model:visible="moreDrawerVisible"
+      :conversation="activeConversation"
+      :current-user-id="currentUserId"
       :search-results="imChat.searchResults"
       :team-members="teamStore.teamMembers"
       :visible-group-members="visibleGroupMembers"
       :is-readonly-conversation="isReadonlyConversation"
-      :is-team-conversation="isTeamConversation"
-      :is-member-list-conversation="isMemberListConversation"
       :can-open-team-settings="canOpenTeamSettings"
       :can-open-permission-settings="canOpenPermissionSettings"
       :can-expand-group-members="canExpandGroupMembers"
-      :display-name="actions.displayName"
-      :display-search-content="actions.displaySearchContent"
-      :display-member-name="actions.displayMemberName"
-      :format-time="actions.formatTime"
-      :file-card-title="actions.fileCardTitle"
       @search="actions.searchMessages"
       @share-file="handleOpenFilePicker"
       @open-team-settings="openTeamSettingsFromMore"
@@ -264,7 +262,6 @@ const actions = useChatPageActions({
 // 解构 computed/ref，使模板中自动解包为原始值
 const {
   visibleGroupMembers,
-  isMemberListConversation,
   canExpandGroupMembers,
   reviewingApplicationId,
 } = actions

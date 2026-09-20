@@ -3,9 +3,16 @@ import { formatSize } from '@/utils/format'
 
 /**
  * 后端 IM 消息原始记录（宽松描述：只列本模块读取的字段）。
+ *
+ * `senderUserId` 写成 `number|string`：`getSenderDisplayName` 要拿它跟当前用户 ID 比，
+ * 而后端 JSON 里 ID 可能是数字也可能是字符串（前端各处都用 `Number()` 兜过一道）。
+ *
  * @typedef {object} RawImMessage
  * @property {string} [content]
  * @property {string} [messageType]
+ * @property {number|string} [senderUserId]
+ * @property {string} [senderName]
+ * @property {string} [senderUsername]
  */
 
 /**
@@ -138,6 +145,37 @@ export function getStructuredMessageSearchContent(message = {}) {
   return payload.title
     ? `${payload.title} ${payload.content || ''}`.trim()
     : payload.content || message.content
+}
+
+/**
+ * 消息发送者的展示名。
+ *
+ * 07-P1-7 从 `views/chat/composables/useChatMessageModel.js` 的 `displayName` 提出，
+ * 并把 `currentUserId` 变成**显式参数** —— 原本它是闭包（靠 composable 的入参捕获），
+ * 想复用就只能把整个函数当 prop 传给子组件。进到这里之后 ChatMoreDrawer 直接 import。
+ *
+ * @param {RawImMessage} [message] - 消息行。
+ * @param {number|string|null} [currentUserId] - 当前登录用户 ID。
+ * @returns {string}
+ */
+export function getSenderDisplayName(message = {}, currentUserId = null) {
+  if (message.messageType === 'SYSTEM_NOTIFICATION' || message.senderUserId == null) {
+    return '系统消息'
+  }
+  if (message.senderUserId === currentUserId) return '我'
+  return message.senderName || message.senderUsername || `用户 ${message.senderUserId}`
+}
+
+/**
+ * 群成员的展示名：名字 → 用户名 → `用户 <id>` 三级回落。
+ *
+ * 07-P1-7 从 `views/chat/composables/useChatMembers.js` 提出，供成员列表与 @提及共用。
+ *
+ * @param {{ name?: string, username?: string, userId?: number|string }} member - 成员行。
+ * @returns {string}
+ */
+export function getMemberDisplayName(member) {
+  return member.name || member.username || `用户 ${member.userId}`
 }
 
 /**

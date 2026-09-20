@@ -16,10 +16,8 @@ import uno.acloud.file.storage.StorageProviderRegistry;
 import uno.acloud.file.storage.DownloadInfo;
 import uno.acloud.vo.FileDownloadUrlVO;
 import uno.acloud.file.vo.FileListItemVO;
-import uno.acloud.file.vo.FileListPagedResultVO;
 import uno.acloud.file.vo.FileResourceVO;
 import uno.acloud.file.vo.FileSearchItemVO;
-import uno.acloud.file.vo.FileSearchResultVO;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -34,6 +32,12 @@ public class FileQueryService implements FileQueryPort {
 
     private static final SortField DEFAULT_SORT_FIELD = SortField.NAME;
     private static final SortOrder DEFAULT_SORT_ORDER = SortOrder.ASC;
+
+    /** 目录文件列表的历史默认页长（与前端 constants/pagination.js 的 spaceFiles=50 对应）。 */
+    private static final int DEFAULT_PAGE_SIZE_OF_FILE_LIST = 50;
+
+    /** 文件搜索的历史默认页长（与前端 constants/pagination.js 的 fileSearch=20 对应）。 */
+    private static final int DEFAULT_PAGE_SIZE_OF_SEARCH = 20;
 
     private final FileMapper fileMapper;
     private final StorageProviderRegistry registry;
@@ -71,17 +75,26 @@ public class FileQueryService implements FileQueryPort {
         return fileList;
     }
 
+    /**
+     * 目录文件列表（分页）。
+     *
+     * <p>信封自 07-P2-4 起由本服务自带的 {@code FileListPagedResultVO} 换成
+     * {@link PageResult}，<b>JSON 字段名完全不变</b>（page / pageSize / total / list），前端无需改动。
+     * 真正变的是页长上限：旧实现硬编码 100，而前端 el-pagination 的选项上界是 200
+     * （{@code SPACE_PAGE_SIZE_OPTIONS}）⇒ 用户选 200 时后端只按 100 分页、前端却按 200 算总页数，
+     * 中后段数据永远翻不到。现在上限统一走 {@link PageResult#MAX_PAGE_SIZE}。</p>
+     */
     @Override
-    public FileListPagedResultVO getFileListByParentId(Long parentId, Long teamId, Integer spaceType, Long projectId, String sortField, String sortOrder, Integer page, Integer pageSize, Long userId) {
+    public PageResult<FileListItemVO> getFileListByParentId(Long parentId, Long teamId, Integer spaceType, Long projectId, String sortField, String sortOrder, Integer page, Integer pageSize, Long userId) {
         if (parentId == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "parentId 不能为空");
         }
         SpaceTarget target = resolveListTarget(parentId, teamId, spaceType, projectId, userId);
         requireReadAccess(target, userId);
         SortOption sortOption = resolveSortOption(sortField, sortOrder);
-        int finalPage = page == null || page < 1 ? 1 : page;
-        int finalPageSize = pageSize == null || pageSize < 1 ? 50 : Math.min(pageSize, 100);
-        int offset = (finalPage - 1) * finalPageSize;
+        int finalPage = PageResult.normalizePage(page);
+        int finalPageSize = PageResult.normalizePageSize(pageSize, DEFAULT_PAGE_SIZE_OF_FILE_LIST);
+        int offset = PageResult.offsetOf(finalPage, finalPageSize);
 
         long total = fileMapper.countByParentId(parentId, target.teamId(), target.spaceType(), target.projectId(), userId);
         List<FileListItemVO> fileList = total == 0
@@ -91,7 +104,7 @@ public class FileQueryService implements FileQueryPort {
                         .map(fileConverter::toFileListItemVO)
                         .sorted(buildFileListComparator(sortOption))
                         .collect(Collectors.toList());
-        return new FileListPagedResultVO(finalPage, finalPageSize, total, fileList);
+        return PageResult.of(finalPage, finalPageSize, total, fileList);
     }
 
     @Override
@@ -264,26 +277,34 @@ public class FileQueryService implements FileQueryPort {
     }
 
     @Override
-    public FileSearchResultVO searchFiles(String keyword, Integer page, Integer pageSize, long userId, Long teamId) {
+    public PageResult<FileSearchItemVO> searchFiles(String keyword, Integer page, Integer pageSize, long userId, Long teamId) {
         return searchFiles(keyword, page, pageSize, userId, teamId, null, null);
     }
 
+    /**
+     * 文件搜索（分页）。
+     *
+     * <p>旧实现返回 {@code FileSearchResultVO{total, list}}，<b>不含 page / pageSize</b>；
+     * 换成本信封后两个字段是纯新增（老前端读 {@code {total, list}} 不受影响），
+     * 前端才能用响应回传的 pageSize 校准自己的分页器。上限也从硬编码的 50 提到
+     * {@link PageResult#MAX_PAGE_SIZE}，与 {@code SPACE_PAGE_SIZE_OPTIONS} 的 200 对齐。</p>
+     */
     @Override
-    public FileSearchResultVO searchFiles(String keyword, Integer page, Integer pageSize, long userId, Long teamId, Integer spaceType, Long projectId) {
+    public PageResult<FileSearchItemVO> searchFiles(String keyword, Integer page, Integer pageSize, long userId, Long teamId, Integer spaceType, Long projectId) {
         fileAccessGuardService.requireTeamViewPermission(teamId, userId);
         if (FileSpaceType.isProject(FileSpaceType.normalize(spaceType, teamId, projectId))) {
             fileAccessGuardService.requireProjectFileAccess(projectId, userId);
         }
         String normalizedKeyword = normalizeKeyword(keyword);
-        int finalPage = page == null || page < 1 ? 1 : page;
-        int finalPageSize = pageSize == null || pageSize < 1 ? 20 : Math.min(pageSize, 50);
-        int offset = (finalPage - 1) * finalPageSize;
+        int finalPage = PageResult.normalizePage(page);
+        int finalPageSize = PageResult.normalizePageSize(pageSize, DEFAULT_PAGE_SIZE_OF_SEARCH);
+        int offset = PageResult.offsetOf(finalPage, finalPageSize);
 
         long total = fileMapper.countByKeyword(userId, teamId, normalizedKeyword);
         List<FileSearchItemVO> searchItems = total == 0
                 ? new ArrayList<>()
                 : fileMapper.searchByKeyword(userId, teamId, normalizedKeyword, finalPageSize, offset);
-        return new FileSearchResultVO(total, searchItems);
+        return PageResult.of(finalPage, finalPageSize, total, searchItems);
     }
 
     @Override
@@ -317,7 +338,7 @@ public class FileQueryService implements FileQueryPort {
         return fileDomainValidator.requireNode(fileId, userId, fileAccessGuardService);
     }
 
-    public FileSearchResultVO searchFiles(String keyword, Integer page, Integer pageSize, long userId) {
+    public PageResult<FileSearchItemVO> searchFiles(String keyword, Integer page, Integer pageSize, long userId) {
         return searchFiles(keyword, page, pageSize, userId, null);
     }
 

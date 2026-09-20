@@ -1,7 +1,7 @@
 import { computed } from 'vue'
 
 import { fetchMyPresence } from '@/api/im'
-import { SYSTEM, TEAM_NOTIFICATION } from '@/constants/conversationTypes'
+import { NOTIFICATION_CONVERSATION_TYPES } from '@/constants/conversationTypes'
 import { FAILED, RECALLED, SENDING, STORED } from '@/constants/messageStatus'
 import { useCurrentUserStore } from '@/store/currentUser'
 import { createClientId } from '@/utils/id'
@@ -172,7 +172,7 @@ export function createRealtimeDomain(state, deps) {
     if (shouldAutoRead) {
       scheduleReadSync(conversationId)
     }
-    if (!selfMessage && [SYSTEM, TEAM_NOTIFICATION].includes(receivedConversation?.type)) {
+    if (!selfMessage && NOTIFICATION_CONVERSATION_TYPES.includes(receivedConversation?.type)) {
       unreadCount.value = Math.max(0, Number(unreadCount.value || 0) + 1)
     }
   }
@@ -187,7 +187,7 @@ export function createRealtimeDomain(state, deps) {
     if (readerUserId === currentUserId) {
       updateConversationUnread(conversationId, 0)
       const conversation = conversations.value.find((item) => item.id === conversationId)
-      if ([SYSTEM, TEAM_NOTIFICATION].includes(conversation?.type)) {
+      if (NOTIFICATION_CONVERSATION_TYPES.includes(conversation?.type)) {
         unreadCount.value = 0
       }
       return

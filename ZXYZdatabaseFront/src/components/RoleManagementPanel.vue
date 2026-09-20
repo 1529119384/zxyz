@@ -2,23 +2,27 @@
   <section class="role-management-panel">
     <div class="role-panel-header">
       <div>
-        <h3>{{ title }}</h3>
-        <p>{{ subtitle }}</p>
+        <h3>{{ labels.title }}</h3>
+        <p>{{ labels.subtitle }}</p>
       </div>
       <el-button type="primary" :icon="Plus" :disabled="!canManage" @click="openCreateDialog">
-        {{ createLabel }}
+        {{ labels.createLabel }}
       </el-button>
     </div>
 
-    <p v-if="!canRead && noAccessText" class="permission-tip">{{ noAccessText }}</p>
-    <p v-else-if="!canManage && readonlyText" class="permission-tip">{{ readonlyText }}</p>
+    <p v-if="!canRead && labels.noAccessText" class="permission-tip">
+      {{ labels.noAccessText }}
+    </p>
+    <p v-else-if="!canManage && labels.readonlyText" class="permission-tip">
+      {{ labels.readonlyText }}
+    </p>
 
     <el-table
       class="role-table"
       :data="canRead ? safeRoles : []"
       row-key="id"
       border
-      :empty-text="canRead ? emptyText : '无查看权限'"
+      :empty-text="canRead ? labels.emptyText : '无查看权限'"
     >
       <el-table-column prop="roleName" label="角色名" min-width="160" />
       <el-table-column prop="roleCode" label="编码" min-width="180" show-overflow-tooltip />
@@ -38,7 +42,7 @@
                 size="small"
                 class="permission-tag"
               >
-                {{ formatPermission(code) }}
+                {{ actions.formatPermission(code) }}
               </el-tag>
               <el-button
                 v-if="normalizePermissionCodes(row).length > visiblePermissionLimit"
@@ -149,23 +153,54 @@ import { ElMessage } from 'element-plus'
 
 import { buildPermissionTree, permissionNodeKey } from '@/models/permission'
 
+/**
+ * 文案组 + 行为组。
+ *
+ * 07-P1-7：此前是 15 个并列 prop —— 其中 title / subtitle / roleTypeLabel / createLabel /
+ * noAccessText / readonlyText / emptyText 七个全是「这个面板叫什么、提示什么」的同一类信息，
+ * 调用点 `views/permission/index.vue` 的两处各写了十七行属性。聚合后调用点只留 3 行、
+ * 文案预设提成常量（SYSTEM_ROLE_PANEL_LABELS / TEAM_ROLE_PANEL_LABELS）。
+ *
+ * `actions` 里的 `saveRole` / `deleteRole` 缺了整个面板就不可用 ⇒ 对象本身 required；
+ * 另两个有默认实现（纯展示，不影响功能），缺省即「不判内置」「原样显示权限码」。
+ */
 const props = defineProps({
-  title: { type: String, required: true },
-  subtitle: { type: String, default: '集中查看角色授权范围，并在弹窗中调整权限。' },
-  roleTypeLabel: { type: String, default: '角色' },
-  createLabel: { type: String, default: '新增角色' },
+  labels: { type: Object, default: () => ({}) },
   roles: { type: Array, default: () => [] },
   permissions: { type: Array, default: () => [] },
   canRead: { type: Boolean, default: true },
   canManage: { type: Boolean, default: false },
-  noAccessText: { type: String, default: '' },
-  readonlyText: { type: String, default: '' },
-  emptyText: { type: String, default: '暂无角色' },
-  isBuiltinRole: { type: Function, default: () => false },
-  formatPermission: { type: Function, default: (code) => code },
-  saveRole: { type: Function, required: true },
-  deleteRole: { type: Function, required: true },
+  actions: { type: Object, required: true },
 })
+
+/**
+ * 文案默认值。
+ *
+ * 它们原本是七个并列 String prop 各自的 `default`；07-P1-7 聚合成 `labels` 后保留同样的回落，
+ * 所以调用方「只覆盖个别键」的行为与聚合前一致。
+ *
+ * ⚠️ 声明在 defineProps **之后**是必须的：`vue/define-macros-order` 要求 defineProps 紧跟 import；
+ * 而 `labels` 的 getter 惰性求值（computed 首次读取才执行），放这里不会触发 TDZ。
+ */
+const DEFAULT_PANEL_LABELS = Object.freeze({
+  title: '',
+  subtitle: '集中查看角色授权范围，并在弹窗中调整权限。',
+  roleTypeLabel: '角色',
+  createLabel: '新增角色',
+  noAccessText: '',
+  readonlyText: '',
+  emptyText: '暂无角色',
+})
+
+/** 文案 = 默认值 ← 调用方覆盖。 */
+const labels = computed(() => ({ ...DEFAULT_PANEL_LABELS, ...props.labels }))
+
+/** 行为 = 默认实现 ← 调用方覆盖。 */
+const actions = computed(() => ({
+  isBuiltinRole: () => false,
+  formatPermission: (code) => code,
+  ...props.actions,
+}))
 const visiblePermissionLimit = 4
 const treeProps = Object.freeze({ children: 'children', label: 'label', disabled: 'disabled' })
 
@@ -189,7 +224,9 @@ const permissionTree = computed(() =>
   markTreeDisabled(buildPermissionTree(safePermissions.value), !props.canManage),
 )
 const checkedNodeKeys = computed(() => form.permissionCodes.map((code) => permissionNodeKey(code)))
-const dialogTitle = computed(() => `${editingRoleId.value ? '编辑' : '新增'}${props.roleTypeLabel}`)
+const dialogTitle = computed(
+  () => `${editingRoleId.value ? '编辑' : '新增'}${labels.value.roleTypeLabel}`,
+)
 
 watch(dialogVisible, (visible) => {
   if (visible) {
@@ -223,7 +260,7 @@ function roleKey(row) {
 }
 
 function isBuiltin(row) {
-  return Boolean(props.isBuiltinRole(row))
+  return Boolean(actions.value.isBuiltinRole(row))
 }
 
 function isExpanded(row) {
@@ -312,7 +349,7 @@ async function submitRole() {
   }
   saving.value = true
   try {
-    const saved = await props.saveRole({
+    const saved = await actions.value.saveRole({
       roleId: editingRoleId.value,
       roleName: form.roleName.trim(),
       roleCode: form.roleCode,
@@ -334,7 +371,7 @@ async function removeRole(row) {
   const key = roleKey(row)
   deletingRoleKey.value = key
   try {
-    await props.deleteRole(row)
+    await actions.value.deleteRole(row)
   } finally {
     deletingRoleKey.value = null
   }

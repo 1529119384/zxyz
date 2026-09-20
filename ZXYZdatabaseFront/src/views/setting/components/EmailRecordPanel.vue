@@ -85,12 +85,12 @@
       class="email-record-pagination"
       background
       layout="total, sizes, prev, pager, next"
-      :total="emailRecordPagination.total"
-      :current-page="emailRecordPagination.page"
-      :page-size="emailRecordPagination.pageSize"
-      :page-sizes="[10, 20, 50]"
-      @current-change="handleEmailRecordPageChange"
-      @size-change="handleEmailRecordPageSizeChange"
+      :total="emailRecordTotal"
+      :current-page="emailRecordPage"
+      :page-size="emailRecordPageSize"
+      :page-sizes="PAGE_SIZE_OPTIONS"
+      @current-change="handleCurrentChange"
+      @size-change="handleSizeChange"
     />
   </section>
 
@@ -148,9 +148,12 @@
 <script setup>
 import DOMPurify from 'dompurify'
 import { Refresh } from '@element-plus/icons-vue'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 
 import { fetchEmailRecordDetail, fetchEmailRecords } from '@/api/emailAdmin'
+import { usePagedList } from '@/composables/usePagedList'
+import { mapEmailRecordPage } from '@/models/emailRecord'
+import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import { handleBusinessError } from '@/utils/error'
 
 const emailRecordStatusOptions = [
@@ -160,14 +163,44 @@ const emailRecordStatusOptions = [
   { label: '发送失败', value: 'FAILED' },
 ]
 
-const emailRecords = ref([])
+const emailRecordFilters = reactive({ status: '', recipient: '', businessType: '' })
+
+// 分页骨架自 07-P2-4 起来自 usePagedList —— 此前这里是全仓最后一处手写分页：
+// 自造的 reactive 分页对象 + 两个手写的 current-change / size-change 处理函数。
+// 页长上下文 emailRecord 固化的是原来写死的 10（见 constants/pagination）。
+const {
+  list: emailRecords,
+  loading: loadingEmailRecords,
+  total: emailRecordTotal,
+  page: emailRecordPage,
+  pageSize: emailRecordPageSize,
+  refresh: loadEmailRecords,
+  resetPage: resetEmailRecordPage,
+  handleCurrentChange,
+  handleSizeChange,
+} = usePagedList(
+  async ({ page, pageSize }) => {
+    const response = await fetchEmailRecords({
+      status: emailRecordFilters.status || undefined,
+      recipient: emailRecordFilters.recipient || undefined,
+      businessType: emailRecordFilters.businessType || undefined,
+      page,
+      pageSize,
+    })
+    // 信封归一化（list 优先、回落旧的 records，并带出 page/pageSize）在
+    // models/emailRecord.js 里做，那里有单测覆盖两条分支。
+    return mapEmailRecordPage(response?.data)
+  },
+  {
+    context: 'emailRecord',
+    errorMessage: '加载历史邮件记录失败',
+    immediate: true,
+  },
+)
+
 const emailRecordDetail = ref(null)
-const loadingEmailRecords = ref(false)
 const loadingEmailRecordDetail = ref(false)
 const emailRecordDetailVisible = ref(false)
-
-const emailRecordFilters = reactive({ status: '', recipient: '', businessType: '' })
-const emailRecordPagination = reactive({ page: 1, pageSize: 10, total: 0 })
 
 const emailRecordPreviewHtml = computed(() => {
   const rawContent = emailRecordDetail.value?.contentHtml || '<p style="color:#909399;">无内容</p>'
@@ -175,33 +208,10 @@ const emailRecordPreviewHtml = computed(() => {
   return `<!doctype html><html><head><meta charset="UTF-8"><style>body{margin:0;padding:16px;font-family:Arial,'Microsoft YaHei',sans-serif;color: var(--zxyz-color-text-primary);line-height:1.6;word-break:break-word;}img{max-width:100%;height:auto;}table{max-width:100%;border-collapse:collapse;}</style></head><body>${cleanContent}</body></html>`
 })
 
-onMounted(loadEmailRecords)
-
-async function loadEmailRecords(page = emailRecordPagination.page) {
-  loadingEmailRecords.value = true
-  try {
-    const response = await fetchEmailRecords({
-      status: emailRecordFilters.status || undefined,
-      recipient: emailRecordFilters.recipient || undefined,
-      businessType: emailRecordFilters.businessType || undefined,
-      page,
-      pageSize: emailRecordPagination.pageSize,
-    })
-    const data = response?.data || {}
-    emailRecords.value = Array.isArray(data.records) ? data.records : []
-    emailRecordPagination.page = Number(data.page || page || 1)
-    emailRecordPagination.pageSize = Number(data.pageSize || emailRecordPagination.pageSize)
-    emailRecordPagination.total = Number(data.total || 0)
-  } catch (error) {
-    handleBusinessError(error, '加载历史邮件记录失败')
-  } finally {
-    loadingEmailRecords.value = false
-  }
-}
-
-function searchEmailRecords() {
-  emailRecordPagination.page = 1
-  loadEmailRecords(1)
+async function searchEmailRecords() {
+  // 筛选条件变了 ⇒ 回到第 1 页再拉（usePagedList 的 refresh 用的是当前 page）。
+  resetEmailRecordPage()
+  await loadEmailRecords()
 }
 
 function resetEmailRecordFilters() {
@@ -209,17 +219,6 @@ function resetEmailRecordFilters() {
   emailRecordFilters.recipient = ''
   emailRecordFilters.businessType = ''
   searchEmailRecords()
-}
-
-function handleEmailRecordPageChange(page) {
-  emailRecordPagination.page = page
-  loadEmailRecords(page)
-}
-
-function handleEmailRecordPageSizeChange(pageSize) {
-  emailRecordPagination.pageSize = pageSize
-  emailRecordPagination.page = 1
-  loadEmailRecords(1)
 }
 
 async function openEmailRecordDetail(record) {

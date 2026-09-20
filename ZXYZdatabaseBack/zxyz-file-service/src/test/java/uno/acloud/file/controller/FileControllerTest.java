@@ -6,6 +6,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.PageResult;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.file.service.FileLifecyclePort;
 import uno.acloud.file.service.FileOperationPort;
@@ -16,7 +17,7 @@ import uno.acloud.file.storage.UploadInfo;
 import uno.acloud.file.vo.BatchOperationDetailVO;
 import uno.acloud.file.vo.FileListItemVO;
 import uno.acloud.file.vo.FileResourceVO;
-import uno.acloud.file.vo.FileSearchResultVO;
+import uno.acloud.file.vo.FileSearchItemVO;
 import uno.acloud.vo.FileDownloadUrlVO;
 
 import java.time.LocalDateTime;
@@ -110,10 +111,10 @@ class FileControllerTest {
 
     @Test
     void searchFiles_delegatesToFileQueryPort() {
-        FileSearchResultVO searchResult = new FileSearchResultVO(0L, List.of());
+        PageResult<FileSearchItemVO> searchResult = PageResult.of(1, 20, 0L, List.of());
         when(fileQueryPort.searchFiles("keyword", 1, 20, 1L, 10L)).thenReturn(searchResult);
 
-        FileSearchResultVO result = fileQueryPort.searchFiles("keyword", 1, 20, 1L, 10L);
+        PageResult<FileSearchItemVO> result = fileQueryPort.searchFiles("keyword", 1, 20, 1L, 10L);
 
         assertNotNull(result);
         assertEquals(0L, result.getTotal());

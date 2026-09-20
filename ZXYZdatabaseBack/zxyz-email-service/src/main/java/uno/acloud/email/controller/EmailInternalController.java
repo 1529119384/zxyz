@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import cn.dev33.satoken.annotation.SaCheckRole;
+import uno.acloud.common.PageResult;
 import uno.acloud.common.Result;
 import uno.acloud.common.SystemRoleCodes;
 import uno.acloud.email.application.EmailDispatchService;
@@ -25,7 +26,6 @@ import uno.acloud.email.dto.BatchSendEmailRequest;
 import uno.acloud.email.dto.BatchSendTemplateEmailRequest;
 import uno.acloud.email.dto.CheckVerifyCodeRequest;
 import uno.acloud.email.dto.EmailConnectivityTestVO;
-import uno.acloud.email.dto.EmailRecordPageVO;
 import uno.acloud.email.vo.EmailRecordVO;
 import uno.acloud.email.dto.EmailRuntimeStatusVO;
 import uno.acloud.email.dto.EmailServerConfigRequest;
@@ -194,7 +194,7 @@ public class EmailInternalController {
     @GetMapping("/records")
     @Operation(summary = "查询邮件发送记录")
     @SaCheckRole(SystemRoleCodes.SYSTEM_ADMIN)
-    public Result<EmailRecordPageVO> listEmailRecords(@RequestParam(required = false) String status,
+    public Result<PageResult<EmailRecordVO>> listEmailRecords(@RequestParam(required = false) String status,
                                                       @RequestParam(required = false) String recipient,
                                                       @RequestParam(required = false) String businessType,
                                                       @RequestParam(required = false) Integer page,

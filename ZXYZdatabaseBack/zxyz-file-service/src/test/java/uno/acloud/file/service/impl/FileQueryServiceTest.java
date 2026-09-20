@@ -5,16 +5,19 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import uno.acloud.common.FileSpaceType;
 import uno.acloud.common.PageResult;
 import uno.acloud.file.infrastructure.entity.FileItem;
 import uno.acloud.file.infrastructure.entity.FileNode;
 import uno.acloud.file.infrastructure.mapper.FileMapper;
 import uno.acloud.file.storage.StorageProviderRegistry;
 import uno.acloud.file.vo.FileListItemVO;
+import uno.acloud.file.vo.FileSearchItemVO;
 
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.*;
@@ -151,5 +154,98 @@ class FileQueryServiceTest {
         verify(fileAccessGuardService).requireProjectFileAccess(9L, 1L);
         assertEquals(0L, result.getTotal().longValue());
         assertEquals(List.of(), result.getList());
+    }
+
+    // ---- getFileListByParentId / searchFiles：默认页长与上限统一（07-P2-4） ----
+
+    /**
+     * 个人空间的目录节点。
+     *
+     * <p>{@code spaceType} 传 null 也没关系 —— {@code SpaceTarget.fromNode} 会走
+     * {@code FileSpaceType.normalize(null, null, null)} 落成 <b>PERSONAL(1)</b>，
+     * 所以下游 {@code countByParentId} / {@code getFileNodesByParentIdPaged} 收到的
+     * {@code spaceType} 是 {@code 1} 而不是 {@code null}（桩里必须写 1，否则 strict stubbing 直接报错）。</p>
+     */
+    private static FileNode personalFolder() {
+        FileNode node = new FileItem();
+        node.setTeamId(null);
+        node.setProjectId(null);
+        node.setSpaceType(null);
+        return node;
+    }
+
+    /**
+     * 目录列表的默认页长是 50（历史口径），<b>不是</b> {@link PageResult#DEFAULT_PAGE_SIZE}(20)：
+     * 两者语义不同，不能互相顶替。
+     */
+    @Test
+    void getFileListByParentIdKeepsFileListingDefaultNotGlobalDefault() {
+        when(fileDomainValidator.requireNode(1L, 1L, fileAccessGuardService)).thenReturn(personalFolder());
+        when(fileMapper.countByParentId(1L, null, FileSpaceType.PERSONAL, null, 1L)).thenReturn(0);
+
+        PageResult<FileListItemVO> result = fileQueryService.getFileListByParentId(
+                1L, null, null, null, null, null, null, null, 1L);
+
+        assertEquals(1, result.getPage().intValue());
+        assertEquals(50, result.getPageSize().intValue());
+        assertNotEquals(PageResult.DEFAULT_PAGE_SIZE, result.getPageSize().intValue());
+        // total 为 0 时不应再发一次注定为空的查询。
+        verify(fileMapper, never()).getFileNodesByParentIdPaged(
+                any(), any(), any(), any(), any(), anyInt(), anyInt());
+    }
+
+    /**
+     * 页长上限必须与 {@link PageResult#MAX_PAGE_SIZE} 一致。
+     *
+     * <p>旧实现硬编码 {@code Math.min(pageSize, 100)}，而前端 el-pagination 的选项上界是 200
+     * ⇒ 用户选 200 时后端只按 100 分页、前端却按 200 算总页数，<b>每翻一页跳过 100 条</b>。
+     * 这条用例把「上限 == MAX_PAGE_SIZE」钉死，改回去就会红。</p>
+     */
+    @Test
+    void getFileListByParentIdClampsPageSizeToGlobalMaxBeforeQuerying() {
+        when(fileDomainValidator.requireNode(1L, 1L, fileAccessGuardService)).thenReturn(personalFolder());
+        when(fileMapper.countByParentId(1L, null, FileSpaceType.PERSONAL, null, 1L)).thenReturn(1);
+        when(fileMapper.getFileNodesByParentIdPaged(
+                        1L, null, FileSpaceType.PERSONAL, null, 1L, PageResult.MAX_PAGE_SIZE, 0))
+                .thenReturn(List.of());
+
+        PageResult<FileListItemVO> result = fileQueryService.getFileListByParentId(
+                1L, null, null, null, null, null, 1, 5000, 1L);
+
+        assertEquals(PageResult.MAX_PAGE_SIZE, result.getPageSize().intValue());
+        // 关键：钳制后的值必须真的下发给查询，否则上限只是"回给前端好看"。
+        verify(fileMapper).getFileNodesByParentIdPaged(
+                1L, null, FileSpaceType.PERSONAL, null, 1L, PageResult.MAX_PAGE_SIZE, 0);
+    }
+
+    /**
+     * 搜索旧实现返回的 {@code FileSearchResultVO} 只有 {total, list}，<b>不含 page / pageSize</b>，
+     * 前端因此无法从响应里校准分页器。换成本信封后两个字段是纯新增。
+     */
+    @Test
+    void searchFilesReturnsFullEnvelopeAndClampsPageSize() {
+        when(fileMapper.countByKeyword(1L, null, "报表")).thenReturn(3);
+        when(fileMapper.searchByKeyword(1L, null, "报表", PageResult.MAX_PAGE_SIZE,
+                PageResult.offsetOf(2, PageResult.MAX_PAGE_SIZE))).thenReturn(List.of());
+
+        PageResult<FileSearchItemVO> result = fileQueryService.searchFiles("报表", 2, 5000, 1L, null);
+
+        assertEquals(2, result.getPage().intValue());
+        assertEquals(PageResult.MAX_PAGE_SIZE, result.getPageSize().intValue());
+        assertEquals(3L, result.getTotal().longValue());
+        assertEquals(List.of(), result.getList());
+    }
+
+    /** 搜索默认页长是 20；total 为 0 时不发查询。 */
+    @Test
+    void searchFilesFallsBackToSearchDefaultPageSize() {
+        when(fileMapper.countByKeyword(1L, null, "报表")).thenReturn(0);
+
+        PageResult<FileSearchItemVO> result = fileQueryService.searchFiles("报表", null, null, 1L, null);
+
+        assertEquals(1, result.getPage().intValue());
+        assertEquals(20, result.getPageSize().intValue());
+        assertEquals(0L, result.getTotal().longValue());
+        verify(fileMapper, never()).searchByKeyword(anyLong(), any(), any(), anyInt(), anyInt());
     }
 }

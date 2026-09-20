@@ -24,6 +24,7 @@ describe('constants/pagination', () => {
     expect(resolvePageSize('recycleBin')).toBe(20)
     expect(resolvePageSize('spaceFiles')).toBe(50)
     expect(resolvePageSize('fileSearch')).toBe(20)
+    expect(resolvePageSize('emailRecord')).toBe(10)
   })
 
   it('falls back to the backend default for unknown contexts', () => {

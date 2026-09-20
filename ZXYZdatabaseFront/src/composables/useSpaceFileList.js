@@ -29,15 +29,19 @@ import {
  * 本函数的 refresh 带并发令牌（丢弃过期响应）、支持预取复用、还要给团队空间根目录拼虚拟入口，
  * 塞进通用骨架只会把抽象做坏。对外行为与 usePagedList 保持一致（换页长回第 1 页）。
  *
+ * 页码 ref 自 07-P2-4 起叫 `page`（此前叫 `currentPage`）—— 全仓其余列表（usePagedList /
+ * useFileSearch / 分享 / 回收站 / 审计日志 / 邮件记录）用的都是 `page`，这里是唯一的例外。
+ * 与后端字段同名也省掉一层心智转换。
+ *
  * @param {UseSpaceFileListOptions} options - 配置项。
- * @returns {{ list: import('vue').Ref<Array>, loading: import('vue').Ref<boolean>, currentPage: import('vue').Ref<number>, pageSize: import('vue').Ref<number>, total: import('vue').Ref<number>, resetPage: Function, refresh: Function, handleCurrentChange: Function, handleSizeChange: Function }} 空间文件列表状态与操作方法。
+ * @returns {{ list: import('vue').Ref<Array>, loading: import('vue').Ref<boolean>, page: import('vue').Ref<number>, pageSize: import('vue').Ref<number>, total: import('vue').Ref<number>, resetPage: Function, refresh: Function, handleCurrentChange: Function, handleSizeChange: Function }} 空间文件列表状态与操作方法。
  */
 export function useSpaceFileList(options) {
   const { currentId, sortState, spaceContext, teamId, spaceType, projectId } = options
 
   const list = ref([])
   const loading = ref(false)
-  const currentPage = ref(1)
+  const page = ref(1)
   const pageSize = ref(resolvePageSize('spaceFiles'))
   const total = ref(0)
   let latestRefreshToken = 0
@@ -85,7 +89,7 @@ export function useSpaceFileList(options) {
       const fileList = await fetchFileList(currentId.value, {
         ...(sortState?.value || {}),
         ...spaceParams,
-        page: currentPage.value,
+        page: page.value,
         pageSize: pageSize.value,
       })
       if (refreshToken !== latestRefreshToken && refreshToken !== forcedRefreshToken) return
@@ -104,6 +108,17 @@ export function useSpaceFileList(options) {
       const rawTotal = fileList?.total ?? (Array.isArray(payload) ? undefined : payload?.total)
       if (rawTotal != null) {
         total.value = Number(rawTotal)
+      }
+
+      // 采纳后端实际生效的**页长**（唯一会被后端静默改变的量：PageResult 会把超限的
+      // pageSize 钳到 MAX_PAGE_SIZE）。不采纳就会出现「前端按 200 算总页数、后端按 100 分页」
+      // ⇒ 每翻一页跳掉一批数据，中后段永远翻不到。
+      // 刻意**不采纳 page**：后端只会把 < 1 归一成 1，前端本就不会发这种页码，
+      // 采纳回声值反而会在响应落后于本地状态时把用户刚翻到的页码拽回去。
+      // 裸数组返回（旧后端）时取不到，保持本地值。
+      const rawServerPageSize = Number(Array.isArray(payload) ? undefined : payload?.pageSize)
+      if (Number.isFinite(rawServerPageSize) && rawServerPageSize >= 1) {
+        pageSize.value = normalizePageSize(rawServerPageSize)
       }
 
       if (
@@ -129,11 +144,11 @@ export function useSpaceFileList(options) {
   }
 
   function resetPage() {
-    currentPage.value = 1
+    page.value = 1
   }
 
   async function handleCurrentChange(nextPage) {
-    currentPage.value = nextPage
+    page.value = nextPage
     await refresh()
   }
 
@@ -141,14 +156,14 @@ export function useSpaceFileList(options) {
     pageSize.value = normalizePageSize(nextPageSize)
     // 换页长后停在原页码很可能越界（例如第 5 页 10 条/页 → 50 条/页只剩 1 页），
     // 统一回到第 1 页。此前 FileExplorer 直接绑 refresh，少了这一步。
-    currentPage.value = 1
+    page.value = 1
     await refresh()
   }
 
   return {
     list,
     loading,
-    currentPage,
+    page,
     pageSize,
     total,
     resetPage,

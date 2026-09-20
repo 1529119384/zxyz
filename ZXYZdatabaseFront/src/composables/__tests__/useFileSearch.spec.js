@@ -269,6 +269,41 @@ describe('useFileSearch', () => {
     expect(pageSize.value).toBe(200)
   })
 
+  // 07-P2-4：搜索信封开始带 page / pageSize（此前只有 total/list）。
+  // 采纳后端生效值，否则「前端按 200 算总页数、后端按 50 分页」⇒ 中后段翻不到。
+  // 用「前端发 200、后端回声 50」建模前后端混版窗口（前端页长选项已开到 200，
+  // 未升级的旧后端把搜索上限钳在 50）。回声必须**小于**请求，否则测的就不是钳制。
+  it('采纳后端回传的 pageSize，并按生效页长继续翻页', async () => {
+    searchFiles.mockResolvedValue({ data: { total: 1000, page: 1, pageSize: 20, list: [] } })
+
+    const searchText = ref('关键词')
+    const { page, pageSize, handleCurrentChange, handleSizeChange } = useFileSearch({
+      searchText,
+      enabled: ref(true),
+      spaceContext: null,
+      teamId: ref(null),
+      spaceType: ref(1),
+      projectId: ref(null),
+    })
+
+    await vi.advanceTimersByTimeAsync(500)
+    await vi.waitFor(() => expect(searchFiles).toHaveBeenCalledTimes(1))
+
+    // 用户把页长切到 200，旧后端只按 50 生效并把 50 回传。
+    searchFiles.mockResolvedValue({ data: { total: 1000, page: 1, pageSize: 50, list: [] } })
+    await handleSizeChange(200)
+
+    expect(searchFiles).toHaveBeenLastCalledWith('关键词', 1, 200, expect.any(Object))
+    expect(pageSize.value).toBe(50)
+
+    // 采纳后必须真的用生效页长继续翻页。
+    searchFiles.mockClear()
+    await handleCurrentChange(3)
+    expect(searchFiles).toHaveBeenLastCalledWith('关键词', 3, 50, expect.any(Object))
+    // 刻意不采纳 page：后端回声的 page=1 不得把用户刚翻到的第 3 页拽回去。
+    expect(page.value).toBe(3)
+  })
+
   // 卸载清理此前一直没被走到：它必须清掉**未触发**的防抖定时器，
   // 否则组件都销毁了仍会迟 500ms 发一次搜索请求。
   it('组件卸载时清掉未触发的防抖定时器，卸载后不再发请求', async () => {

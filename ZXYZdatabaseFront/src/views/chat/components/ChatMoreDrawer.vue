@@ -1,10 +1,5 @@
 <template>
-  <el-drawer
-    :model-value="visible"
-    title="更多"
-    size="420px"
-    @update:model-value="handleVisibleChange"
-  >
+  <el-drawer v-model="visible" title="更多" size="420px">
     <div class="more-drawer">
       <section class="more-section">
         <h3>搜索聊天记录</h3>
@@ -22,15 +17,15 @@
           :key="message.messageId"
           class="search-result-item"
         >
-          <strong>{{ displayName(message) }}</strong>
+          <strong>{{ getSenderDisplayName(message, currentUserId) }}</strong>
           <p>
             {{
               message.messageType === 'FILE_CARD'
-                ? fileCardTitle(message.fileCard || {})
-                : displaySearchContent(message)
+                ? getFileCardTitle(message.fileCard || {})
+                : getStructuredMessageSearchContent(message)
             }}
           </p>
-          <small>{{ formatTime(message.createTime) }}</small>
+          <small>{{ formatChatTime(message.createTime) }}</small>
         </article>
         <el-empty v-if="!searchResults.length" description="暂无搜索结果" />
       </section>
@@ -64,9 +59,9 @@
             @click="emit('open-member-card', member, $event)"
           >
             <el-avatar :size="36" :src="member.avatar">{{
-              displayMemberName(member).slice(0, 1)
+              getMemberDisplayName(member).slice(0, 1)
             }}</el-avatar>
-            <span>{{ displayMemberName(member) }}</span>
+            <span>{{ getMemberDisplayName(member) }}</span>
           </button>
         </div>
         <el-empty v-else description="暂无可显示成员" />
@@ -79,12 +74,29 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
+import { PROJECT, TEAM } from '@/constants/conversationTypes'
+import {
+  formatChatTime,
+  getFileCardTitle,
+  getMemberDisplayName,
+  getSenderDisplayName,
+  getStructuredMessageSearchContent,
+} from '@/models/imPresentation'
+
+// 07-P1-7：props 从 15 个收到 10 个，去掉的都是「父级把已经算好的结果再传一遍」的项 ——
+//   · 5 个格式化函数（displayName / displaySearchContent / displayMemberName / formatTime /
+//     fileCardTitle）全是 models/imPresentation 里纯函数的薄包装，唯一的外部输入是 currentUserId
+//     ⇒ 改成「传数据（currentUserId）+ 本组件自己 import 函数」；
+//   · isTeamConversation / isMemberListConversation 只依赖会话类型 ⇒ 传 conversation 自己判定，
+//     取值口径与 views/chat/index.vue、useChatMembers 完全一致。
+// 余下 8 个布尔/数组是真正由父级的权限与成员状态算出来的结果，本组件无从推导。
 const props = defineProps({
-  visible: {
-    type: Boolean,
-    default: false,
+  /** 当前会话：用来判定「是否群聊」「是否有成员列表」。 */
+  conversation: {
+    type: Object,
+    default: null,
   },
   searchResults: {
     type: Array,
@@ -102,14 +114,6 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
-  isTeamConversation: {
-    type: Boolean,
-    default: false,
-  },
-  isMemberListConversation: {
-    type: Boolean,
-    default: false,
-  },
   canOpenTeamSettings: {
     type: Boolean,
     default: false,
@@ -122,30 +126,14 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
-  displayName: {
-    type: Function,
-    required: true,
-  },
-  displaySearchContent: {
-    type: Function,
-    required: true,
-  },
-  displayMemberName: {
-    type: Function,
-    required: true,
-  },
-  formatTime: {
-    type: Function,
-    required: true,
-  },
-  fileCardTitle: {
-    type: Function,
-    required: true,
+  /** 当前登录用户 ID：`getSenderDisplayName` 靠它把「自己发的」显示成「我」。 */
+  currentUserId: {
+    type: [Number, String],
+    default: null,
   },
 })
 
 const emit = defineEmits([
-  'update:visible',
   'search',
   'share-file',
   'open-team-settings',
@@ -154,11 +142,21 @@ const emit = defineEmits([
   'expand-members',
 ])
 
-const searchKeyword = ref('')
+// 07-P1-7：`visible` 走 defineModel（与 components/LogoutDialog.vue 同法）。
+// 此前是「visible prop + handleVisibleChange 手动 emit('update:visible')」两处样板，
+// 父级本来用的就是 `v-model:visible`，对外契约没变。
+//
+// 顺序说明：`vue/define-macros-order` 要求 defineProps / defineEmits 紧跟 import，
+// 所以 defineModel 与下面的 computed 只能排在其后。
+const visible = defineModel('visible', {
+  type: Boolean,
+  default: false,
+})
 
-function handleVisibleChange(value) {
-  emit('update:visible', value)
-}
+const isTeamConversation = computed(() => props.conversation?.type === TEAM)
+const isMemberListConversation = computed(() => [TEAM, PROJECT].includes(props.conversation?.type))
+
+const searchKeyword = ref('')
 
 function submitSearch() {
   emit('search', searchKeyword.value.trim())

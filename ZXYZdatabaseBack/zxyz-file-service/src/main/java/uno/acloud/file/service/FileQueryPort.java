@@ -3,9 +3,8 @@ package uno.acloud.file.service;
 import uno.acloud.common.PageResult;
 import uno.acloud.dto.FileInfoDTO;
 import uno.acloud.file.vo.FileListItemVO;
-import uno.acloud.file.vo.FileListPagedResultVO;
+import uno.acloud.file.vo.FileSearchItemVO;
 import uno.acloud.file.vo.FileResourceVO;
-import uno.acloud.file.vo.FileSearchResultVO;
 import uno.acloud.vo.FileDownloadUrlVO;
 
 import java.util.List;
@@ -17,7 +16,14 @@ public interface FileQueryPort {
 
     List<FileListItemVO> getFileListByParentId(Long parentId, Long teamId, Integer spaceType, Long projectId, String sortField, String sortOrder, Long userId);
 
-    FileListPagedResultVO getFileListByParentId(Long parentId, Long teamId, Integer spaceType, Long projectId, String sortField, String sortOrder, Integer page, Integer pageSize, Long userId);
+    /**
+     * 目录文件列表（分页）。
+     *
+     * <p>全仓分页信封自 07-P2-4 起统一为 {@link PageResult}（page / pageSize / total / list），
+     * 本方法原先自带的分页结果类型已删除。默认页长 50 是本接口的历史口径，
+     * 上限统一由 {@code PageResult.normalizePageSize} 钳制。</p>
+     */
+    PageResult<FileListItemVO> getFileListByParentId(Long parentId, Long teamId, Integer spaceType, Long projectId, String sortField, String sortOrder, Integer page, Integer pageSize, Long userId);
 
     FileDownloadUrlVO getFileDownloadUrl(Long fileId);
 
@@ -83,7 +89,14 @@ public interface FileQueryPort {
 
     FileResourceVO getFileResourceById(Long fileId, Long userId);
 
-    FileSearchResultVO searchFiles(String keyword, Integer page, Integer pageSize, long userId, Long teamId);
+    /**
+     * 文件搜索（分页）。
+     *
+     * <p>旧结果类型只有 {@code {total, list}}，<b>不带 page / pageSize</b>，与其他列表接口形状不一致
+     * （前端因此无法从响应里校准实际生效的页码与页长）。07-P2-4 起换成本类的 {@link PageResult}，
+     * 两个字段是<b>纯新增</b>，老前端读 {@code {total, list}} 不受影响。</p>
+     */
+    PageResult<FileSearchItemVO> searchFiles(String keyword, Integer page, Integer pageSize, long userId, Long teamId);
 
-    FileSearchResultVO searchFiles(String keyword, Integer page, Integer pageSize, long userId, Long teamId, Integer spaceType, Long projectId);
+    PageResult<FileSearchItemVO> searchFiles(String keyword, Integer page, Integer pageSize, long userId, Long teamId, Integer spaceType, Long projectId);
 }

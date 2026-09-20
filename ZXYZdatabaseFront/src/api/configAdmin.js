@@ -4,6 +4,14 @@ import request from '@/utils/request'
 export const fetchAllConfigs = () => request.get('/api/admin/configs')
 
 /**
+ * 按 key 读取单个配置值。
+ *
+ * 07-A-3 复核（2026-09-21）：**后端端点真实存在** —— `zxyz-admin-service` 的
+ * `ConfigAdminController#getByKey`（`@GetMapping("/{key}")`，类级 `@RequestMapping("/configs")`），
+ * 网关 `RewritePath /api/admin/(?<segment>.*) → /${segment}` 负责剥掉 `/api/admin` 前缀。
+ * 同文件的另外四个函数都被 `views/setting/ConfigAdmin.vue` 用着，**只有本函数前端暂无消费者**。
+ * 刻意保留而非删除：一旦要做「配置详情」页，删了得把请求契约重写一遍。
+ *
  * @param {string} key - 配置键
  */
 export const fetchConfig = (key) => request.get(`/api/admin/configs/${key}`)

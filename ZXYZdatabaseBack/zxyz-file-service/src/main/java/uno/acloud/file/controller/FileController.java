@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.PageResult;
 import uno.acloud.common.Result;
 import uno.acloud.common.SystemPermissionCodes;
 import uno.acloud.common.web.CurrentUser;
@@ -43,10 +44,9 @@ import uno.acloud.file.vo.BatchOperationDetailVO;
 import uno.acloud.file.vo.BatchOperationResult;
 import uno.acloud.file.vo.BatchUploadConfirmResultVO;
 import uno.acloud.file.vo.FileListItemVO;
-import uno.acloud.file.vo.FileListPagedResultVO;
+import uno.acloud.file.vo.FileSearchItemVO;
 import uno.acloud.vo.FileDownloadUrlVO;
 import uno.acloud.file.vo.FileResourceVO;
-import uno.acloud.file.vo.FileSearchResultVO;
 
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -104,7 +104,7 @@ public class FileController {
     @GetMapping
     @SaCheckPermission(SystemPermissionCodes.FILE_READ)
     @RequiresTeamPermission(value = TeamPermissionCodes.TEAM_FILE_READ, skipWhenTeamIdMissing = true)
-    public Result<FileListPagedResultVO> getFileList(@CurrentUser Long userId,
+    public Result<PageResult<FileListItemVO>> getFileList(@CurrentUser Long userId,
                               @RequestParam Long parentId,
                               @RequestParam(required = false) Long teamId,
                               @RequestParam(required = false) Integer spaceType,
@@ -113,7 +113,7 @@ public class FileController {
                               @RequestParam(required = false) String sortOrder,
                               @RequestParam(defaultValue = "1") Integer page,
                               @RequestParam(defaultValue = "50") Integer pageSize) {
-        FileListPagedResultVO result = fileQueryPort.getFileListByParentId(
+        PageResult<FileListItemVO> result = fileQueryPort.getFileListByParentId(
                 parentId, teamId, spaceType, projectId, sortField, sortOrder, page, pageSize, userId);
         return Result.of(result);
     }
@@ -129,14 +129,14 @@ public class FileController {
     @GetMapping("/search")
     @SaCheckPermission(SystemPermissionCodes.FILE_READ)
     @RequiresTeamPermission(value = TeamPermissionCodes.TEAM_FILE_READ, skipWhenTeamIdMissing = true)
-    public Result<FileSearchResultVO> searchFiles(@CurrentUser Long userId,
+    public Result<PageResult<FileSearchItemVO>> searchFiles(@CurrentUser Long userId,
                               @RequestParam String keyword,
                               @RequestParam(required = false) Long teamId,
                               @RequestParam(required = false) Integer spaceType,
                               @RequestParam(required = false) Long projectId,
                               @RequestParam(defaultValue = "1") Integer page,
                               @RequestParam(defaultValue = "20") Integer pageSize) {
-        FileSearchResultVO result = spaceType == null && projectId == null
+        PageResult<FileSearchItemVO> result = spaceType == null && projectId == null
                 ? fileQueryPort.searchFiles(keyword, page, pageSize, userId, teamId)
                 : fileQueryPort.searchFiles(keyword, page, pageSize, userId, teamId, spaceType, projectId);
         return Result.of(result);

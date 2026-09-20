@@ -1,5 +1,7 @@
 import { computed, nextTick, ref } from 'vue'
 
+import { PROJECT, TEAM } from '@/constants/conversationTypes'
+import { getMemberDisplayName } from '@/models/imPresentation'
 import { handleBusinessError } from '@/utils/error'
 
 export function useChatMembers({
@@ -13,8 +15,10 @@ export function useChatMembers({
   const memberCardVisible = ref(false)
   const memberCardVirtualRef = ref(null)
   const selectedMember = ref(null)
+  // 07-A-3：此前是裸字符串 `['TEAM', 'PROJECT']`，把 constants/conversationTypes 里
+  // 已有的取值口径又抄了一遍 —— 后端若加一种「有成员列表」的类型，两处会各自漂移。
   const isMemberListConversation = computed(() =>
-    ['TEAM', 'PROJECT'].includes(activeConversation.value?.type),
+    [TEAM, PROJECT].includes(activeConversation.value?.type),
   )
   const visibleGroupMembers = computed(() =>
     membersExpanded.value ? teamStore.teamMembers : teamStore.teamMembers.slice(0, 8),
@@ -26,8 +30,10 @@ export function useChatMembers({
       teamStore.teamMembers.length > visibleGroupMembers.value.length,
   )
 
+  // 07-P1-7：实现提到 models/imPresentation（ChatMoreDrawer 也要用，此前靠 prop 传函数），
+  // 这里只做转发，避免复制出第二份回落顺序。
   function displayMemberName(member) {
-    return member.name || member.username || `用户 ${member.userId}`
+    return getMemberDisplayName(member)
   }
 
   function mentionName(userId) {

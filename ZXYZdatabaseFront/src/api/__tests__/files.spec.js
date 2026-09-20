@@ -52,6 +52,33 @@ describe('files API', () => {
     expect(result.data).toEqual([{ id: 1 }])
   })
 
+  it('fetchFileList 把信封里的 page / pageSize 一并提升到同级', async () => {
+    vi.mocked(request.get).mockResolvedValue({
+      code: 1,
+      msg: 'ok',
+      data: { page: 2, pageSize: 100, total: 1000, list: [{ id: 1 }] },
+    })
+
+    const result = await fetchFileList(1, { page: 2, pageSize: 200 })
+
+    // pageSize 是**后端生效值**（请求的 200 被上限钳成 100），
+    // 分页器必须采纳它才能算对总页数，否则每翻一页跳掉一批数据。
+    expect(result.data).toEqual([{ id: 1 }])
+    expect(result.total).toBe(1000)
+    expect(result.page).toBe(2)
+    expect(result.pageSize).toBe(100)
+  })
+
+  it('fetchFileList 遇到裸数组时不提升分页字段（向后兼容）', async () => {
+    vi.mocked(request.get).mockResolvedValue({ code: 1, msg: 'ok', data: [{ id: 2 }] })
+
+    const result = await fetchFileList(1)
+
+    expect(result.data).toEqual([{ id: 2 }])
+    expect(result.page).toBeUndefined()
+    expect(result.pageSize).toBeUndefined()
+  })
+
   it('应调用 GET /api/files/search 搜索文件', async () => {
     vi.mocked(request.get).mockResolvedValue({ code: 1, msg: 'ok', data: {} })
     await searchFiles('test', 1, 20, { teamId: 5 })
@@ -411,6 +438,19 @@ describe('files API', () => {
       const result = await fetchRecycleList({ page: 1, pageSize: 20 })
       expect(result.data).toEqual([])
       expect(result.total).toBe(0)
+    })
+
+    it('fetchRecycleList 同样把 page / pageSize 提升到同级', async () => {
+      vi.mocked(request.get).mockResolvedValue({
+        code: 1,
+        msg: 'ok',
+        data: { page: 3, pageSize: 20, total: 41, list: [] },
+      })
+
+      const result = await fetchRecycleList({ page: 3, pageSize: 20 })
+
+      expect(result.page).toBe(3)
+      expect(result.pageSize).toBe(20)
     })
 
     it('restoreFiles 用 DELETE 且请求体放在 data 中', async () => {

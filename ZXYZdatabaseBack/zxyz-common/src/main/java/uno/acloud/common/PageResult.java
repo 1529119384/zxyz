@@ -13,10 +13,18 @@ import java.util.List;
 /**
  * 通用分页信封。
  *
- * <p>字段与既有的 {@code FileListPagedResultVO} / {@code FileSearchResultVO} 保持一致
- * （{@code page} / {@code pageSize} / {@code total} / {@code list}），前端因此可以复用同一套
- * 解析逻辑（见 {@code api/files.ts::fetchFileList} 里对 {@code {list,total}} 信封的兼容代码），
+ * <p>字段固定为 {@code page} / {@code pageSize} / {@code total} / {@code list}，前端因此可以复用
+ * 同一套解析逻辑（见 {@code api/files.ts::fetchFileList} 里对 {@code {list,total}} 信封的兼容代码），
  * 新接口不必再各自约定字段名。
+ *
+ * <p><b>全库唯一的分页信封</b>：file-service 原先自带的 {@code FileListPagedResultVO} 与
+ * {@code FileSearchResultVO}（后者连 {@code page} / {@code pageSize} 都没有）、email-service 的
+ * {@code EmailRecordPageVO}（列表字段叫 {@code records}）已于 07-P2-4 全部并入本类。
+ * 列表字段名此后只有 {@code list} 一个。
+ *
+ * <p><b>默认页长与上限是两件事</b>：默认页长按接口历史口径各自不同（空间文件列表 50、
+ * 文件搜索 20、我的分享 10），用 {@link #normalizePageSize(Integer, int)} 传；上限则必须全库唯一，
+ * 见 {@link #MAX_PAGE_SIZE}。
  *
  * <p>放在 {@code zxyz-common} 而不是每个服务各写一个 VO：分页信封跨服务是同一种形状，
  * 逐接口复制只会持续放大重复代码（见 07 文档「重复代码」一节）。
@@ -56,10 +64,31 @@ public class PageResult<T> {
         return page == null || page < 1 ? 1 : page;
     }
 
-    /** 归一化每页条数：{@code null} 或小于 1 取默认值，超过上限则钳制到上限。 */
+    /** 归一化每页条数：{@code null} 或小于 1 取 {@link #DEFAULT_PAGE_SIZE}，超过上限则钳制到上限。 */
     public static int normalizePageSize(Integer pageSize) {
+        return normalizePageSize(pageSize, DEFAULT_PAGE_SIZE);
+    }
+
+    /**
+     * 归一化每页条数，默认值由调用方按接口的历史口径指定。
+     *
+     * <p><b>为什么需要这个重载</b>：各接口的历史默认页长本就不同（空间文件列表 50、
+     * 文件搜索 20、我的分享 10），这些默认值不能统一；但<b>上限只能有一处</b>。
+     * 此前 file-service 与 email-service 各自硬编码上限（100 / 50），而前端 el-pagination 的
+     * 页长选项最大是 200（{@code constants/pagination.js::SPACE_PAGE_SIZE_OPTIONS}）——
+     * 用户选 200 时后端按 100 或 50 分页、前端却按 200 算总页数，
+     * 两者不一致会让<b>中后段数据永远翻不到</b>。
+     *
+     * <p>统一走本方法后上限恒为 {@link #MAX_PAGE_SIZE}，与前端选项上界一致。
+     * 前端另有「按响应回传的 pageSize 校准」作第二道防线（见 {@code useSpaceFileList}）。
+     *
+     * @param pageSize        原始每页条数，{@code null} 或小于 1 时取 {@code defaultPageSize}
+     * @param defaultPageSize 该接口的历史默认页长
+     * @return 归一化后的页长，取值范围 [1, MAX_PAGE_SIZE]
+     */
+    public static int normalizePageSize(Integer pageSize, int defaultPageSize) {
         if (pageSize == null || pageSize < 1) {
-            return DEFAULT_PAGE_SIZE;
+            return defaultPageSize;
         }
         return Math.min(pageSize, MAX_PAGE_SIZE);
     }

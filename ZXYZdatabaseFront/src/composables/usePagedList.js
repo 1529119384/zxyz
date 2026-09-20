@@ -22,6 +22,7 @@ import { handleBusinessError } from '@/utils/error'
  * @typedef {Object} PagedListPage
  * @property {any[]} [list] - 当前页记录。
  * @property {number|string|null} [total] - 记录总数。
+ * @property {number|string|null} [pageSize] - 后端实际生效的页长（可能被上限钳制）；缺失时保持本地值。
  */
 
 /**
@@ -55,21 +56,58 @@ export function usePagedList(loader, options = {}) {
   const total = ref(0)
   const page = ref(1)
   const pageSize = ref(normalizePageSize(explicitPageSize ?? resolvePageSize(context)))
+  let latestRequestToken = 0
+
+  /**
+   * 用后端回传的 pageSize 校准本地页长。
+   *
+   * 为什么需要：请求里的 pageSize 可能被后端的页长上限钳过
+   * （`PageResult.normalizePageSize`）。前端若不采纳生效值，就会出现
+   * 「前端按 200 算总页数、后端按 100 分页」⇒ 每翻一页跳掉一批数据，中后段永远看不到。
+   *
+   * **只采纳 pageSize，不采纳 page**：pageSize 是唯一会被后端静默改变的量
+   * （钳到上限）；而 page 只会被 `< 1 → 1` 归一化，前端本就不会发出小于 1 的页码，
+   * 后端的回声值恒等于请求值。若连 page 一起采纳，反而会在「响应回声落后于本地状态」时
+   * 把用户刚翻到的页码拽回去（实测会把 handleCurrentChange(4) 拉回第 1 页）。
+   *
+   * 只在后端真的回传了合法值时才覆盖；缺字段（旧后端 / 裸数组）时保持本地值。
+   *
+   * 只由**当前这次请求**触发校准（refresh 用请求令牌把过期响应挡在门外）：
+   * 「第 4 页还没回来就换页长」时两个请求同时在飞，迟到的旧响应回声会把用户刚选的页长拽回去。
+   *
+   * @param {PagedListPage|null|undefined} result - loader 的返回值。
+   */
+  function adoptServerPaging(result) {
+    const serverPageSize = Number(result?.pageSize)
+    if (Number.isFinite(serverPageSize) && serverPageSize >= 1) {
+      pageSize.value = normalizePageSize(serverPageSize)
+    }
+  }
 
   async function refresh() {
+    // 请求令牌：迟到的旧响应不得覆盖新状态。page / pageSize 会被用户连续改动
+    // （点了第 4 页又马上换页长），两个请求同时在飞是常态，谁先返回不一定谁最新。
+    // 与 useSpaceFileList 的 latestRefreshToken、useFileSearch 的 latestSearchToken 同法。
+    const requestToken = ++latestRequestToken
     loading.value = true
 
     try {
       const result = await loader({ page: page.value, pageSize: pageSize.value })
+      if (requestToken !== latestRequestToken) return
 
       list.value = Array.isArray(result?.list) ? result.list : []
       total.value = Number(result?.total) || 0
+      adoptServerPaging(result)
     } catch (error) {
+      if (requestToken !== latestRequestToken) return
+
       list.value = []
       total.value = 0
       handleBusinessError(error, errorMessage)
     } finally {
-      loading.value = false
+      if (requestToken === latestRequestToken) {
+        loading.value = false
+      }
     }
   }
 

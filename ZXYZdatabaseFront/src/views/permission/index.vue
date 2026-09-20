@@ -27,21 +27,12 @@
 
           <div v-show="showSystemPermissionTab" class="permission-stack__content">
             <RoleManagementPanel
-              title="系统角色"
-              role-type-label="系统角色"
-              create-label="新增角色"
-              subtitle="管理系统级角色的授权范围，内置角色不可删除。"
+              :labels="SYSTEM_ROLE_PANEL_LABELS"
+              :actions="systemRolePanelActions"
               :roles="safeSystemRoles"
               :permissions="safeSystemPermissions"
               :can-read="canReadSystemPermissionCenter"
               :can-manage="canManageSystemRoles"
-              no-access-text="你没有系统权限中心查看权限，当前分区不可用。"
-              readonly-text="当前为只读模式，系统角色不可编辑。"
-              empty-text="暂无系统角色"
-              :is-builtin-role="isBuiltinSystemRole"
-              :format-permission="formatPermissionLabel"
-              :save-role="systemActions.saveSystemRole"
-              :delete-role="systemActions.deleteSystemRole"
             />
 
             <div class="auxiliary-grid">
@@ -125,21 +116,12 @@
 
           <div v-show="selectedTeamId && showTeamPermissionTab" class="permission-stack__content">
             <RoleManagementPanel
-              title="团队角色"
-              role-type-label="团队角色"
-              create-label="新增团队角色"
-              subtitle="管理当前团队内的角色权限，内置角色不可删除。"
+              :labels="TEAM_ROLE_PANEL_LABELS"
+              :actions="teamRolePanelActions"
               :roles="safeTeamRoles"
               :permissions="safeTeamPermissions"
               :can-read="canReadTeamPermissionCenter"
               :can-manage="canManageTeamRoles"
-              no-access-text="你没有团队权限中心查看权限，当前分区不可用。"
-              readonly-text="当前为只读模式，团队角色不可编辑。"
-              empty-text="暂无团队角色"
-              :is-builtin-role="isBuiltinTeamRole"
-              :format-permission="formatPermissionLabel"
-              :save-role="teamActions.saveTeamRole"
-              :delete-role="teamActions.deleteTeamRole"
             />
 
             <div class="auxiliary-grid">
@@ -216,6 +198,7 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 
 import RoleManagementPanel from '@/components/RoleManagementPanel.vue'
@@ -263,6 +246,45 @@ const {
   memberRoleForm,
   displayTeamMemberName,
 } = usePermissionCenterData()
+
+// 07-P1-7：RoleManagementPanel 把「文案」与「行为」各聚合成一个对象，两个实例只在文案与
+// 回调来源上不同，于是提成模块内常量 —— 调用点从十七行属性收到三行。
+const SYSTEM_ROLE_PANEL_LABELS = Object.freeze({
+  title: '系统角色',
+  subtitle: '管理系统级角色的授权范围，内置角色不可删除。',
+  roleTypeLabel: '系统角色',
+  createLabel: '新增角色',
+  noAccessText: '你没有系统权限中心查看权限，当前分区不可用。',
+  readonlyText: '当前为只读模式，系统角色不可编辑。',
+  emptyText: '暂无系统角色',
+})
+
+const TEAM_ROLE_PANEL_LABELS = Object.freeze({
+  title: '团队角色',
+  subtitle: '管理当前团队内的角色权限，内置角色不可删除。',
+  roleTypeLabel: '团队角色',
+  createLabel: '新增团队角色',
+  noAccessText: '你没有团队权限中心查看权限，当前分区不可用。',
+  readonlyText: '当前为只读模式，团队角色不可编辑。',
+  emptyText: '暂无团队角色',
+})
+
+// 必须用 computed 而不是对象字面量：`systemActions` / `isBuiltinSystemRole` 等都是
+// usePermissionCenterData 里稳定的引用，computed 因此只求值一次、对象引用也就稳定；
+// 写成 `:actions="{ ... }"` 会每轮渲染都造新对象，让面板里的 labels/actions computed 反复失效。
+const systemRolePanelActions = computed(() => ({
+  isBuiltinRole: isBuiltinSystemRole,
+  formatPermission: formatPermissionLabel,
+  saveRole: systemActions.saveSystemRole,
+  deleteRole: systemActions.deleteSystemRole,
+}))
+
+const teamRolePanelActions = computed(() => ({
+  isBuiltinRole: isBuiltinTeamRole,
+  formatPermission: formatPermissionLabel,
+  saveRole: teamActions.saveTeamRole,
+  deleteRole: teamActions.deleteTeamRole,
+}))
 </script>
 
 <style scoped>

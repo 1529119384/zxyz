@@ -27,7 +27,14 @@ export const listStorageProviders = () => {
 }
 
 /**
- * 更新存储提供者配置
+ * 更新存储提供者配置。
+ *
+ * 07-A-3 复核（2026-09-21）：**后端端点真实存在** —— `zxyz-file-service` 的
+ * `StorageProviderController#update`（`@PatchMapping("/{providerId}")`），
+ * 网关路由 id `file-service-storage-providers` 覆盖 `/api/admin/storage-providers/**`。
+ * 同文件的 `listStorageProviders` / `checkStorageProviderHealth` 也**都没有前端消费者**，
+ * 即整个存储提供者管理面（后端 + 网关）已就绪、UI 尚未接。刻意保留而非删除。
+ *
  * @param {string} providerId - 提供者标识
  * @param {{displayName?: string, enabled?: boolean, isDefault?: boolean, configJson?: string}} data - 配置数据
  * @returns {Promise<{code: number}>}

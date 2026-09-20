@@ -98,10 +98,10 @@ describe('useSpaceFileList', () => {
   it('refetches with the requested page on current-change', async () => {
     fetchFileList.mockResolvedValue({ code: 1, msg: 'success', data: [], total: 41 })
 
-    const { currentPage, handleCurrentChange } = createComposable()
+    const { page, handleCurrentChange } = createComposable()
     await handleCurrentChange(3)
 
-    expect(currentPage.value).toBe(3)
+    expect(page.value).toBe(3)
     expect(fetchFileList).toHaveBeenLastCalledWith(
       -1,
       expect.objectContaining({ page: 3, pageSize: 50 }),
@@ -111,14 +111,14 @@ describe('useSpaceFileList', () => {
   it('resets to the first page when the page size changes', async () => {
     fetchFileList.mockResolvedValue({ code: 1, msg: 'success', data: [], total: 100 })
 
-    const { currentPage, pageSize, handleCurrentChange, handleSizeChange } = createComposable()
+    const { page, pageSize, handleCurrentChange, handleSizeChange } = createComposable()
     await handleCurrentChange(5)
-    expect(currentPage.value).toBe(5)
+    expect(page.value).toBe(5)
 
     await handleSizeChange(20)
 
     expect(pageSize.value).toBe(20)
-    expect(currentPage.value).toBe(1)
+    expect(page.value).toBe(1)
     expect(fetchFileList).toHaveBeenLastCalledWith(
       -1,
       expect.objectContaining({ page: 1, pageSize: 20 }),
@@ -140,14 +140,56 @@ describe('useSpaceFileList', () => {
   it('resetPage 只把页码拨回第 1 页，不自己发请求', async () => {
     fetchFileList.mockResolvedValue({ code: 1, msg: 'success', data: [], total: 41 })
 
-    const { currentPage, resetPage, handleCurrentChange } = createComposable()
+    const { page, resetPage, handleCurrentChange } = createComposable()
     await handleCurrentChange(4)
-    expect(currentPage.value).toBe(4)
+    expect(page.value).toBe(4)
 
     fetchFileList.mockClear()
     resetPage()
 
-    expect(currentPage.value).toBe(1)
+    expect(page.value).toBe(1)
     expect(fetchFileList).not.toHaveBeenCalled()
+  })
+
+  // 07-P2-4：请求里的 pageSize 可能被后端页长上限钳过，采纳回传的生效值是第二道防线 ——
+  // 不采纳就会出现「前端按 200 算总页数、后端按 100 分页」⇒ 每翻一页跳掉一批数据。
+  // 用「前端发 200、后端回声 100」建模前后端混版窗口（SPACE_PAGE_SIZE_OPTIONS 已开到 200，
+  // 未升级的旧后端仍把上限钳在 100）。回声必须**小于**请求，否则测的就不是钳制。
+  it('adopts the page size the backend actually applied', async () => {
+    fetchFileList.mockResolvedValue({
+      code: 1,
+      msg: 'success',
+      data: { list: [], total: 1000, page: 1, pageSize: 100 },
+    })
+
+    const { page, pageSize, handleCurrentChange, handleSizeChange } = createComposable()
+    await handleSizeChange(200)
+
+    // 请求带的是用户选的 200，不是回声的 100。
+    expect(fetchFileList).toHaveBeenLastCalledWith(
+      -1,
+      expect.objectContaining({ page: 1, pageSize: 200 }),
+    )
+    expect(pageSize.value).toBe(100)
+
+    // 采纳后必须真的用生效页长继续翻页。
+    await handleCurrentChange(3)
+    expect(fetchFileList).toHaveBeenLastCalledWith(
+      -1,
+      expect.objectContaining({ page: 3, pageSize: 100 }),
+    )
+    // 刻意不采纳 page：后端回声的 page=1 不得把用户刚翻到的第 3 页拽回去。
+    expect(page.value).toBe(3)
+  })
+
+  it('keeps the local page size when the payload carries no paging fields', async () => {
+    // 裸数组 / 旧后端：不得把页长改成 0 或全局默认值。
+    fetchFileList.mockResolvedValue({ code: 1, msg: 'success', data: [], total: 2 })
+
+    const { page, pageSize, refresh } = createComposable()
+    await refresh()
+
+    expect(page.value).toBe(1)
+    expect(pageSize.value).toBe(50)
   })
 })
