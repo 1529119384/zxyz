@@ -66,7 +66,19 @@ public interface FileMapper {
     @Select("SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider FROM file_node WHERE id = #{fileId}")
     FileNode getFileNodeById(Long fileId);
 
+    /**
+     * 按 id 取活跃节点（{@code deleted = 0}）。
+     *
+     * <p>⚠️ 必须显式引用 {@code fileNodeResultMap}：本方法返回的是**抽象类** {@code FileNode}，
+     * 而 {@code file_type} → {@code FileItem} / {@code Folder} 的落地只能由该 ResultMap 携带的
+     * 判别器完成。缺了它，MyBatis 会拿抽象类去实例化并抛
+     * {@code ReflectionException: Error instantiating class ...FileNode ... Cause: InstantiationException}
+     * —— 也就是说「查到行」反而比「查不到行」更糟：三个内部端点
+     * （{@code /api/internal/files/{id}/stream-info}、{@code /stream}、{@code /share-download-url}）
+     * 的分享下载链路会整体 500。本仓其余 10 个返回 {@code FileNode} 的语句均已带该 ResultMap。</p>
+     */
     @Select("SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider FROM file_node WHERE id = #{fileId} AND deleted = 0")
+    @ResultMap("fileNodeResultMap")
     FileNode getActiveFileNodeById(Long fileId);
 
     @Select("SELECT COUNT(*) FROM file_node WHERE parent_id = #{parentId} AND deleted = 0")
