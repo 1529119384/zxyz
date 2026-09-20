@@ -198,11 +198,16 @@ echo "===== Restarting ====="
 # 本分支（不构建、直接拉 GHCR 镜像）尤其危险：连带重建 gateway 时用的仍是 .env 里的
 # APP_IMAGE_TAG，若该 sha 的镜像本地缺失就会退化走 compose 的 build: 段 ⇒ lstat 报错。
 # 与 CI 主部署路径（deploy-on-server.sh:442）以及本脚本 --build 分支保持同一纪律。
+# 另外，两个分支都补 --no-build（2026-09-19）：本脚本在服务器 /www/zxyz/ 运行，
+# 那里是白名单 cp 出来的目录、**没有源码**，compose 一旦退回 build: 段只会以 lstat
+# 之类与真实原因无关的错误收场。而两个分支其实都已把镜像备好 —— --build 分支上面
+# 刚 `docker compose build`，else 分支上面刚从 GHCR 拉过 —— 所以不需要也不该让
+# compose 自己构建。与 deploy-on-server.sh:442/578 及 rollback.sh 的纪律保持一致。
 if [ "$BUILD_FIRST" = true ]; then
   # 本地构建后仅重启自身，不重启依赖服务
-  docker compose up -d --no-deps "${SERVICES[@]}"
+  docker compose up -d --no-deps --no-build "${SERVICES[@]}"
 else
-  docker compose up -d --no-deps "${SERVICES[@]}"
+  docker compose up -d --no-deps --no-build "${SERVICES[@]}"
 fi
 
 # --- 等待容器 running 状态（非健康） ---

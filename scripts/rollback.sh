@@ -119,7 +119,11 @@ echo "===== Restarting ====="
 #   而服务器上没有 ZXYZdatabaseBack 源码 ⇒ 报 lstat 之类与真实原因无关的错误。
 #   且本脚本**没有 rollback-of-rollback** 兜底，连带重建失败会让站点停在「新旧混合」状态。
 #   点名服务 + --no-deps 也正是 CI 主部署路径的纪律（deploy-on-server.sh:442）。
-docker compose up -d --no-deps "${SERVICES[@]}"
+#   另带 --no-build（2026-09-19 补齐，与 deploy-on-server.sh:578 的自动回滚段一致）：
+#   服务器 /www/zxyz/ 是白名单 cp 出来的目录、**没有源码**，所以上面那条「退化走 build: 段」
+#   一旦发生只会以 lstat 之类与真实原因无关的错误收场。带 --no-build 后，若点名服务的
+#   上一版镜像本地确实缺失，compose 会直接报「镜像不存在」，把真实原因暴露出来。
+docker compose up -d --no-deps --no-build "${SERVICES[@]}"
 
 # --- 等待容器 running 状态（非健康） ---
 echo "===== Waiting for containers to start ====="
