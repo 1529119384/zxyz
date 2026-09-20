@@ -2,15 +2,16 @@
   "$comment": "前端产物体积预算（gzip KiB）。棘轮：只能收紧。改动请附理由。重新生成：npm run build && node scripts/check-bundle-size.mjs --baseline",
   "$baseline": "2026-09-13 首次建立。基线 = dev @ 87bca6d 起的前端产物，vite 7.3.2 / node 22。取值 = 实测 + 8%（分组）/ 3%（总计），并已对 selection 做一次棘轮收紧。",
   "$ratchet_2026_09_17": "vendor 62 -> 63。理由：axios 1.13.2 -> 1.20.0（跨 7 个 minor 的兼容/安全更新）令 vendor 分组（vue+vue-router+pinia+axios）由 57.4 涨到 62.05 KiB，超原预算 0.05 KiB。属「有意新增能力」而非「非预期膨胀」：其余分组与总计（464.5/471）均未变，膨胀全部来自 axios 自身。此项是唯一被放宽的预算，且放宽幅度 1 KiB ≈ 实测增量（+4.65 KiB 无法靠 1 KiB 掩盖，只用于消除 0.05 KiB 的临界误报）。后续如需再放宽，必须先做分组瘦身。",
+  "$rebased_2026_09_19": "分组预算按 vite 7.3.2 -> 8.3.0（打包器 rollup -> rolldown）带来的**归属变化**重排，不是体积回归。背景：vite 8 只接受函数形态 manualChunks，原对象形态直接抛 TypeError: manualChunks is not a function，导致 vite build 失败、quality-check-frontend 整条红；该失败自 #44 合入起即存在，只因 CI 的 build-and-push 在那次 run 里步骤全 skipped（job 仍报 success）而一直未被发现。重排证据：① element-plus 与 @element-plus/icons-vue 全程为 2.11.7 / 2.3.2，未变；② tree-shaking 完好——ElCarousel/ElColorPicker/ElTransfer/ElCalendar/ElCascader/ElWatermark/ElTour 均不在产物中；③ JS 总计 448.1 仍低于 471、CSS 38.1 低于 50，无净增长。归属迁移量：element-plus 203 -> 235.7（+32.7），vendor 63 -> 29.4（-33.6，vue 运行时系被并入 element-plus 块），index 94 -> 29.4（-64.6，被 rolldown 拆成 35 个小块共 62.1，并新出 chat 17.9 / permission 8.8 两个分组）。四项预算合计由 387 降到 338，净收紧 49 KiB；叠加总计未动，本次整体属收紧。element-plus 取值 = 实测 235.7 + 8%（沿用本文件既定分组约定）；index/vendor/SystemAdmin/bootstrap 按 check-bundle-size 工具自身的建议收紧到实测 + 约 7%。遗留：chat 17.9 / permission 8.8 已超 8 KiB 但未设预算，后续另立条目补。",
   "totalJsGzipKib": 471,
   "totalCssGzipKib": 50,
   "groupGzipKib": {
-    "element-plus": 203,
-    "index": 94,
+    "element-plus": 255,
+    "index": 31,
     "archiveDownloadRunner": 71,
-    "vendor": 63,
-    "SystemAdmin": 27,
-    "bootstrap": 26,
+    "vendor": 31,
+    "SystemAdmin": 21,
+    "bootstrap": 11,
     "selection": 9
   }
 }

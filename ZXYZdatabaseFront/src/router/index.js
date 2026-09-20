@@ -151,16 +151,14 @@ router.afterEach((to, from) => {
   }
 })
 
-router.beforeEach(async (to, from, next) => {
+router.beforeEach(async (to, from) => {
   if (publicRouteNames.has(to.name)) {
-    next()
-    return
+    return true
   }
 
   const currentUserStore = useCurrentUserStore()
   if (!currentUserStore.profile) {
-    next({ name: 'login', query: { redirect: sanitizeRedirectPath(to.fullPath) } })
-    return
+    return { name: 'login', query: { redirect: sanitizeRedirectPath(to.fullPath) } }
   }
 
   const sessionStore = useSessionStore()
@@ -168,12 +166,10 @@ router.beforeEach(async (to, from, next) => {
   try {
     const session = await sessionStore.ensureSessionReady()
     if (session.shouldEnterNoTeam && to.name !== 'noTeam') {
-      next({ name: 'noTeam' })
-      return
+      return { name: 'noTeam' }
     }
     if (session.hasTeams && to.name === 'noTeam') {
-      next({ name: 'index' })
-      return
+      return { name: 'index' }
     }
   } catch (error) {
     // 判断是否为认证失败（401/403）
@@ -183,16 +179,14 @@ router.beforeEach(async (to, from, next) => {
       handleBusinessError(error, '登录状态已过期，请重新登录')
       sessionStore.resetSessionBootstrap()
       currentUserStore.clearAll()
-      next({ name: 'login', query: { redirect: sanitizeRedirectPath(to.fullPath) } })
-      return
+      return { name: 'login', query: { redirect: sanitizeRedirectPath(to.fullPath) } }
     }
     // 网络错误等非认证错误，仍跳转登录页避免在异常状态下访问页面
     handleBusinessError(error, '加载登录状态失败，请稍后重试')
-    next({ name: 'login', query: { redirect: sanitizeRedirectPath(to.fullPath) } })
-    return
+    return { name: 'login', query: { redirect: sanitizeRedirectPath(to.fullPath) } }
   }
 
-  next()
+  return true
 })
 
 export default router

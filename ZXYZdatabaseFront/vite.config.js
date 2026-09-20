@@ -51,9 +51,21 @@ export default defineConfig(({ mode }) => {
       sourcemap: false,
       rollupOptions: {
         output: {
-          manualChunks: {
-            'element-plus': ['element-plus'],
-            vendor: ['vue', 'vue-router', 'pinia', 'axios'],
+          // Vite 8 的打包器换成 rolldown 后，manualChunks **只接受函数形态**：
+          // 原对象写法（{ 'element-plus': [...], vendor: [...] }）会直接
+          // `TypeError: manualChunks is not a function` 让 `vite build` 失败，
+          // 而 build 是 quality-check-frontend 的必需步骤 ⇒ 整条前端门禁红。
+          // 这里保持与对象写法等价的语义：node_modules 里 element-plus 系进
+          // element-plus 块，vue 运行时系进 vendor 块，其余交给默认算法。
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return undefined
+            if (/(?:^|[/\\])node_modules[/\\](?:@element-plus|element-plus)[/\\]/.test(id)) {
+              return 'element-plus'
+            }
+            if (/(?:^|[/\\])node_modules[/\\](?:vue|@vue|vue-router|pinia|axios)[/\\]/.test(id)) {
+              return 'vendor'
+            }
+            return undefined
           }
         }
       }
