@@ -55,7 +55,7 @@
         layout="total, sizes, prev, pager, next"
         :current-page="page"
         :page-size="pageSize"
-        :page-sizes="[10, 20, 50]"
+        :page-sizes="PAGE_SIZE_OPTIONS"
         :total="total"
         @current-change="handleCurrentChange"
         @size-change="handleSizeChange"
@@ -85,6 +85,7 @@
 import { computed, ref, watch } from 'vue'
 
 import FileContextMenu from '@/components/FileContextMenu.vue'
+import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import { useExplorerTableInteractions } from '@/composables/useExplorerTableInteractions'
 import { useRecycleBinList } from '@/composables/useRecycleBinList'
 import { getFileIcon } from '@/models/file'

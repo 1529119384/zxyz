@@ -1,6 +1,7 @@
 package uno.acloud.share.service.impl;
 
 import org.springframework.stereotype.Service;
+import uno.acloud.common.PageResult;
 import uno.acloud.share.dto.ShareCreateRequest;
 import uno.acloud.share.dto.ShareVerifyRequest;
 import uno.acloud.share.service.SharePort;
@@ -9,7 +10,6 @@ import uno.acloud.share.vo.ShareCreateResponse;
 import uno.acloud.share.vo.ShareDownloadResponseVO;
 import uno.acloud.share.vo.ShareFilesResponseItemVO;
 import uno.acloud.share.vo.ShareMyListItemVO;
-import uno.acloud.share.vo.ShareMyListResponseVO;
 import uno.acloud.share.vo.SharePublicInfoVO;
 
 import java.util.List;
@@ -35,7 +35,7 @@ public class ShareService implements SharePort {
     }
 
     @Override
-    public ShareMyListResponseVO getMyShares(Long userId, Integer page, Integer pageSize) {
+    public PageResult<ShareMyListItemVO> getMyShares(Long userId, Integer page, Integer pageSize) {
         return shareManageService.getMyShares(userId, page, pageSize);
     }
 

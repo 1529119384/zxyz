@@ -5,6 +5,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import uno.acloud.common.util.TransactionHelper;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.PageResult;
 import uno.acloud.common.ShareErrorCode;
 import uno.acloud.share.common.ShareStatus;
 import uno.acloud.exception.BusinessException;
@@ -18,7 +19,6 @@ import uno.acloud.share.infrastructure.entity.ShareItem;
 import uno.acloud.share.infrastructure.mapper.ShareMapper;
 import uno.acloud.share.vo.ShareCreateResponse;
 import uno.acloud.share.vo.ShareMyListItemVO;
-import uno.acloud.share.vo.ShareMyListResponseVO;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -31,6 +31,12 @@ import java.util.stream.Collectors;
 public class ShareManager {
 
     private static final String SHARE_PATH_PREFIX = "/s/";
+
+    /**
+     * 我的分享列表默认每页条数：与 ShareController#getMyShares 的 defaultValue = "10"
+     * 保持一致（PageResult.DEFAULT_PAGE_SIZE 是 20，两者语义不同，不能互相顶替）。
+     */
+    private static final int DEFAULT_PAGE_SIZE = 10;
 
     private final ShareMapper shareMapper;
     private final ShareValidator shareValidator;
@@ -112,18 +118,18 @@ public class ShareManager {
         });
     }
 
-    public ShareMyListResponseVO getMyShares(Long userId, Integer page, Integer pageSize) {
+    public PageResult<ShareMyListItemVO> getMyShares(Long userId, Integer page, Integer pageSize) {
         shareValidator.validateUserId(userId);
-        int safePage = page == null || page < 1 ? 1 : page;
-        int safePageSize = pageSize == null || pageSize < 1 ? 10 : pageSize;
+        int safePage = PageResult.normalizePage(page);
+        int safePageSize = normalizeSharePageSize(pageSize);
         int total = shareMapper.countByUserId(userId);
         if (total <= 0) {
-            return new ShareMyListResponseVO(0, List.<ShareMyListItemVO>of());
+            return PageResult.of(safePage, safePageSize, 0, List.<ShareMyListItemVO>of());
         }
 
-        int offset = (safePage - 1) * safePageSize;
+        int offset = PageResult.offsetOf(safePage, safePageSize);
         if (offset >= total) {
-            return new ShareMyListResponseVO(total, List.<ShareMyListItemVO>of());
+            return PageResult.of(safePage, safePageSize, total, List.<ShareMyListItemVO>of());
         }
 
         List<Share> shares = shareMapper.listPageByUserId(userId, offset, safePageSize);
@@ -131,7 +137,26 @@ public class ShareManager {
         List<ShareMyListItemVO> rows = shares.stream()
                 .map(this::toShareMyListItemVO)
                 .collect(Collectors.toList());
-        return new ShareMyListResponseVO(total, rows);
+        return PageResult.of(safePage, safePageSize, total, rows);
+    }
+
+    /**
+     * 我的分享列表的 pageSize 归一化。
+     *
+     * <p><b>为什么不直接用 PageResult.normalizePageSize</b>：它把「未指定」落成
+     * PageResult.DEFAULT_PAGE_SIZE（20），而本接口的历史默认值是 10
+     * （见 ShareController#getMyShares 的 defaultValue）。直接复用会把每页条数从 10
+     * 悄悄改成 20，属于契约外变更。</p>
+     *
+     * <p><b>上限是本接口原先缺的闸门</b>：旧实现只判 pageSize &lt; 1，调用方传一个极大的
+     * pageSize 就等于把分页接口恢复成「全表查询」（与 07-P0-2 里 admin 侧修的同一类问题）。
+     * 这里统一钳制到 PageResult.MAX_PAGE_SIZE。</p>
+     */
+    private static int normalizeSharePageSize(Integer pageSize) {
+        if (pageSize == null || pageSize < 1) {
+            return DEFAULT_PAGE_SIZE;
+        }
+        return Math.min(pageSize, PageResult.MAX_PAGE_SIZE);
     }
 
     public ShareMyListItemVO getShareDetail(Long shareId, Long userId) {

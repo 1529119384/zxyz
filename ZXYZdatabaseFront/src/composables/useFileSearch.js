@@ -1,6 +1,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import { searchFiles } from '@/api/files'
+import { normalizePageSize, resolvePageSize } from '@/constants/pagination'
 import { resolveSpaceRequestParams } from '@/composables/useCurrentSpaceContext'
 import { handleBusinessError } from '@/utils/error'
 
@@ -23,7 +24,7 @@ const EMPTY_SEARCH_RESULT = {
  * 文件搜索组合函数，提供防抖搜索、结果管理和搜索模式切换。
  *
  * @param {UseFileSearchOptions} options - 配置项。
- * @returns {{ list: import('vue').ComputedRef<Array>, loading: import('vue').Ref<boolean>, results: import('vue').Ref<Object>, total: import('vue').ComputedRef<number>, isSearchMode: import('vue').ComputedRef<boolean>, search: Function, resetResults: Function }} 文件搜索状态与操作方法。
+ * @returns {{ list: import('vue').ComputedRef<Array>, loading: import('vue').Ref<boolean>, results: import('vue').Ref<Object>, total: import('vue').ComputedRef<number>, isSearchMode: import('vue').ComputedRef<boolean>, search: Function, refresh: Function, resetResults: Function, handleCurrentChange: Function, handleSizeChange: Function }} 文件搜索状态与操作方法。
  */
 export function useFileSearch(options) {
   const { searchText, enabled, spaceContext, teamId, spaceType, projectId } = options
@@ -33,7 +34,7 @@ export function useFileSearch(options) {
   const list = computed(() => results.value.list)
   const total = computed(() => results.value.total || 0)
   const page = ref(1)
-  const pageSize = ref(20)
+  const pageSize = ref(resolvePageSize('fileSearch'))
   const isSearchMode = computed(() => Boolean(enabled?.value) && Boolean(searchText.value.trim()))
   const spaceParams = computed(() =>
     resolveSpaceRequestParams(spaceContext, {
@@ -138,6 +139,18 @@ export function useFileSearch(options) {
     }
   })
 
+  async function handleCurrentChange(nextPage) {
+    page.value = nextPage
+    await refresh()
+  }
+
+  async function handleSizeChange(nextPageSize) {
+    pageSize.value = normalizePageSize(nextPageSize)
+    // 换页长后停在原页码很可能越界，统一回到第 1 页（与 usePagedList 一致）。
+    page.value = 1
+    await refresh()
+  }
+
   return {
     list,
     loading,
@@ -149,5 +162,7 @@ export function useFileSearch(options) {
     search,
     refresh,
     resetResults,
+    handleCurrentChange,
+    handleSizeChange,
   }
 }

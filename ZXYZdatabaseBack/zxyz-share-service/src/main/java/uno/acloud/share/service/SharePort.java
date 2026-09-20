@@ -1,5 +1,6 @@
 package uno.acloud.share.service;
 
+import uno.acloud.common.PageResult;
 import uno.acloud.share.dto.ShareCreateRequest;
 import uno.acloud.share.dto.ShareVerifyRequest;
 import uno.acloud.share.service.model.ShareVerifyResult;
@@ -7,7 +8,6 @@ import uno.acloud.share.vo.ShareCreateResponse;
 import uno.acloud.share.vo.ShareDownloadResponseVO;
 import uno.acloud.share.vo.ShareFilesResponseItemVO;
 import uno.acloud.share.vo.ShareMyListItemVO;
-import uno.acloud.share.vo.ShareMyListResponseVO;
 import uno.acloud.share.vo.SharePublicInfoVO;
 import uno.acloud.share.vo.ShareVerifyResponseVO;
 
@@ -16,7 +16,7 @@ import java.util.List;
 public interface SharePort {
     ShareCreateResponse createShare(ShareCreateRequest request, Long userId);
 
-    ShareMyListResponseVO getMyShares(Long userId, Integer page, Integer pageSize);
+    PageResult<ShareMyListItemVO> getMyShares(Long userId, Integer page, Integer pageSize);
 
     ShareMyListItemVO getShareDetail(Long shareId, Long userId);
 

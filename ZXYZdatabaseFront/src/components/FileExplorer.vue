@@ -97,25 +97,25 @@
 
       <el-pagination
         v-if="isSearchMode"
-        v-model:current-page="fileSearch.page"
-        v-model:page-size="fileSearch.pageSize"
-        :page-sizes="[20, 50, 100, 200]"
+        :current-page="fileSearch.page"
+        :page-size="fileSearch.pageSize"
+        :page-sizes="SPACE_PAGE_SIZE_OPTIONS"
         :total="searchTotal"
         layout="total, sizes, prev, pager, next"
         class="pagination-bar"
-        @current-change="fileSearch.refresh"
-        @size-change="fileSearch.refresh"
+        @current-change="fileSearch.handleCurrentChange"
+        @size-change="fileSearch.handleSizeChange"
       />
       <el-pagination
         v-else
-        v-model:current-page="currentPage"
-        v-model:page-size="pageSize"
-        :page-sizes="[20, 50, 100, 200]"
+        :current-page="currentPage"
+        :page-size="pageSize"
+        :page-sizes="SPACE_PAGE_SIZE_OPTIONS"
         :total="total"
         layout="total, sizes, prev, pager, next"
         class="pagination-bar"
-        @current-change="spaceFileList.refresh"
-        @size-change="spaceFileList.refresh"
+        @current-change="handleCurrentChange"
+        @size-change="handleSizeChange"
       />
     </div>
 
@@ -144,6 +144,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import FileContextMenu from '@/components/FileContextMenu.vue'
+import { SPACE_PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import { useProvidedSpaceContext } from '@/composables/useCurrentSpaceContext'
 import { useExplorerTableInteractions } from '@/composables/useExplorerTableInteractions'
 import { useFileNavigation } from '@/composables/useFileNavigation'
@@ -199,7 +200,8 @@ const spaceFileList = useSpaceFileList({
   spaceContext,
 })
 
-const { currentPage, pageSize, total, resetPage } = spaceFileList
+const { currentPage, pageSize, total, resetPage, handleCurrentChange, handleSizeChange } =
+  spaceFileList
 
 const fileSearch = useFileSearch({
   searchText: computed(() => props.searchText),

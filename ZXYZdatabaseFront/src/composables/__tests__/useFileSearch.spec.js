@@ -201,4 +201,101 @@ describe('useFileSearch', () => {
     expect(list.value).toEqual([])
     expect(total.value).toBe(0)
   })
+
+  // 07-P1-4：分页事件从「模板直接绑 refresh」改为显式 handler（并把换页长回第 1 页的语义补上）。
+  it('handleCurrentChange 用新页码重新搜索', async () => {
+    searchFiles.mockResolvedValue({ data: { total: 41, list: [{ id: 1 }] } })
+
+    const searchText = ref('关键词')
+    const { page, handleCurrentChange } = useFileSearch({
+      searchText,
+      enabled: ref(true),
+      spaceContext: null,
+      teamId: ref(null),
+      spaceType: ref(1),
+      projectId: ref(null),
+    })
+
+    await vi.advanceTimersByTimeAsync(500)
+    await vi.waitFor(() => expect(searchFiles).toHaveBeenCalledTimes(1))
+
+    await handleCurrentChange(3)
+
+    expect(page.value).toBe(3)
+    expect(searchFiles).toHaveBeenLastCalledWith('关键词', 3, 20, expect.any(Object))
+  })
+
+  it('handleSizeChange 换页长后回到第 1 页', async () => {
+    searchFiles.mockResolvedValue({ data: { total: 100, list: [] } })
+
+    const searchText = ref('关键词')
+    const { page, pageSize, handleCurrentChange, handleSizeChange } = useFileSearch({
+      searchText,
+      enabled: ref(true),
+      spaceContext: null,
+      teamId: ref(null),
+      spaceType: ref(1),
+      projectId: ref(null),
+    })
+
+    await vi.advanceTimersByTimeAsync(500)
+    await handleCurrentChange(4)
+    expect(page.value).toBe(4)
+
+    await handleSizeChange(50)
+
+    expect(pageSize.value).toBe(50)
+    expect(page.value).toBe(1)
+    expect(searchFiles).toHaveBeenLastCalledWith('关键词', 1, 50, expect.any(Object))
+  })
+
+  it('handleSizeChange 把超限页长钳到上限', async () => {
+    searchFiles.mockResolvedValue({ data: { total: 0, list: [] } })
+
+    const searchText = ref('关键词')
+    const { pageSize, handleSizeChange } = useFileSearch({
+      searchText,
+      enabled: ref(true),
+      spaceContext: null,
+      teamId: ref(null),
+      spaceType: ref(1),
+      projectId: ref(null),
+    })
+
+    await vi.advanceTimersByTimeAsync(500)
+    await handleSizeChange(9999)
+
+    // 与后端 PageResult.MAX_PAGE_SIZE 同值。
+    expect(pageSize.value).toBe(200)
+  })
+
+  // 卸载清理此前一直没被走到：它必须清掉**未触发**的防抖定时器，
+  // 否则组件都销毁了仍会迟 500ms 发一次搜索请求。
+  it('组件卸载时清掉未触发的防抖定时器，卸载后不再发请求', async () => {
+    const { createApp, nextTick } = await import('vue')
+
+    const searchText = ref('')
+    const app = createApp({
+      setup() {
+        useFileSearch({
+          searchText,
+          enabled: ref(true),
+          spaceContext: null,
+          teamId: ref(null),
+          spaceType: ref(1),
+          projectId: ref(null),
+        })
+        return () => {}
+      },
+    })
+    app.mount(document.createElement('div'))
+
+    searchText.value = '关键词'
+    await nextTick()
+
+    app.unmount()
+
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(searchFiles).not.toHaveBeenCalled()
+  })
 })

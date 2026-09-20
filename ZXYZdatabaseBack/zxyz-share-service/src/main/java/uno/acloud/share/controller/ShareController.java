@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import uno.acloud.common.PageResult;
 import uno.acloud.common.Result;
 import uno.acloud.common.audit.Log;
 import uno.acloud.common.SystemPermissionCodes;
@@ -23,7 +24,6 @@ import uno.acloud.share.dto.ShareUpdateRequest;
 import uno.acloud.share.service.SharePort;
 import uno.acloud.share.vo.ShareCreateResponse;
 import uno.acloud.share.vo.ShareMyListItemVO;
-import uno.acloud.share.vo.ShareMyListResponseVO;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -43,10 +43,21 @@ public class ShareController {
         return Result.of(shareService.createShare(request, userId));
     }
 
+    /**
+     * 查询我的分享列表。
+     *
+     * <p>信封自 07-P1-4 起统一为 {@link PageResult}（page / pageSize / total / list），
+     * 与文件列表、回收站、审计日志三处一致；此前那个只回 total + rows 的专用响应 VO
+     * 是全库唯一的分页特例，已删除（背景见 ISSUE/07 与 ISSUE/32 的 P1-4）。</p>
+     *
+     * <p>归一化与上限钳制（{@link PageResult#MAX_PAGE_SIZE}）统一在
+     * {@code ShareManager#getMyShares} 内完成，这里只声明默认值。默认 pageSize 是 10，
+     * 与 {@code ShareManager.DEFAULT_PAGE_SIZE} 必须保持一致。</p>
+     */
     @GetMapping
     @Operation(summary = "查询我的分享列表")
     @SaCheckPermission(SystemPermissionCodes.SHARE_READ)
-    public Result<ShareMyListResponseVO> getMyShares(@CurrentUser Long userId,
+    public Result<PageResult<ShareMyListItemVO>> getMyShares(@CurrentUser Long userId,
                               @RequestParam(required = false, defaultValue = "1") Integer page,
                               @RequestParam(required = false, defaultValue = "10") Integer pageSize) {
         return Result.of(shareService.getMyShares(userId, page, pageSize));

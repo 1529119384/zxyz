@@ -150,12 +150,27 @@ function mapMyShareRecord(item = {}) {
 }
 
 /**
- * @param {{ total?: number|string|null, rows?: RawShareRecord[] }} [data]
+ * 把后端「我的分享」响应归一化成统一分页信封。
+ *
+ * 07-P1-4 起后端把 {total, rows} 换成了 zxyz-common 的 PageResult{page, pageSize, total, list}
+ * （与文件列表、回收站、审计日志三处一致）。这里**同时认 list 与 rows** 是刻意的降级保护：
+ * 前后端同批上线时浏览器可能仍持有旧的 chunk，或在途请求正好跨过部署时刻 ——
+ * 只认 list 会让「我的分享」整页空白。等线上稳定后可以删掉 rows 分支。
+ *
+ * @param {{ page?: number|string|null, pageSize?: number|string|null, total?: number|string|null, list?: RawShareRecord[], rows?: RawShareRecord[] }} [data]
  */
 export function mapMyShareRecords(data = {}) {
+  const rawRecords = Array.isArray(data?.list)
+    ? data?.list
+    : Array.isArray(data?.rows)
+      ? data?.rows
+      : []
+
   return {
+    page: Number(data?.page) || 1,
+    pageSize: Number(data?.pageSize) || 0,
     total: Number(data?.total) || 0,
-    rows: Array.isArray(data?.rows) ? data?.rows.map(mapMyShareRecord) : [],
+    list: rawRecords.map(mapMyShareRecord),
   }
 }
 

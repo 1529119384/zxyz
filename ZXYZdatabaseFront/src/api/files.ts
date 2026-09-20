@@ -1,3 +1,4 @@
+import { DEFAULT_PAGE_SIZE } from '@/constants/pagination'
 import { mapRecycleFileEntries, mapSearchFileEntries, mapSpaceFileEntries } from '@/models/file'
 import rawRequest, { UPLOAD_REQUEST_TIMEOUT } from '@/utils/request'
 import type { AxiosRequestConfig } from 'axios'
@@ -252,7 +253,7 @@ export const fetchFileList = async (
 export const searchFiles = async (
   keyword: string,
   page = 1,
-  pageSize = 20,
+  pageSize = DEFAULT_PAGE_SIZE,
   options: SearchOptions = {},
 ): Promise<ApiResult<PagedFileResult>> => {
   const { signal, ...paramsOptions } = options

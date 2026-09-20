@@ -69,7 +69,7 @@
         layout="total, sizes, prev, pager, next"
         :current-page="page"
         :page-size="pageSize"
-        :page-sizes="[10, 20, 50]"
+        :page-sizes="PAGE_SIZE_OPTIONS"
         :total="total"
         @current-change="handleCurrentChange"
         @size-change="handleSizeChange"
@@ -81,6 +81,7 @@
 <script setup>
 import { defineOptions } from 'vue'
 
+import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import { SHARE_STATUS } from '@/constants/shareStatus'
 import { formatShareExpireText } from '@/models/share'
 import { useMyShareList } from '@/composables/useMyShareList'
