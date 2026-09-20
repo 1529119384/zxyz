@@ -4,7 +4,7 @@
     "path" : "/api/email/internal/records",
     "requestBodyType" : null,
     "requestBodyJsonFields" : [ ],
-    "responseDataType" : "uno.acloud.email.dto.EmailRecordPageVO"
+    "responseDataType" : "uno.acloud.common.PageResult<uno.acloud.email.vo.EmailRecordVO>"
   }, {
     "method" : "GET",
     "path" : "/api/email/internal/records/{id}",

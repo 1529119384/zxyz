@@ -36,8 +36,11 @@ public class EmailRecordQueryService {
      * （与文件列表、回收站、分享、审计日志四处对齐）。前端 {@code EmailRecordPanel.vue}
      * 已同批改为 {@code list} 优先、回落 {@code records}，部署窗口期内不会出现「记录全空」。</p>
      *
-     * <p>顺带把页长上限从硬编码的 100 提到 {@link PageResult#MAX_PAGE_SIZE}（前端选项上界 200），
-     * 并把原来的 {@code normalizePageSize(pageSize, ...)}（拼写少个 s，与后端其他类型不一致）去掉。</p>
+     * <p>顺带把页长上限从硬编码的 {@code 100} 提到 {@link PageResult#MAX_PAGE_SIZE}（=200，
+     * 与前端页长选项上界一致），并删掉本类那两个私有归一化方法（{@code normalizePage} /
+     * {@code normalizePageSize}）—— 它们与 {@link PageResult} 的同名方法逐字同构，
+     * 只是把上限写死成 100，正是「用户选 200 后中后段数据翻不到」的来源。
+     * 默认页长仍取本接口的历史口径 20。</p>
      */
     public PageResult<EmailRecordVO> listRecords(String status, String recipient, String businessType, Integer page, Integer pageSize) {
         int safePage = PageResult.normalizePage(page);
