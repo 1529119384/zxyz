@@ -22,7 +22,7 @@ const h = vi.hoisted(() => ({
   },
 }))
 
-// ---- 页面打桩（18 个懒加载出口，逐个桩掉）----
+// ---- 页面打桩（19 个懒加载出口，逐个桩掉）----
 vi.mock('@/views/layout/index.vue', h.stubView)
 vi.mock('@/views/index/index.vue', h.stubView)
 vi.mock('@/views/login/index.vue', h.stubView)
@@ -41,6 +41,7 @@ vi.mock('@/views/projects/index.vue', h.stubView)
 vi.mock('@/views/join/team.vue', h.stubView)
 vi.mock('@/views/share/index.vue', h.stubView)
 vi.mock('@/views/no-team/index.vue', h.stubView)
+vi.mock('@/views/not-found/index.vue', h.stubView)
 
 // ---- store 打桩 ----
 vi.mock('@/store/currentUser', () => ({
@@ -65,9 +66,16 @@ vi.mock('@/store/chat', () => ({
 // ⚠️ 必须返回**真函数**：`requireSystemAdminRole()` 是在模块顶层被调用的，
 //    若桩成 undefined，`beforeEnter` 会变成 undefined，
 //    `route-guard-coverage.spec.js` 的「声明权限 meta ⇒ 必须有 beforeEnter」就会失效。
+// ⚠️ 桩体必须用 **return 风格**（vue-router 5 已废弃 `next()`）：
+//    早先这里写的是 `(to, from, next) => next()`，于是每跑一次本文件就刷一片
+//    `[VUE_ROUTER_R0025] The next() callback ... is deprecated`。真实守卫
+//    （src/router/guards/permission.js）其实早就改成了 return 风格，
+//    告警**只**来自这个桩 ⇒ 会让人误判成「生产代码还没改完」。桩也要跟上。
 vi.mock('@/router/guards/permission', () => ({
-  requireSystemAdminRole: () => (to, from, next) => next(),
-  requirePermissionCenter: (to, from, next) => next(),
+  // 工厂：路由表顶层 `requireSystemAdminRole()` 会调用它，须返回守卫函数
+  requireSystemAdminRole: () => () => true,
+  // 直接作为 `beforeEnter: requirePermissionCenter` 使用 ⇒ 它本身就是守卫函数
+  requirePermissionCenter: () => true,
 }))
 
 import router from '@/router/index'
@@ -92,17 +100,51 @@ describe('路由导航（全局守卫的真实行为）', () => {
   })
 
   it('protocol-relative 注入（/%2F%2F…）的回跳参数被降级为 /index（不外跳）', async () => {
-    // 该路径不匹配任何路由，vue-router 会打「No match found」告警。
-    // 本用例正是要覆盖这种「畸形路径」输入 ⇒ 告警是预期的，
-    // 故临时静音，而不是让它污染 CI 日志。
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    try {
-      await router.push('/%2F%2Fevil.example.com/steal')
-    } finally {
-      warn.mockRestore()
-    }
+    // 本用例只钉一件事：**回跳参数必须被清洗**。
+    // `/%2F%2Fevil.example.com/steal` 解码后是 `//evil.example.com/steal`，
+    // 若原样写进 `?redirect=` 就是一个可用的外跳（开放重定向）载荷。
+    //
+    // 📌 2026-09-20 加了 catch-all 路由后，本用例的**前提变了**：
+    //    该路径现在由 `notFound` 接住，不再产生 vue-router 的「No match found」告警
+    //    ⇒ 原先为静音该告警而加的 `console.warn` spy 已成**死代码**，一并删除。
+    //      留着一个永不触发的 spy 比删掉更危险：它会让人以为这里仍在验证告警行为。
+    //    断言本身不受影响 —— 清洗发生在 redirect 参数上，与路径是否匹配路由无关。
+    await router.push('/%2F%2Fevil.example.com/steal')
     expect(router.currentRoute.value.name).toBe('login')
     expect(router.currentRoute.value.query.redirect).toBe('/index')
+  })
+
+  it('未匹配路径（已登录）→ 落到兜底 404 路由，不再是白屏', async () => {
+    loginReady()
+    await router.push('/definitely-not-a-real-route')
+    expect(router.currentRoute.value.name).toBe('notFound')
+    // 404 不是被守卫重定向过来的，不应带 redirect 参数
+    expect(router.currentRoute.value.query.redirect).toBeUndefined()
+  })
+
+  it('未匹配路径（未登录）→ 仍统一回登录页（该路径存不存在对未认证者不可区分）', async () => {
+    // 这是一条**有意的设计约束**：`notFound` 刻意不在 `publicRouteNames` 里。
+    // 好处是未认证访问者对「路径存在」与「路径不存在」拿到完全一致的响应，
+    // 无法靠「有没有 404」探出路由表的存在性。
+    // 若将来有人把 notFound 加进白名单，本用例会失败 ⇒ 强制那次改动走一次 review，
+    // 而不是让这个副作用悄无声息地生效。
+    await router.push('/definitely-not-a-real-route')
+    expect(router.currentRoute.value.name).toBe('login')
+    expect(router.currentRoute.value.query.redirect).toBe('/definitely-not-a-real-route')
+  })
+
+  it('catch-all 不吞噬任何已声明的路由（加 catch-all 的头号风险）', async () => {
+    loginReady()
+    const shadowCheck = [
+      ['/', 'index'], // 根路径：自身有 redirect，最终落在 index
+      ['/projects', 'projects'], // layout 下的普通静态子路由
+      ['/setting/permissions', 'permissionCenter'], // 嵌套两层、且隔壁有 alias 的子路由
+      ['/s/abc', 'sharePublic'], // 带动态段的公开路由（形态上最像 catch-all）
+    ]
+    for (const [target, expected] of shadowCheck) {
+      await router.push(target)
+      expect(router.currentRoute.value.name, `${target} 被 catch-all 吃掉了`).toBe(expected)
+    }
   })
 
   it('公开路由（分享页 / 注册页）免登录即可进入', async () => {

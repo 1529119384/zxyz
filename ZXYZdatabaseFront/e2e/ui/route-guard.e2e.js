@@ -34,6 +34,16 @@ test.describe('路由守卫（真浏览器 + 打桩后端）', () => {
     expect(new URL(page.url()).searchParams.get('redirect')).toBe('/projects')
   })
 
+  test('未登录访问不存在的路径 → 同样回落登录页，不向未认证者暴露「该路径不存在」', async ({ page }) => {
+    // 这条钉住一个**有意的设计约束**：兜底路由 notFound 刻意不在 publicRouteNames 里。
+    // 加了 catch-all 之后最容易出的偏差，就是让未认证用户直接看到 404 页 ——
+    // 那样一来「路径存在与否」就成了可探测信号（存在 ⇒ 跳登录，不存在 ⇒ 404），
+    // 等于把路由表暴露给未认证访问者。
+    await page.goto('/no-such-page-abc-123', { waitUntil: 'domcontentloaded' })
+    await expect(page).toHaveURL(/\/login/)
+    expect(new URL(page.url()).searchParams.get('redirect')).toBe('/no-such-page-abc-123')
+  })
+
   test('公开路由 /login 直接渲染，不被守卫拦截', async ({ page }) => {
     await page.goto('/login', { waitUntil: 'domcontentloaded' })
     await expect(page).toHaveURL(/\/login$/)

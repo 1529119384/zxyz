@@ -26,6 +26,7 @@ const Projects = () => import('@/views/projects/index.vue')
 const JoinTeam = () => import('@/views/join/team.vue')
 const SharePublic = () => import('@/views/share/index.vue')
 const NoTeam = () => import('@/views/no-team/index.vue')
+const NotFound = () => import('@/views/not-found/index.vue')
 
 // 导出以便 route-guard-coverage.spec.js 断言「白名单是显式且最小的」
 export const publicRouteNames = new Set(['login', 'register', 'sharePublic'])
@@ -141,6 +142,18 @@ const router = createRouter({
     { path: '/register', name: 'register', component: Register },
     { path: '/no-team', name: 'noTeam', component: NoTeam },
     { path: '/s/:shareKey', name: 'sharePublic', component: SharePublic },
+    // ⚠️ 必须放在**最后一条**：`/:pathMatch(.*)*` 是 catch-all，匹配优先级最低，
+    //    但仍会被 vue-router 的评分规则排序 —— 放在前面虽未必立刻出错，
+    //    却会让「谁兜谁」变得依赖评分细节而非阅读顺序，review 时极易误判。
+    //
+    // 兜底未匹配路径（ISSUE/28 §5 / §7-C）：此前无 catch-all ⇒ 未匹配路径白屏。
+    //
+    // 刻意**不加入** `publicRouteNames`（见下方 beforeEach 的第一分支）：
+    //   未登录用户命中兜底时仍走「统一回登录页」这条既有路径，
+    //   这样**未认证访问者对「路径存在」与「路径不存在」得到完全一致的响应**，
+    //   不会因为「是否 404」被探出路由表的存在性。
+    //   本页真正修复的是「**已登录**用户输错路径 ⇒ 白屏」这一条。
+    { path: '/:pathMatch(.*)*', name: 'notFound', component: NotFound },
   ],
 })
 
