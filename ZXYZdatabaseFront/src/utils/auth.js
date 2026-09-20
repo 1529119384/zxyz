@@ -12,7 +12,3 @@ const LOGIN_USER_KEY = 'loginUser'
 export function clearToken() {
   localStorage.removeItem(LOGIN_USER_KEY)
 }
-
-export function clearLoginUser() {
-  clearToken()
-}

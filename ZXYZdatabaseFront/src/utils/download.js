@@ -17,10 +17,6 @@ function triggerDownload(href, fileName, options = {}) {
   document.body.removeChild(link)
 }
 
-export function triggerDownloadByUrl(url, fileName, options = {}) {
-  triggerDownload(url, fileName, options)
-}
-
 export function triggerDownloadByBlob(blob, fileName, options = {}) {
   const objectUrl = URL.createObjectURL(blob)
 
