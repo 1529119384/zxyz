@@ -29,7 +29,7 @@
     "element-plus": "^2.11.7",
     "pinia": "^3.0.4",
     "vue": "^3.5.42",
-    "vue-router": "^4.6.3"
+    "vue-router": "^5.3.1"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.2.2",
