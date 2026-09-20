@@ -3,6 +3,7 @@ package uno.acloud.team.service.impl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -14,6 +15,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.lock.DistributedLockTemplate;
 import static uno.acloud.common.TeamErrorCode.*;
 import uno.acloud.common.UserErrorCode;
 import uno.acloud.common.TeamPermissionCodes;
@@ -106,7 +108,8 @@ class EnterpriseTeamServiceTest {
                 teamMapper, quotaMapper, userServiceClient, projectServiceClient,
                 fileServiceClient, passwordEncoder, teamPermissionService,
                 teamFileAccessService, teamEventPublisher, avatarUploadSignService,
-                redissonClient, teamEntityMapper, transactionHelper, teamUserDefaultSyncMapper, 100, 107374182400L, 6);
+                new DistributedLockTemplate(redissonClient), teamEntityMapper, transactionHelper,
+                teamUserDefaultSyncMapper, 100, 107374182400L, 6);
         // Mock TransactionHelper to execute lambdas directly (simulates transactional behavior)
         lenient().when(transactionHelper.execute(any())).thenAnswer(invocation -> {
             TransactionHelper.TransactionCallback<?> callback = invocation.getArgument(0);
@@ -663,5 +666,31 @@ class EnterpriseTeamServiceTest {
 
         // User should never be created
         verify(userServiceClient, never()).createTeamUser(anyString(), anyString(), any(), any(), any(), any());
+    }
+
+    // ==================== P1-2 回归：用户锁必须包住整个事务 ====================
+
+    @Test
+    void createMember_userLockMustWrapWholeTransaction() throws Exception {
+        // 修复前：用户锁在 upsertMember 内部抢（此时事务已打开），且解锁早于提交
+        //   ⇒ ① 锁等待连带持有数据库连接与行锁；② 「一个账号只能属于一个团队」的
+        //      TOCTOU 实际没被拦住。
+        // 修复后：抢锁 → 开事务 → 提交 → 释放。本用例用调用顺序把这条不变式钉住：
+        // 一旦有人把锁挪回事务内部，tryLock 会出现在 execute 之后 ⇒ 立刻变红。
+        Long teamId = 10L;
+        Long operatorUserId = 1L;
+        Long newUserId = 2L;
+        CreateTeamMemberRequest request = newTeamMemberRequest();
+
+        stubSuccessfulCreateMember(teamId, operatorUserId, newUserId, request);
+        // getLock 每次都返回同一个桩实例，借此取到辅助方法内部创建的用户锁
+        RLock userLock = redissonClient.getLock("zxyz:team:member:user:" + newUserId);
+
+        enterpriseTeamService.createMember(teamId, request, operatorUserId);
+
+        InOrder inOrder = inOrder(userLock, transactionHelper);
+        inOrder.verify(userLock).tryLock(5L, 30L, TimeUnit.SECONDS);
+        inOrder.verify(transactionHelper).execute(any());
+        inOrder.verify(userLock).unlock();
     }
 }

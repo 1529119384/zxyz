@@ -7,6 +7,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.lock.DistributedLockTemplate;
 import uno.acloud.exception.BusinessException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -28,7 +29,7 @@ class ConversationLockManagerTest {
         when(lock.tryLock(2, 30, java.util.concurrent.TimeUnit.SECONDS)).thenReturn(true);
         when(lock.isHeldByCurrentThread()).thenReturn(true);
 
-        ConversationLockManager manager = new ConversationLockManager(redissonClient);
+        ConversationLockManager manager = new ConversationLockManager(new DistributedLockTemplate(redissonClient));
         String result = manager.withLock("conversation-message:1", () -> "ok");
 
         assertEquals("ok", result);
@@ -40,7 +41,7 @@ class ConversationLockManagerTest {
         when(redissonClient.getLock("zxyz:im:lock:conversation:conversation-read:9")).thenReturn(lock);
         when(lock.tryLock(2, 30, java.util.concurrent.TimeUnit.SECONDS)).thenReturn(false);
 
-        ConversationLockManager manager = new ConversationLockManager(redissonClient);
+        ConversationLockManager manager = new ConversationLockManager(new DistributedLockTemplate(redissonClient));
         BusinessException exception = assertThrows(BusinessException.class,
                 () -> manager.withLock("conversation-read:9", () -> "never"));
 

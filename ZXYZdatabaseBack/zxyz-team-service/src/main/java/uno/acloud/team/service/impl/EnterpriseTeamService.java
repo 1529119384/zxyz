@@ -1,8 +1,6 @@
 package uno.acloud.team.service.impl;
 
 import lombok.extern.slf4j.Slf4j;
-import org.redisson.api.RLock;
-import org.redisson.api.RedissonClient;
 import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -11,6 +9,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationAdapter;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
+import uno.acloud.common.lock.DistributedLockTemplate;
 import uno.acloud.common.util.TransactionHelper;
 import uno.acloud.common.util.TransactionUtils;
 import uno.acloud.common.ErrorCode;
@@ -52,7 +51,6 @@ import uno.acloud.dto.UserInfoDTO;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -83,7 +81,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
     private final TeamFileAccessPort teamFileAccessService;
     private final TeamEventPublisher teamEventPublisher;
     private final AvatarUploadSignService avatarUploadSignService;
-    private final RedissonClient redissonClient;
+    private final DistributedLockTemplate lockTemplate;
     private final TeamEntityMapper teamEntityMapper;
     private final TransactionHelper transactionHelper;
     private final TeamUserDefaultSyncMapper teamUserDefaultSyncMapper;
@@ -101,7 +99,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
                                  TeamFileAccessPort teamFileAccessService,
                                  TeamEventPublisher teamEventPublisher,
                                  AvatarUploadSignService avatarUploadSignService,
-                                 RedissonClient redissonClient,
+                                 DistributedLockTemplate lockTemplate,
                                  TeamEntityMapper teamEntityMapper,
                                  TransactionHelper transactionHelper,
                                  TeamUserDefaultSyncMapper teamUserDefaultSyncMapper,
@@ -118,7 +116,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
         this.teamFileAccessService = teamFileAccessService;
         this.teamEventPublisher = teamEventPublisher;
         this.avatarUploadSignService = avatarUploadSignService;
-        this.redissonClient = redissonClient;
+        this.lockTemplate = lockTemplate;
         this.teamEntityMapper = teamEntityMapper;
         this.transactionHelper = transactionHelper;
         this.teamUserDefaultSyncMapper = teamUserDefaultSyncMapper;
@@ -133,25 +131,10 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
         String ownerUsername = requireText(request == null ? null : request.getOwnerUsername(), "大管理员用户名不能为空");
         String ownerPassword = normalizePassword(request == null ? null : request.getOwnerPassword());
 
-        // Distributed lock on team name to prevent TOCTOU race on duplicate team creation
-        RLock lock = redissonClient.getLock("zxyz:team:create:" + teamName);
-        boolean acquired = false;
-        try {
-            acquired = lock.tryLock(LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS, TimeUnit.SECONDS);
-            if (!acquired) {
-                throw new BusinessException(ErrorCode.CONCURRENT_OPERATION, "操作过于频繁，请稍后重试");
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "操作被中断");
-        }
-        try {
-            return doCreateTeam(request, teamName, ownerUsername, ownerPassword);
-        } finally {
-            if (acquired && lock.isHeldByCurrentThread()) {
-                lock.unlock();
-            }
-        }
+        // 锁 ①：团队名 —— 防止并发重复建团队。
+        // 键与持有区间不要随意改：必须覆盖 doCreateTeam 全程（含其内部事务与 afterCommit 事件）。
+        return lockTemplate.withLock("zxyz:team:create:" + teamName, LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS,
+                () -> doCreateTeam(request, teamName, ownerUsername, ownerPassword));
     }
 
     TeamVO doCreateTeam(CreateTeamRequest request, String teamName, String ownerUsername, String ownerPassword) {
@@ -177,9 +160,17 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
         }
         Long ownerId = owner.getId();
 
+        // P1-2 缺陷修复：owner 的「一人一团队」用户锁必须**包住整个事务**，
+        // 不能在事务已经打开之后才去抢（原实现放在 upsertMember 内部）。修复前的两处问题：
+        //   ① tryLock 最长等 5 秒，而它发生在事务内部 ⇒ 数据库连接与行锁被连带持有；
+        //   ② unlock 发生在事务提交**之前** ⇒ 并发建团队时另一方在 countCurrentMemberships
+        //      里读不到本事务尚未提交的成员行，「一个账号只能属于一个团队」的 TOCTOU
+        //      实际没被拦住（只剩唯一索引兜底）。
+        // 现顺序：抢锁 → 开事务 → 提交 → 释放锁，不变式才真正成立。
         // DB operations — inside TransactionTemplate via TransactionHelper
         // TransactionTemplate 提供活动事务，registerSynchronization 直接注册，无需 isActualTransactionActive 检查
-        Long teamId = transactionHelper.execute(status -> {
+        Long teamId = lockTemplate.withLock("zxyz:team:member:user:" + ownerId,
+                LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS, () -> transactionHelper.execute(status -> {
             // P2-A4: 跨服务写孤儿数据补偿框架
             // createTeamUser 在事务外已调用，若本地事务回滚，user-service 用户将成为孤儿。
             // 这里只注册「回滚补偿」：回滚时删除已创建的 user-service 用户。
@@ -238,7 +229,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
             );
 
             return team.getId();
-        });
+        }));
 
         // Event — after transaction commit
         // 批次 3：团队已经建好了，事件发不出去（RabbitMQ 抖动 / 重试耗尽）不该把创建操作报成失败。
@@ -301,18 +292,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
         teamFileAccessService.check(operatorUserId, teamId, TeamPermissionCodes.TEAM_MEMBER_CREATE);
         Team team = requireTeam(teamId);
 
-        RLock lock = redissonClient.getLock("zxyz:team:member:" + teamId);
-        boolean acquired = false;
-        try {
-            acquired = lock.tryLock(LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS, TimeUnit.SECONDS);
-            if (!acquired) {
-                throw new BusinessException(ErrorCode.CONCURRENT_OPERATION, "操作过于频繁，请稍后重试");
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "操作被中断");
-        }
-        try {
+        return lockTemplate.withLock("zxyz:team:member:" + teamId, LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS, () -> {
             TeamQuota quota = quotaMapper.getByTeamId(teamId);
             int memberLimit = quota == null ? defaultMemberLimit : quota.getMemberLimit();
             if (teamMapper.countOccupiedMembers(teamId) >= memberLimit) {
@@ -338,7 +318,9 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
             Long userId = user.getId();
 
             // DB operations — inside transaction via TransactionHelper
-            TeamMemberVO result = transactionHelper.execute(status -> {
+            // P1-2 缺陷修复：与 doCreateTeam 同一形态 —— 用户锁包住整个事务（抢锁 → 提交 → 释放）。
+            TeamMemberVO result = lockTemplate.withLock("zxyz:team:member:user:" + userId,
+                    LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS, () -> transactionHelper.execute(status -> {
                 // P2-A4: 跨服务写孤儿数据补偿框架 —— 与 doCreateTeam 完全同一形态。
                 // createTeamUser 在事务外已调用；若本地事务回滚（例如 upsertMember 判「一个账号只能属于
                 // 一个团队」、或创建后读回成员失败），user-service 里这个新用户既没有团队成员行也没有角色
@@ -357,18 +339,14 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
                     log.debug("TransactionSynchronizationManager 无活动事务，跳过成员创建补偿注册", e);
                 }
                 return createMemberInTransaction(teamId, userId, user, request);
-            });
+            }));
             // MQ publish after transaction commit
             // 批次 3：成员已经落库，事件发不出去不该把「加成员」报成失败 ——
             // 用户重试只会撞「用户名已存在」，反而更难理解。
             TransactionUtils.runAfterCommit("成员创建后发布事件 teamId=" + teamId + ", userId=" + userId,
                     () -> teamEventPublisher.publishMemberCreated(teamId, user, request));
             return result;
-        } finally {
-            if (acquired && lock.isHeldByCurrentThread()) {
-                lock.unlock();
-            }
-        }
+        });
     }
 
     private TeamMemberVO createMemberInTransaction(Long teamId, Long userId, UserInfoDTO user, CreateTeamMemberRequest request) {
@@ -387,18 +365,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
     public TeamMemberVO updateMemberStatus(Long teamId, Long targetUserId, UpdateTeamMemberStatusRequest request, Long operatorUserId) {
         teamFileAccessService.check(operatorUserId, teamId, TeamPermissionCodes.TEAM_MEMBER_REMOVE);
 
-        RLock lock = redissonClient.getLock("zxyz:team:member:" + teamId);
-        boolean acquired = false;
-        try {
-            acquired = lock.tryLock(LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS, TimeUnit.SECONDS);
-            if (!acquired) {
-                throw new BusinessException(ErrorCode.CONCURRENT_OPERATION, "操作过于频繁，请稍后重试");
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "操作被中断");
-        }
-        try {
+        return lockTemplate.withLock("zxyz:team:member:" + teamId, LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS, () -> {
             int status = request == null || request.getStatus() == null ? 0 : request.getStatus();
             if (status != 0 && status != 1) {
                 throw new ValidationException("成员状态只能为 0 或 1");
@@ -413,11 +380,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
                     .findFirst()
                     .map(m -> toMemberVO(m, userMap))
                     .orElseThrow(() -> new NotFoundException(TeamErrorCode.TEAM_NOT_FOUND.getCode(), "成员不存在"));
-        } finally {
-            if (acquired && lock.isHeldByCurrentThread()) {
-                lock.unlock();
-            }
-        }
+        });
     }
 
     @Override
@@ -433,18 +396,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
             throw new ForbiddenException(TeamErrorCode.TEAM_PERMISSION_DENIED.getCode(), "成员仍是项目负责人，请先移交负责人");
         }
 
-        RLock lock = redissonClient.getLock("zxyz:team:member:" + teamId);
-        boolean acquired = false;
-        try {
-            acquired = lock.tryLock(LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS, TimeUnit.SECONDS);
-            if (!acquired) {
-                throw new BusinessException(ErrorCode.CONCURRENT_OPERATION, "操作过于频繁，请稍后重试");
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "操作被中断");
-        }
-        try {
+        lockTemplate.withLockVoid("zxyz:team:member:" + teamId, LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS, () -> {
             // DB operations — inside transaction via TransactionHelper
             transactionHelper.executeWithoutResult(status -> {
                 if (teamMapper.removeMember(teamId, targetUserId) != 1) {
@@ -456,27 +408,12 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
             // 批次 3：成员已从库里移除，im 侧同步事件失败不该让接口报失败
             TransactionUtils.runAfterCommit("成员移除后发布事件 teamId=" + teamId + ", userId=" + targetUserId,
                     () -> teamEventPublisher.publishMemberRemoved(teamId, targetUserId));
-        } finally {
-            if (acquired && lock.isHeldByCurrentThread()) {
-                lock.unlock();
-            }
-        }
+        });
     }
 
     @Override
     public void leaveTeam(Long teamId, Long userId) {
-        RLock lock = redissonClient.getLock("zxyz:team:member:" + teamId);
-        boolean acquired = false;
-        try {
-            acquired = lock.tryLock(LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS, TimeUnit.SECONDS);
-            if (!acquired) {
-                throw new BusinessException(ErrorCode.CONCURRENT_OPERATION, "操作过于频繁，请稍后重试");
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "操作被中断");
-        }
-        try {
+        lockTemplate.withLockVoid("zxyz:team:member:" + teamId, LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS, () -> {
             Team team = requireTeam(teamId);
             TeamMember member = teamMapper.getActiveMember(teamId, userId);
             if (member == null) {
@@ -498,11 +435,7 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
             // 批次 3：同 removeMember —— 退出动作已落库，事件失败只告警
             TransactionUtils.runAfterCommit("成员退出后发布事件 teamId=" + teamId + ", userId=" + userId,
                     () -> teamEventPublisher.publishMemberRemoved(teamId, userId));
-        } finally {
-            if (acquired && lock.isHeldByCurrentThread()) {
-                lock.unlock();
-            }
-        }
+        });
     }
 
     @Override
@@ -571,38 +504,29 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
         }
     }
 
+    /**
+     * 写入成员行（含「一个账号只能属于一个团队」不变式校验）。
+     *
+     * <p><b>前置条件（P1-2）</b>：调用方必须<b>已经持有</b> {@code x:team:member:user:{userId}} 锁，
+     * 且该锁必须覆盖<b>整个事务</b>（抢锁 → 开事务 → 提交 → 释放）。
+     * 本方法自身<b>不再加锁</b> —— 原实现在这里抢锁，而它总是被从事务内部调用，导致：
+     * ① 锁等待期间数据库连接与行锁被连带持有；② 解锁早于事务提交，不变式实际没被锁住。</p>
+     */
     private void upsertMember(Long teamId, Long userId, String roleCode, Integer status, LocalDateTime now) {
-        RLock userLock = redissonClient.getLock("zxyz:team:member:user:" + userId);
-        boolean userLockAcquired = false;
-        try {
-            userLockAcquired = userLock.tryLock(LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS, TimeUnit.SECONDS);
-            if (!userLockAcquired) {
-                throw new BusinessException(ErrorCode.CONCURRENT_OPERATION, "操作过于频繁，请稍后重试");
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "操作被中断");
+        if (teamMapper.countCurrentMemberships(userId) > 0 && teamMapper.getActiveMember(teamId, userId) == null) {
+            throw new BusinessException(TeamErrorCode.TEAM_MEMBER_EXISTS.getCode(), "一个账号只能属于一个团队");
         }
+        TeamMember member = new TeamMember();
+        member.setTeamId(teamId);
+        member.setUserId(userId);
+        member.setRoleCode(roleCode);
+        member.setStatus(status);
+        member.setJoinTime(now);
+        member.setUpdateTime(now);
         try {
-            if (teamMapper.countCurrentMemberships(userId) > 0 && teamMapper.getActiveMember(teamId, userId) == null) {
-                throw new BusinessException(TeamErrorCode.TEAM_MEMBER_EXISTS.getCode(), "一个账号只能属于一个团队");
-            }
-            TeamMember member = new TeamMember();
-            member.setTeamId(teamId);
-            member.setUserId(userId);
-            member.setRoleCode(roleCode);
-            member.setStatus(status);
-            member.setJoinTime(now);
-            member.setUpdateTime(now);
-            try {
-                teamMapper.upsertMember(member);
-            } catch (DuplicateKeyException e) {
-                throw new BusinessException(TeamErrorCode.TEAM_MEMBER_EXISTS.getCode(), "一个账号只能属于一个团队");
-            }
-        } finally {
-            if (userLockAcquired && userLock.isHeldByCurrentThread()) {
-                userLock.unlock();
-            }
+            teamMapper.upsertMember(member);
+        } catch (DuplicateKeyException e) {
+            throw new BusinessException(TeamErrorCode.TEAM_MEMBER_EXISTS.getCode(), "一个账号只能属于一个团队");
         }
     }
 
