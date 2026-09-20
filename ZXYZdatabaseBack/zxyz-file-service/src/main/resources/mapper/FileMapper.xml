@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  FileMapper —— 较长 / 动态 SQL 的 XML 载体（P2-7，分批迁移中）。
+
+  改本文件前必读的四条规矩：
+  1. 一条语句**只能有一个定义**：在注解就在接口里，在 XML 就在本文件里，**不可两处同 id**
+     —— 否则启动即抛 Mapped Statements collection already contains value for
+     uno.acloud.file.infrastructure.mapper.FileMapper.xxx（响亮失败，但会拖垮整个服务启动）。
+  2. namespace 必须是接口全限定名。写错时 XML 本身能加载、但语句挂不到接口上，
+     调用时报 BindingException: Invalid bound statement (not found)。
+  3. 本文件靠 MyBatis-Plus 的默认 mapper-locations（classpath*:/mapper/**/*.xml）被扫到，
+     file-service 无需在 application.yml 里再配（已核 starter 配置元数据：默认值即此）。
+     注意属性前缀是 mybatis-plus.*，写成 mybatis.* 是**静默无效**的。
+  4. XML 先于注解解析 ⇒ 只允许注解引用本文件的 resultMap，反之不可。
+
+  ⚠️ XML 是动态 SQL 的载体 ⇒ 从注解的 {"<script>", ...} 数组迁过来时**必须删掉 <script> 包裹层**，
+     直接写 <foreach>/<choose>/<if>；`<` 一律写成 &lt;。
+-->
+<mapper namespace="uno.acloud.file.infrastructure.mapper.FileMapper">
+
+    <!-- ===== 标量返回：计数 / 取单列 ===== -->
+
+    <select id="countActiveChildren" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM file_node WHERE parent_id = #{parentId} AND deleted = 0
+    </select>
+
+    <select id="getParentId" resultType="java.lang.Long">
+        SELECT parent_id FROM file_node WHERE id = #{fileId}
+    </select>
+
+    <select id="countByParentId" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM file_node
+        WHERE parent_id = #{parentId} AND deleted = 0
+        <choose>
+            <when test="spaceType != null and spaceType == 3">AND space_type = 3 AND project_id = #{projectId}</when>
+            <when test="teamId == null">AND (space_type IS NULL OR space_type = 1) AND team_id IS NULL AND (#{userId} IS NULL OR upload_user_id = #{userId})</when>
+            <otherwise>AND team_id = #{teamId}</otherwise>
+        </choose>
+    </select>
+
+    <select id="countByKeyword" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM file_node
+        WHERE deleted = 0
+        <choose>
+            <when test="teamId == null">AND team_id IS NULL AND upload_user_id = #{userId}</when>
+            <otherwise>AND team_id = #{teamId}</otherwise>
+        </choose>
+        AND original_name LIKE CONCAT(#{keyword}, '%')
+    </select>
+
+    <select id="getActiveNamesByParentIdAndFileType" resultType="java.lang.String">
+        SELECT original_name FROM file_node
+        WHERE parent_id = #{parentId} AND file_type = #{fileType} AND deleted = 0
+        <choose>
+            <when test="spaceType != null and spaceType == 3">AND space_type = 3 AND project_id = #{projectId}</when>
+            <when test="teamId == null">AND (space_type IS NULL OR space_type = 1) AND team_id IS NULL AND (#{userId} IS NULL OR upload_user_id = #{userId})</when>
+            <otherwise>AND team_id = #{teamId}</otherwise>
+        </choose>
+    </select>
+
+    <select id="getPersonalRootFileIds" resultType="java.lang.Long">
+        SELECT id FROM file_node
+        WHERE parent_id = -1
+          AND (space_type IS NULL OR space_type = 1)
+          AND team_id IS NULL
+          AND upload_user_id = #{userId}
+          AND deleted IN (0, 1)
+    </select>
+
+    <!-- OSS objectKey 反查：只取活跃/回收站中的文件行且 uuid_name 非空 -->
+    <select id="getOssKeysByIds" resultType="java.lang.String">
+        SELECT uuid_name FROM file_node
+        WHERE deleted IN (0, 1) AND file_type = 1
+        AND id IN
+        <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
+            #{fileId}
+        </foreach>
+        AND uuid_name IS NOT NULL AND uuid_name != ''
+    </select>
+
+    <!-- 递归 CTE：种子与递归步都允许 deleted IN (0, 1)（回收站内的子树也算后代） -->
+    <select id="collectDescendantIds" resultType="java.lang.Long">
+        WITH RECURSIVE descendants AS (
+            SELECT id, parent_id FROM file_node WHERE deleted IN (0, 1) AND id IN
+            <foreach collection="rootIds" item="rootId" open="(" separator="," close=")">
+                #{rootId}
+            </foreach>
+            UNION ALL
+            SELECT child.id, child.parent_id FROM file_node child
+            INNER JOIN descendants parent ON child.parent_id = parent.id
+            WHERE child.deleted IN (0, 1)
+        )
+        SELECT id FROM descendants
+    </select>
+
+    <!-- ===== 单行 UPDATE ===== -->
+
+    <update id="renameNodeById">
+        UPDATE file_node SET original_name = #{originalName}, store_path = #{storePath}, modify_time = NOW()
+        WHERE id = #{fileId}
+    </update>
+
+    <update id="moveNodeById">
+        UPDATE file_node
+        SET original_name = #{originalName}, parent_id = #{parentId}, store_path = #{storePath},
+            team_id = #{teamId}, space_type = #{spaceType}, project_id = #{projectId}, modify_time = NOW()
+        WHERE id = #{fileId}
+    </update>
+
+    <update id="updateStorePathById">
+        UPDATE file_node SET store_path = #{storePath}, modify_time = NOW() WHERE id = #{fileId}
+    </update>
+
+    <update id="updateStorePathAndSpaceById">
+        UPDATE file_node
+        SET store_path = #{storePath}, team_id = #{teamId}, space_type = #{spaceType},
+            project_id = #{projectId}, modify_time = NOW()
+        WHERE id = #{fileId}
+    </update>
+
+    <!-- 目录改名后按前缀批量改写后代路径；deleted IN (0, 1) ⇒ 回收站内的后代也要一起改 -->
+    <update id="renameDescendantStorePaths">
+        UPDATE file_node
+        SET store_path = CONCAT(#{newPrefix}, SUBSTRING(store_path, LENGTH(#{oldPrefix}) + 1)), modify_time = NOW()
+        WHERE store_path LIKE CONCAT(#{oldPrefix}, '/%') AND deleted IN (0, 1)
+    </update>
+
+</mapper>

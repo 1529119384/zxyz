@@ -81,10 +81,10 @@ public interface FileMapper {
     @ResultMap("fileNodeResultMap")
     FileNode getActiveFileNodeById(Long fileId);
 
-    @Select("SELECT COUNT(*) FROM file_node WHERE parent_id = #{parentId} AND deleted = 0")
+    // countActiveChildren / getParentId 的 SQL 已迁至 mapper/FileMapper.xml（P2-7 批次 1）
+
     int countActiveChildren(@Param("parentId") Long parentId);
 
-    @Select("SELECT parent_id FROM file_node WHERE id = #{fileId}")
     Long getParentId(@Param("fileId") Long fileId);
 
     @Select({
@@ -163,17 +163,7 @@ public interface FileMapper {
                                                @Param("limit") int limit,
                                                @Param("offset") int offset);
 
-    @Select({
-            "<script>",
-            "SELECT COUNT(*) FROM file_node",
-            "WHERE parent_id = #{parentId} AND deleted = 0",
-            "<choose>",
-            "  <when test='spaceType != null and spaceType == 3'>AND space_type = 3 AND project_id = #{projectId}</when>",
-            "  <when test='teamId == null'>AND (space_type IS NULL OR space_type = 1) AND team_id IS NULL AND (#{userId} IS NULL OR upload_user_id = #{userId})</when>",
-            "  <otherwise>AND team_id = #{teamId}</otherwise>",
-            "</choose>",
-            "</script>"
-    })
+    /** 列表总数；WHERE 与 {@link #getFileNodesByParentId} 同形（已迁至 mapper/FileMapper.xml）。 */
     int countByParentId(@Param("parentId") Long parentId,
                         @Param("teamId") Long teamId,
                         @Param("spaceType") Integer spaceType,
@@ -271,21 +261,7 @@ public interface FileMapper {
                                    @Param("projectId") Long projectId,
                                    @Param("userId") Long userId);
 
-    @Select({
-            "<script>",
-            "WITH RECURSIVE descendants AS (",
-            "    SELECT id, parent_id FROM file_node WHERE deleted IN (0, 1) AND id IN",
-            "    <foreach collection='rootIds' item='rootId' open='(' separator=',' close=')'>",
-            "        #{rootId}",
-            "    </foreach>",
-            "    UNION ALL",
-            "    SELECT child.id, child.parent_id FROM file_node child",
-            "    INNER JOIN descendants parent ON child.parent_id = parent.id",
-            "    WHERE child.deleted IN (0, 1)",
-            ")",
-            "SELECT id FROM descendants",
-            "</script>"
-    })
+    /** 递归 CTE，取子树全部 id（已迁至 mapper/FileMapper.xml）。 */
     List<Long> collectDescendantIds(@Param("rootIds") List<Long> rootIds);
 
     @Select({
@@ -314,17 +290,7 @@ public interface FileMapper {
     @ResultMap("fileNodeResultMap")
     List<FileNode> collectDescendantNodes(@Param("parentIds") List<Long> parentIds);
 
-    @Select({
-            "<script>",
-            "SELECT uuid_name FROM file_node",
-            "WHERE deleted IN (0, 1) AND file_type = 1",
-            "AND id IN",
-            "<foreach collection='fileIds' item='fileId' open='(' separator=',' close=')'>",
-            "#{fileId}",
-            "</foreach>",
-            "AND uuid_name IS NOT NULL AND uuid_name != ''",
-            "</script>"
-    })
+    /** 取 OSS objectKey（已迁至 mapper/FileMapper.xml）。 */
     List<String> getOssKeysByIds(@Param("fileIds") List<Long> fileIds);
 
     @Insert("INSERT INTO file_node (file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider) VALUES (#{fileType}, #{uuidName}, #{originalName}, #{category}, #{fileSize}, #{fileUrl}, #{storePath}, #{uploadUserId}, #{sharedUserId}, #{teamId}, #{spaceType}, #{projectId}, #{deletedUserId}, #{parentId}, #{createTime}, #{modifyTime}, #{deleted}, #{storageProvider})")
@@ -335,17 +301,7 @@ public interface FileMapper {
     @Options(useGeneratedKeys = true, keyProperty = "id")
     Integer insertFolder(Folder folder);
 
-    @Select({
-            "<script>",
-            "SELECT original_name FROM file_node",
-            "WHERE parent_id = #{parentId} AND file_type = #{fileType} AND deleted = 0",
-            "<choose>",
-            "  <when test='spaceType != null and spaceType == 3'>AND space_type = 3 AND project_id = #{projectId}</when>",
-            "  <when test='teamId == null'>AND (space_type IS NULL OR space_type = 1) AND team_id IS NULL AND (#{userId} IS NULL OR upload_user_id = #{userId})</when>",
-            "  <otherwise>AND team_id = #{teamId}</otherwise>",
-            "</choose>",
-            "</script>"
-    })
+    /** 同级同名去重用；WHERE 与 {@link #countByParentId} 同形（已迁至 mapper/FileMapper.xml）。 */
     List<String> getActiveNamesByParentIdAndFileType(@Param("parentId") Long parentId,
                                                      @Param("teamId") Long teamId,
                                                      @Param("spaceType") Integer spaceType,
@@ -353,17 +309,7 @@ public interface FileMapper {
                                                      @Param("fileType") Integer fileType,
                                                      @Param("userId") Long userId);
 
-    @Select({
-            "<script>",
-            "SELECT COUNT(*) FROM file_node",
-            "WHERE deleted = 0",
-            "<choose>",
-            "  <when test='teamId == null'>AND team_id IS NULL AND upload_user_id = #{userId}</when>",
-            "  <otherwise>AND team_id = #{teamId}</otherwise>",
-            "</choose>",
-            "AND original_name LIKE CONCAT(#{keyword}, '%')",
-            "</script>"
-    })
+    /** 关键词命中总数；与 {@link #searchByKeyword} 同形（已迁至 mapper/FileMapper.xml）。 */
     int countByKeyword(@Param("userId") long userId, @Param("teamId") Long teamId, @Param("keyword") String keyword);
 
     default int countByKeyword(long userId, String keyword) {
@@ -406,12 +352,12 @@ public interface FileMapper {
         return searchByKeyword(userId, null, keyword, pageSize, offset);
     }
 
-    @Update("UPDATE file_node SET original_name = #{originalName}, store_path = #{storePath}, modify_time = NOW() WHERE id = #{fileId}")
+    // 以下 5 条单行 UPDATE 已迁至 mapper/FileMapper.xml（P2-7 批次 1）
+
     int renameNodeById(@Param("fileId") Long fileId,
                        @Param("originalName") String originalName,
                        @Param("storePath") String storePath);
 
-    @Update("UPDATE file_node SET original_name = #{originalName}, parent_id = #{parentId}, store_path = #{storePath}, team_id = #{teamId}, space_type = #{spaceType}, project_id = #{projectId}, modify_time = NOW() WHERE id = #{fileId}")
     int moveNodeById(@Param("fileId") Long fileId,
                      @Param("originalName") String originalName,
                      @Param("parentId") Long parentId,
@@ -420,17 +366,14 @@ public interface FileMapper {
                      @Param("spaceType") Integer spaceType,
                      @Param("projectId") Long projectId);
 
-    @Update("UPDATE file_node SET store_path = #{storePath}, modify_time = NOW() WHERE id = #{fileId}")
     int updateStorePathById(@Param("fileId") Long fileId, @Param("storePath") String storePath);
 
-    @Update("UPDATE file_node SET store_path = #{storePath}, team_id = #{teamId}, space_type = #{spaceType}, project_id = #{projectId}, modify_time = NOW() WHERE id = #{fileId}")
     int updateStorePathAndSpaceById(@Param("fileId") Long fileId,
                                     @Param("storePath") String storePath,
                                     @Param("teamId") Long teamId,
                                     @Param("spaceType") Integer spaceType,
                                     @Param("projectId") Long projectId);
 
-    @Update("UPDATE file_node SET store_path = CONCAT(#{newPrefix}, SUBSTRING(store_path, LENGTH(#{oldPrefix}) + 1)), modify_time = NOW() WHERE store_path LIKE CONCAT(#{oldPrefix}, '/%') AND deleted IN (0, 1)")
     int renameDescendantStorePaths(@Param("oldPrefix") String oldPrefix, @Param("newPrefix") String newPrefix);
 
     @Update({
@@ -558,14 +501,7 @@ public interface FileMapper {
     })
     List<TeamStorageUsage> sumActiveFileSizeByTeamIds(@Param("teamIds") List<Long> teamIds);
 
-    @Select("""
-            SELECT id FROM file_node
-            WHERE parent_id = -1
-              AND (space_type IS NULL OR space_type = 1)
-              AND team_id IS NULL
-              AND upload_user_id = #{userId}
-              AND deleted IN (0, 1)
-            """)
+    /** 个人空间哨兵根节点（parent_id = -1）的 id 列表（已迁至 mapper/FileMapper.xml）。 */
     List<Long> getPersonalRootFileIds(@Param("userId") Long userId);
 
     @Select("""
