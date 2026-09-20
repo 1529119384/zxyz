@@ -20,6 +20,7 @@ import java.io.UncheckedIOException;
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -199,6 +200,30 @@ class FileMapperWiringTest {
         assertBackedByXml(configuration, "selectTombstoneExpiredIds", SqlCommandType.SELECT);
     }
 
+    /**
+     * 迁移收尾形态：**全部 41 条语句都由 {@code mapper/FileMapper.xml} 承载**，
+     * 接口里不再残留任何内联 SQL。
+     *
+     * <p>这是整轮 P2-7 的终态断言 —— 任何「漏搬一条」都会在这里被点名，
+     * 而不必等运行时才抛 {@code BindingException: Invalid bound statement (not found)}。</p>
+     */
+    @Test
+    void noStatementIsStillInlineAnnotated() {
+        Configuration configuration = assemble();
+
+        List<String> stillInline = new ArrayList<>();
+        for (MappedStatement statement : configuration.getMappedStatements()) {
+            if (!statement.getId().startsWith(NS + ".")) {
+                continue;
+            }
+            String resource = statement.getResource();
+            if (resource == null || !resource.contains("FileMapper.xml")) {
+                stillInline.add(statement.getId() + " <- " + resource);
+            }
+        }
+        assertTrue(stillInline.isEmpty(), "仍有语句留在接口注解里、未迁到 XML：" + stillInline);
+    }
+
     private static void assertBackedByXml(Configuration configuration, String id, SqlCommandType expected) {
         MappedStatement statement = require(configuration, id);
         assertEquals(expected, statement.getSqlCommandType(), id + " 的语句类型不符");
@@ -322,6 +347,32 @@ class FileMapperWiringTest {
         missingForFolder.removeAll(mappedColumnsUpper(configuration.getResultMap(folderCaseMapId)));
         assertTrue(missingForFolder.isEmpty(),
                 "file_type=0 分支缺列（会静默丢字段）：" + missingForFolder);
+    }
+
+    /**
+     * 别名列结果映射：{@code <result column>} 必须写 SQL 里的<b>别名</b>（{@code teamId}），
+     * 写成原列名（{@code team_id}）不会报错，只会让字段**静默为 null**。
+     * <p>这条属于「SQL 文本等价」覆盖不到的风险（SQL 一模一样，错的是映射声明），
+     * 故在此单独钉住。</p>
+     */
+    @Test
+    void aliasedResultMapsUseAliasNotRawColumnName() {
+        Configuration configuration = assemble();
+
+        ResultMap search = configuration.getResultMap(NS + ".fileSearchItemResultMap");
+        assertNotNull(search, "fileSearchItemResultMap 未注册");
+        assertTrue(mappedColumnsUpper(search).contains("TEAMID"),
+                "searchByKeyword 的团队列必须映射别名 teamId（SQL 里是 team_id AS teamId）");
+
+        ResultMap personal = configuration.getResultMap(NS + ".personalStorageUsageResultMap");
+        assertNotNull(personal, "personalStorageUsageResultMap 未注册");
+        assertTrue(mappedColumnsUpper(personal).contains("USERID"), "应映射别名 userId");
+        assertTrue(mappedColumnsUpper(personal).contains("USEDSTORAGE"), "应映射别名 usedStorage");
+
+        ResultMap team = configuration.getResultMap(NS + ".teamStorageUsageResultMap");
+        assertNotNull(team, "teamStorageUsageResultMap 未注册");
+        assertTrue(mappedColumnsUpper(team).contains("TEAMID"), "应映射别名 teamId");
+        assertTrue(mappedColumnsUpper(team).contains("USEDSTORAGE"), "应映射别名 usedStorage");
     }
 
     // ==========================================================================

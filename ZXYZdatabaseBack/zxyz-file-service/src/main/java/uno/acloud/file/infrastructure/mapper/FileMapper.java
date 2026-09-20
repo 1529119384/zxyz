@@ -1,13 +1,7 @@
 package uno.acloud.file.infrastructure.mapper;
 
-import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
-import org.apache.ibatis.annotations.Options;
 import org.apache.ibatis.annotations.Param;
-import org.apache.ibatis.annotations.Result;
-import org.apache.ibatis.annotations.ResultMap;
-import org.apache.ibatis.annotations.Results;
-import org.apache.ibatis.annotations.Select;
 import uno.acloud.file.infrastructure.entity.FileItem;
 import uno.acloud.file.infrastructure.entity.FileNode;
 import uno.acloud.file.infrastructure.entity.Folder;
@@ -19,6 +13,20 @@ import uno.acloud.dto.TeamStorageUsage;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 文件节点表 {@code file_node} 的 Mapper。
+ *
+ * <p>⚠️ 本接口<b>不再内联 SQL</b>：全部 41 条语句与 4 个 resultMap 都在
+ * {@code src/main/resources/mapper/FileMapper.xml}，靠 MyBatis-Plus 默认的
+ * {@code mybatis-plus.mapper-locations = classpath*:/mapper/**&#47;*.xml} 被扫到
+ * （注意前缀是 {@code mybatis-plus.*}；写成 {@code mybatis.*} 是静默无效的）。
+ * 改 SQL 请改 XML —— 本文件只保留方法签名、{@code @Param} 名与 default 重载。
+ * ⚠️ {@code @Param} 是 XML 里 {@code #{…}} 的取参名，改名必须同步改 XML。</p>
+ *
+ * <p>{@link FileNode} 是抽象类（子类 {@link FileItem} / {@link Folder}），只能靠
+ * {@code fileNodeResultMap} 的 {@code <discriminator>} 落地 ⇒ 凡返回 {@code FileNode} 的语句
+ * 都必须引用它。该不变量由 {@code FileMapperWiringTest} 守护（不需要数据库即可验证）。</p>
+ */
 @Mapper
 public interface FileMapper {
 
@@ -29,8 +37,6 @@ public interface FileMapper {
      * {@code mapper/FileMapper.xml} 承载 —— 它是**抽象类** {@link FileNode} 能落到
      * {@link FileItem} / {@link Folder} 的唯一途径，本仓 11 条返回 {@code FileNode} 的语句共用它。</p>
      */
-    @Select("SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider FROM file_node WHERE id = #{fileId}")
-    @ResultMap("fileNodeResultMap")
     FileNode getFileNodeById(Long fileId);
 
     /**
@@ -44,8 +50,6 @@ public interface FileMapper {
      * （{@code /api/internal/files/{id}/stream-info}、{@code /stream}、{@code /share-download-url}）
      * 的分享下载链路会整体 500。本仓其余 10 个返回 {@code FileNode} 的语句均已带该 ResultMap。</p>
      */
-    @Select("SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider FROM file_node WHERE id = #{fileId} AND deleted = 0")
-    @ResultMap("fileNodeResultMap")
     FileNode getActiveFileNodeById(Long fileId);
 
     // countActiveChildren / getParentId 的 SQL 已迁至 mapper/FileMapper.xml（P2-7 批次 1）
@@ -54,41 +58,10 @@ public interface FileMapper {
 
     Long getParentId(@Param("fileId") Long fileId);
 
-    @Select({
-            "<script>",
-            "SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider FROM file_node WHERE id IN",
-            "<foreach collection='fileIds' item='fileId' open='(' separator=',' close=')'>",
-            "#{fileId}",
-            "</foreach>",
-            "</script>"
-    })
-    @ResultMap("fileNodeResultMap")
     List<FileNode> getFileNodesByIds(@Param("fileIds") List<Long> fileIds);
 
-    @Select({
-            "<script>",
-            "SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider FROM file_node WHERE deleted = 0 AND id IN",
-            "<foreach collection='fileIds' item='fileId' open='(' separator=',' close=')'>",
-            "#{fileId}",
-            "</foreach>",
-            "</script>"
-    })
-    @ResultMap("fileNodeResultMap")
     List<FileNode> getActiveFileNodesByIds(@Param("fileIds") List<Long> fileIds);
 
-    @Select({
-            "<script>",
-            "SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider",
-            "FROM file_node",
-            "WHERE parent_id = #{parentId} AND deleted = 0",
-            "<choose>",
-            "  <when test='spaceType != null and spaceType == 3'>AND space_type = 3 AND project_id = #{projectId}</when>",
-            "  <when test='teamId == null'>AND (space_type IS NULL OR space_type = 1) AND team_id IS NULL AND (#{userId} IS NULL OR upload_user_id = #{userId})</when>",
-            "  <otherwise>AND team_id = #{teamId}</otherwise>",
-            "</choose>",
-            "</script>"
-    })
-    @ResultMap("fileNodeResultMap")
     List<FileNode> getFileNodesByParentId(@Param("parentId") Long parentId,
                                           @Param("teamId") Long teamId,
                                           @Param("spaceType") Integer spaceType,
@@ -107,21 +80,6 @@ public interface FileMapper {
         return getFileNodesByParentId(parentId, teamId, null);
     }
 
-    @Select({
-            "<script>",
-            "SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider",
-            "FROM file_node",
-            "WHERE parent_id = #{parentId} AND deleted = 0",
-            "<choose>",
-            "  <when test='spaceType != null and spaceType == 3'>AND space_type = 3 AND project_id = #{projectId}</when>",
-            "  <when test='teamId == null'>AND (space_type IS NULL OR space_type = 1) AND team_id IS NULL AND (#{userId} IS NULL OR upload_user_id = #{userId})</when>",
-            "  <otherwise>AND team_id = #{teamId}</otherwise>",
-            "</choose>",
-            "ORDER BY file_type DESC, original_name ASC",
-            "LIMIT #{limit} OFFSET #{offset}",
-            "</script>"
-    })
-    @ResultMap("fileNodeResultMap")
     List<FileNode> getFileNodesByParentIdPaged(@Param("parentId") Long parentId,
                                                @Param("teamId") Long teamId,
                                                @Param("spaceType") Integer spaceType,
@@ -137,18 +95,6 @@ public interface FileMapper {
                         @Param("projectId") Long projectId,
                         @Param("userId") Long userId);
 
-    @Select({
-            "<script>",
-            "SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider",
-            "FROM file_node",
-            "WHERE parent_id = #{parentId}",
-            "<choose>",
-            "  <when test='teamId == null'>AND team_id IS NULL AND (#{userId} IS NULL OR upload_user_id = #{userId})</when>",
-            "  <otherwise>AND team_id = #{teamId}</otherwise>",
-            "</choose>",
-            "</script>"
-    })
-    @ResultMap("fileNodeResultMap")
     List<FileNode> getChildrenByParentIdWithDeleted(@Param("parentId") Long parentId,
                                                     @Param("teamId") Long teamId,
                                                     @Param("userId") Long userId);
@@ -157,44 +103,10 @@ public interface FileMapper {
         return getChildrenByParentIdWithDeleted(parentId, null, null);
     }
 
-    @Select("SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider FROM file_node WHERE parent_id = #{parentId}")
-    @ResultMap("fileNodeResultMap")
     List<FileNode> getShareChildrenByParentIdWithDeleted(@Param("parentId") Long parentId);
 
-    @Select({
-            "<script>",
-            "SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path,",
-            "       upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider",
-            "FROM file_node",
-            "WHERE parent_id IN",
-            "<foreach collection='parentIds' item='parentId' open='(' separator=',' close=')'>",
-            "    #{parentId}",
-            "</foreach>",
-            "</script>"
-    })
-    @ResultMap("fileNodeResultMap")
     List<FileNode> getShareChildrenByParentIdsWithDeleted(@Param("parentIds") List<Long> parentIds);
 
-    @Select({
-            "<script>",
-            "SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path,",
-            "       upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider",
-            "FROM file_node f",
-            "WHERE f.deleted = 1",
-            "  AND NOT EXISTS (",
-            "      SELECT 1 FROM file_node p",
-            "      WHERE p.id = f.parent_id AND p.deleted = 1",
-            "  )",
-            "<choose>",
-            "  <when test='spaceType != null and spaceType == 3'>AND f.space_type = 3 AND f.project_id = #{projectId}</when>",
-            "  <when test='teamId == null'>AND (f.space_type IS NULL OR f.space_type = 1) AND f.team_id IS NULL AND f.upload_user_id = #{userId}</when>",
-            "  <otherwise>AND f.team_id = #{teamId}</otherwise>",
-            "</choose>",
-            "ORDER BY modify_time DESC",
-            "LIMIT #{limit} OFFSET #{offset}",
-            "</script>"
-    })
-    @ResultMap("fileNodeResultMap")
     List<FileNode> getFileNodesInRecycleBinPaged(@Param("teamId") Long teamId,
                                                  @Param("spaceType") Integer spaceType,
                                                  @Param("projectId") Long projectId,
@@ -208,21 +120,6 @@ public interface FileMapper {
      * <p>WHERE 条件必须与 {@link #getFileNodesInRecycleBinPaged} 逐字保持一致：
      * 两处一旦不同步，分页器就会出现"总条数与实际翻页结果对不上"的静默错位。
      */
-    @Select({
-            "<script>",
-            "SELECT COUNT(*) FROM file_node f",
-            "WHERE f.deleted = 1",
-            "  AND NOT EXISTS (",
-            "      SELECT 1 FROM file_node p",
-            "      WHERE p.id = f.parent_id AND p.deleted = 1",
-            "  )",
-            "<choose>",
-            "  <when test='spaceType != null and spaceType == 3'>AND f.space_type = 3 AND f.project_id = #{projectId}</when>",
-            "  <when test='teamId == null'>AND (f.space_type IS NULL OR f.space_type = 1) AND f.team_id IS NULL AND f.upload_user_id = #{userId}</when>",
-            "  <otherwise>AND f.team_id = #{teamId}</otherwise>",
-            "</choose>",
-            "</script>"
-    })
     int countFileNodesInRecycleBin(@Param("teamId") Long teamId,
                                    @Param("spaceType") Integer spaceType,
                                    @Param("projectId") Long projectId,
@@ -231,41 +128,13 @@ public interface FileMapper {
     /** 递归 CTE，取子树全部 id（已迁至 mapper/FileMapper.xml）。 */
     List<Long> collectDescendantIds(@Param("rootIds") List<Long> rootIds);
 
-    @Select({
-            "<script>",
-            "WITH RECURSIVE descendants AS (",
-            "    SELECT id, file_type, uuid_name, original_name, category, file_size, file_url,",
-            "           store_path, upload_user_id, shared_user_id, team_id, space_type, project_id,",
-            "           deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider",
-            "    FROM file_node",
-            "    WHERE parent_id IN",
-            "    <foreach collection='parentIds' item='parentId' open='(' separator=',' close=')'>",
-            "        #{parentId}",
-            "    </foreach>",
-            "    AND deleted = 0",
-            "    UNION ALL",
-            "    SELECT c.id, c.file_type, c.uuid_name, c.original_name, c.category, c.file_size, c.file_url,",
-            "           c.store_path, c.upload_user_id, c.shared_user_id, c.team_id, c.space_type, c.project_id,",
-            "           c.deleted_user_id, c.parent_id, c.create_time, c.modify_time, c.deleted, c.storage_provider",
-            "    FROM file_node c",
-            "    INNER JOIN descendants d ON c.parent_id = d.id",
-            "    WHERE c.deleted = 0",
-            ")",
-            "SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider FROM descendants",
-            "</script>"
-    })
-    @ResultMap("fileNodeResultMap")
     List<FileNode> collectDescendantNodes(@Param("parentIds") List<Long> parentIds);
 
     /** 取 OSS objectKey（已迁至 mapper/FileMapper.xml）。 */
     List<String> getOssKeysByIds(@Param("fileIds") List<Long> fileIds);
 
-    @Insert("INSERT INTO file_node (file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider) VALUES (#{fileType}, #{uuidName}, #{originalName}, #{category}, #{fileSize}, #{fileUrl}, #{storePath}, #{uploadUserId}, #{sharedUserId}, #{teamId}, #{spaceType}, #{projectId}, #{deletedUserId}, #{parentId}, #{createTime}, #{modifyTime}, #{deleted}, #{storageProvider})")
-    @Options(useGeneratedKeys = true, keyProperty = "id")
     Integer insertFileItem(FileItem fileItem);
 
-    @Insert("INSERT INTO file_node(file_type, original_name, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider) VALUES(#{fileType}, #{originalName}, #{storePath}, #{uploadUserId}, #{sharedUserId}, #{teamId}, #{spaceType}, #{projectId}, #{deletedUserId}, #{parentId}, #{createTime}, #{modifyTime}, #{deleted}, #{storageProvider})")
-    @Options(useGeneratedKeys = true, keyProperty = "id")
     Integer insertFolder(Folder folder);
 
     /** 同级同名去重用；WHERE 与 {@link #countByParentId} 同形（已迁至 mapper/FileMapper.xml）。 */
@@ -283,32 +152,6 @@ public interface FileMapper {
         return countByKeyword(userId, null, keyword);
     }
 
-    @Select({
-            "<script>",
-            "SELECT id, file_type, original_name, category, file_size,",
-            "parent_id, team_id AS teamId, create_time, modify_time",
-            "FROM file_node",
-            "WHERE deleted = 0",
-            "<choose>",
-            "  <when test='teamId == null'>AND team_id IS NULL AND upload_user_id = #{userId}</when>",
-            "  <otherwise>AND team_id = #{teamId}</otherwise>",
-            "</choose>",
-            "AND original_name LIKE CONCAT(#{keyword}, '%')",
-            "ORDER BY modify_time DESC",
-            "LIMIT #{pageSize} OFFSET #{offset}",
-            "</script>"
-    })
-    @Results({
-            @Result(column = "id", property = "id", id = true),
-            @Result(column = "file_type", property = "fileType"),
-            @Result(column = "original_name", property = "originalName"),
-            @Result(column = "category", property = "category"),
-            @Result(column = "file_size", property = "fileSize"),
-            @Result(column = "parent_id", property = "parentId"),
-            @Result(column = "teamId", property = "teamId"),
-            @Result(column = "create_time", property = "createTime"),
-            @Result(column = "modify_time", property = "modifyTime")
-    })
     List<FileSearchItemVO> searchByKeyword(@Param("userId") long userId,
                                            @Param("teamId") Long teamId,
                                            @Param("keyword") String keyword,
@@ -363,45 +206,11 @@ public interface FileMapper {
 
     long sumPersonalStorageByUsers(@Param("userIds") List<Long> userIds);
 
-    @Select({
-            "<script>",
-            "SELECT upload_user_id AS userId, COALESCE(SUM(file_size), 0) AS usedStorage",
-            "FROM file_node",
-            "WHERE deleted IN (0, 1) AND file_type = 1",
-            "AND (space_type IS NULL OR space_type = 1)",
-            "AND team_id IS NULL",
-            "AND upload_user_id IN",
-            "<foreach collection='userIds' item='userId' open='(' separator=',' close=')'>",
-            "#{userId}",
-            "</foreach>",
-            "GROUP BY upload_user_id",
-            "</script>"
-    })
-    @Results({
-            @Result(column = "userId", property = "userId"),
-            @Result(column = "usedStorage", property = "usedStorage")
-    })
     List<PersonalStorageUsage> listPersonalStorageUsageByUsers(@Param("userIds") List<Long> userIds);
 
     /**
      * 批量查询多个团队的存储用量。
      */
-    @Select({
-            "<script>",
-            "SELECT team_id AS teamId, COALESCE(SUM(file_size), 0) AS usedStorage",
-            "FROM file_node",
-            "WHERE deleted IN (0, 1) AND file_type = 1 AND space_type = 2",
-            "AND team_id IN",
-            "<foreach collection='teamIds' item='teamId' open='(' separator=',' close=')'>",
-            "#{teamId}",
-            "</foreach>",
-            "GROUP BY team_id",
-            "</script>"
-    })
-    @Results({
-            @Result(column = "teamId", property = "teamId"),
-            @Result(column = "usedStorage", property = "usedStorage")
-    })
     List<TeamStorageUsage> sumActiveFileSizeByTeamIds(@Param("teamIds") List<Long> teamIds);
 
     /** 个人空间哨兵根节点（parent_id = -1）的 id 列表（已迁至 mapper/FileMapper.xml）。 */

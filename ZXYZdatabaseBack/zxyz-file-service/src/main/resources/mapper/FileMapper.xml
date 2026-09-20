@@ -275,4 +275,220 @@
         LIMIT #{limit}
     </select>
 
+    <!--
+      ===== 别名列结果映射 =====
+      这三条的 SQL 用了别名（team_id AS teamId / upload_user_id AS userId …），
+      ⚠️ column 必须写**别名**而不是原列名，写错会让字段静默为 null。
+    -->
+    <resultMap id="fileSearchItemResultMap" type="uno.acloud.file.vo.FileSearchItemVO">
+        <id column="id" property="id"/>
+        <result column="file_type" property="fileType"/>
+        <result column="original_name" property="originalName"/>
+        <result column="category" property="category"/>
+        <result column="file_size" property="fileSize"/>
+        <result column="parent_id" property="parentId"/>
+        <result column="teamId" property="teamId"/>
+        <result column="create_time" property="createTime"/>
+        <result column="modify_time" property="modifyTime"/>
+    </resultMap>
+
+    <resultMap id="personalStorageUsageResultMap" type="uno.acloud.dto.PersonalStorageUsage">
+        <result column="userId" property="userId"/>
+        <result column="usedStorage" property="usedStorage"/>
+    </resultMap>
+
+    <resultMap id="teamStorageUsageResultMap" type="uno.acloud.dto.TeamStorageUsage">
+        <result column="teamId" property="teamId"/>
+        <result column="usedStorage" property="usedStorage"/>
+    </resultMap>
+
+    <select id="searchByKeyword" resultMap="fileSearchItemResultMap">
+        SELECT id, file_type, original_name, category, file_size,
+        parent_id, team_id AS teamId, create_time, modify_time
+        FROM file_node
+        WHERE deleted = 0
+        <choose>
+            <when test="teamId == null">AND team_id IS NULL AND upload_user_id = #{userId}</when>
+            <otherwise>AND team_id = #{teamId}</otherwise>
+        </choose>
+        AND original_name LIKE CONCAT(#{keyword}, '%')
+        ORDER BY modify_time DESC
+        LIMIT #{pageSize} OFFSET #{offset}
+    </select>
+
+    <select id="listPersonalStorageUsageByUsers" resultMap="personalStorageUsageResultMap">
+        SELECT upload_user_id AS userId, COALESCE(SUM(file_size), 0) AS usedStorage
+        FROM file_node
+        WHERE deleted IN (0, 1) AND file_type = 1
+        AND (space_type IS NULL OR space_type = 1)
+        AND team_id IS NULL
+        AND upload_user_id IN
+        <foreach collection="userIds" item="userId" open="(" separator="," close=")">
+            #{userId}
+        </foreach>
+        GROUP BY upload_user_id
+    </select>
+
+    <select id="sumActiveFileSizeByTeamIds" resultMap="teamStorageUsageResultMap">
+        SELECT team_id AS teamId, COALESCE(SUM(file_size), 0) AS usedStorage
+        FROM file_node
+        WHERE deleted IN (0, 1) AND file_type = 1 AND space_type = 2
+        AND team_id IN
+        <foreach collection="teamIds" item="teamId" open="(" separator="," close=")">
+            #{teamId}
+        </foreach>
+        GROUP BY team_id
+    </select>
+
+    <!--
+      ===== 回收站孪生对 =====
+      ⚠️ 这两条的 WHERE 必须**逐字一致**（源码注释亦如此要求）：
+      一处不同步，分页器就会出现「总条数与实际翻页结果对不上」的静默错位。
+      FileMapperWiringTest#recycleBinTwinsLiveInTheSameCarrier 会守住「两者同载体」。
+    -->
+    <select id="getFileNodesInRecycleBinPaged" resultMap="fileNodeResultMap">
+        SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path,
+               upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider
+        FROM file_node f
+        WHERE f.deleted = 1
+          AND NOT EXISTS (
+              SELECT 1 FROM file_node p
+              WHERE p.id = f.parent_id AND p.deleted = 1
+          )
+        <choose>
+            <when test="spaceType != null and spaceType == 3">AND f.space_type = 3 AND f.project_id = #{projectId}</when>
+            <when test="teamId == null">AND (f.space_type IS NULL OR f.space_type = 1) AND f.team_id IS NULL AND f.upload_user_id = #{userId}</when>
+            <otherwise>AND f.team_id = #{teamId}</otherwise>
+        </choose>
+        ORDER BY modify_time DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countFileNodesInRecycleBin" resultType="java.lang.Integer">
+        SELECT COUNT(*) FROM file_node f
+        WHERE f.deleted = 1
+          AND NOT EXISTS (
+              SELECT 1 FROM file_node p
+              WHERE p.id = f.parent_id AND p.deleted = 1
+          )
+        <choose>
+            <when test="spaceType != null and spaceType == 3">AND f.space_type = 3 AND f.project_id = #{projectId}</when>
+            <when test="teamId == null">AND (f.space_type IS NULL OR f.space_type = 1) AND f.team_id IS NULL AND f.upload_user_id = #{userId}</when>
+            <otherwise>AND f.team_id = #{teamId}</otherwise>
+        </choose>
+    </select>
+
+    <!-- ===== 父 id 列表（含/不含已删除、分享专用） ===== -->
+
+    <select id="getFileNodesByParentId" resultMap="fileNodeResultMap">
+        SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider
+        FROM file_node
+        WHERE parent_id = #{parentId} AND deleted = 0
+        <choose>
+            <when test="spaceType != null and spaceType == 3">AND space_type = 3 AND project_id = #{projectId}</when>
+            <when test="teamId == null">AND (space_type IS NULL OR space_type = 1) AND team_id IS NULL AND (#{userId} IS NULL OR upload_user_id = #{userId})</when>
+            <otherwise>AND team_id = #{teamId}</otherwise>
+        </choose>
+    </select>
+
+    <select id="getFileNodesByParentIdPaged" resultMap="fileNodeResultMap">
+        SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider
+        FROM file_node
+        WHERE parent_id = #{parentId} AND deleted = 0
+        <choose>
+            <when test="spaceType != null and spaceType == 3">AND space_type = 3 AND project_id = #{projectId}</when>
+            <when test="teamId == null">AND (space_type IS NULL OR space_type = 1) AND team_id IS NULL AND (#{userId} IS NULL OR upload_user_id = #{userId})</when>
+            <otherwise>AND team_id = #{teamId}</otherwise>
+        </choose>
+        ORDER BY file_type DESC, original_name ASC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- ⚠️ 本条的列清单里**没有** space_type / project_id（迁移前即如此），不要顺手补齐。 -->
+    <select id="getChildrenByParentIdWithDeleted" resultMap="fileNodeResultMap">
+        SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider
+        FROM file_node
+        WHERE parent_id = #{parentId}
+        <choose>
+            <when test="teamId == null">AND team_id IS NULL AND (#{userId} IS NULL OR upload_user_id = #{userId})</when>
+            <otherwise>AND team_id = #{teamId}</otherwise>
+        </choose>
+    </select>
+
+    <select id="getShareChildrenByParentIdWithDeleted" resultMap="fileNodeResultMap">
+        SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider FROM file_node WHERE parent_id = #{parentId}
+    </select>
+
+    <select id="getShareChildrenByParentIdsWithDeleted" resultMap="fileNodeResultMap">
+        SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path,
+               upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider
+        FROM file_node
+        WHERE parent_id IN
+        <foreach collection="parentIds" item="parentId" open="(" separator="," close=")">
+            #{parentId}
+        </foreach>
+    </select>
+
+    <!-- ===== 批量按 id 取 ===== -->
+
+    <select id="getFileNodesByIds" resultMap="fileNodeResultMap">
+        SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider FROM file_node WHERE id IN
+        <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
+            #{fileId}
+        </foreach>
+    </select>
+
+    <select id="getActiveFileNodesByIds" resultMap="fileNodeResultMap">
+        SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider FROM file_node WHERE deleted = 0 AND id IN
+        <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
+            #{fileId}
+        </foreach>
+    </select>
+
+    <!--
+      递归 CTE（与 collectDescendantIds 刻意不同）：
+      种子是「给定父节点的活跃子节点」，递归步也只走活跃行 —— 与 collectDescendantIds 的
+      deleted IN (0, 1) 口径**故意不同**，两条不可合并。
+    -->
+    <select id="collectDescendantNodes" resultMap="fileNodeResultMap">
+        WITH RECURSIVE descendants AS (
+            SELECT id, file_type, uuid_name, original_name, category, file_size, file_url,
+                   store_path, upload_user_id, shared_user_id, team_id, space_type, project_id,
+                   deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider
+            FROM file_node
+            WHERE parent_id IN
+            <foreach collection="parentIds" item="parentId" open="(" separator="," close=")">
+                #{parentId}
+            </foreach>
+            AND deleted = 0
+            UNION ALL
+            SELECT c.id, c.file_type, c.uuid_name, c.original_name, c.category, c.file_size, c.file_url,
+                   c.store_path, c.upload_user_id, c.shared_user_id, c.team_id, c.space_type, c.project_id,
+                   c.deleted_user_id, c.parent_id, c.create_time, c.modify_time, c.deleted, c.storage_provider
+            FROM file_node c
+            INNER JOIN descendants d ON c.parent_id = d.id
+            WHERE c.deleted = 0
+        )
+        SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider FROM descendants
+    </select>
+
+    <!-- ===== 单行取（含已删除 / 仅活跃）与插入 ===== -->
+
+    <select id="getFileNodeById" resultMap="fileNodeResultMap">
+        SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider FROM file_node WHERE id = #{fileId}
+    </select>
+
+    <select id="getActiveFileNodeById" resultMap="fileNodeResultMap">
+        SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider FROM file_node WHERE id = #{fileId} AND deleted = 0
+    </select>
+
+    <!-- ⚠️ useGeneratedKeys 必须保留：实体 id 不回填会让后续依赖 getId() 的逻辑静默走错。 -->
+    <insert id="insertFileItem" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO file_node (file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider) VALUES (#{fileType}, #{uuidName}, #{originalName}, #{category}, #{fileSize}, #{fileUrl}, #{storePath}, #{uploadUserId}, #{sharedUserId}, #{teamId}, #{spaceType}, #{projectId}, #{deletedUserId}, #{parentId}, #{createTime}, #{modifyTime}, #{deleted}, #{storageProvider})
+    </insert>
+
+    <insert id="insertFolder" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO file_node(file_type, original_name, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider) VALUES(#{fileType}, #{originalName}, #{storePath}, #{uploadUserId}, #{sharedUserId}, #{teamId}, #{spaceType}, #{projectId}, #{deletedUserId}, #{parentId}, #{createTime}, #{modifyTime}, #{deleted}, #{storageProvider})
+    </insert>
+
 </mapper>
