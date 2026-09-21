@@ -80,6 +80,9 @@ ZXYZdatabaseFront/.git/
 ISSUE/
 sql/schema_*.sql
 
+# 用户手写的待办清单：本地磁盘保留，不入库（2026-09-21 取消跟踪）
+任务.md
+
 # 本地 CI 轮询产物（记录上次 run id）；未忽略会令 pre-push 的子仓库同步检查
 # 把工作区视为"脏"从而拒推。
 .last_ci_run
