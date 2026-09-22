@@ -10,14 +10,17 @@ import org.apache.ibatis.mapping.ResultMap;
 import org.apache.ibatis.mapping.SqlCommandType;
 import org.apache.ibatis.session.Configuration;
 import org.junit.jupiter.api.Test;
+import org.xml.sax.InputSource;
 import uno.acloud.file.infrastructure.entity.FileItem;
 import uno.acloud.file.infrastructure.entity.FileNode;
 import uno.acloud.file.infrastructure.entity.Folder;
 import uno.acloud.file.infrastructure.mapper.FileMapper;
 
+import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.StringReader;
 import java.io.UncheckedIOException;
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
@@ -543,13 +546,24 @@ class FileMapperWiringTest {
         //    改为关掉外部实体解析（既满足安全要求，又不需要联网取 DTD）。
         factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
         factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+        // 🔴 上面两条**拦不住**解析器去拉外部 DTD：DOCTYPE 里声明的 SYSTEM DTD 由
+        //    `load-external-dtd` 这个**独立**特性控制。少了它，本用例会去 mybatis.org 取
+        //    mybatis-3-mapper.dtd —— 网络通时侥幸绿、取不到就红。
+        //    实测（2026-09-22，本机代理状态变化时）：
+        //      FileMapperWiringTest.everyInClauseSurvivesAnEmptyCollection:495
+        //        -> discoverOpenParenForeach:552 ? Connect Connection timed out: connect
+        //    这是我自己给门禁埋的 flaky 源（门禁依赖网络 = 门禁不可信）⇒ 必须显式关掉。
+        factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
         factory.setValidating(false);
         factory.setNamespaceAware(false);
 
         Map<String, Set<String>> found = new LinkedHashMap<>();
         try (InputStream xml = Resources.getResourceAsStream(XML_RESOURCE)) {
             assertNotNull(xml, XML_RESOURCE + " 不在 classpath 上");
-            org.w3c.dom.Document document = factory.newDocumentBuilder().parse(xml);
+            DocumentBuilder builder = factory.newDocumentBuilder();
+            // 兜底：任何外部实体 / DTD 一律回空内容，从根上杜绝联网，且与具体解析器实现无关。
+            builder.setEntityResolver((publicId, systemId) -> new InputSource(new StringReader("")));
+            org.w3c.dom.Document document = builder.parse(xml);
             org.w3c.dom.NodeList foreachNodes = document.getElementsByTagName("foreach");
             for (int i = 0; i < foreachNodes.getLength(); i++) {
                 org.w3c.dom.Element foreach = (org.w3c.dom.Element) foreachNodes.item(i);
