@@ -166,7 +166,7 @@ services:
   # 恰好重演本项目已踩过的"镜像不被监控"。收成 compose 服务后，digest 就落在
   # .github/dependabot.yml 已有的 `docker-compose` 生态视野内。
   flyway:
-    image: flyway/flyway:10.12@sha256:ac06f3b8d08887be37b7753f40f4a7315df750d9b42ad3ee5bcd10e29f163a3e
+    image: flyway/flyway:13.7@sha256:f8b67e58dd85b54ade4e3fe093a5b9c79dc02d55b7bb090d4fddb23211dea63a
     container_name: zxyz-flyway
     profiles: ["tools"]
     restart: "no"
