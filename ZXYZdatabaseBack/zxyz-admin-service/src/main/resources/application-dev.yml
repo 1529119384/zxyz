@@ -8,9 +8,11 @@ config:
     jdbc-url: ${ADMIN_DATASOURCE_URL:jdbc:mysql://localhost:3306/zxyz_config}
     username: ${ADMIN_DATASOURCE_USERNAME:root}
     password: ${ADMIN_DATASOURCE_PASSWORD:123456}
-    hikari:
-      maximum-pool-size: 5
-      minimum-idle: 2
+    # ⚠️ 池容量键必须**直接**挂在 config.datasource 下（不能套 hikari: 层）——
+    # DataSourceBuilder 对 MySQL 产出 HikariDataSource，maximumPoolSize/minimumIdle 是其直接属性。
+    # 详见 application-prod.yml 与 ConfigDataSourcePoolBindingTest（审计 C-16）。
+    maximum-pool-size: 5
+    minimum-idle: 2
 
 app:
   team-service:

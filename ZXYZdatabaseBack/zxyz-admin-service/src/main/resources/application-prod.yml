@@ -9,6 +9,10 @@ config:
     jdbc-url: jdbc:mysql://${CONFIG_DB_HOST}:${CONFIG_DB_PORT:3306}/zxyz_config?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
     username: ${CONFIG_DB_USERNAME}
     password: ${CONFIG_DB_PASSWORD}
-    hikari:
-      maximum-pool-size: 5
-      minimum-idle: 2
+    # ⚠️ 池容量键必须**直接**挂在 config.datasource 下：DataSourceBuilder 对 MySQL 产出的是
+    # HikariDataSource，它把 maximumPoolSize/minimumIdle 暴露为直接属性，**没有 hikari: 这一层**。
+    # 之前误写成 config.datasource.hikari.*，因 @ConfigurationProperties 绑定目标不存在且
+    # ignoreUnknownFields 默认 true ⇒ 被静默忽略，池实际跑在 Hikari 默认值 10/10（审计 C-16）。
+    # 守护测试：ConfigDataSourcePoolBindingTest。
+    maximum-pool-size: 5
+    minimum-idle: 2
