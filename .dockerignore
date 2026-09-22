@@ -1,6 +1,20 @@
 # Root Docker build context ignore file.
 # docker-compose.yml uses the project root as build context so the front Dockerfile
 # can read deploy/nginx/default.conf and both images can be built from one place.
+#
+# 🔴 本文件是**唯一**生效的 .dockerignore（C-49）。原因：两个镜像的构建上下文都是仓库根
+#   （CI: `context: .` + `dockerfile: ZXYZdatabaseFront/Dockerfile`；compose 同理），
+#   而 Docker 只读取**构建上下文根目录**下的 .dockerignore
+#   （`<dockerfile>.dockerignore` 亦按其所在目录查找，但只作用于以该目录为上下文的构建）。
+#   ⇒ 子目录里的 `.dockerignore` 一律**静默不生效**：在其中加排除项会让人误以为已有防护。
+#   原先的 `ZXYZdatabaseFront/.dockerignore` 已因此删除（其有效项本文件均已覆盖，
+#   其余项指向 tests/ __tests__/ .vite/ .github/ 等**并不存在**的目录）。
+#   ⚠️ 请勿重建该文件，更**不要**改名为 `Dockerfile.dockerignore`：其 `.env.*` 没有
+#      `!.env.production` 例外，一旦生效会把 `ZXYZdatabaseFront/.env.production`
+#      排除出构建上下文 ⇒ `vite build` 取不到生产环境变量 ⇒ 整站不可用。
+#
+# ⚠️ 注意匹配语义：**不含 `/` 的写法只匹配上下文根**（所以下面用 `**/node_modules`
+#    而不是 `node_modules`）。为子目录加排除项时务必带 `**/` 前缀。
 
 **/.git
 **/.idea

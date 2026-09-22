@@ -6,13 +6,15 @@
 
 本项目采用分层测试策略，覆盖单元测试、集成测试和组件测试三个层面：
 
-| 测试类型 | 目的 | 占比 | 运行成本 |
+| 测试类型 | 目的 | 当前规模（2026-09-22 实测） | 运行成本 |
 |---|---|---|---|
-| **单元测试** | 验证单类逻辑正确性，隔离外部依赖 | 主体（~65 类） | 低（秒级） |
-| **集成测试** | 验证 MyBatis SQL + Flyway 迁移在真实 MySQL 上的行为 | 辅助（8 类 Mapper） | 中（需 Docker） |
-| **MQ 消费者测试** | 验证消息处理逻辑、幂等性、毒消息处理 | 专项（2 类） | 低 |
+| **单元测试** | 验证单类逻辑正确性，隔离外部依赖 | 主体（约 116 类） | 低（秒级） |
+| **集成测试** | 验证 MyBatis SQL + Flyway 迁移在真实 MySQL 上的行为 | 10 类（`*IntegrationTest`，含 9 个 Mapper 集成） | 中（需 Docker） |
+| **MQ 消费者测试** | 验证消息处理逻辑、幂等性、毒消息处理 | 8 类（`*ConsumerTest`） | 低 |
 | **上下文冒烟测试** | 验证 Spring 上下文能加载 | 1 类（`ZxyzImApplicationTests`） | 中（需 Spring） |
-| **组件测试** | 验证 Vue 组件渲染和交互 | 暂缺（Phase B 补） | 中 |
+| **组件测试** | 验证 Vue 组件渲染和交互 | 已建立（`@vue/test-utils`；见「组件测试模式」） | 中 |
+
+> **规模口径（2026-09-22）**：后端按 `ZXYZdatabaseBack/**/src/test/java/**/*.java` 实测（137 个文件，含抽象基类 `AbstractIntegrationTest`）；剔除该基类与 failsafe 的 `*IT` 后约 **135 个测试类** —— `*IntegrationTest` 10、`*ConsumerTest` 8、冒烟 1，其余约 116 为单元测试。前端为 `*.spec.js` 共 **65** 个文件（权威计数见 `CLAUDE.md`，由 `npm run doc-count:check` 校验）。
 
 **回归测试**：修改代码后运行全量测试（`mvn test` + `npm run test`），确保未引入破坏性变更。
 
@@ -25,7 +27,7 @@
 | 后端测试 | JUnit 5 (Jupiter) | 5.12.2（由 Spring Boot 3.5.7 BOM 管理，未在 pom 显式指定） |
 | 后端 Mock | Mockito | 5.17.0（同上） |
 | 后端集成 | Spring Boot Test + Testcontainers | MySQL 8.4 + Redis 7 |
-| 前端测试 | Vitest | 4.1 |
+| 前端测试 | Vitest | 5.0（`package.json` `^5.0.0`，实测安装 5.0.1） |
 | 前端环境 | happy-dom | ^20.10.2 |
 | 前端 Mock | `vi.mock()` + `vi.fn()` | — |
 | 前端状态 | Pinia 测试（`setActivePinia`） | ^3.0.4 |
@@ -510,7 +512,7 @@ class FileMapperIntegrationTest extends AbstractIntegrationTest {
 
 #### application-test.yml
 
-集成测试需要 `src/test/resources/application-test.yml`。**按本服务实际依赖的下游裁剪**——例如 admin-service 的 `AdminServiceProperties` 绑定 `app` prefix，仅有 `emailService`、`fileService`、`internalServiceToken` 三项，无需配 `team-service` / `user-service`：
+集成测试需要 `src/test/resources/application-test.yml`。**按本服务实际依赖的下游裁剪**——例如 admin-service 的 `AdminServiceProperties` 绑定 `app` prefix，当前字段仅 `internalServiceToken`（**订正 2026-09-22**：`emailService`/`fileService` 已移除），因此 test yml 只需 `app.internal-service-token` 一项：
 
 ```yaml
 spring:
@@ -885,14 +887,15 @@ afterEach(() => server?.close())
 
 ---
 
-### 组件测试模式（Phase B 补）
+### 组件测试模式
 
-> 当前 `@vue/test-utils` 已安装但全仓库零 import，组件测试将在 Phase B 建立。
+> **2026-09-22 订正**：`@vue/test-utils` 已被实际使用 —— `src/components/__tests__/` 下已有 **6 个组件 spec**（`TeamSwitcher` / `FileUploader` / `FileContextMenu` / `InputDialog` / `DeleteConfirmDialog` / `RoleManagementPanel`），另有 `src/views/permission/components/__tests__/`、`src/views/setting/components/__tests__/`、`src/views/not-found/__tests__/` 等渲染层测试。组件测试**已建立**（不再是"Phase B 待补"）。
 
-**Element Plus 全局 mock**：
+**各 spec 按需 mock Element Plus**：
 
 ```javascript
-// test/setup.js 中统一 mock
+// 每个组件 spec 自行 mock element-plus（不是 setup.js 统一 mock；
+// vite.config.mjs 在 test 模式下已关闭 el-* 样式的全量注入）
 vi.mock('element-plus', () => ({
   ElMessage: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
   ElDialog: { ... },
@@ -1185,7 +1188,7 @@ npm run test
 # Watch 模式
 npm run test:watch
 
-# 覆盖率（需先 npm install -D @vitest/coverage-v8）
+# 覆盖率（@vitest/coverage-v8 已在 devDependencies，无需额外安装）
 npm run test:coverage
 ```
 
@@ -1195,35 +1198,39 @@ npm run test:coverage
 
 ### 当前状态
 
-| 检查项 | dev 分支 | PR / main |
+> **2026-09-22 订正**：原表把 dev 列写成"跳过"、覆盖率写成"无"，**均与 `ci-cd.yml` 相反**。实际：**dev 是保护分支，`Determine skip quality` 对其强制 `skip_quality=false`（`ci-cd.yml:325-331`）⇒ 质量检查在 dev 上同样强制运行**。`skip_quality=true` 只允许在**非保护分支**、且必须配非 `latest` 的显式 tag（`:334-344`）。
+
+前后端各作业**仅当对应变更面存在时**才跑（由 `detect-changes` 的 `backend-any` / `frontend` 过滤）：
+
+| 检查项 | dev | PR / main |
 |---|---|---|
-| 前端 lint | 跳过 | 运行 |
-| 前端 test | 跳过 | 运行 |
-| 后端 test | 跳过 | 运行 |
-| 覆盖率 | 无 | 无 |
+| 后端 `mvn test`（含 JaCoCo 报告） | 运行（有后端变更时） | 运行 |
+| 前端 lint / typecheck / typecheck:scope / colors:check / doc-count:check / build / size:check | 运行（有前端变更时） | 运行 |
+| 前端 `test:coverage`（覆盖率**硬门禁**） | 运行 | 运行 |
+| 后端覆盖率 | 仅打印汇总（`ci-cd.yml:707`），**暂不阻断** | 仅打印汇总 |
 
 ### 覆盖率工具
 
 **后端 JaCoCo**：在根 `pom.xml` 配置后，每次 `mvn test` 自动生成报告。
 
-**前端 V8 coverage**：`package.json` 已声明 `@vitest/coverage-v8`，`npm run test:coverage` 直接可用。`vite.config.js` 已配置阈值（`statements:69 / branches:56 / functions:66 / lines:69`），低于阈值会失败。
+**前端 V8 coverage**：`package.json` 已声明 `@vitest/coverage-v8`，`npm run test:coverage` 直接可用。`vite.config.mjs` 已配置**全局阈值** `statements:88 / branches:81 / functions:88 / lines:88`，并对两个目录设了更高阈值：`src/store/im/**` = 94/89/95/94、`src/api/**` = 96/94/95/96（取自 `vite.config.mjs:128-145`）；任一低于阈值即失败（棘轮口径：只上调）。
 
 ```bash
 cd ZXYZdatabaseFront
 npm run test:coverage
 ```
 
-vitest 4.x 默认 `coverage.all:false`，报告池为测试 import 链触达的文件，而非 `src/**` 全部；调高阈值前先实测基线。
+Vitest 5 已**移除** `coverage.all` 选项（`CoverageOptions` 里已无 `all`）：默认**只收测试运行中触达的文件**（报告池 = 测试 import 链加载过的文件，而非 `src/**` 全部）。要把未被测试触达的文件也纳入，须显式配置 `coverage.include`；调高阈值前先实测基线。
 
 ### 修改 CI 配置
 
-dev 分支启用测试：修改 `.github/workflows/ci-cd.yml`，移除 "Determine skip quality" 步骤（第 145–152 行），保留 `workflow_dispatch` 的 `skip_quality` 输入用于紧急热修复。
+⚠️ **无需为 dev 分支"启用测试"** —— dev 是**保护分支**，质量检查本就**强制运行**（`ci-cd.yml:325-331` 原文："保护分支（dev）永远不允许跳过质量检查"）。若确需临时跳过（仅限**非保护分支**的一次性场景），用 `workflow_dispatch` 的 `skip_quality=true`，并**必须**给一个非 `latest` 的显式镜像 tag（`ci-cd.yml:334-344` 会校验并记审计日志）。
 
 ---
 
 ## admin-service 测试示例
 
-> admin-service 现已落地 5 个测试文件作为样板：3 个单元测试（ConfigService / ConfigAdminController / ProviderAdminController）+ 2 个集成测试（ConfigServiceIntegrationTest / ConfigMapperIntegrationTest）。本段摘录每个测试类的核心陷阱与断言点，完整实现见对应文件。
+> admin-service 现已落地 **6 个测试文件**：4 个非集成测试（`ConfigServiceTest` / `ConfigAdminControllerTest` / `ArchitectureRulesTest` / `InternalApiContractTest`）+ 2 个集成测试（`ConfigServiceIntegrationTest` / `ConfigMapperIntegrationTest`）。本段摘录其中若干测试类的核心陷阱与断言点，完整实现见对应文件。
 
 ### 单元测试：ConfigService
 
@@ -1246,7 +1253,9 @@ dev 分支启用测试：修改 `.github/workflows/ci-cd.yml`，移除 "Determin
 - `update`：通过嵌套静态类 `ConfigAdminController.UpdateConfigRequest` 构造请求、`request.setValue("new-value")`（`ConfigAdminControllerTest.java:79-80`），断言 `configService.update("app.name", "new-value", 1L)`（`:82-85`）。
 - 类级 `@SaCheckRole` 在 MockitoExtension 单测中**不生效**，测试只验证业务委派、**不验证授权**（授权需走 `@WebMvcTest` + Sa-Token mock）；`UpdateConfigRequest.value` 上的 `@NotBlank + @Size(max=4096)` 在纯单测中也不会自动执行——契约校验需走 `@WebMvcTest`/集成测试。
 
-### 单元测试：ProviderAdminController
+### 单元测试：ProviderAdminController ⚠️（历史样板 · 该类与测试当前均不在仓内）
+
+> ⚠️ **2026-09-22 订正**：本小节引用的 `ProviderAdminController` / `ProviderAdminControllerTest` **当前不在仓内**（全仓 `grep ProviderAdminControllerTest` 仅命中本文件；admin-service 的 controller 现只有 `ConfigAdminController`，且 `StorageProviderClient` / `EmailProviderClient` 亦零命中）。以下内容作**历史样板**保留，其路径与行号引用**已不可解析**，请勿据此排期；若重新引入请以实际文件为准。
 
 `ProviderAdminControllerTest`（`zxyz-admin-service/src/test/java/uno/acloud/admin/controller/ProviderAdminControllerTest.java`，纯 Mockito）：
 
@@ -1260,7 +1269,7 @@ dev 分支启用测试：修改 `.github/workflows/ci-cd.yml`，移除 "Determin
 
 - 类级 `@Transactional`（`ConfigServiceIntegrationTest.java:29`）+ `extends AbstractIntegrationTest`（`:30`）。`AbstractIntegrationTest`（`zxyz-common/src/test/java/uno/acloud/common/AbstractIntegrationTest.java`）上 `@SpringBootTest` + `@ActiveProfiles("test")` 会**加载 admin-service 完整 Spring 上下文**。
 - `static { DB_NAME = "zxyz_config"; }`（`ConfigServiceIntegrationTest.java:33`）指定 Testcontainers MySQL 指向 `zxyz_config` 库。
-- **必须 `@MockitoBean` 所有外部依赖 bean**，否则 `@SpringBootTest` 上下文起不来：`EmailProviderClient`、`StorageProviderClient`、`RabbitTemplate`、`StringRedisTemplate`、`JasyptEncryptor`（`ConfigServiceIntegrationTest.java:38-51`）。mock `JasyptEncryptor` 可避免真实 Jasypt 在启动时需要 `jasypt.encryptor.password`；mock `StringRedisTemplate` 避免真实 Redis 注入到 `ConfigService`。
+- **必须 `@MockitoBean` 会让上下文起不来的外部依赖**：`RabbitTemplate`、`StringRedisTemplate`、`JasyptEncryptor`（`ConfigServiceIntegrationTest.java:37-44`）。mock `JasyptEncryptor` 可避免真实 Jasypt 在启动时需要 `jasypt.encryptor.password`；mock `StringRedisTemplate` 避免真实 Redis 注入到 `ConfigService`。（**订正 2026-09-22**：早期还 mock `EmailProviderClient` / `StorageProviderClient`，这两个类已从仓内移除。）
 - `get_roundTrip_withJasyptDecrypt`：用 mapper 直接 `insert` 一条 `ENC(abc)` 配置（`:77`），stub `decrypt("ENC(abc)")→"decrypted"`（`:80`），调 `configService.get(...)` 断言 `"decrypted"` 并 `verify(jasyptEncryptor).decrypt("ENC(abc)")`（`:86-89`）。
 - `update_triggersRedisNotificationAfterCommit`：用 `thenAnswer(invocation -> invocation.getArgument(0))` 让 mock decrypt 原样返回（`:108-109`），调 `configService.update(...)` 后**在方法返回前直接**断言 `stringRedisTemplate.convertAndSend("zxyz:config:changed", key)`（`:115`）。注意：本类带类级 `@Transactional`，方法结束时事务提交触发 `afterCommit`，mock 的 `convertAndSend` 在测试方法体内已被调用——与 `ConfigServiceTest` 纯单测相反（纯单测需手动 `afterCommit()`，见上文）。
 
@@ -1268,10 +1277,10 @@ dev 分支启用测试：修改 `.github/workflows/ci-cd.yml`，移除 "Determin
 
 `ConfigMapperIntegrationTest`（`zxyz-admin-service/src/test/java/uno/acloud/admin/mapper/ConfigMapperIntegrationTest.java`，`@Transactional` + 继承 `AbstractIntegrationTest`）：
 
-- 同样 `static { DB_NAME = "zxyz_config"; }`（`ConfigMapperIntegrationTest.java:21`）、`@MockitoBean` 5 个外部 bean（`EmailProviderClient`/`StorageProviderClient`/`RabbitTemplate`/`JasyptEncryptor`/`StringRedisTemplate`，`:23-36`）——与 `ConfigServiceIntegrationTest` 完全一致的 mock 套件，是 `@SpringBootTest` 上下文能起得来的前提。
+- 同样 `static { DB_NAME = "zxyz_config"; }`（`ConfigMapperIntegrationTest.java:19`）、`@MockitoBean` **3 个**外部 bean（`RabbitTemplate` / `JasyptEncryptor` / `StringRedisTemplate`，`:21-28`）——与 `ConfigServiceIntegrationTest` 一致的 mock 套件，是 `@SpringBootTest` 上下文能起得来的前提。（**订正 2026-09-22**：原文记 5 个含 `EmailProviderClient`/`StorageProviderClient`，这两个类已移除。）
 - `SysConfig.configType` 字段是 **`String`**（不是 `int`/`Integer`），写入用 `setConfigType("SYSTEM")`（`ConfigMapperIntegrationTest.java:46, 60`），用 `setConfigType(1)` 会编译失败。
 - `insertAndSelectByKey_roundTrip`：`configMapper.insert(config)` 后 `selectByKey` 断言 `getConfigValue()` 往返一致（`:42-53`）；`updateValue_modifiesExistingKey`：先 insert `original`，再 `updateValue(..., "modified")`，`selectByKey` 断言新值（`:55-69`）。Mapper 层纯 CRUD 烟雾测试，不涉及 Caffeine/Redis/Jasypt（均被 mock）。
-- 测试资源 `application-test.yml` 已存在于 `zxyz-admin-service/src/test/resources/application-test.yml`（22 行：`spring.config.import: classpath:application-common.yml` + 关闭 Nacos discovery + `app:` 块含 `internal-service-token`/`email-service.base-url`/`file-service.base-url`）。Jasypt password 与 `config.datasource.*` 由 `application-common.yml` 与 `AbstractIntegrationTest` 的 Testcontainers 注入，无需在 test yml 重复。
+- 测试资源 `application-test.yml` 已存在于 `zxyz-admin-service/src/test/resources/application-test.yml`（**19 行**：`spring.config.import: classpath:application-common.yml` + 关闭 Nacos discovery + `app:` 块**仅含 `internal-service-token`**；**订正 2026-09-22**：原文记 22 行且含 `email-service.base-url`/`file-service.base-url`，这两项已随对应 client 移除）。Jasypt password 与 `config.datasource.*` 由 `application-common.yml` 与 `AbstractIntegrationTest` 的 Testcontainers 注入，无需在 test yml 重复。
 
 > 旁注（admin-service 配置对齐，非测试代码本身但常导致集成测试上下文起不来）：
 > - `AdminServiceProperties` 用 `@ConfigurationProperties(prefix = "app")`（`src/main/java/uno/acloud/admin/config/AdminServiceProperties.java:9`），YAML key 必须是 `app`（如 `app.internal-service-token`、`app.email-service.base-url`），**不是 `app.admin-service.*`**——prefix 不匹配会静默绑定为空，client 取不到 base-url 抛 `IllegalStateException("服务地址未配置")`（`AdminServiceProperties.java:39`）。
@@ -1297,52 +1306,62 @@ dev 分支启用测试：修改 `.github/workflows/ci-cd.yml`，移除 "Determin
 | `config.datasource` vs `spring.datasource` | admin-service DataSource 未注入 | admin-service 必须用 `config.datasource.*` |
 | `IntegrationTest` 未 mock 外部 ServiceClient | `@SpringBootTest` 因下游连接失败而起不来 | `@MockitoBean` 所有外部 client + `RabbitTemplate`，必要时 `JasyptEncryptor` |
 | `ErrorCode` 是 `int` 常量类不是枚举，`Result.getCode()` 返回 `Integer` | `== someIntegerObj` 在 -128~127 区间外是引用比较坑 | 与 `int` 字面量比较安全；与其他 `Integer` 变量比较用 `.equals()` 或 `.intValue()` |
-| `StorageProviderClient.listAll()` 返回 `JsonNode` 不是 `List` | 测试中 `thenReturn(List.of())` 编译失败 | 用 `ObjectMapper.readTree(...)` 构造 `JsonNode` |
-| `StorageProviderClient.updateConfig(String, Object)` 第二参数是 `Object` 不是 `Map` | Mockito `any(Map.class)` 编译失败 | 用 `any()` 或 `any(Object.class)`；用 `eq(someMap)` 仍可工作 |
+| `StorageProviderClient.listAll()` 返回 `JsonNode` 不是 `List`（⚠️ **该类当前不在仓内**，仅作历史记录） | 测试中 `thenReturn(List.of())` 编译失败 | 用 `ObjectMapper.readTree(...)` 构造 `JsonNode` |
+| `StorageProviderClient.updateConfig(String, Object)` 第二参数是 `Object` 不是 `Map`（⚠️ **该类当前不在仓内**） | Mockito `any(Map.class)` 编译失败 | 用 `any()` 或 `any(Object.class)`；用 `eq(someMap)` 仍可工作 |
 
 ### 测试文件清单（实测，按模块）
 
-#### 后端（共 83 个文件）
+#### 后端（共 137 个文件）
 
-| 模块 | 文件数 | 拆分 |
-|---|---|---|
-| `zxyz-common` | 5 | 1 抽象基类 `AbstractIntegrationTest` + 4 单元测试 |
-| `zxyz-user-service` | 9 | 2 Mapper 集成 + 6 Service（含 `LoginRateLimiterTest`）+ 1 Controller |
-| `zxyz-team-service` | 13 | 2 Mapper 集成 + 9 Service + 2 MQ（`TeamEventPublisher` + `UserDeletedEventConsumer`） |
-| `zxyz-project-service` | 11 | 2 Mapper 集成 + 4 Service + 1 Assembler + 1 ErrorCode + 1 RestClient + 1 AOP + 1 MQ |
-| `zxyz-file-service` | 15 | 2 Mapper 集成 + 10 Service + 2 Controller + 1 MQ |
-| `zxyz-share-service` | 6 | 4 Service + 1 MQ + 1 Infrastructure Client（`ShareFileServiceClient`） |
-| `zxyz-email-service` | 7 | 7 application 层（DDD） |
-| `zxyz-im-service` | 10 | 7 application + 1 config + 1 controller + 1 infrastructure |
-| `zxyz-audit-service` | 1 | 1 MQ 消费者 |
-| `zxyz-gateway` | 1 | 1 Filter 配置 |
-| `zxyz-admin-service` | 5 | 3 单元（ConfigService / ConfigAdminController / ProviderAdminController）+ 2 集成（ConfigServiceIntegrationTest / ConfigMapperIntegrationTest） |
+> **2026-09-22 实测**（口径：`ZXYZdatabaseBack/**/src/test/java/**/*.java`，含抽象基类 `AbstractIntegrationTest`）。原文记 83 个、且各模块「拆分」列已随代码演进失真，故本次只保留**文件数**（按模块）：
 
-总和：5 + 9 + 13 + 11 + 15 + 6 + 7 + 10 + 1 + 1 + 5 = **83**
+| 模块 | 文件数 |
+|---|---|
+| `zxyz-common` | 20（含 1 抽象基类 `AbstractIntegrationTest`） |
+| `zxyz-admin-service` | 7 |
+| `zxyz-audit-service` | 4 |
+| `zxyz-email-service` | 10 |
+| `zxyz-file-service` | 19 |
+| `zxyz-gateway` | 7 |
+| `zxyz-im-service` | 13 |
+| `zxyz-project-service` | 12 |
+| `zxyz-share-service` | 15 |
+| `zxyz-starter` | 5 |
+| `zxyz-team-service` | 14 |
+| `zxyz-user-service` | 11 |
 
-#### 前端（共 26 个文件）
+总和：20 + 7 + 4 + 10 + 19 + 7 + 13 + 12 + 15 + 5 + 14 + 11 = **137**
+
+#### 前端（共 65 个文件）
+
+> **2026-09-22 实测**（口径：`ZXYZdatabaseFront/src/**/*.spec.js`）。原文记 26 个是**已过时**的旧读数（`CLAUDE.md` 早已指出应为 65）。
 
 | 目录 | 文件数 |
 |---|---|
-| `src/api/__tests__/` | 4 |
-| `src/composables/__tests__/` | 16 |
-| `src/store/__tests__/` | 1（仅 `currentUser.spec.js`） |
-| `src/store/im/__tests__/` | 1（`normalizers.spec.js`，独立子目录） |
-| `src/utils/__tests__/` | 3 |
-| `src/router/__tests__/` | 1 |
+| `src/api/__tests__/` | 5 |
+| `src/components/__tests__/` | 6 |
+| `src/composables/__tests__/` | 23 |
+| `src/constants/__tests__/` | 1 |
+| `src/models/__tests__/` | 3 |
+| `src/router/__tests__/` | 3 |
+| `src/services/__tests__/` | 1 |
+| `src/store/__tests__/` | 2（`chat` / `currentUser`） |
+| `src/store/im/__tests__/` | 7 |
+| `src/utils/__tests__/` | 9 |
+| `src/views/**/__tests__/` | 5（permission 1 + permission/components 2 + not-found 1 + setting/components 1） |
 
-总和：4 + 16 + 1 + 1 + 3 + 1 = **26**
+总和：5 + 6 + 23 + 1 + 3 + 3 + 1 + 2 + 7 + 9 + 5 = **65**（与 `CLAUDE.md` 一致，由 `npm run doc-count:check` 校验）
 
 ### 涉及的核心 FQN 速查
 
 - `uno.acloud.admin.service.ConfigService`（构造器 4 参）
 - `uno.acloud.admin.controller.ConfigAdminController`（构造器 3 参，含嵌套 `UpdateConfigRequest`，4 个端点：`listAll`/`getByKey`/`update`/`listAuditLogs`）
-- `uno.acloud.admin.controller.ProviderAdminController`（构造器 2 参，6 个端点，含两个 health）
+- `uno.acloud.admin.controller.ProviderAdminController`（构造器 2 参，6 个端点，含两个 health）⚠️ **该类当前不在仓内（已移除）**
 - `uno.acloud.admin.domain.SysConfig`（`@Data` + `@TableName`，`configType` 是 `String`，无 `create()`/`builder()`）
 - `uno.acloud.admin.mapper.SysConfigMapper`（继承 `BaseMapper<SysConfig>`，自定义 `selectByKey`、`updateValue`；`insert` 由父接口继承）
 - `uno.acloud.admin.mapper.SysConfigAuditMapper`（自定义 `insert(String, String, String, Long)`）
-- `uno.acloud.admin.client.StorageProviderClient` / `EmailProviderClient`（继承 `AbstractServiceClient`；`listAll()`/`healthCheck()` 返 `JsonNode`；`updateConfig(String, Object)`）
-- `uno.acloud.admin.config.AdminServiceProperties`（`@ConfigurationProperties(prefix="app")`，三字段：`emailService`、`fileService`、`internalServiceToken`）
+- `uno.acloud.admin.client.StorageProviderClient` / `EmailProviderClient`（继承 `AbstractServiceClient`；`listAll()`/`healthCheck()` 返 `JsonNode`；`updateConfig(String, Object)`）⚠️ **这两个类当前不在仓内（已移除）**
+- `uno.acloud.admin.config.AdminServiceProperties`（`@ConfigurationProperties(prefix="app")`，字段现仅 `internalServiceToken`；**订正 2026-09-22**：原文记的 `emailService`/`fileService` 字段已移除）
 - `uno.acloud.common.util.JasyptEncryptor`（`@Component`，包 `uno.acloud.common.util`，**不是** `common.config`）
 - `uno.acloud.common.Result<T>`（`code` 是 `Integer`，`SUCCESS=1` 来自 `ErrorCode`）
 - `uno.acloud.common.ErrorCode`（`public final class`，常量 `SUCCESS=1`、`NOT_FOUND=4040`、`BAD_REQUEST=4000` 等，非枚举）

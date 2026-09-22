@@ -27,7 +27,7 @@ API 模块严格按领域分离（`src/api/`），禁止跨领域引用。每个
 
 ## Pinia Stores
 
-`store/im/` 包含 5 个领域文件（conversationDomain, messageDomain, notificationDomain, permissionDomain, realtimeDomain, teamDomain）+ chatBridge 插件。
+`store/im/` 包含 6 个领域文件（conversationDomain、messageDomain、notificationDomain、permissionDomain、realtimeDomain、teamDomain）与 `normalizers.js`（实体/消息归一化，不属于任何领域）。`store/plugins/chatBridge.js` 是 chat 与 im 之间的桥接插件，位于 `store/plugins/` 而**不在** `store/im/` 下。
 
 顶层 stores：session、currentUser、currentId、team、chat。
 

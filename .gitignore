@@ -80,6 +80,12 @@ ZXYZdatabaseFront/.git/
 ISSUE/
 sql/schema_*.sql
 
+# AI 协作产出的审计/收口报告（deliverables/engineering-assurance/**）。
+# 与 ISSUE/、任务.md 同类：内容留在本地磁盘供人阅读，不入库（2026-09-22）。
+# ⚠️ 必须忽略：未跟踪文件会令 pre-push 的子仓库同步检查把根仓视为"脏"从而拒推
+#    （与 .last_ci_run 同一成因）。
+deliverables/
+
 # 用户手写的待办清单：本地磁盘保留，不入库（2026-09-21 取消跟踪）
 任务.md
 

@@ -72,7 +72,7 @@ cd ZXYZdatabaseFront && git diff HEAD --stat && cd ..
 
 ```bash
 mvn clean -DskipTests compile                   # baseline compile check
-mvn test                                         # all tests (~83 test classes)
+mvn test                                         # all tests（135 个测试类 / 137 个测试源文件，见 docs/testing.md）
 mvn test -pl zxyz-team-service                   # single module tests
 mvn test -pl zxyz-file-service -Dtest=FileUploadServiceTest  # single test class
 mvn clean package -DskipTests                    # package for Docker build
@@ -116,7 +116,7 @@ npm run test:coverage # Vitest + @vitest/coverage-v8 coverage
 
 **Backend**: Java 17, Spring Boot 3.5.7, Spring Cloud 2025.0.0, Maven multi-module. Group: `uno.acloud`, base package: `uno.acloud.{service}`.
 
-**Frontend**: Vue 3.5 (Composition API + `<script setup>`), Vite 7.3, Element Plus 2.11 (auto-import), Pinia 3.0, Axios 1.13, Vitest 4.1.
+**Frontend**: Vue 3.5 (Composition API + `<script setup>`), Vite 8.3, Element Plus 2.11 (auto-import), Pinia 3.0, Axios 1.20, Vitest 5.0.
 
 ### Backend: 11 Maven Modules
 
@@ -193,7 +193,7 @@ WHEN 添加 setting 子路由, DO 确保 `route.name` 在 Setting 组件 watcher
 - 服务器 `.env` 在 `/www/zxyz/.env`，独立于仓库维护，CI/CD 不同步
 - 镜像标签：dev → `dev`，main → `latest`，tag → 版本号；每镜像双 tag（`${tag}` + `${git_sha}` 供精确回滚）；本地改 `.env` 的 `APP_IMAGE_TAG`/`IMAGE_PREFIX` 控制部署目标
 
-**前端测试**: 26 个测试文件，278 个用例（`npm run test`）。命名 `*.spec.js` 放对应目录 `__tests__/` 下，`vi.mock()` 外部依赖，测试名中文。import 顺序：vitest/vue 最前 → `vi.mock()` 紧跟 → 再 `@/` 与第三方（`element-plus` import 须在 `vi.mock()` 后，否则 `import-x/order` 报错）。详见 [docs/testing.md](docs/testing.md)。
+**前端测试**: 65 个测试文件，1209 个用例（`npm run test`）。⚠️ 文件数由 `npm run doc-count:check`（`ZXYZdatabaseFront/scripts/check-doc-test-count.mjs`）对着 `src/**/*.spec.js` 实测校验 —— 此前这里写的是 26 个，实测已 65 个，是无人发现的 2.5 倍偏差。用例数无法静态推导，改测试后请跑一次 `npm run test` 并同步这里的数字（`vite.config.mjs` 覆盖率注释里的同类数字是**历史快照**，不要改）。命名 `*.spec.js` 放对应目录 `__tests__/` 下，`vi.mock()` 外部依赖，测试名中文。import 顺序：vitest/vue 最前 → `vi.mock()` 紧跟 → 再 `@/` 与第三方（`element-plus` import 须在 `vi.mock()` 后，否则 `import-x/order` 报错）。详见 [docs/testing.md](docs/testing.md)。
 
 **CI/CD**: `.github/workflows/ci-cd.yml` 按路径变更选择性构建部署。push 到 dev/main、`v*` tag、PR、手动 dispatch；`dorny/paths-filter` 按服务目录判断重建；backend-common 变更触发全部后端重建；docker-compose.yml 变更不触发重建；workflow_dispatch 输入 `tag`（必填）/`skip_quality`/`fast_deploy`。
 
