@@ -787,6 +787,14 @@ jobs:
       - name: Hardcoded colors
         run: npm run colors:check
 
+      # 文档里的测试文件数校验（F5）：`CLAUDE.md` 写了一份「N 个测试文件，M 个用例」，
+      # 实测曾写成 26 个，而真实值是 65 —— 一个 doc 里落后 2.5 倍的数字。它不会让任何构建失败，
+      # 人和 agent 却会拿它当基线，正是本仓反复出现的「看起来有维护、其实没有」形态。
+      # 文件数可静态数出 ⇒ 硬断言；用例数无法静态推导 ⇒ 只提示，不做假绿断言。
+      # 注意不扫 vite.config.mjs：那里的同类数字是按日期分轮的历史快照，不该按当前值改写。
+      - name: Doc test counts
+        run: npm run doc-count:check
+
       # 产物体积预算门禁（ISSUE/08 §5.6）：Vite 自带的 "chunks are larger than 500 kB"
       # 只是控制台提示，既不看 gzip 后的真实传输量，也不会让 CI 变红 —— 又一处
       # "看起来有告警其实没有"。本步把"体积不回归"变成硬断言（棘轮，见 bundle-budget.json）。
@@ -797,7 +805,7 @@ jobs:
       - name: Bundle size budget
         run: npm run size:check
 
-      # 覆盖率门禁：必须带 --coverage，否则 vite.config.js 里配的 thresholds 根本不会被评估。
+      # 覆盖率门禁：必须带 --coverage，否则 vite.config.mjs 里配的 thresholds 根本不会被评估。
       # 此前 CI 跑的是 `npm run test`（= vitest run，无 --coverage）⇒ 4 组精心调过的棘轮
       # 阈值从未被执行过一次。阈值同样遵循棘轮：先测真实基线，取值在基线下方约 4 点，达标后上调。
       - name: Test

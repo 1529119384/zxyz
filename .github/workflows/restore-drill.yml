@@ -1,0 +1,203 @@
+name: MySQL 恢复演练（默认关闭，仅手动触发）
+
+# =============================================================================
+# 为什么【默认关闭】——这是本 workflow 的第一性原则，改动前请先读完：
+#
+#   生产机 160.202.46.118 的真实规格为 4 核 / 7.94 GB / **无 swap**。而
+#   docker-compose.yml 里 15 个容器的 limits 之和已达 **7.875 GiB**
+#   （审计文档按另一口径记为 8.125 GiB），几乎吃满物理内存 —— 留给内核与 Docker
+#   自身的余量近乎为零。在这种机器上，恢复演练会在**同一台机**上额外拉起一个
+#   mysql:8.4 容器并灌入全量备份；一旦内存吃紧，内核 OOM killer 挑中的很可能是
+#   正在跑的 MySQL 容器 —— 那是数据安全事故，代价远大于一次演练的收益。
+#
+#   ⇒ 因此本 workflow **只保留手动触发（workflow_dispatch）**，并再加一道显式确认
+#     输入（confirm: RUN）。不再复制 ci-cd.yml 那种「一推代码就自动打到生产」的隐式行为：
+#     把「是否在低峰窗口执行演练」这个决策交还给人。
+#
+# 一行开启方法（二选一，务必先读完再动手）：
+#   A) 取消下方 on.schedule 段的两行注释 ⇒ 每月 1 日 04:17 UTC 自动执行。
+#      ⚠️ 开启前请先落地「C-20 内存超卖」处置或「加 swap」中的任一项（见
+#      deliverables/engineering-assurance/ops-closeout-2026-09-22.md §1/§3），
+#      否则等于在无 swap 的满内存机器上定期制造 OOM 窗口。
+#   B) 不用 GitHub schedule，改在服务器上装 crontab 直接跑 scripts/restore-drill.sh。
+#      代价/收益权衡见同一份报告的 §1。
+#
+# 触发方式：Actions → 本 workflow → Run workflow → confirm 输入 RUN。
+# =============================================================================
+
+on:
+  # ---- 周期执行：刻意注释掉，保持关闭 --------------------------------------
+  # 保留（而非删除）是为了留下「按月演练」的既定意图 + 一行开启位置，
+  # 避免后来者重新设计、也避免「以为是漏写」而随手加回来。
+  # schedule:
+  #   - cron: '17 4 1 * *'      # 每月 1 日 04:17 UTC（避开整点，减少排队）
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: '在服务器上执行恢复演练必须输入 RUN（其它任何值都会跳过整个作业）'
+        required: true
+        default: 'NO'
+
+# 演练发生在服务器上，本 workflow 自身不写任何 GitHub 资源 ⇒ 只读即可。
+permissions:
+  contents: read
+
+jobs:
+  restore-drill:
+    runs-on: ubuntu-latest
+    # 二次确认门禁：未输入 RUN ⇒ 整个 job 跳过（在 UI 上可见，非静默）。
+    if: github.event.inputs.confirm == 'RUN'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # --- 与 ci-cd.yml 逐字一致的凭据模式（本仓既定契约，勿自创）---
+      - name: Determine deploy target
+        id: target
+        run: |
+          # 与 ci-cd.yml 的 deploy / nacos-import 作业同款表达式。
+          echo "host=${{ (secrets.DEV_DEPLOY_HOST || secrets.DEPLOY_HOST) }}" >> "$GITHUB_OUTPUT"
+
+      - name: Determine SSH key
+        id: ssh-key
+        run: |
+          # 私钥是多行 PEM，必须用 heredoc 定界符写进 GITHUB_ENV
+          # （单行 name=value 会报 Invalid format）。
+          {
+            echo "ssh_key<<GH_SSH_KEY_EOF"
+            echo "${{ (secrets.DEV_SSH_KEY || secrets.DEPLOY_SSH_KEY) }}"
+            echo "GH_SSH_KEY_EOF"
+          } >> "$GITHUB_ENV"
+
+      # --- 前置守卫 + 在服务器上执行演练 ---
+      - name: Run restore drill on server
+        id: drill
+        uses: appleboy/ssh-action@v1
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/www/zxyz' }}
+        with:
+          host: ${{ steps.target.outputs.host }}
+          username: ${{ secrets.DEPLOY_USERNAME }}
+          key: ${{ env.ssh_key }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          timeout: 60s
+          # 整体超时上限：单次演练（含灌库）不应超过 20 分钟，到点即断，杜绝挂死。
+          command_timeout: 20m
+          envs: DEPLOY_PATH
+          script: |
+            #!/bin/bash
+            set -euo pipefail
+            DEPLOY_DIR="${DEPLOY_PATH:-/www/zxyz}"
+            REPO_DIR="${DEPLOY_DIR}-repo"
+            BACKUP_DIR="$DEPLOY_DIR/backups"
+            LOG="$BACKUP_DIR/restore-drill.log"
+            mkdir -p "$BACKUP_DIR"
+
+            # 跳过语义：显式输出 SKIPPED: <原因>（同时写入日志供 artifact 留存），
+            # 且以 0 退出 —— 「不满足前置条件」是跳过、不是故障，但绝不静默。
+            skip() {
+              echo "::warning::SKIPPED: $1"
+              printf 'SKIPPED: %s\n' "$1" > "$LOG"
+              exit 0
+            }
+
+            echo "=== 恢复演练前置守卫 ==="
+
+            # 守卫 1：.env 存在（restore-drill.sh 按自身位置 source ../.env）
+            [ -f "$DEPLOY_DIR/.env" ] || skip "未找到 $DEPLOY_DIR/.env（MYSQL_ROOT_PASSWORD 来源缺失）"
+
+            # 守卫 2：磁盘可用 >= 5 GB（灌库 + 临时容器写盘所需）
+            avail_kb=$(df -Pk "$DEPLOY_DIR" 2>/dev/null | awk 'NR==2 {print $4}' || true)
+            if [ -z "${avail_kb:-}" ] || [ "$avail_kb" -lt 5242880 ]; then
+              skip "$DEPLOY_DIR 可用空间 ${avail_kb:-未知}KB < 5GB"
+            fi
+
+            # 守卫 3：最新备份存在且 mtime < 48 小时。过期本身就该报警 ——
+            # 它意味着备份链路（crontab/backup.sh）已经断了，演练无从谈起。
+            latest=$(ls -1t "$BACKUP_DIR"/mysql_*.sql.gz 2>/dev/null | head -n1 || true)
+            [ -n "$latest" ] || skip "$BACKUP_DIR 下无 mysql_*.sql.gz（备份链路可能已断，请排查 crontab/backup.sh）"
+            age_s=$(( $(date +%s) - $(stat -c %Y "$latest") ))
+            if [ "$age_s" -gt 172800 ]; then
+              skip "最新备份 $(basename "$latest") 已过期 $((age_s/3600))h（>48h，备份链路可能已断，请排查）"
+            fi
+
+            # 取克隆里的最新演练脚本。沿用 deploy-on-server.sh 的惯例：
+            # 脚本必须**从 $DEPLOY_DIR 侧**执行，才能 source 到生产 .env、写到生产 backups/；
+            # 而脚本实体的最新版本来自 $DEPLOY_DIR-repo 克隆（$DEPLOY_DIR/scripts 不自动更新）。
+            SRC="$REPO_DIR/scripts/restore-drill.sh"
+            if [ -f "$SRC" ]; then
+              mkdir -p "$DEPLOY_DIR/scripts"
+              cp -f "$SRC" "$DEPLOY_DIR/scripts/restore-drill.sh"
+            fi
+            DRILL="$DEPLOY_DIR/scripts/restore-drill.sh"
+            [ -f "$DRILL" ] || skip "未找到 restore-drill.sh（$SRC 与 $DRILL 均不存在）"
+
+            echo "守卫通过：磁盘可用 $((avail_kb/1024/1024))GiB / 最新备份 $(basename "$latest")（$((age_s/3600))h 前）"
+            echo "=== 执行恢复演练（$DRILL）==="
+            if bash "$DRILL" 2>&1 | tee "$LOG"; then
+              echo "::notice::恢复演练 PASS"
+            else
+              echo "::error::恢复演练 FAIL（详见还原后的日志 artifact）"
+              exit 1
+            fi
+
+      # --- 取回日志：无论演练成功 / 失败 / 跳过后都执行 ---
+      - name: Fetch drill log
+        if: always()
+        continue-on-error: true
+        env:
+          SSH_PRIVATE_KEY: ${{ env.ssh_key }}
+          DEPLOY_HOST: ${{ steps.target.outputs.host }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USERNAME }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || 22 }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/www/zxyz' }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_drill
+          chmod 600 ~/.ssh/id_drill
+          ssh -i ~/.ssh/id_drill -p "$DEPLOY_PORT" \
+            -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cat '${DEPLOY_PATH}/backups/restore-drill.log'" > restore-drill.log 2>&1 || true
+          echo "--- 演练日志（尾部 40 行）---"
+          tail -n 40 restore-drill.log || true
+
+      - name: Upload drill log artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: restore-drill-log
+          path: restore-drill.log
+          if-no-files-found: warn
+          retention-days: 30
+
+      # --- 无条件收尾：清理服务器上可能残留的演练临时容器 ---
+      # 与两处防线互补：restore-drill.sh 内的 EXIT trap（脚本正常/异常退出时清理），
+      # 以及 docker run 的 --rm（容器自身停止即删）。本步兜底的是「SSH 会话被硬杀、
+      # 远端 shell 收到不可捕获信号」这类 trap 根本不执行的情况。
+      - name: Cleanup leftover drill containers
+        if: always()
+        continue-on-error: true
+        uses: appleboy/ssh-action@v1
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/www/zxyz' }}
+        with:
+          host: ${{ steps.target.outputs.host }}
+          username: ${{ secrets.DEPLOY_USERNAME }}
+          key: ${{ env.ssh_key }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          timeout: 60s
+          command_timeout: 2m
+          envs: DEPLOY_PATH
+          script: |
+            #!/bin/bash
+            set -uo pipefail
+            leftover=$(docker ps -aq --filter "name=zxyz-restore-drill-" || true)
+            if [ -n "$leftover" ]; then
+              # shellcheck disable=SC2086
+              docker rm -f $leftover
+              echo "已清理残留演练容器: $leftover"
+            else
+              echo "无残留演练容器"
+            fi
