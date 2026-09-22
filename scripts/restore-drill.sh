@@ -14,7 +14,12 @@
 #   - 需要本机 Docker 可用，且能拉取 mysql:8.4 镜像（或本地已缓存）
 #   - 需要 .env 中配置 MYSQL_ROOT_PASSWORD
 #   - 临时容器会占用端口（映射到随机可用端口），演练结束后自动删除
-#   - 生产环境建议结合 crontab 周期执行，确保持续可恢复
+#   - 临时容器被**硬性封顶在 512 MB 内存 / 0 swap**（--memory=512m --memory-swap=512m）：
+#     生产机为 4 核 / 7.94 GB / **无 swap**，而 docker-compose.yml 里容器 limits 之和
+#     已达 7.875 GiB，几乎吃满物理内存。演练若再拉起一个无上限的 MySQL 容器，
+#     有把内核 OOM killer 引向生产 MySQL 的真实风险 —— 故此处必须封顶。
+#   - 定期执行：CI 侧另有 .github/workflows/restore-drill.yml，但**默认关闭**
+#     （仅 workflow_dispatch 手动触发），原因同上；也可自行接 crontab（见该文件头）。
 
 set -euo pipefail
 
@@ -32,7 +37,10 @@ export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"
 BACKUP_DIR="${BACKUP_DIR:-$PROJECT_DIR/backups}"
 
 # 找最近一个 MySQL 备份
-LATEST=$(ls -1t "$BACKUP_DIR"/mysql_*.sql.gz 2>/dev/null | head -n1)
+# 注意 `|| true`：set -e 下 `VAR=$(ls … | head)` 若 ls 无匹配会以非零退出（pipefail 传导），
+# 使脚本在**赋值那一行**就直接退出（status=2），下面那条本该打印的 "FAIL: … 未找到备份"
+# 永远打不出来。补 `|| true` 让流程走到显式检查，保留 exit 1 的 FAIL 契约不变。
+LATEST=$(ls -1t "$BACKUP_DIR"/mysql_*.sql.gz 2>/dev/null | head -n1 || true)
 if [ -z "$LATEST" ] || [ ! -f "$LATEST" ]; then
   echo "FAIL: 在 $BACKUP_DIR 未找到 mysql_*.sql.gz 备份文件" >&2
   exit 1
@@ -61,9 +69,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "启动临时 MySQL 容器: $CONTAINER_NAME (端口 $DRILL_PORT)"
+echo "启动临时 MySQL 容器: $CONTAINER_NAME (端口 $DRILL_PORT，内存上限 512m/0 swap)"
 docker run -d \
   --name "$CONTAINER_NAME" \
+  --rm \
+  --memory=512m --memory-swap=512m \
   -e MYSQL_ROOT_PASSWORD \
   -p "127.0.0.1:${DRILL_PORT}:3306" \
   mysql:8.4 >/dev/null

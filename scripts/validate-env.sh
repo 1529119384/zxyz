@@ -250,8 +250,24 @@ check_not_placeholder "VERIFY_CODE_PEPPER"
 
 echo ""
 echo "--- 前端地址 ---"
-if echo "${FRONTEND_BASE_URL:-}" | grep -qE "YOUR_SERVER_IP|CHANGE_ME|localhost"; then
-  echo "  WARN: FRONTEND_BASE_URL 似乎是占位符: ${FRONTEND_BASE_URL}"
+# FRONTEND_BASE_URL 是下方「CORS × 前端地址一致性」门禁的输入，也是 .env.example 里
+# 唯一必须手填的地址（init-secrets.sh 不生成，其默认值恰是占位符 http://YOUR_SERVER_IP）。
+#
+# 历史缺陷（实测失效链）：这里对占位符只记一个 WARN，而脚本收尾是
+# 「ERRORS>0 → exit 1；WARNINGS>0 → exit 0（PASS）」，同时 _cors_frontend_check 见占位符
+# 即 return 0 跳过校验 —— 两处跳过叠加后，该门禁在「新服务器首次部署」这个它唯一真正
+# 被需要的场景里 100% 静默失效。上线后的表现是：nginx 丢端口 ⇒ 后端把请求当 80 端口
+# ⇒ 浏览器访问 http://<ip>:<port> 的 Origin 被判为跨域 ⇒ 登录等所有 /api 被 403。
+# ⇒ 占位符属「配置错误」，一律置 ERROR（不再是提示）；只有指向本机时才降级为 WARN。
+if [ -z "${FRONTEND_BASE_URL:-}" ]; then
+  echo "  ERROR: FRONTEND_BASE_URL 未设置"
+  ERRORS=$((ERRORS + 1))
+elif echo "$FRONTEND_BASE_URL" | grep -qE "YOUR_SERVER_IP|CHANGE_ME"; then
+  echo "  ERROR: FRONTEND_BASE_URL 仍是占位符: ${FRONTEND_BASE_URL}"
+  echo "         请填成浏览器实际访问该站点的地址（含端口），例如 http://160.202.46.118:8081"
+  ERRORS=$((ERRORS + 1))
+elif echo "$FRONTEND_BASE_URL" | grep -qE '^(https?://)?(localhost|127\.0\.0\.1)([:/]|$)'; then
+  echo "  WARN: FRONTEND_BASE_URL 指向本机地址（仅本机自测可用）: ${FRONTEND_BASE_URL}"
   WARNINGS=$((WARNINGS + 1))
 else
   check_required "FRONTEND_BASE_URL"

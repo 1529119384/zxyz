@@ -499,18 +499,67 @@ else
 
   # --- 分层健康检查 ---
   # 普通服务：30 次 × 10s = 300s（8G 机器 10 个 JVM 同启实测需 2-6 分钟，60s 窗口曾误判回滚）
+  #
+  # 🔴 为什么是「正向断言」而不是「反向 grep 坏状态」（2026-09-21 修复，P0）：
+  #   `docker compose ps` 默认**只列 running 容器**。容器 Exited（崩溃退出）时它根本不出现在
+  #   输出里 ⇒ 原来的 `! compose ps | grep -qE "...(unhealthy|starting)"` 会「无命中 ⇒ 判通过」
+  #   ⇒ 门禁恒绿、HEALTH_OK 一直 true ⇒ **自动回滚永不触发**；而且回滚后的校验用的是同一个
+  #   盲区，会打出 AUTO_ROLLBACK_SUCCESS 并 exit 0 —— 一次真把服务打挂的部署会被报告为
+  #   「部署成功」。反向 grep 永远漏掉「不存在的东西」，正向断言天然覆盖「容器从未创建」。
+  assert_services_ready() {
+    local want="$1"
+    local output
+    if ! output="$(docker compose ps -a --format '{{.Service}} {{.State}} {{.Health}}' 2>/dev/null)"; then
+      echo "  ERROR: docker compose ps -a 执行失败，无法判定服务健康状态"
+      return 1
+    fi
+    local bad=0 svc line state health
+    for svc in $want; do
+      line="$(printf '%s\n' "$output" | awk -v s="$svc" '$1==s{print; exit}')"
+      if [ -z "$line" ]; then
+        echo "  MISSING: $svc 不在 compose 服务列表中（容器从未创建）"
+        bad=1
+        continue
+      fi
+      state="$(printf '%s' "$line" | awk '{print $2}')"
+      health="$(printf '%s' "$line" | awk '{print $3}')"
+      if [ "$state" != "running" ]; then
+        echo "  NOT READY: $svc state=$state（需要 running）"
+        bad=1
+      elif [ -n "$health" ] && [ "$health" != "healthy" ]; then
+        echo "  NOT READY: $svc health=$health（需要 healthy；空值=该服务未配 healthcheck，属正常）"
+        bad=1
+      fi
+    done
+    return $bad
+  }
+
+  # 🔴 待检清单**从 UPDATE_SVC 派生**，不再手写正则：
+  #   此前 common 段的正则只列了 8 个服务（缺 project-service）⇒ 「只改 project-service」时
+  #   门禁恒通过；frontend-nginx 则从未被任何健康门禁覆盖。两份清单 = 同一知识的两个副本，
+  #   任何一处新增服务都会重新引入漂移；派生后「部署哪些」与「检查哪些」永远同源。
+  #   gateway / frontend-nginx 单独分层（启动窗口与依赖顺序不同），见下。
+  COMMON_SVC=()
+  for _svc in "${UPDATE_SVC[@]}"; do
+    case "$_svc" in
+      gateway|frontend-nginx) ;;
+      *) COMMON_SVC+=("$_svc") ;;
+    esac
+  done
+  echo "Health gate targets: common=[${COMMON_SVC[*]}] gateway frontend-nginx"
+
   echo "===== Waiting for common services ====="
   for i in $(seq 1 30); do
-    if ! docker compose ps 2>/dev/null | grep -qE "(im-service|email-service|user-service|share-service|file-service|team-service|audit-service|admin-service).*(unhealthy|starting)"; then
+    if assert_services_ready "${COMMON_SVC[*]}"; then
       echo "Common services ready"
       break
     fi
     if [ "$i" -eq 30 ]; then
       echo "ERROR: Common services not all healthy after 300s"
-      echo "--- 诊断: 容器状态 ---"
-      docker compose ps 2>/dev/null || true
+      echo "--- 诊断: 容器状态（含已退出） ---"
+      docker compose ps -a 2>/dev/null || true
       echo "--- 诊断: 最近日志 ---"
-      for svc in im-service email-service user-service share-service file-service team-service audit-service admin-service; do
+      for svc in "${COMMON_SVC[@]}"; do
         echo ">>> $svc <<<"
         docker logs --tail 20 "zxyz-$svc" 2>&1 || true
       done
@@ -523,16 +572,38 @@ else
   if [ "$HEALTH_OK" = true ]; then
     echo "===== Waiting for gateway ====="
     for i in $(seq 1 30); do
-      if ! docker compose ps 2>/dev/null | grep -qE "gateway.*(unhealthy|starting)"; then
+      if assert_services_ready gateway; then
         echo "Gateway ready"
         break
       fi
       if [ "$i" -eq 30 ]; then
         echo "ERROR: Gateway startup timeout after 300s"
-        echo "--- 诊断: 容器状态 ---"
-        docker compose ps 2>/dev/null || true
+        echo "--- 诊断: 容器状态（含已退出） ---"
+        docker compose ps -a 2>/dev/null || true
         echo "--- 诊断: gateway 最近日志 ---"
         docker logs --tail 30 zxyz-gateway 2>&1 || true
+        HEALTH_OK=false
+      fi
+      sleep 10
+    done
+  fi
+
+  # frontend-nginx：此前**不在任何健康门禁里** —— 改 CSP / nginx conf / 前端产物后它起不来
+  # （nginx 配置语法错、静态资源缺失、upstream 解析失败）时，部署会照常报告成功。
+  # 它有 healthcheck（curl localhost:80），nginx 启动是秒级，故窗口取 12×10s=120s。
+  if [ "$HEALTH_OK" = true ]; then
+    echo "===== Waiting for frontend-nginx ====="
+    for i in $(seq 1 12); do
+      if assert_services_ready frontend-nginx; then
+        echo "frontend-nginx ready"
+        break
+      fi
+      if [ "$i" -eq 12 ]; then
+        echo "ERROR: frontend-nginx startup timeout after 120s"
+        echo "--- 诊断: 容器状态（含已退出） ---"
+        docker compose ps -a 2>/dev/null || true
+        echo "--- 诊断: frontend-nginx 最近日志 ---"
+        docker logs --tail 30 zxyz-frontend-nginx 2>&1 || true
         HEALTH_OK=false
       fi
       sleep 10
@@ -588,10 +659,14 @@ else
         fi
 
         # 回滚后健康检查：30 次 × 10s = 300s（同上，10 个 JVM 重建后需要数分钟）
+        # 🔴 这里是主路径的同一个盲区：原判据 `! compose ps | grep -qE "(unhealthy|starting)"`
+        #   在容器 Exited 时**无命中 ⇒ 判通过** ⇒ 立刻打出 AUTO_ROLLBACK_SUCCESS 并 exit 0，
+        #   于是「回滚失败」被报告成「回滚成功」。改用同一个正向断言；
+        #   清单同样从 UPDATE_SVC 派生（回滚重建的正是这批服务）。
         echo "===== Verifying rollback health ====="
         ROLLBACK_OK=false
         for i in $(seq 1 30); do
-          if ! docker compose ps 2>/dev/null | grep -qE "(unhealthy|starting)"; then
+          if assert_services_ready "${UPDATE_SVC[*]}"; then
             ROLLBACK_OK=true
             echo "Rollback health check passed (${i}0s)"
             break
