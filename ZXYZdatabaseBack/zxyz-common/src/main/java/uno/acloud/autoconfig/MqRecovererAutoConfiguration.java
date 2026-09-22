@@ -1,11 +1,11 @@
-package uno.acloud.common.config;
+package uno.acloud.autoconfig;
 
 import org.springframework.amqp.rabbit.retry.MessageRecoverer;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 import uno.acloud.common.mq.LoggingMessageRecoverer;
 
 /**
@@ -31,19 +31,18 @@ import uno.acloud.common.mq.LoggingMessageRecoverer;
  *       本配置就再也不生效（且不会有任何报错）。故此处用
  *       {@code @ConditionalOnMissingBean(MessageRecoverer.class)} 让业务侧的定义优先，
  *       同时各服务<strong>不应</strong>再新增第二个。</li>
- *   <li><strong>不要给它加 {@code @ConditionalOnBean} 之类的依赖型条件</strong>。本类位于
- *       {@code uno.acloud.common.config}，会被各服务 {@code @ComponentScan} 扫到；
- *       仓库既有教训是「被扫到的 {@code @Configuration} 里写依赖自动配置 Bean 的
- *       {@code @ConditionalOnBean} ⇒ 条件恒为 false、Bean 静默不创建」。
- *       这里只用「类是否在 classpath」（{@code @ConditionalOnClass}）与「缺省才建」
- *       （{@code @ConditionalOnMissingBean}）两种安全条件，并同时登记进
- *       {@code AutoConfiguration.imports}。</li>
+ *   <li><strong>仍然不要给它加 {@code @ConditionalOnBean} 之类的依赖型条件</strong>。
+ *       本类原位于 {@code uno.acloud.common.config}（会被各服务 {@code @ComponentScan} 扫到），
+ *       那里写依赖型条件会因「先被扫描、后注册自动配置」而恒定求值为 false、Bean 静默不创建；
+ *       2026-09-21 已随 C-10 迁入 {@code uno.acloud.autoconfig}（不被任何 {@code @ComponentScan} 覆盖）。
+ *       条件仍只用「类是否在 classpath」（{@code @ConditionalOnClass}）与「缺省才建」
+ *       （{@code @ConditionalOnMissingBean}）两种安全形态。</li>
  * </ul>
  *
  * <p>各服务（含未消费 DLQ 的 file / project / share / team）都会加载本配置 —— 这正是目的：
  * 那四个服务的死信队列没有消费者，全局 recoverer 是它们<strong>唯一</strong>的可观测信号。</p>
  */
-@Configuration
+@AutoConfiguration
 @ConditionalOnClass(MessageRecoverer.class)
 public class MqRecovererAutoConfiguration {
 

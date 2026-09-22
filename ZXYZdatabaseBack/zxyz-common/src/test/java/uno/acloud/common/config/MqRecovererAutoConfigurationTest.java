@@ -12,6 +12,7 @@ import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.retry.MessageRecoverer;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import uno.acloud.autoconfig.MqRecovererAutoConfiguration;
 import uno.acloud.common.mq.LoggingMessageRecoverer;
 
 import java.nio.charset.StandardCharsets;

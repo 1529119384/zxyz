@@ -26,12 +26,16 @@ import java.util.concurrent.TimeUnit;
  * @deprecated P2-A1 已将全部动态配置键迁移到 Nacos（{@code zxyz-dynamic.yml}），
  *     各服务改为通过 {@code @Value} / {@code @ConfigurationProperties} 消费，
  *     生产代码已无任何取值调用。本类仅因历史原因保留，将在下个版本连同
- *     {@link ConfigClientAutoConfiguration} 的 Bean 定义、Redis Pub/Sub 监听，
- *     以及 admin-service {@code V2__hot_config_keys.sql} 的种子 INSERT 一并删除。
- *     <p><strong>删除前必须先解除的耦合</strong>：{@code CacheConfig} 上有
- *     {@code @ConditionalOnBean(ConfigGetter.class)}，一旦移除本 Bean，
- *     {@code CacheConfig} 会静默不再创建 —— {@code @EnableCaching} 随之失效、
- *     全服务缓存被静默关闭，且不会有任何报错。务必先把该条件改为不依赖本类。
+ *     {@code uno.acloud.autoconfig.ConfigClientAutoConfiguration} 的 Bean 定义、
+ *     Redis Pub/Sub 监听，以及 admin-service {@code V2__hot_config_keys.sql} 的种子
+ *     INSERT 一并删除。
+ *     <p><b>曾经的删除阻塞项已解除</b>（2026-09-21 核实）：{@code CacheConfig} 过去带
+ *     {@code @ConditionalOnBean(ConfigGetter.class)}，移除本 Bean 会让它静默不创建、
+ *     {@code @EnableCaching} 随之失效且无任何报错。该条件现已移除，{@code CacheConfig}
+ *     只按 {@code @ConditionalOnClass(RedisConnectionFactory.class)} 判断，删除本类不再波及缓存。
+ *     <p><b>剩余待拍板项</b>：admin-service 的 {@code ConfigService} 仍在向
+ *     {@code zxyz:config:changed} 发布消息；只删消费端会让发布方「以为有人在听」，
+ *     必须与发布端一并决定去留（报告 C-16）。
  */
 @Deprecated
 @Slf4j

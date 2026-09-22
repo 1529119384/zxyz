@@ -1,10 +1,11 @@
-package uno.acloud.common.config;
+package uno.acloud.autoconfig;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
 import org.springframework.data.redis.serializer.RedisSerializationContext;
@@ -38,8 +39,10 @@ import org.springframework.data.redis.cache.RedisCacheManager;
  * <p>
  * 此配置仅在 {@code spring-boot-starter-data-redis} 位于 classpath 时激活
  * （所有业务服务均已依赖该 starter，gateway 使用 reactive 版本不触发）。
+ *
+ * <p><b>C-10（2026-09-21）：本类原位于 {@code uno.acloud.common.config} —— 一个被各服务{@code @ComponentScan} 覆盖的包（basePackages 含 {@code uno.acloud.common}），同时又登记在{@code AutoConfiguration.imports} 中 ⇒ 同一份配置被注册两次、条件在两个不同阶段各求值一次。已迁入 {@code uno.acloud.autoconfig}（不被任何 {@code @ComponentScan} 覆盖），并补上 Spring Boot 3 要求的 {@code @AutoConfiguration}。实测证据见同包 {@code AuditBufferRetryAutoConfiguration} 的类注释。</p>
  */
-@Configuration(proxyBeanMethods = false)
+@AutoConfiguration(after = RedisAutoConfiguration.class)
 @ConditionalOnClass(RedisConnectionFactory.class)
 // 缓存激活仅依赖 Redis 是否在 classpath（所有业务服务均依赖 redis starter）。
 // 刻意不依赖已废弃的 ConfigGetter Bean：原 @ConditionalOnBean(ConfigGetter.class)

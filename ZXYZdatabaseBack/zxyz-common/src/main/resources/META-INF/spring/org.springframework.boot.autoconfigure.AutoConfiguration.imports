@@ -1,8 +1,9 @@
-uno.acloud.common.config.AuthServicePortAutoConfig
-uno.acloud.common.config.CacheConfig
-uno.acloud.common.config.ConfigClientAutoConfiguration
-uno.acloud.common.config.RedissonAutoConfiguration
+uno.acloud.autoconfig.AuthServicePortAutoConfig
+uno.acloud.autoconfig.CacheConfig
+uno.acloud.autoconfig.ConfigClientAutoConfiguration
+uno.acloud.autoconfig.RedissonAutoConfiguration
 uno.acloud.autoconfig.PermissionCacheAutoConfiguration
 uno.acloud.autoconfig.TeamPermissionCacheAutoConfiguration
 uno.acloud.satoken.RemoteStpInterfaceAutoConfig
-uno.acloud.common.config.MqRecovererAutoConfiguration
+uno.acloud.autoconfig.MqRecovererAutoConfiguration
+uno.acloud.autoconfig.AuditBufferRetryAutoConfiguration

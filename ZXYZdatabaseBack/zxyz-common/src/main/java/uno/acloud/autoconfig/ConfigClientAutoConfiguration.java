@@ -1,12 +1,12 @@
-package uno.acloud.common.config;
+package uno.acloud.autoconfig;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
@@ -26,13 +26,15 @@ import uno.acloud.common.config.ConfigGetter;
  *
  * @deprecated P2-A1 已将全部动态配置键迁移到 Nacos（{@code zxyz-dynamic.yml}），
  *     本自动配置连同 {@link ConfigGetter} Bean 与 Redis Pub/Sub 监听将在下个版本删除。
- *     <p><strong>删除前必须先解除的耦合</strong>：{@code CacheConfig} 上有
- *     {@code @ConditionalOnBean(ConfigGetter.class)}，移除本处的 Bean 定义会导致
- *     {@code CacheConfig} 静默不再创建 —— {@code @EnableCaching} 失效、
- *     全服务缓存被静默关闭且无任何报错。务必先改掉该条件。
+ *     <p><b>该耦合已在删除前解除</b>（2026-09-21 核实）：{@code CacheConfig} 现只按
+ *     {@code @ConditionalOnClass(RedisConnectionFactory.class)} 判断，不再依赖
+ *     {@code ConfigGetter} Bean，故移除本类不会波及 {@code @EnableCaching}。
+ *     <p><b>尚未删除的原因</b>：{@code admin-service} 的 {@code ConfigService} 仍在向
+ *     {@code zxyz:config:changed} 频道发布消息，删除接收端会让「发布方以为有人在听」，
+ *     属另一处需要一并拍板的取舍（报告 C-16）。在此之前仅做归位（C-10），不改行为。
  */
 @Deprecated
-@Configuration
+@AutoConfiguration
 @ConditionalOnClass(RestClient.class)
 @ConditionalOnProperty(name = "app.admin-service.base-url")
 public class ConfigClientAutoConfiguration {
