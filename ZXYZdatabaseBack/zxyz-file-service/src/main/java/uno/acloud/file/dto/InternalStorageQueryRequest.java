@@ -20,4 +20,5 @@ public class InternalStorageQueryRequest implements Serializable {
     private Long projectId;
     private List<Long> userIds;
     private List<Long> teamIds;
+    private List<Long> projectIds;
 }

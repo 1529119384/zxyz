@@ -46,9 +46,10 @@ public class ProjectCatalogService implements ProjectCatalogPort {
     @Override
     public List<ProjectVO> listVisibleProjects(Long teamId, Long userId) {
         teamFileAccessService.requireTeamMember(teamId, userId);
-        return projectMapper.listVisibleProjects(teamId, userId).stream()
-                .map(project -> viewAssembler.toProjectVO(project, userId))
-                .toList();
+        // 必须走批量装配：逐项目调 toProjectVO 会让 P 个项目产生 2P 次远程调用（用量查询 + 权限校验）
+        // 与 2P 次 DB 查询。toProjectVOList 把「与项目无关的权限校验」提到循环外，
+        // 并用批量端点替换按项目的用量/配额/成员查询。详见 ProjectViewAssembler 类注释。
+        return viewAssembler.toProjectVOList(projectMapper.listVisibleProjects(teamId, userId), userId);
     }
 
     @Override

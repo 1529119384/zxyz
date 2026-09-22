@@ -64,11 +64,13 @@ class FileMapperWiringTest {
     private static final String NS = "uno.acloud.file.infrastructure.mapper.FileMapper";
 
     /**
-     * 41 = {@code @Select} 29 + {@code @Update} 9 + {@code @Insert} 2 + {@code @Delete} 1。
-     * <p>迁移只搬「定义写在哪」，语句总数不变 ⇒ 这个数字在整轮 P2-7 期间恒为 41。
-     * 它同时兜住「迁移时漏搬 / 误删一条」。</p>
+     * 42 条语句（P2-7 迁移收尾时为 41，后新增 {@code sumActiveFileSizeByProjectIds}）。
+     * <p>迁移只搬「定义写在哪」，语句总数不变；而这个数字在迁移结束后<b>只在真的增删语句时变</b>，
+     * 因此它同时兜住两类错误：「迁移时漏搬 / 误删一条」与「新加语句忘了同步本数字」。</p>
+     * <p>⚠️ 新增/删除 FileMapper 语句时必须同批更新此常量 —— 这正是它存在的意义：
+     * 强迫改动者确认「这是有意的语句集合变更」，而不是靠运行时 {@code BindingException} 才发现。</p>
      */
-    private static final int EXPECTED_STATEMENTS = 41;
+    private static final int EXPECTED_STATEMENTS = 42;
 
     /**
      * MyBatis-Plus 默认的 {@code mapper-locations}（已核 starter 配置元数据，非推断：
@@ -201,7 +203,19 @@ class FileMapperWiringTest {
     }
 
     /**
-     * 迁移收尾形态：**全部 41 条语句都由 {@code mapper/FileMapper.xml} 承载**，
+     * 2026-09-21 新增的批量项目存储聚合（项目列表页 N+1 修复）。
+     * <p>它与迁移不是一回事 —— 是<b>真的多了一条语句</b>，因此必须落在 XML 里
+     * （{@link #noStatementIsStillInlineAnnotated} 要求全部语句均由 XML 承载）。</p>
+     */
+    @Test
+    void projectUsageAggregateIsBackedByXml() {
+        Configuration configuration = assemble();
+
+        assertBackedByXml(configuration, "sumActiveFileSizeByProjectIds", SqlCommandType.SELECT);
+    }
+
+    /**
+     * 迁移收尾形态：**全部 42 条语句都由 {@code mapper/FileMapper.xml} 承载**，
      * 接口里不再残留任何内联 SQL。
      *
      * <p>这是整轮 P2-7 的终态断言 —— 任何「漏搬一条」都会在这里被点名，
@@ -373,6 +387,12 @@ class FileMapperWiringTest {
         assertNotNull(team, "teamStorageUsageResultMap 未注册");
         assertTrue(mappedColumnsUpper(team).contains("TEAMID"), "应映射别名 teamId");
         assertTrue(mappedColumnsUpper(team).contains("USEDSTORAGE"), "应映射别名 usedStorage");
+
+        // 项目维度：SQL 里是 project_id AS projectId ⇒ 映射必须写别名，写成 project_id 只会静默为 null
+        ResultMap project = configuration.getResultMap(NS + ".projectStorageUsageResultMap");
+        assertNotNull(project, "projectStorageUsageResultMap 未注册");
+        assertTrue(mappedColumnsUpper(project).contains("PROJECTID"), "应映射别名 projectId");
+        assertTrue(mappedColumnsUpper(project).contains("USEDSTORAGE"), "应映射别名 usedStorage");
     }
 
     // ==========================================================================

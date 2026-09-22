@@ -8,6 +8,7 @@ import uno.acloud.file.infrastructure.entity.Folder;
 import uno.acloud.file.vo.FileSearchItemVO;
 
 import uno.acloud.dto.PersonalStorageUsage;
+import uno.acloud.dto.ProjectStorageUsage;
 import uno.acloud.dto.TeamStorageUsage;
 
 import java.util.List;
@@ -16,7 +17,7 @@ import java.util.Map;
 /**
  * 文件节点表 {@code file_node} 的 Mapper。
  *
- * <p>⚠️ 本接口<b>不再内联 SQL</b>：全部 41 条语句与 4 个 resultMap 都在
+ * <p>⚠️ 本接口<b>不再内联 SQL</b>：全部 42 条语句与 5 个 resultMap 都在
  * {@code src/main/resources/mapper/FileMapper.xml}，靠 MyBatis-Plus 默认的
  * {@code mybatis-plus.mapper-locations = classpath*:/mapper/**&#47;*.xml} 被扫到
  * （注意前缀是 {@code mybatis-plus.*}；写成 {@code mybatis.*} 是静默无效的）。
@@ -212,6 +213,23 @@ public interface FileMapper {
      * 批量查询多个团队的存储用量。
      */
     List<TeamStorageUsage> sumActiveFileSizeByTeamIds(@Param("teamIds") List<Long> teamIds);
+
+    /**
+     * 批量查询多个项目的存储用量（每个项目一条）。
+     *
+     * <p>存在的理由是「列表页 N+1」：项目列表要为每个项目显示已用容量，逐项目调
+     * {@link #sumActiveFileSize} 会让 P 个项目产生 P 次远程调用 + P 次 SUM 扫描。
+     * 本方法把这一维压成 1 次 {@code IN} + {@code GROUP BY}。</p>
+     *
+     * <p>口径与 {@code sumActiveFileSize(spaceType=3)} <b>逐字一致</b>
+     * （{@code deleted IN (0,1) AND file_type = 1 AND space_type = 3}），
+     * 因此两者对同一 projectId 必然返回同一数值；差别只在「无匹配行」的表达方式：
+     * 单值版返回 {@code 0}，本方法<b>不返回该 projectId 这一条</b> ⇒ 消费端按 0 处理。</p>
+     *
+     * <p>⚠️ 改本方法时 {@code sumActiveFileSize} 的 spaceType=3 分支必须同批改，否则列表页与详情页
+     * 会给出两个不同的「已用容量」，且差别只在有回收站数据时才显形 —— 属静默不一致。</p>
+     */
+    List<ProjectStorageUsage> sumActiveFileSizeByProjectIds(@Param("projectIds") List<Long> projectIds);
 
     /** 个人空间哨兵根节点（parent_id = -1）的 id 列表（已迁至 mapper/FileMapper.xml）。 */
     List<Long> getPersonalRootFileIds(@Param("userId") Long userId);

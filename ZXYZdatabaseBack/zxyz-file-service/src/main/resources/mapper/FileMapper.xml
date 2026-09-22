@@ -302,6 +302,12 @@
         <result column="usedStorage" property="usedStorage"/>
     </resultMap>
 
+    <!-- ⚠️ column 必须写 SQL 里的**别名**（projectId），写成原列名 project_id 不报错、只让字段静默为 null。 -->
+    <resultMap id="projectStorageUsageResultMap" type="uno.acloud.dto.ProjectStorageUsage">
+        <result column="projectId" property="projectId"/>
+        <result column="usedStorage" property="usedStorage"/>
+    </resultMap>
+
     <select id="searchByKeyword" resultMap="fileSearchItemResultMap">
         SELECT id, file_type, original_name, category, file_size,
         parent_id, team_id AS teamId, create_time, modify_time
@@ -338,6 +344,26 @@
             #{teamId}
         </foreach>
         GROUP BY team_id
+    </select>
+
+    <!--
+      ⚠️ 与上面 sumActiveFileSize 的 spaceType==3 分支**逐字同口径**：
+         deleted IN (0,1) AND file_type = 1 AND space_type = 3 AND project_id IN (...)
+         两处一旦不同步，"列表页已用容量"与"详情页已用容量"就会给出不同的数字
+         （差别只在有回收站/已删除行时才显形，属静默不一致）。
+      注意这里**不按 upload_user_id 过滤** —— 项目空间容量是项目级口径，与上面单值版一致
+      （单值版 spaceType==3 分支同样忽略 userId）。
+      无匹配行的 projectId 不会出现在结果里，消费端按 0 处理（等价于单值版的 COALESCE(...,0)）。
+    -->
+    <select id="sumActiveFileSizeByProjectIds" resultMap="projectStorageUsageResultMap">
+        SELECT project_id AS projectId, COALESCE(SUM(file_size), 0) AS usedStorage
+        FROM file_node
+        WHERE deleted IN (0, 1) AND file_type = 1 AND space_type = 3
+        AND project_id IN
+        <foreach collection="projectIds" item="projectId" open="(" separator="," close=")">
+            #{projectId}
+        </foreach>
+        GROUP BY project_id
     </select>
 
     <!--

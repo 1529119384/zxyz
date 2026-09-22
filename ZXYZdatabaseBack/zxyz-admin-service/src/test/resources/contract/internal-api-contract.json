@@ -375,10 +375,22 @@
     "method" : "POST",
     "path" : "/api/internal/storage/personal-usage-list",
     "requestBodyType" : "uno.acloud.file.dto.InternalStorageQueryRequest",
-    "requestBodyJsonFields" : [ "projectId", "spaceType", "teamId", "teamIds", "userId", "userIds" ],
+    "requestBodyJsonFields" : [ "projectId", "projectIds", "spaceType", "teamId", "teamIds", "userId", "userIds" ],
     "responseDataType" : "java.util.List<uno.acloud.dto.PersonalStorageUsage>"
   }, {
     "method" : "GET",
+    "path" : "/api/internal/storage/project-usage-list",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.util.List<uno.acloud.dto.ProjectStorageUsage>"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/storage/project-usage-list",
+    "requestBodyType" : "uno.acloud.file.dto.InternalStorageQueryRequest",
+    "requestBodyJsonFields" : [ "projectId", "projectIds", "spaceType", "teamId", "teamIds", "userId", "userIds" ],
+    "responseDataType" : "java.util.List<uno.acloud.dto.ProjectStorageUsage>"
+  }, {
+    "method" : "GET",
     "path" : "/api/internal/storage/sum-active",
     "requestBodyType" : null,
     "requestBodyJsonFields" : [ ],
@@ -387,7 +399,7 @@
     "method" : "POST",
     "path" : "/api/internal/storage/sum-active",
     "requestBodyType" : "uno.acloud.file.dto.InternalStorageQueryRequest",
-    "requestBodyJsonFields" : [ "projectId", "spaceType", "teamId", "teamIds", "userId", "userIds" ],
+    "requestBodyJsonFields" : [ "projectId", "projectIds", "spaceType", "teamId", "teamIds", "userId", "userIds" ],
     "responseDataType" : "java.lang.Long"
   }, {
     "method" : "GET",
@@ -399,7 +411,7 @@
     "method" : "POST",
     "path" : "/api/internal/storage/sum-personal",
     "requestBodyType" : "uno.acloud.file.dto.InternalStorageQueryRequest",
-    "requestBodyJsonFields" : [ "projectId", "spaceType", "teamId", "teamIds", "userId", "userIds" ],
+    "requestBodyJsonFields" : [ "projectId", "projectIds", "spaceType", "teamId", "teamIds", "userId", "userIds" ],
     "responseDataType" : "java.lang.Long"
   }, {
     "method" : "GET",
@@ -411,7 +423,7 @@
     "method" : "POST",
     "path" : "/api/internal/storage/team-usage-list",
     "requestBodyType" : "uno.acloud.file.dto.InternalStorageQueryRequest",
-    "requestBodyJsonFields" : [ "projectId", "spaceType", "teamId", "teamIds", "userId", "userIds" ],
+    "requestBodyJsonFields" : [ "projectId", "projectIds", "spaceType", "teamId", "teamIds", "userId", "userIds" ],
     "responseDataType" : "java.util.List<uno.acloud.dto.TeamStorageUsage>"
   }, {
     "method" : "GET",

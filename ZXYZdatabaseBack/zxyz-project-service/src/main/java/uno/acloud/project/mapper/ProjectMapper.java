@@ -52,6 +52,28 @@ public interface ProjectMapper extends BaseMapper<Project> {
     @Select("SELECT COUNT(*) FROM project_member WHERE project_id = #{projectId} AND user_id = #{userId}")
     int countMember(@Param("projectId") Long projectId, @Param("userId") Long userId);
 
+    /**
+     * 一次取回「该用户在某团队内已加入的项目 id」（项目列表页批量装配用）。
+     *
+     * <p>存在的理由是列表页 N+1：逐项目调 {@link #countMember} 会让 P 个项目产生 P 次查询。</p>
+     *
+     * <p>语义等价性：调用方拿到的是 {@code listVisibleProjects(teamId, userId)} 的结果集，
+     * 其过滤条件是 {@code p.team_id = #{teamId} AND p.status = 0}。本方法用同一个 JOIN 谓词，
+     * 因此「返回集合是否含某项目」恰好等价于对该项目调 {@code countMember(...) > 0}。</p>
+     *
+     * <p>⚠️ 刻意不做成 {@code project_id IN (...)} 的动态 SQL：入参项目数不可控，
+     * 且用 JOIN 表达能顺带把「跨团队项目 id 串入」这一整类错误挡在 SQL 层。</p>
+     */
+    @Select("""
+            SELECT pm.project_id
+            FROM project_member pm
+            JOIN project p ON p.id = pm.project_id
+            WHERE pm.user_id = #{userId}
+              AND p.team_id = #{teamId}
+              AND p.status = 0
+            """)
+    List<Long> listMemberProjectIds(@Param("teamId") Long teamId, @Param("userId") Long userId);
+
     @Select("SELECT COUNT(*) FROM project WHERE leader_user_id = #{userId} AND status = 0")
     int countActiveProjectsLedBy(@Param("userId") Long userId);
 

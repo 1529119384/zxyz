@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import uno.acloud.common.Result;
 import uno.acloud.dto.PersonalStorageUsage;
+import uno.acloud.dto.ProjectStorageUsage;
 import uno.acloud.dto.TeamStorageUsage;
 import uno.acloud.file.dto.InternalStorageQueryRequest;
 import uno.acloud.file.service.impl.StorageCacheService;
@@ -115,5 +116,36 @@ public class InternalStorageController {
             return Result.of(List.of());
         }
         return Result.of(storageCacheService.sumActiveFileSizeByTeamIds(teamIds));
+    }
+
+    @Operation(summary = "获取项目存储用量列表（POST）")
+    @PostMapping("/project-usage-list")
+    public Result<List<ProjectStorageUsage>> listProjectStorageUsage(@Valid @RequestBody InternalStorageQueryRequest request) {
+        return doListProjectStorageUsage(request);
+    }
+
+    @Operation(summary = "获取项目存储用量列表（GET）")
+    @GetMapping("/project-usage-list")
+    public Result<List<ProjectStorageUsage>> listProjectStorageUsageGet(@Valid InternalStorageQueryRequest request) {
+        return doListProjectStorageUsage(request);
+    }
+
+    /**
+     * 项目列表页的批量容量查询。
+     *
+     * <p>调用方是 project-service 的 {@code ProjectViewAssembler.toProjectVOList}：项目列表要为每个项目
+     * 显示已用容量，逐项目调 {@code /sum-active} 会造成 P 次远程调用 + P 次 SUM 扫描。
+     * 本端点把这一维压成 1 次调用。</p>
+     *
+     * <p>⚠️ 返回列表<b>只含「有文件的项目」</b>（GROUP BY 的天然结果），调用方必须把
+     * 「不在返回列表里」当作 0 —— 不要在这里补齐空项目，那会让「没有文件的空项目」与
+     * 「查不到的项目」无法区分，且徒增传输量。</p>
+     */
+    private Result<List<ProjectStorageUsage>> doListProjectStorageUsage(InternalStorageQueryRequest request) {
+        List<Long> projectIds = request.getProjectIds();
+        if (projectIds == null || projectIds.isEmpty()) {
+            return Result.of(List.of());
+        }
+        return Result.of(storageCacheService.sumActiveFileSizeByProjectIds(projectIds));
     }
 }
