@@ -3,6 +3,7 @@ package uno.acloud.file.mapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import org.apache.ibatis.builder.xml.XMLMapperBuilder;
 import org.apache.ibatis.io.Resources;
+import org.apache.ibatis.mapping.BoundSql;
 import org.apache.ibatis.mapping.Discriminator;
 import org.apache.ibatis.mapping.MappedStatement;
 import org.apache.ibatis.mapping.ResultMap;
@@ -14,6 +15,7 @@ import uno.acloud.file.infrastructure.entity.FileNode;
 import uno.acloud.file.infrastructure.entity.Folder;
 import uno.acloud.file.infrastructure.mapper.FileMapper;
 
+import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -21,10 +23,15 @@ import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -54,6 +61,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 只能靠 {@code fileNodeResultMap} 的 {@code <discriminator>} 落地。缺判别器时
  * MyBatis 会拿抽象类去实例化并抛 {@code InstantiationException} —— 也就是「查得到行」反而更糟。
  * 这一条同样不需要数据库，本类一并钉住。</p>
+ *
+ * <p>⚠️ 另有一条**装配期测不出、只在执行期爆**的形态，本类也一并钉住（见
+ * {@link #everyInClauseSurvivesAnEmptyCollection()}）：{@code IN (<foreach>)} 在**空集合**上会
+ * 整段消失（连括号一起），拼出 {@code WHERE id IN AND …} 这种语法错 SQL。它不需要数据库即可判定 ——
+ * 坏的是**生成出来的 SQL 文本**，不是数据。</p>
  *
  * <h2>它不能替代什么</h2>
  * <p>SQL 的<b>语义</b>（WHERE 条件、排序、分页、唯一键行为）必须由
@@ -437,5 +449,163 @@ class FileMapperWiringTest {
         assertTrue(assemble().isMapUnderscoreToCamelCase(),
                 "MybatisConfiguration 默认的 mapUnderscoreToCamelCase 变了 ⇒ 依赖自动映射的列会静默映射不上；"
                         + "仓库里那条 mybatis.configuration.* 是无效配置，改它没用，需用 mybatis-plus.configuration.*");
+    }
+
+    // ==========================================================================
+    // 五、IN (<foreach>) 的空集合不变量
+    // ==========================================================================
+
+    /** 探针集合大小。取 2 而非 1，才能同时验证分隔符与「占位符数 == 元素数」。 */
+    private static final int PROBE_SIZE = 2;
+
+    /** 悬空 IN：`IN` 之后不是 `(`（其后是 AND / WHERE / 语句结尾都算坏掉）。 */
+    private static final Pattern DANGLING_IN = Pattern.compile("\\bIN\\b(?!\\s*\\()");
+
+    /** 带占位符的 IN 组。要求组内至少一个 `?` ⇒ 天然跳过 `deleted IN (0, 1)` 这类字面量。 */
+    private static final Pattern IN_WITH_PLACEHOLDERS = Pattern.compile("IN\\s*\\(([^)]*\\?[^)]*)\\)");
+
+    /** 语句元素名（用于从 {@code <foreach>} 往上找到它所属的 statement）。 */
+    private static final Set<String> STATEMENT_TAGS = Set.of("select", "insert", "update", "delete");
+
+    /**
+     * 凡 {@code IN (…<foreach>…)} 必须**自带空集合守卫**；本用例对每条语句各跑一次
+     * 「空集合」与「非空集合」两档，双向钉住。
+     *
+     * <h2>为什么必须钉</h2>
+     * <p>MyBatis 的 {@code <foreach open="(" close=")">} 在集合为**空**时会**整段消失**（连括号一起），
+     * 于是 SQL 被拼成 {@code WHERE id IN AND x = 1} / {@code WHERE id IN} 这类形态。
+     * 关键危险在于：它**装配期完全正常**（本类其余用例全绿），只在真正执行时抛
+     * {@code SQLSyntaxErrorException: … near 'AND …'} —— 属于「装配测不出、CI 也未必撞到」的形态。</p>
+     *
+     * <h2>判据（为什么这样断言才不是自证）</h2>
+     * <ul>
+     *   <li><b>空集合</b>：SQL 里必须出现 {@code 1 = 0} 兜底，且**任何** {@code IN} 都必须紧跟 {@code (}
+     *       —— 直接捕获「悬空 IN」这个坏形态本身，而不是只看有没有写守卫。</li>
+     *   <li><b>非空集合</b>：必须真的生成 {@code IN (?, ?)}，且**占位符数 == 集合元素数**。
+     *       这一档专防「守卫写反（条件取反）把非空分支也短路」—— 那种错会让所有批量操作静默变成 no-op，
+     *       比报错更危险。</li>
+     * </ul>
+     *
+     * <p>⚠️ 语句与集合名**由 DOM 从 XML 自动发现**（不写死清单）⇒ 将来新增带 {@code IN}
+     * 的语句会自动纳入本门禁；同时用「发现数 ≥ 16」兜住「发现逻辑自己失效导致空扫假绿」。</p>
+     */
+    @Test
+    void everyInClauseSurvivesAnEmptyCollection() throws Exception {
+        Configuration configuration = assemble();
+        Map<String, Set<String>> inClauses = discoverOpenParenForeach();
+
+        assertTrue(inClauses.size() >= 16,
+                "只从 mapper/FileMapper.xml 里发现 " + inClauses.size() + " 条含 IN (<foreach>) 的语句，"
+                        + "少于预期的 16 条 ⇒ DOM 发现逻辑本身可能失效（空扫会假绿）");
+
+        List<String> problems = new ArrayList<>();
+        for (Map.Entry<String, Set<String>> entry : inClauses.entrySet()) {
+            String id = entry.getKey();
+            MappedStatement statement = require(configuration, id);
+
+            for (boolean empty : new boolean[]{true, false}) {
+                String label = empty ? "空集合" : "非空集合";
+                BoundSql boundSql = statement.getBoundSql(probeParams(entry.getValue(), empty));
+                String sql = boundSql.getSql().replaceAll("\\s+", " ").trim();
+
+                Matcher dangling = DANGLING_IN.matcher(sql);
+                if (dangling.find()) {
+                    problems.add(id + " [" + label + "] 出现悬空 IN：「"
+                            + around(sql, dangling.start()) + "」");
+                }
+                if (empty && !sql.contains("1 = 0")) {
+                    problems.add(id + " [空集合] 未产出 `1 = 0` 兜底 ⇒ 该语句缺少空集合守卫");
+                }
+                if (!empty) {
+                    Matcher group = IN_WITH_PLACEHOLDERS.matcher(sql);
+                    if (!group.find()) {
+                        problems.add(id + " [非空集合] 未生成 IN (…) ⇒ 守卫把非空分支也短路了");
+                    } else if (group.group(1).split("\\?", -1).length - 1 != PROBE_SIZE) {
+                        problems.add(id + " [非空集合] IN 内占位符数 ≠ " + PROBE_SIZE
+                                + "：「" + around(sql, group.start()) + "」");
+                    }
+                }
+            }
+        }
+
+        assertTrue(problems.isEmpty(),
+                "IN 子句的空集合守卫缺失或写反：\n  - " + String.join("\n  - ", problems));
+    }
+
+    /**
+     * 从 XML 里自动发现「带 {@code open="("} 的 {@code <foreach>}」及其所属 statement 与 collection 名。
+     * <p>用 DOM 而非正则：{@code <foreach>} 的属性顺序、换行与自闭合写法都不固定，
+     * 正则一旦跟不上就会**静默漏掉**关键字句（漏掉的正是最该被测的那条）。</p>
+     */
+    private static Map<String, Set<String>> discoverOpenParenForeach() throws Exception {
+        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        // ⚠️ 不能开 disallow-doctype-decl：本文件头部就有 DOCTYPE，开了会直接解析失败。
+        //    改为关掉外部实体解析（既满足安全要求，又不需要联网取 DTD）。
+        factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+        factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+        factory.setValidating(false);
+        factory.setNamespaceAware(false);
+
+        Map<String, Set<String>> found = new LinkedHashMap<>();
+        try (InputStream xml = Resources.getResourceAsStream(XML_RESOURCE)) {
+            assertNotNull(xml, XML_RESOURCE + " 不在 classpath 上");
+            org.w3c.dom.Document document = factory.newDocumentBuilder().parse(xml);
+            org.w3c.dom.NodeList foreachNodes = document.getElementsByTagName("foreach");
+            for (int i = 0; i < foreachNodes.getLength(); i++) {
+                org.w3c.dom.Element foreach = (org.w3c.dom.Element) foreachNodes.item(i);
+                if (!"(".equals(foreach.getAttribute("open"))) {
+                    continue;
+                }
+                org.w3c.dom.Node parent = foreach.getParentNode();
+                while (parent != null
+                        && !(parent instanceof org.w3c.dom.Element element
+                        && STATEMENT_TAGS.contains(element.getTagName()))) {
+                    parent = parent.getParentNode();
+                }
+                assertNotNull(parent, "open=\"(\" 的 <foreach> 不在任何 select/insert/update/delete 内");
+                String statementId = ((org.w3c.dom.Element) parent).getAttribute("id");
+                assertFalse(statementId.isEmpty(), "发现一处无 id 的语句");
+                found.computeIfAbsent(statementId, k -> new LinkedHashSet<>())
+                        .add(foreach.getAttribute("collection"));
+            }
+        }
+        return found;
+    }
+
+    /**
+     * 造探针参数。集合名以 {@code Map} 结尾的按 {@code Map} 造（{@code batchRenameByIds} 的
+     * {@code index}/{@code item} 语义要求它是 Map），其余一律造 {@code List}。
+     * <p>探针里**只放集合本身**：这些语句的其他 {@code #{…}} 占位符在 Map 参数下解析为 null，
+     * 不影响 SQL 文本形态 —— 本用例断言的是「拼出来的 SQL 形态」，不是绑定值。</p>
+     */
+    private static Map<String, Object> probeParams(Set<String> collections, boolean empty) {
+        Map<String, Object> params = new HashMap<>();
+        for (String name : collections) {
+            if (name.endsWith("Map")) {
+                Map<Long, String> value = new LinkedHashMap<>();
+                if (!empty) {
+                    for (int i = 1; i <= PROBE_SIZE; i++) {
+                        value.put((long) i, "probe-" + i);
+                    }
+                }
+                params.put(name, value);
+            } else {
+                List<Long> value = new ArrayList<>();
+                if (!empty) {
+                    for (int i = 1; i <= PROBE_SIZE; i++) {
+                        value.add((long) i);
+                    }
+                }
+                params.put(name, value);
+            }
+        }
+        return params;
+    }
+
+    /** 取命中位置前后各 30 字符，用于让失败信息能直接看出坏在哪儿。 */
+    private static String around(String sql, int index) {
+        int from = Math.max(0, index - 30);
+        int to = Math.min(sql.length(), index + 30);
+        return sql.substring(from, to);
     }
 }

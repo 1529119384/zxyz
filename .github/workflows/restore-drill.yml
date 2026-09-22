@@ -23,6 +23,10 @@ name: MySQL 恢复演练（默认关闭，仅手动触发）
 #      代价/收益权衡见同一份报告的 §1。
 #
 # 触发方式：Actions → 本 workflow → Run workflow → confirm 输入 RUN。
+#
+# 另有第二道「响亮失败」：步骤 Assert deploy credentials present 会在**开跑前**断言
+#   DEPLOY_HOST / SSH_KEY / DEPLOY_USERNAME 三个凭据均非空，任一为空即 ::error:: + 失败。
+#   它不是 skip —— 凭据缺失属仓库配置缺陷，被当成「本次无需演练」忽略掉最危险。
 # =============================================================================
 
 on:
@@ -68,6 +72,32 @@ jobs:
             echo "${{ (secrets.DEV_SSH_KEY || secrets.DEPLOY_SSH_KEY) }}"
             echo "GH_SSH_KEY_EOF"
           } >> "$GITHUB_ENV"
+
+      # --- 前置断言：凭据必须齐备，否则**响亮失败** ---
+      # 为什么是 `::error::` + exit 1 而不是像下面那样 `skip`：
+      #   凭据缺失是**仓库配置缺陷**，不是「本次不满足演练前置条件」。若走 skip，它会伪装成
+      #   「本次无需演练」从而被无限期忽略；而若带着空 host/key 继续往下，ssh-action 会在
+      #   **不可预期的时机/位置**失败，收尾步还会拿着同样的空值去连一个未知目标。
+      #   ⇒ 宁可红，不可猜。
+      # ⚠️ 凭据一律经 `env:` 传入、用 `${VAR:-}` 判空，**绝不**把 secret 插值进 `run:` 脚本文本
+      #   （私钥是多行 PEM，插值进脚本文本既易坏、又多一次落盘机会）。
+      - name: Assert deploy credentials present
+        id: preflight
+        env:
+          DRILL_HOST: ${{ secrets.DEV_DEPLOY_HOST || secrets.DEPLOY_HOST }}
+          DRILL_SSH_KEY: ${{ secrets.DEV_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
+          DRILL_USER: ${{ secrets.DEPLOY_USERNAME }}
+        run: |
+          set -euo pipefail
+          missing=""
+          [ -n "${DRILL_HOST:-}" ]    || missing="$missing DEPLOY_HOST"
+          [ -n "${DRILL_SSH_KEY:-}" ] || missing="$missing SSH_KEY"
+          [ -n "${DRILL_USER:-}" ]    || missing="$missing DEPLOY_USERNAME"
+          if [ -n "$missing" ]; then
+            echo "::error::缺少部署凭据:$missing —— 恢复演练已中止（未触碰服务器）"
+            exit 1
+          fi
+          echo "凭据齐备：host / username / key 均非空"
 
       # --- 前置守卫 + 在服务器上执行演练 ---
       - name: Run restore drill on server
@@ -143,7 +173,7 @@ jobs:
 
       # --- 取回日志：无论演练成功 / 失败 / 跳过后都执行 ---
       - name: Fetch drill log
-        if: always()
+        if: always() && steps.preflight.outcome == 'success'
         continue-on-error: true
         env:
           SSH_PRIVATE_KEY: ${{ env.ssh_key }}
@@ -164,7 +194,7 @@ jobs:
           tail -n 40 restore-drill.log || true
 
       - name: Upload drill log artifact
-        if: always()
+        if: always() && steps.preflight.outcome == 'success'
         uses: actions/upload-artifact@v7
         with:
           name: restore-drill-log
@@ -177,7 +207,7 @@ jobs:
       # 以及 docker run 的 --rm（容器自身停止即删）。本步兜底的是「SSH 会话被硬杀、
       # 远端 shell 收到不可捕获信号」这类 trap 根本不执行的情况。
       - name: Cleanup leftover drill containers
-        if: always()
+        if: always() && steps.preflight.outcome == 'success'
         continue-on-error: true
         uses: appleboy/ssh-action@v1
         env:

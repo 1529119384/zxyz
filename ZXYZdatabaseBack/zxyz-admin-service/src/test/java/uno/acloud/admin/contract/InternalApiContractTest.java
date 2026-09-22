@@ -103,8 +103,11 @@ class InternalApiContractTest {
     private static final String INTERNAL_PATH_SEGMENT = "internal";
 
     /**
-     * 扫描到的端点数下限。2026-09-15 实测 <b>90</b> 个内部端点（分布在 83 条不同路径上）。
-     * ⚠️ 这个数字比 `ISSUE/18` 里「40+ 内部端点无契约测试」的估计高出一倍多 —— 因为那条估计
+     * 扫描到的端点数下限。2026-09-15 实测 <b>90</b> 个内部端点（分布在 83 条不同路径上）；
+     * 2026-09-22 复测为 <b>92</b>（新增项目存储用量内部端点 + 4 条既有端点补 {@code projectIds} 字段）。
+     * ⚠️ 这个数字<b>随功能增长，不是固定值</b>：这里只做「下限不得低于 80」的防空扫断言，
+     * 精确的端点集合以快照文件 {@code contract/internal-api-contract.json} 为准，别照抄本注释的历史读数。
+     * ⚠️ 它比 `ISSUE/18` 里「40+ 内部端点无契约测试」的估计高出一倍多 —— 因为那条估计
      * 只数了「没有测试的 Controller」，没有把内部 Controller 的每个方法展开。阈值取 80 留余量。
      */
     private static final int MIN_EXPECTED_ENDPOINTS = 80;

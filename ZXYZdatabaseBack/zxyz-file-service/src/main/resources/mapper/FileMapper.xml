@@ -14,6 +14,19 @@
      file-service 无需在 application.yml 里再配（已核 starter 配置元数据：默认值即此）。
      注意属性前缀是 mybatis-plus.*，写成 mybatis.* 是**静默无效**的。
   4. XML 先于注解解析 ⇒ 只允许注解引用本文件的 resultMap，反之不可。
+  5. 🔴 **凡 `IN (<foreach>)` 必须自带空集合守卫**。`<foreach open="(" close=")">` 在空集合上
+     会**整段消失**（连括号一起），于是留下 `WHERE id IN` / `AND id IN AND x = 1` 这类悬空
+     `IN` ⇒ MySQL 报语法错 1064，且发生在**运行期**（装配期一切正常）。
+     统一写法（守卫与主体成对出现，空集语义 = `1 = 0` = 匹配 0 行，是合法 no-op）：
+
+         <if test="ids == null or ids.isEmpty()">AND 1 = 0</if>
+         <if test="ids != null and !ids.isEmpty()">AND col IN
+             <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+         </if>
+
+     ⚠️ 若 `IN` 是 `WHERE` 后的**第一个**谓词，则空分支写 `1 = 0`（不带 AND）、
+        非空分支写 `col IN (...)`（不带 AND），否则会出现 `WHERE AND` / `WHERE 1 = 0 IN`。
+     ⇒ 本文件由 FileMapperWiringTest.everyInClauseSurvivesAnEmptyCollection 逐条钉住。
 
   ⚠️ XML 是动态 SQL 的载体 ⇒ 从注解的 {"<script>", ...} 数组迁过来时**必须删掉 <script> 包裹层**，
      直接写 <foreach>/<choose>/<if>；`<` 一律写成 &lt;。
@@ -108,20 +121,25 @@
     <select id="getOssKeysByIds" resultType="java.lang.String">
         SELECT uuid_name FROM file_node
         WHERE deleted IN (0, 1) AND file_type = 1
-        AND id IN
-        <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
-            #{fileId}
-        </foreach>
+        <if test="fileIds == null or fileIds.isEmpty()">AND 1 = 0</if>
+        <if test="fileIds != null and !fileIds.isEmpty()">AND id IN
+            <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
+                #{fileId}
+            </foreach>
+        </if>
         AND uuid_name IS NOT NULL AND uuid_name != ''
     </select>
 
     <!-- 递归 CTE：种子与递归步都允许 deleted IN (0, 1)（回收站内的子树也算后代） -->
     <select id="collectDescendantIds" resultType="java.lang.Long">
         WITH RECURSIVE descendants AS (
-            SELECT id, parent_id FROM file_node WHERE deleted IN (0, 1) AND id IN
-            <foreach collection="rootIds" item="rootId" open="(" separator="," close=")">
-                #{rootId}
-            </foreach>
+            SELECT id, parent_id FROM file_node WHERE deleted IN (0, 1)
+            <if test="rootIds == null or rootIds.isEmpty()">AND 1 = 0</if>
+            <if test="rootIds != null and !rootIds.isEmpty()">AND id IN
+                <foreach collection="rootIds" item="rootId" open="(" separator="," close=")">
+                    #{rootId}
+                </foreach>
+            </if>
             UNION ALL
             SELECT child.id, child.parent_id FROM file_node child
             INNER JOIN descendants parent ON child.parent_id = parent.id
@@ -166,49 +184,66 @@
 
     <update id="batchRenameByIds">
         UPDATE file_node
-        SET original_name = CASE id
-        <foreach collection="renameMap" index="fileId" item="originalName">
-            WHEN #{fileId} THEN #{originalName}
-        </foreach>
-        END, modify_time = NOW()
-        WHERE id IN
-        <foreach collection="renameMap" index="fileId" item="originalName" open="(" separator="," close=")">
-            #{fileId}
-        </foreach>
+        SET
+        <if test="renameMap == null or renameMap.isEmpty()">modify_time = NOW()</if>
+        <if test="renameMap != null and !renameMap.isEmpty()">original_name = CASE id
+            <foreach collection="renameMap" index="fileId" item="originalName">
+                WHEN #{fileId} THEN #{originalName}
+            </foreach>
+            END, modify_time = NOW()</if>
+        WHERE
+        <if test="renameMap == null or renameMap.isEmpty()">1 = 0</if>
+        <if test="renameMap != null and !renameMap.isEmpty()">id IN
+            <foreach collection="renameMap" index="fileId" item="originalName" open="(" separator="," close=")">
+                #{fileId}
+            </foreach>
+        </if>
     </update>
 
     <update id="logicalDeleteByIds">
         UPDATE file_node
         SET deleted = 1, modify_time = NOW(), deleted_user_id = #{userId}
-        WHERE deleted IN (0, 1) AND id IN
-        <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
-            #{fileId}
-        </foreach>
+        WHERE deleted IN (0, 1)
+        <if test="fileIds == null or fileIds.isEmpty()">AND 1 = 0</if>
+        <if test="fileIds != null and !fileIds.isEmpty()">AND id IN
+            <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
+                #{fileId}
+            </foreach>
+        </if>
     </update>
 
     <update id="restoreByIds">
         UPDATE file_node
         SET deleted = 0, modify_time = NOW()
-        WHERE deleted = 1 AND id IN
-        <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
-            #{fileId}
-        </foreach>
+        WHERE deleted = 1
+        <if test="fileIds == null or fileIds.isEmpty()">AND 1 = 0</if>
+        <if test="fileIds != null and !fileIds.isEmpty()">AND id IN
+            <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
+                #{fileId}
+            </foreach>
+        </if>
     </update>
 
     <update id="reallyDeleteByIds">
         UPDATE file_node
         SET deleted = 2, modify_time = NOW(), deleted_user_id = #{userId}
-        WHERE deleted IN (0, 1) AND id IN
-        <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
-            #{fileId}
-        </foreach>
+        WHERE deleted IN (0, 1)
+        <if test="fileIds == null or fileIds.isEmpty()">AND 1 = 0</if>
+        <if test="fileIds != null and !fileIds.isEmpty()">AND id IN
+            <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
+                #{fileId}
+            </foreach>
+        </if>
     </update>
 
     <delete id="deleteTombstoneRows">
-        DELETE FROM file_node WHERE id IN
-        <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
-            #{fileId}
-        </foreach>
+        DELETE FROM file_node WHERE
+        <if test="fileIds == null or fileIds.isEmpty()">1 = 0</if>
+        <if test="fileIds != null and !fileIds.isEmpty()">id IN
+            <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
+                #{fileId}
+            </foreach>
+        </if>
     </delete>
 
     <!-- ===== 存储聚合与过期扫描 ===== -->
@@ -230,19 +265,24 @@
         WHERE deleted IN (0, 1) AND file_type = 1
         AND (space_type IS NULL OR space_type = 1)
         AND team_id IS NULL
-        AND upload_user_id IN
-        <foreach collection="userIds" item="userId" open="(" separator="," close=")">
-            #{userId}
-        </foreach>
+        <if test="userIds == null or userIds.isEmpty()">AND 1 = 0</if>
+        <if test="userIds != null and !userIds.isEmpty()">AND upload_user_id IN
+            <foreach collection="userIds" item="userId" open="(" separator="," close=")">
+                #{userId}
+            </foreach>
+        </if>
     </select>
 
     <select id="sumDeletedFileBytesByScopeKey" resultType="java.util.Map">
         SELECT scope_key AS scopeKey, COALESCE(SUM(file_size), 0) AS totalBytes
         FROM file_node
-        WHERE id IN
-        <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
-            #{fileId}
-        </foreach>
+        WHERE
+        <if test="fileIds == null or fileIds.isEmpty()">1 = 0</if>
+        <if test="fileIds != null and !fileIds.isEmpty()">id IN
+            <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
+                #{fileId}
+            </foreach>
+        </if>
           AND file_size IS NOT NULL
         GROUP BY scope_key
     </select>
@@ -328,10 +368,12 @@
         WHERE deleted IN (0, 1) AND file_type = 1
         AND (space_type IS NULL OR space_type = 1)
         AND team_id IS NULL
-        AND upload_user_id IN
-        <foreach collection="userIds" item="userId" open="(" separator="," close=")">
-            #{userId}
-        </foreach>
+        <if test="userIds == null or userIds.isEmpty()">AND 1 = 0</if>
+        <if test="userIds != null and !userIds.isEmpty()">AND upload_user_id IN
+            <foreach collection="userIds" item="userId" open="(" separator="," close=")">
+                #{userId}
+            </foreach>
+        </if>
         GROUP BY upload_user_id
     </select>
 
@@ -339,10 +381,12 @@
         SELECT team_id AS teamId, COALESCE(SUM(file_size), 0) AS usedStorage
         FROM file_node
         WHERE deleted IN (0, 1) AND file_type = 1 AND space_type = 2
-        AND team_id IN
-        <foreach collection="teamIds" item="teamId" open="(" separator="," close=")">
-            #{teamId}
-        </foreach>
+        <if test="teamIds == null or teamIds.isEmpty()">AND 1 = 0</if>
+        <if test="teamIds != null and !teamIds.isEmpty()">AND team_id IN
+            <foreach collection="teamIds" item="teamId" open="(" separator="," close=")">
+                #{teamId}
+            </foreach>
+        </if>
         GROUP BY team_id
     </select>
 
@@ -359,10 +403,12 @@
         SELECT project_id AS projectId, COALESCE(SUM(file_size), 0) AS usedStorage
         FROM file_node
         WHERE deleted IN (0, 1) AND file_type = 1 AND space_type = 3
-        AND project_id IN
-        <foreach collection="projectIds" item="projectId" open="(" separator="," close=")">
-            #{projectId}
-        </foreach>
+        <if test="projectIds == null or projectIds.isEmpty()">AND 1 = 0</if>
+        <if test="projectIds != null and !projectIds.isEmpty()">AND project_id IN
+            <foreach collection="projectIds" item="projectId" open="(" separator="," close=")">
+                #{projectId}
+            </foreach>
+        </if>
         GROUP BY project_id
     </select>
 
@@ -449,26 +495,35 @@
         SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path,
                upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider
         FROM file_node
-        WHERE parent_id IN
-        <foreach collection="parentIds" item="parentId" open="(" separator="," close=")">
-            #{parentId}
-        </foreach>
+        WHERE
+        <if test="parentIds == null or parentIds.isEmpty()">1 = 0</if>
+        <if test="parentIds != null and !parentIds.isEmpty()">parent_id IN
+            <foreach collection="parentIds" item="parentId" open="(" separator="," close=")">
+                #{parentId}
+            </foreach>
+        </if>
     </select>
 
     <!-- ===== 批量按 id 取 ===== -->
 
     <select id="getFileNodesByIds" resultMap="fileNodeResultMap">
-        SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider FROM file_node WHERE id IN
-        <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
-            #{fileId}
-        </foreach>
+        SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider FROM file_node WHERE
+        <if test="fileIds == null or fileIds.isEmpty()">1 = 0</if>
+        <if test="fileIds != null and !fileIds.isEmpty()">id IN
+            <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
+                #{fileId}
+            </foreach>
+        </if>
     </select>
 
     <select id="getActiveFileNodesByIds" resultMap="fileNodeResultMap">
-        SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider FROM file_node WHERE deleted = 0 AND id IN
-        <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
-            #{fileId}
-        </foreach>
+        SELECT id, file_type, uuid_name, original_name, category, file_size, file_url, store_path, upload_user_id, shared_user_id, team_id, space_type, project_id, deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider FROM file_node WHERE deleted = 0
+        <if test="fileIds == null or fileIds.isEmpty()">AND 1 = 0</if>
+        <if test="fileIds != null and !fileIds.isEmpty()">AND id IN
+            <foreach collection="fileIds" item="fileId" open="(" separator="," close=")">
+                #{fileId}
+            </foreach>
+        </if>
     </select>
 
     <!--
@@ -482,10 +537,13 @@
                    store_path, upload_user_id, shared_user_id, team_id, space_type, project_id,
                    deleted_user_id, parent_id, create_time, modify_time, deleted, storage_provider
             FROM file_node
-            WHERE parent_id IN
-            <foreach collection="parentIds" item="parentId" open="(" separator="," close=")">
-                #{parentId}
-            </foreach>
+            WHERE
+            <if test="parentIds == null or parentIds.isEmpty()">1 = 0</if>
+            <if test="parentIds != null and !parentIds.isEmpty()">parent_id IN
+                <foreach collection="parentIds" item="parentId" open="(" separator="," close=")">
+                    #{parentId}
+                </foreach>
+            </if>
             AND deleted = 0
             UNION ALL
             SELECT c.id, c.file_type, c.uuid_name, c.original_name, c.category, c.file_size, c.file_url,
