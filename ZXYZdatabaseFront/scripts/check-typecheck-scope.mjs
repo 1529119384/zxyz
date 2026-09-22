@@ -17,7 +17,7 @@
  *   规则 1（声明式）：`FULLY_LIT_DIRS` 下的 .js 必须**全部**带 `// @ts-check`。
  *                     一旦声明某层已纳入检查，就不允许再退回去。
  *   规则 2（棘轮）  ：全仓带 `// @ts-check` 的 .js 文件数不得低于 `CHECKJS_BASELINE`。
- *                    覆盖面只能增加，不能减少（与 vite.config.js 的覆盖率阈值同为棘轮思路）。
+ *                    覆盖面只能增加，不能减少（与 vite.config.mjs 的覆盖率阈值同为棘轮思路）。
  *
  * 用法：node scripts/check-typecheck-scope.mjs        （CI 与本地均可跑）
  */

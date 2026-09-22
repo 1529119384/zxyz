@@ -30,6 +30,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { useTeamManagement } from '@/composables/team/useTeamManagement'
 import { useCurrentUserStore } from '@/store/currentUser'
+import { logger } from '@/utils/logger'
 
 const route = useRoute()
 const router = useRouter()
@@ -81,7 +82,9 @@ watch(
       return
     }
     router.replace({ name: visibleNavItems.value[0]?.name || 'accountSettings' }).catch((err) => {
-      console.warn('Settings nav redirect failed:', err?.message || err)
+      // 走 utils/logger：裸 console.warn 不受 import.meta.env.DEV 门控，
+      // 生产构建也会打进用户控制台（F9）。
+      logger.warn('Settings nav redirect failed:', err?.message || err)
     })
   },
   { immediate: true },

@@ -60,6 +60,7 @@ import { useEventListener } from '@vueuse/core'
 import TeamSelectDialog from '@/components/TeamSelectDialog.vue'
 import { useLoginForm } from '@/composables/useLoginForm'
 import { usePostLoginGuide } from '@/composables/usePostLoginGuide'
+import { logger } from '@/utils/logger'
 
 const { loginForm, loginFormRef, loginRules, loggingIn, handleKeydown } = useLoginForm()
 const {
@@ -83,7 +84,9 @@ async function handleLoginByEnter(event) {
     await handlePostLoginSuccess()
   } catch (error) {
     // 登录或后续引导流程的异常已由各层内部处理，此处仅防止未捕获 Promise 向上冒泡。
-    console.warn('Login enter handler error:', error)
+    // 用 utils/logger 而非裸 console.warn：后者不看 import.meta.env.DEV，
+    // 生产构建也会把这条打到用户控制台（F9）。
+    logger.warn('Login enter handler error:', error)
   }
 }
 

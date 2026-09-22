@@ -1,12 +1,10 @@
 import { createApiClient } from '@/utils/createApiClient'
-import { requireViteEnv } from '@/utils/env'
+import { resolveApiBaseUrl } from '@/utils/env'
 
-function getApiBaseUrl() {
-  return requireViteEnv('VITE_API_BASE_URL')
-}
-
+// 基地址由 utils/env.js 统一提供（原先本文件与 request.js 各存一份逐字相同的
+// getApiBaseUrl() —— F7）。
 const publicRequest = createApiClient({
-  baseURL: getApiBaseUrl(),
+  baseURL: resolveApiBaseUrl(),
   timeout: 5000,
   onTokenExpired: 'silent',
 })

@@ -1,6 +1,21 @@
 // @ts-check
 import imRequest from '@/utils/imRequest'
 
+// ⚠️ 这里是**双前缀**，不是笔误（F8）：imRequest 的 baseURL 已经是 '/im-api'
+// （见 utils/imRequest.js 的 requireViteEnv('VITE_IM_API_BASE_URL')），
+// 而下述每条路径又自带 '/api/...' ⇒ 实际发出的是 '/im-api/api/im/...'。
+//
+// 它之所以成立，靠链路上三处同时成立（2026-09-21 逐处核对）：
+//   ① 前端 baseURL = VITE_IM_API_BASE_URL（部署值为 '/im-api'）；
+//   ② nginx `location /im-api { proxy_pass http://gateway:18000; }` —— **原样转发、不做 rewrite**
+//      （deploy/nginx/snippets/proxy-locations.conf）；
+//   ③ gateway 路由 `Path=/im-api/**` + `StripPrefix=1` 剥掉 '/im-api'
+//      （zxyz-gateway/src/main/resources/application.yml）。
+// ⇒ 到 im-service 时恰好还原成 '/api/im/...'。
+//
+// 只读本文件无法知道 '/im-api' 是"前缀"还是"另一个域"。改 baseURL、改 nginx 的 proxy_pass、
+// 或改 gateway 的 StripPrefix 任意一处，都会让这里**静默 404**（不是编译错误）。
+// 要动请三处一起看。
 export const fetchImHealth = () => imRequest.get('/api/im/health')
 
 /**

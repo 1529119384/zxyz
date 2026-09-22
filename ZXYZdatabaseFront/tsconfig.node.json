@@ -10,5 +10,5 @@
     "checkJs": false,
     "noEmit": true
   },
-  "include": ["vite.config.js"]
+  "include": ["vite.config.mjs"]
 }

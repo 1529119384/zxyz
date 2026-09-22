@@ -20,7 +20,7 @@
 //    一并收走，然后在 `npm run test:coverage` 里以
 //    「Playwright Test did not expect test() to be called here」成片失败（本机实测 2 failed）。
 //    改名为 `.e2e.js` 后 vitest 不匹配，配合下面这行 testMatch 由 Playwright 独占该目录 ——
-//    这样就不必去动 vite.config.js 的 vitest.exclude（覆盖默认值本身是另一种坑）。
+//    这样就不必去动 vite.config.mjs 的 vitest.exclude（覆盖默认值本身是另一种坑）。
 import { defineConfig, devices } from '@playwright/test'
 
 const LOCAL_BASE_URL = process.env.E2E_LOCAL_BASE_URL || 'http://127.0.0.1:5173'

@@ -92,6 +92,10 @@ export default defineConfig(({ mode }) => {
         // 阈值采用「棘轮」策略：仅下调当前未达标的项，取值在实测值下方约 2 个点，
         // 使门禁可用并防回归；已达标的项（如 api 的 statements/lines 70）保持不动。
         // 实测（npx vitest run --coverage --coverage.clean=false）：
+        // ⚠️ 下面每一「轮」的数字是该轮结束时的**历史快照**，不是"当前值" ——
+        //    请勿拿今天的实测值去改写它们（本轮审计中差点发生：把 44/970 改成了 65/1208）。
+        //    当前测试数量只在 CLAUDE.md 里声明一次，并由
+        //    scripts/check-doc-test-count.mjs 对着文件系统校验文件数。
         //   2026-09-03 首轮  全局 stmts 60.14 / branch 51.98 / funcs 55.08 / lines 60.52
         //                     src/store/im  stmts 37.60 / branch 47.87 / funcs 29.58 / lines 38.13
         //                     src/api stmts 72.50 / branch 35.29 / funcs 57.77 / lines 74.54

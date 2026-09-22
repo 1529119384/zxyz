@@ -46,7 +46,22 @@ export default [
     },
   },
   {
-    files: ['vite.config.js', 'vitest.config.js'],
+    files: ['vite.config.mjs', 'vitest.config.js'],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+      },
+    },
+  },
+  {
+    // scripts/ 下的校验脚本跑在 Node 里，需要 node globals。
+    //
+    // ⚠️ 上面 `**/*.{js,vue}` 那一块只给 .js / .vue 装了 `globals.browser`，
+    // 而 .mjs **不在**该 pattern 内 ⇒ 这些脚本此前既没有 browser 也没有 node globals，
+    // 每个文件都会报一片 `'console' is not defined` / `'process' is not defined`
+    //（实测 4 个脚本共 55 条）。CI 的 lint 只跑 `eslint src/`，所以一直没暴露；
+    // 本条把 scripts/ 的类型环境补正，日后把 `eslint scripts/` 纳入 CI 即可直接可用。
+    files: ['scripts/**/*.{js,mjs}'],
     languageOptions: {
       globals: {
         ...globals.node,

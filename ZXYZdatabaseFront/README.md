@@ -75,7 +75,7 @@ npm run preview
 ZXYZdatabaseFront/
 ├── index.html                  # 入口 HTML
 ├── package.json
-├── vite.config.js              # Vite 构建配置
+├── vite.config.mjs              # Vite 构建配置
 ├── .env.development            # 开发环境变量
 ├── .env.production             # 生产环境变量
 ├── public/                     # 静态资源（图标字体等）
@@ -438,7 +438,7 @@ IM 实时通信通过 `src/utils/imWebSocket.js` 管理的 WebSocket 客户端�
 
 ## Vite 构建配置
 
-配置位于 `vite.config.js`：
+配置位于 `vite.config.mjs`：
 
 - **Vue 插件**：`@vitejs/plugin-vue`
 - **自动导入**：`unplugin-auto-import` + `unplugin-vue-components`，配合 `ElementPlusResolver` 实现 Element Plus 按需导入

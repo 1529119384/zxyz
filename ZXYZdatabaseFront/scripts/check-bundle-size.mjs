@@ -140,7 +140,7 @@ if (unhashed.length > 0) {
   console.error(
     '✖ 以下产物没有内容哈希，分组键会随构建漂移，无法作为预算依据：\n' +
       unhashed.map((n) => `    - assets/${n}`).join('\n') +
-      '\n  请确认 vite.config.js 的 build.rollupOptions.output 未关闭 hash。',
+      '\n  请确认 vite.config.mjs 的 build.rollupOptions.output 未关闭 hash。',
   )
   process.exit(1)
 }

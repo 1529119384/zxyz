@@ -21,9 +21,11 @@
     // 刻意保持 false：改成 true 会一次性冒出数百条错误（ISSUE/08 4.1 方案 B）。
     // 需要纳入检查的文件，在其首行加 `// @ts-check` 即可（方案 A）。
     "checkJs": false,
-    "baseUrl": ".",
+    // 2026-09-22：删除 baseUrl —— TS 6 起 `baseUrl` 已被弃用
+    //（TS5101: will stop functioning in TypeScript 7.0），删掉即为 TS 7 清路障。
+    // 无 baseUrl 时，`paths` 相对本 tsconfig.json 所在目录解析，故改用 "./src/*"。
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue", "src/**/*.js"],

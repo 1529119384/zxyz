@@ -19,7 +19,7 @@
  *      测试、`NS.foo` 形式）。命中弱证据的条目**不进「疑似死导出」**，只列进
  *      「需人工确认」区，避免把「被自动注册/被模板引用」的东西误判为死代码。
  *   C. 结构豁免：`src/components/**` 下的 `.vue` 由 `unplugin-vue-components`
- *      自动全局注册（`vite.config.js` 的 `Components()` 未设 `dirs`，即默认
+ *      自动全局注册（`vite.config.mjs` 的 `Components()` 未设 `dirs`，即默认
  *      `src/components`）⇒ 组件**不需要 import**，一律豁免。
  *
  * 用法：
