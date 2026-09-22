@@ -17,7 +17,7 @@ import java.util.function.Supplier;
  * 才解锁」这条语义只有一份实现。</p>
  *
  * <p><b>为什么不加 {@code @Component}</b>：本类依赖 {@code RedissonClient}，而后者由条件自动配置
- * {@code uno.acloud.common.config.RedissonAutoConfiguration} 提供。全仓有 9 个服务都
+ * {@code uno.acloud.autoconfig.RedissonAutoConfiguration} 提供。全仓有 9 个服务都
  * {@code @ComponentScan("uno.acloud.common")}；若把本类做成 {@code @Component}，
  * 任何拿不到 {@code RedissonClient} 的服务都会**启动即失败**（比"静默不创建"更糟）。
  * 因此本类改为由该自动配置以 {@code @Bean} 提供，存活条件与 {@code RedissonClient} 严格一致。</p>

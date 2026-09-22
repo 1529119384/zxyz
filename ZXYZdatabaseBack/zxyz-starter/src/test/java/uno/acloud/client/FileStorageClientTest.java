@@ -15,6 +15,7 @@ import uno.acloud.dto.PersonalStorageUsage;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
@@ -25,8 +26,11 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 /**
- * {@link FileStorageClient} 的两个"批量"接口都带**空参短路**与**异常兜底**，
- * 这两条分支直接决定上游页面会不会因为下游抖动而整页失败，因此必须逐条钉死。
+ * {@link FileStorageClient} 的三个"批量"接口都带**空参短路**，其中两个还带**异常兜底**，
+ * 这些分支直接决定上游页面会不会因为下游抖动而整页失败，因此必须逐条钉死。
+ *
+ * <p>⚠️ 注意「异常兜底」在两个批量接口上<b>刻意不同</b>：团队版降级为空 Map，
+ * 项目版照常抛出。两条路径都有用例钉住，改任何一条都会红。</p>
  */
 class FileStorageClientTest {
 
@@ -34,6 +38,7 @@ class FileStorageClientTest {
     private static final String SUM_PATH = "/api/internal/storage/sum-active";
     private static final String PERSONAL_PATH = "/api/internal/storage/personal-usage-list";
     private static final String TEAM_PATH = "/api/internal/storage/team-usage-list";
+    private static final String PROJECT_PATH = "/api/internal/storage/project-usage-list";
 
     private ObjectMapper objectMapper;
     private MockRestServiceServer server;
@@ -165,6 +170,65 @@ class FileStorageClientTest {
                         MediaType.APPLICATION_JSON));
 
         assertThat(client.listTeamStorageUsageByTeamIds(List.of(7L))).isEmpty();
+        server.verify();
+    }
+
+    // ==================== listProjectStorageUsageByProjectIds ====================
+
+    @Test
+    void listProjectStorageUsageByProjectIds_whenIdsNullOrEmpty_shortCircuitsWithoutHttpCall() {
+        assertThat(client.listProjectStorageUsageByProjectIds(null)).isEmpty();
+        assertThat(client.listProjectStorageUsageByProjectIds(List.of())).isEmpty();
+
+        // 零 expectation ⇒ 一旦真发了请求，verify 会因" Unexpected request"失败
+        server.verify();
+    }
+
+    @Test
+    void listProjectStorageUsageByProjectIds_mapsProjectIdToUsedStorage() {
+        server.expect(requestTo(BASE_URL + PROJECT_PATH))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().string(containsString("\"projectIds\":[11,12]")))
+                .andRespond(withSuccess(
+                        "{\"code\":1,\"data\":[{\"projectId\":11,\"usedStorage\":110},"
+                                + "{\"projectId\":12,\"usedStorage\":120}]}",
+                        MediaType.APPLICATION_JSON));
+
+        assertThat(client.listProjectStorageUsageByProjectIds(List.of(11L, 12L)))
+                .containsEntry(11L, 110L)
+                .containsEntry(12L, 120L);
+        server.verify();
+    }
+
+    /**
+     * 「没有文件的项目不在返回列表里」是<b>契约</b>，不是缺陷：GROUP BY 天然不产出零行分组，
+     * 而调用方按 0 处理（等价于单值版 {@code COALESCE(SUM(...), 0)}）。
+     * <p>这里钉住「返回 Map 里就是没有这个 key」，避免有人「顺手补齐空项目」——
+     * 那会让「没有文件的空项目」与「查不到的项目」无法区分。</p>
+     */
+    @Test
+    void listProjectStorageUsageByProjectIds_omitsProjectsWithoutFiles() {
+        server.expect(requestTo(BASE_URL + PROJECT_PATH))
+                .andRespond(withSuccess("{\"code\":1,\"data\":[]}", MediaType.APPLICATION_JSON));
+
+        assertThat(client.listProjectStorageUsageByProjectIds(List.of(11L))).isEmpty();
+        server.verify();
+    }
+
+    /**
+     * 与团队版<b>刻意不同</b>：项目版不吞异常。
+     *
+     * <p>团队版失败时返回空 Map，等价于「所有团队用量都是 0」—— 用户会看到容量条统统归零
+     * 而没有任何错误提示。项目版选择照常抛出，与逐项目版 {@code sumActiveFileSize}
+     * 的失败语义一致（列表页原本就会因第一项失败而整体报错）。</p>
+     */
+    @Test
+    void listProjectStorageUsageByProjectIds_whenServerErrors_throwsInsteadOfSilentlyZeroing() {
+        server.expect(requestTo(BASE_URL + PROJECT_PATH)).andRespond(withServerError());
+
+        // 只钉「会抛」这个行为，不钉具体异常类型（下游可能是 BusinessException 或 RestClient 异常）
+        assertThatThrownBy(() -> client.listProjectStorageUsageByProjectIds(List.of(11L)))
+                .isInstanceOf(RuntimeException.class);
         server.verify();
     }
 }

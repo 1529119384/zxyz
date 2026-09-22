@@ -54,7 +54,14 @@ public class FileResourceChangedPublisher {
                     fileInfo == null ? null : fileInfo.getParentId(),
                     fileInfo == null ? null : fileInfo.getStorePath(),
                     fileInfo == null ? 1 : fileInfo.getDeleted(),
-                    fileInfo == null ? null : fileInfo.getModifyTime()
+                    fileInfo == null ? null : fileInfo.getModifyTime(),
+                    // teamId 必须**真实填充**：消费端（project-service 的 StorageCacheInvalidationConsumer）
+                    // 据此做定向缓存失效；为 null 会退化成全量失效（原先本方法走 6 参重载，teamId 恒 null）。
+                    fileInfo == null ? null : fileInfo.getTeamId(),
+                    // projectId：FileInfoDTO 目前没有该字段（文件只归属 team 或个人），故此处恒为 null。
+                    // 若将来需要「按项目定向失效」，须先给 FileInfoDTO 补字段再填这里，
+                    // 不要在此处臆造一个值。
+                    null
             );
             publish(eventType, event);
         }

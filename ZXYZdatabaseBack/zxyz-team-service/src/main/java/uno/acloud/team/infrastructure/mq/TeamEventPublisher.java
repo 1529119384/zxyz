@@ -24,9 +24,16 @@ import java.util.concurrent.atomic.AtomicLong;
  * 发布团队领域事件到 RabbitMQ。
  * 替代 ImTeamSyncClient 的 HTTP 同步方式。
  *
- * <p>m52: 成员事件设置 priority header 保证处理顺序：
- * member.added → priority 1（先处理），member.removed → priority 2（后处理）。
- * 同时附加 sequenceNumber 供消费方检测乱序。</p>
+ * <p><b>m52：成员事件的处理顺序由消费端按事件里的 {@code sequenceNumber} 判定，
+ * 与 RabbitMQ 消息优先级无关。</b></p>
+ *
+ * <p>此前这里用 {@code MessageProperties.setPriority(1/2)} 声称「保证 added 先于 removed 处理」，
+ * 但全仓 <b>没有任何队列声明 {@code x-max-priority}</b>，未声明的队列会直接忽略消息优先级
+ * ⇒ 该保证<b>静默失效</b>，是个名不副实的承诺。现已移除 priority 设置：
+ * 真正生效的机制一直是 {@code sequenceNumber}（消费方据此检测乱序并决定丢弃）。</p>
+ *
+ * <p>⚠️ 不要试图给已存在的生产队列补 {@code x-max-priority}：改队列参数会触发
+ * {@code PRECONDITION_FAILED}，需要先删除队列，风险远大于收益。</p>
  *
  * <p>使用 {@code uno.acloud.common.event} 包下的结构化事件 record 替代 HashMap，
  * 保证字段类型安全和事件格式一致性。</p>
@@ -97,36 +104,15 @@ public class TeamEventPublisher {
                 request != null ? request.getRoleCode() : null,
                 seq
         );
-        // m52: member.added 优先级 1（先于 removed 处理）
-        publishWithPriority(RabbitMqConstants.ROUTING_KEY_TEAM_MEMBER_ADDED, event, 1);
+        // 顺序由 event 里的 sequenceNumber 判定（消费端据此检测乱序），不依赖 MQ 优先级。
+        publish(RabbitMqConstants.ROUTING_KEY_TEAM_MEMBER_ADDED, event);
     }
 
     public void publishMemberRemoved(Long teamId, Long userId) {
         long seq = sequenceCounter.incrementAndGet();
         TeamMemberRemovedEvent event = TeamMemberRemovedEvent.of(teamId, userId, seq);
-        // m52: member.removed 优先级 2（后于 added 处理）
-        publishWithPriority(RabbitMqConstants.ROUTING_KEY_TEAM_MEMBER_REMOVED, event, 2);
-    }
-
-    /**
-     * m52: 带优先级和序列号的发布方法，用于成员事件。
-     * 优先级确保 added 先于 removed 处理，序列号用于消费方检测乱序。
-     */
-    private void publishWithPriority(String routingKey, Object event, int priority) {
-        String json = serialize(routingKey, event);
-        try {
-            retryTemplate.execute(context -> {
-                rabbitTemplate.convertAndSend(RabbitMqConstants.EXCHANGE, routingKey, json, msg -> {
-                    msg.getMessageProperties().setPriority(priority);
-                    return msg;
-                });
-                log.debug("发布团队事件到 RabbitMQ: routingKey={}, priority={}", routingKey, priority);
-                return null;
-            });
-        } catch (Exception e) {
-            log.error("发布团队事件失败（已重试{}次）: routingKey={}", MAX_RETRY_ATTEMPTS, routingKey, e);
-            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "MQ事件发布失败: " + routingKey);
-        }
+        // 顺序由 event 里的 sequenceNumber 判定（消费端据此检测乱序），不依赖 MQ 优先级。
+        publish(RabbitMqConstants.ROUTING_KEY_TEAM_MEMBER_REMOVED, event);
     }
 
     private void publish(String routingKey, Object event) {

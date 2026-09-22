@@ -22,7 +22,7 @@ import uno.acloud.im.infrastructure.netty.NettyImRealtimePushService;
  * <p>去重：发布端会把自身 {@code nodeId} 写入 {@code originNodeId}；
  * 本节点收到自己发出的广播时直接丢弃，保证每条消息仅被实际持有连接的那个节点推送一次。</p>
  *
- * <p>参考 {@code uno.acloud.common.config.ConfigClientAutoConfiguration} 的
+ * <p>参考 {@code uno.acloud.autoconfig.ConfigClientAutoConfiguration} 的
  * {@link RedisMessageListenerContainer} + {@link ChannelTopic} 写法。</p>
  */
 @Slf4j

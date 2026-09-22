@@ -8,6 +8,7 @@ import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import uno.acloud.dto.PersonalStorageUsage;
+import uno.acloud.dto.ProjectStorageUsage;
 import uno.acloud.dto.TeamStorageUsage;
 import uno.acloud.file.infrastructure.mapper.FileMapper;
 
@@ -135,6 +136,39 @@ public class StorageCacheService {
             redisTemplate.opsForValue().set(key, objectMapper.writeValueAsString(list), CACHE_TTL);
         } catch (Exception e) {
             log.warn("写入团队存储列表缓存失败: key={}", key, e);
+        }
+        return list;
+    }
+
+    // ==================== sumActiveFileSizeByProjectIds ====================
+
+    /**
+     * 批量查询项目存储用量（项目列表页用）。
+     *
+     * <p>缓存键按 projectIds <b>排序后</b>拼接，保证 {@code [1,2]} 与 {@code [2,1]} 命中同一份缓存 ——
+     * 否则同一批项目会因入参顺序不同而各自回源，缓存形同虚设。与
+     * {@link #sumActiveFileSizeByTeamIds} 保持同一口径。</p>
+     */
+    public List<ProjectStorageUsage> sumActiveFileSizeByProjectIds(List<Long> projectIds) {
+        if (projectIds == null || projectIds.isEmpty()) {
+            return List.of();
+        }
+        String sortedKey = projectIds.stream().sorted().map(String::valueOf)
+                .reduce((a, b) -> a + "," + b).orElse("");
+        String key = KEY_PREFIX + "project:" + sortedKey;
+        try {
+            String cached = redisTemplate.opsForValue().get(key);
+            if (cached != null) {
+                return objectMapper.readValue(cached, new TypeReference<>() {});
+            }
+        } catch (Exception e) {
+            log.warn("读取项目存储列表缓存失败: key={}", key, e);
+        }
+        List<ProjectStorageUsage> list = fileMapper.sumActiveFileSizeByProjectIds(projectIds);
+        try {
+            redisTemplate.opsForValue().set(key, objectMapper.writeValueAsString(list), CACHE_TTL);
+        } catch (Exception e) {
+            log.warn("写入项目存储列表缓存失败: key={}", key, e);
         }
         return list;
     }

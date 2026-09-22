@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.client.RestClient;
 import uno.acloud.dto.PersonalStorageUsage;
+import uno.acloud.dto.ProjectStorageUsage;
 import uno.acloud.dto.TeamStorageUsage;
 
 import java.util.Collections;
@@ -100,5 +101,35 @@ public class FileStorageClient extends AbstractServiceClient {
             log.warn("批量查询团队存储用量失败", e);
             return Collections.emptyMap();
         }
+    }
+
+    /**
+     * 批量查询项目存储用量，返回 projectId → usedStorage 的 Map。
+     *
+     * <p>用于项目列表页：逐项目调 {@link #sumActiveFileSize} 会让 P 个项目产生 P 次远程调用与
+     * P 次 SUM 扫描，本方法把这一维压成 1 次 {@code IN} + {@code GROUP BY}。</p>
+     *
+     * <p>刻意<b>不做</b>「失败降级为空 Map」——那等于把所有项目的已用容量静默变成 0，
+     * 用户会看到容量条统统归零而没有任何错误提示。此处让它照常抛出，
+     * 与逐项目版 {@link #sumActiveFileSize} 的失败语义保持一致
+     *（列表页原本就会因第一项失败而整体报错）。</p>
+     *
+     * @param projectIds 项目 ID 列表
+     * @return projectId → usedStorage 映射；<b>没有文件的项目不会出现在 Map 里</b>，
+     *         调用方按 0 处理（等价于 {@code sumActiveFileSize} 对空项目返回 0）
+     */
+    public Map<Long, Long> listProjectStorageUsageByProjectIds(List<Long> projectIds) {
+        if (projectIds == null || projectIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        JsonNode root = postJson("/api/internal/storage/project-usage-list",
+                Map.of("projectIds", projectIds));
+        List<ProjectStorageUsage> list = objectMapper().convertValue(
+                root.path("data"),
+                new TypeReference<List<ProjectStorageUsage>>() {}
+        );
+        return list.stream().collect(Collectors.toMap(
+                ProjectStorageUsage::getProjectId,
+                ProjectStorageUsage::getUsedStorage));
     }
 }
