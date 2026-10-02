@@ -28,6 +28,9 @@ export function createConversationDomain(state, deps = {}) {
     handleTeamAccessRevoked,
   } = deps
   const readSyncTimers = new Map()
+  // 过期响应令牌（J-4，与 usePagedList 同法）：快速切换团队时两个 loadConversations 同时在飞，
+  // 先发起的慢响应不得整表覆盖后发起请求已写入的会话列表。
+  let latestConversationsToken = 0
 
   function isConversationEffectivelyVisible(conversationId) {
     return Boolean(
@@ -133,7 +136,11 @@ export function createConversationDomain(state, deps = {}) {
   }
 
   async function loadConversations(teamId = selectedTeamId.value) {
+    const requestToken = ++latestConversationsToken
     const response = await fetchMyConversations(resolveTeamScopedParams(teamId))
+    if (requestToken !== latestConversationsToken) {
+      return conversations.value
+    }
     conversations.value = Array.isArray(response?.data)
       ? response.data.map((item) => normalizeConversation(item))
       : []

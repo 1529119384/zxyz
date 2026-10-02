@@ -10,7 +10,7 @@ import java.io.Serializable;
 
 @Getter
 @Setter
-@ToString
+@ToString(exclude = {"password"})
 @Schema(description = "关联账号信任请求")
 public class LinkedAccountTrustRequest implements Serializable {
     private static final long serialVersionUID = 1L;

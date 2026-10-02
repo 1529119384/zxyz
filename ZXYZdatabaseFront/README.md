@@ -6,12 +6,12 @@
 
 | 类别 | 技术 | 版本 |
 |---|---|---|
-| 框架 | Vue 3 (Composition API + `<script setup>`) | ^3.5.32 |
-| 构建工具 | Vite | ^7.3.2 |
-| 路由 | Vue Router 4 (`createWebHistory`) | ^4.6.3 |
+| 框架 | Vue 3 (Composition API + `<script setup>`) | ^3.5.42 |
+| 构建工具 | Vite | ^8.3.0 |
+| 路由 | Vue Router 5 (`createWebHistory`) | ^5.3.1 |
 | 状态管理 | Pinia 3 | ^3.0.4 |
 | UI 组件库 | Element Plus | ^2.11.7 |
-| HTTP 客户端 | Axios | ^1.13.2 |
+| HTTP 客户端 | Axios | ^1.20.0 |
 | 图标 | @element-plus/icons-vue | ^2.3.2 |
 | 归档/打包 | @zip.js/zip.js | ^2.8.26 |
 | XSS 防护 | DOMPurify | ^3.4.5 |

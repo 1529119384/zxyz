@@ -102,10 +102,26 @@ echo ""
 # --- 拉取镜像 ---
 if [ "$NO_PULL" = false ]; then
   echo "===== Pulling images ====="
+  # ⚠️ 2026-10-03 修复（审计 I-10①）：原来是 `docker compose pull "$svc" &` + **无参 wait**。
+  #   无参 wait 只等所有子进程结束，**不会把子进程的非零退出码透传出来**
+  #   （deploy-on-server.sh 的 pull 段早已按同一教训改成逐 pid wait，这里原样残留）。
+  #   改为逐 pid wait：失败**不中止**（回滚首要目标是尽快回到可用版本，旧 sha 镜像通常
+  #   已在本地），但把失败**显式打印**出来，不再静默吞掉。
+  PULL_PIDS=()
   for svc in "${SERVICES[@]}"; do
     docker compose pull "$svc" &
+    PULL_PIDS+=("$!:$svc")
   done
-  wait
+  PULL_FAILED=()
+  for entry in "${PULL_PIDS[@]}"; do
+    pid="${entry%%:*}"; svc="${entry#*:}"
+    if ! wait "$pid"; then
+      PULL_FAILED+=("$svc")
+    fi
+  done
+  if [ ${#PULL_FAILED[@]} -gt 0 ]; then
+    echo "WARN: 以下服务 pull 返回非零（若本地已有该 sha 镜像则不影响回滚）：${PULL_FAILED[*]}"
+  fi
   echo "Pull complete"
 fi
 
@@ -148,5 +164,25 @@ done
 echo ""
 echo "===== Status ====="
 docker compose ps "${SERVICES[@]}"
+
+# --- 记录已回滚版本（审计 I-10②，2026-10-03）---
+# 为什么：DEPLOYED_REVISION 是「线上到底跑的是哪一版」的**唯一可信来源**
+# （见 deploy-on-server.sh:44-48 的设计说明）。自动回滚路径会写它
+# （deploy-on-server.sh 的 write_deployed_revision "$PREV_TAG" "true"），
+# 而**手动回滚**此前不写 ⇒ 回滚后该文件仍在说"跑的是新版本"，回滚审计失真。
+# 此处补齐同一动作：4 行同款写入（脚本间不共享函数，复制比引入跨脚本 source 更稳 ——
+# rollback.sh 在服务器上是以 /www/zxyz/scripts/rollback.sh 独立调用的，不保证同在
+# deploy-on-server.sh 的上下文里）。
+# ROLLBACK=true 让消费方一眼看出这是回滚落地的版本，而非一次正常部署。
+{
+  echo "DEPLOYED_REVISION=${PREV_TAG}"
+  echo "DEPLOYED_AT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  echo "DEPLOY_ENV=${DEPLOY_ENV:-unknown}"
+  echo "DEPLOYED_BY=${GITHUB_ACTOR:-local}"
+  echo "ROLLBACK=true"
+} > DEPLOYED_REVISION
+chmod 644 DEPLOYED_REVISION 2>/dev/null || true
+echo "已记录部署版本：${PREV_TAG} → $(pwd)/DEPLOYED_REVISION（ROLLBACK=true）"
+
 echo ""
 echo "===== Rollback complete ====="

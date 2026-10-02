@@ -95,7 +95,8 @@ export const fetchSystemNotifications = (params = {}) =>
 export const fetchSystemNotificationUnreadCount = (params = {}) =>
   imRequest.get('/api/im/system-notifications/unread-count', { params })
 
-export const fetchMyPresence = () => imRequest.get('/api/im/presence/me')
+// fetchMyPresence（GET /api/im/presence/me）已随 J-9 删除：唯一消费者 realtimeDomain.loadMyPresence
+// 是无调用方的死代码，AUTH_OK 信封已实时维护 myPresence。
 
 /**
  * @param {Array<string|number>} [userIds] - 用户 ID 列表

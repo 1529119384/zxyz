@@ -67,6 +67,33 @@ describe('notificationDomain', () => {
       expect(state.unreadCount.value).toBe(2)
     })
 
+    it('应丢弃过期响应：先发起的 loadNotifications 慢响应不得覆盖后发起的结果（J-4）', async () => {
+      const { state, domain } = createDomain()
+      const { fetchSystemNotifications, fetchSystemNotificationUnreadCount } =
+        await import('@/api/im')
+      let resolveA
+      fetchSystemNotifications.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveA = () => resolve({ data: [{ id: 'nA', title: '团队A通知' }] })
+          }),
+      )
+      fetchSystemNotificationUnreadCount.mockResolvedValue({ data: { unreadCount: 0 } })
+
+      // 切到团队 A（慢请求在途）
+      const promiseA = domain.loadNotifications(10)
+      // 切到团队 B（已返回）
+      fetchSystemNotifications.mockResolvedValue({ data: [{ id: 'nB', title: '团队B通知' }] })
+      const promiseB = domain.loadNotifications(20)
+      await promiseB
+      expect(state.notifications.value.map((n) => n.id)).toEqual(['nB'])
+
+      // 团队 A 的慢响应此刻才回来：不得覆盖 B 的通知列表
+      resolveA()
+      await promiseA
+      expect(state.notifications.value.map((n) => n.id)).toEqual(['nB'])
+    })
+
     it('带 resolveTeamScopedParams 分页参数并同步刷新未读数', async () => {
       const { state, deps, domain } = createDomain()
       const { fetchSystemNotifications, fetchSystemNotificationUnreadCount } =

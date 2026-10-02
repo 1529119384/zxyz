@@ -83,9 +83,6 @@ function createDomain() {
     userSearchResults: ref([]),
   }
   const deps = {
-    clearActiveConversation: vi.fn(),
-    loadConversations: vi.fn(() => Promise.resolve([])),
-    loadNotifications: vi.fn(() => Promise.resolve([])),
     emitter: { emit: vi.fn() },
   }
   const domain = createTeamDomain(state, deps)
@@ -432,6 +429,35 @@ describe('teamDomain', () => {
       await domain.loadTeamMembers()
       expect(fetchTeamMembers).toHaveBeenCalledWith(4)
     })
+
+    it('应丢弃过期响应：先发起的慢响应不得覆盖后发起团队的成员列表（J-4）', async () => {
+      const { state, domain } = createDomain()
+      let resolveA
+      vi.mocked(fetchTeamMembers).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveA = () =>
+              resolve({ data: [{ userId: 11, name: '成员A', role: 'ADMIN' }] })
+          }),
+      )
+
+      // 切到团队 A（慢请求在途，selectedTeamId 已被同步为 10）
+      const promiseA = domain.loadTeamMembers(10)
+      // 切到团队 B（已返回）
+      vi.mocked(fetchTeamMembers).mockResolvedValue({
+        data: [{ userId: 22, name: '成员B', role: 'MEMBER' }],
+      })
+      const promiseB = domain.loadTeamMembers(20)
+      await promiseB
+      expect(state.selectedTeamId.value).toBe(20)
+      expect(state.teamMembers.value.map((m) => m.userId)).toEqual([22])
+
+      // 团队 A 的慢响应此刻才回来：不得覆盖 B 的成员列表，也不得拽回 selectedTeamId
+      resolveA()
+      await promiseA
+      expect(state.teamMembers.value.map((m) => m.userId)).toEqual([22])
+      expect(state.selectedTeamId.value).toBe(20)
+    })
   })
 
   describe('loadTeamMembersSafe', () => {
@@ -519,12 +545,12 @@ describe('teamDomain', () => {
     })
 
     it('创建成功后选中新团队并加载其成员', async () => {
-      const { state, deps, domain } = createDomain()
+      const { state, domain } = createDomain()
       vi.mocked(createAdminTeam).mockResolvedValue({ data: { id: 21, name: 'new' } })
       const result = await domain.createNewTeam({ name: 'new' })
       expect(createAdminTeam).toHaveBeenCalledWith({ name: 'new' })
       expect(fetchMyTeams).toHaveBeenCalled()
-      expect(deps.loadConversations).toHaveBeenCalled()
+      // J-8：会话列表刷新已移出本域，由调用方编排
       expect(state.selectedTeamId.value).toBe(21)
       expect(fetchTeamMembers).toHaveBeenCalledWith(21)
       expect(result).toEqual({ id: 21, name: 'new' })
@@ -647,23 +673,21 @@ describe('teamDomain', () => {
       vi.mocked(fetchTeamMembers).mockResolvedValue({ data: [] })
     })
 
-    it('退出后清空选中团队、会话并重载数据', async () => {
-      const { state, deps, domain } = createDomain()
+    it('退出后清空选中团队并重载团队列表', async () => {
+      const { state, domain } = createDomain()
       state.selectedTeamId.value = 5
       vi.mocked(leaveTeam).mockResolvedValue({ data: true })
       await domain.leaveSelectedTeam()
       expect(leaveTeam).toHaveBeenCalledWith(5)
       expect(state.selectedTeamId.value).toBeNull()
-      expect(deps.clearActiveConversation).toHaveBeenCalled()
       expect(fetchMyTeams).toHaveBeenCalled()
-      expect(deps.loadConversations).toHaveBeenCalled()
+      // J-8：激活会话清空与会话列表刷新已移出本域，由 useTeamSettingsActions 编排
     })
 
     it('teamId 非法时抛错且不调用退出接口', async () => {
-      const { deps, domain } = createDomain()
+      const { domain } = createDomain()
       await expect(domain.leaveSelectedTeam(0)).rejects.toThrow('请先选择团队')
       expect(leaveTeam).not.toHaveBeenCalled()
-      expect(deps.clearActiveConversation).not.toHaveBeenCalled()
     })
   })
 
@@ -675,15 +699,15 @@ describe('teamDomain', () => {
       vi.mocked(fetchTeamJoinRequests).mockResolvedValue({ data: [] })
     })
 
-    it('移除成员后重载成员、管理态与会话', async () => {
-      const { deps, domain } = createDomain()
+    it('移除成员后重载成员与管理态', async () => {
+      const { domain } = createDomain()
       vi.mocked(removeTeamMember).mockResolvedValue({ data: true })
       await domain.removeMember(3, 7)
       expect(removeTeamMember).toHaveBeenCalledWith(3, 7)
       expect(fetchTeamMembers).toHaveBeenCalledWith(3)
       expect(fetchTeamMutes).toHaveBeenCalledWith(3)
       expect(fetchTeamJoinRequests).toHaveBeenCalledWith(3)
-      expect(deps.loadConversations).toHaveBeenCalled()
+      // J-8：会话列表刷新已移出本域，由 useTeamMemberActions 编排
     })
 
     it('teamId 非法时抛错且不调用移除接口', async () => {
@@ -700,24 +724,21 @@ describe('teamDomain', () => {
       vi.mocked(fetchTeamMembers).mockResolvedValue({ data: [] })
     })
 
-    it('接受邀请后重载通知、团队与会话', async () => {
-      const { deps, domain } = createDomain()
+    it('接受邀请后重载团队列表', async () => {
+      const { domain } = createDomain()
       vi.mocked(acceptTeamInvitation).mockResolvedValue({ data: { teamId: 1 } })
       await expect(domain.acceptInvitation(11)).resolves.toEqual({ teamId: 1 })
       expect(acceptTeamInvitation).toHaveBeenCalledWith(11)
-      expect(deps.loadNotifications).toHaveBeenCalled()
       expect(fetchMyTeams).toHaveBeenCalled()
-      expect(deps.loadConversations).toHaveBeenCalled()
+      // J-8：通知与会话刷新已移出本域，由调用方编排
     })
 
-    it('拒绝邀请后只重载通知', async () => {
-      const { deps, domain } = createDomain()
+    it('拒绝邀请后不再触发任何重载', async () => {
+      const { domain } = createDomain()
       vi.mocked(rejectTeamInvitation).mockResolvedValue({ data: { ok: true } })
       await expect(domain.rejectInvitation(12)).resolves.toEqual({ ok: true })
       expect(rejectTeamInvitation).toHaveBeenCalledWith(12)
-      expect(deps.loadNotifications).toHaveBeenCalled()
       expect(fetchMyTeams).not.toHaveBeenCalled()
-      expect(deps.loadConversations).not.toHaveBeenCalled()
     })
 
     it('接口异常时向外抛出', async () => {
@@ -732,13 +753,12 @@ describe('teamDomain', () => {
       vi.clearAllMocks()
     })
 
-    it('发布公告后重载会话与通知并返回数据', async () => {
-      const { deps, domain } = createDomain()
+    it('发布公告后返回数据', async () => {
+      const { domain } = createDomain()
       vi.mocked(publishTeamAnnouncement).mockResolvedValue({ data: { id: 9 } })
       await expect(domain.publishAnnouncement(4, { content: 'hi' })).resolves.toEqual({ id: 9 })
       expect(publishTeamAnnouncement).toHaveBeenCalledWith(4, { content: 'hi' })
-      expect(deps.loadConversations).toHaveBeenCalled()
-      expect(deps.loadNotifications).toHaveBeenCalled()
+      // J-8：会话/通知刷新已移出本域，由 useTeamSettingsActions 编排
     })
 
     it('teamId 非法时抛错', async () => {
@@ -850,14 +870,14 @@ describe('teamDomain', () => {
       vi.mocked(fetchTeamJoinRequests).mockResolvedValue({ data: [] })
     })
 
-    it('未选中团队时只重载团队与会话', async () => {
-      const { deps, domain } = createDomain()
+    it('未选中团队时只重载团队列表', async () => {
+      const { domain } = createDomain()
       vi.mocked(approveTeamJoinRequest).mockResolvedValue({ data: { ok: true } })
       await expect(domain.approveJoinRequest(6)).resolves.toEqual({ ok: true })
       expect(approveTeamJoinRequest).toHaveBeenCalledWith(6)
       expect(fetchMyTeams).toHaveBeenCalled()
-      expect(deps.loadConversations).toHaveBeenCalled()
       expect(fetchTeamMutes).not.toHaveBeenCalled()
+      // J-8：会话列表刷新已移出本域，由 useTeamMemberActions 编排
     })
 
     it('已选中团队时额外重载管理态', async () => {
@@ -926,11 +946,8 @@ describe('teamDomain', () => {
         inviteLink: ref(null),
         userSearchResults: ref([]),
       }
-      const domain = createTeamDomain(state, {
-        clearActiveConversation: vi.fn(),
-        loadConversations: vi.fn(() => Promise.resolve([])),
-        loadNotifications: vi.fn(() => Promise.resolve([])),
-      })
+      // J-8：chat 依赖已移出本域，deps 只剩 emitter（且可缺省）
+      const domain = createTeamDomain(state, {})
       await expect(domain.refreshTeamPermissionCenter(1)).resolves.toBeUndefined()
     })
   })

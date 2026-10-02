@@ -8,6 +8,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import uno.acloud.common.ErrorCode;
 import static uno.acloud.common.TeamErrorCode.*;
 import uno.acloud.exception.BusinessException;
+import uno.acloud.im.config.ImProperties;
 import uno.acloud.im.domain.enums.ConversationType;
 import uno.acloud.im.infrastructure.persistence.entity.ImConversation;
 import uno.acloud.im.infrastructure.persistence.entity.ImMessage;
@@ -42,9 +43,11 @@ class MessageModerationServiceTest {
 
     @BeforeEach
     void setUp() {
+        ImProperties imProperties = new ImProperties();
+        imProperties.getMessage().setRecallWindowSeconds(120);
         service = new MessageModerationService(
                 imMessageMapper, conversationMapper, teamMapper,
-                conversationService, teamPermissionService, 120);
+                conversationService, teamPermissionService, imProperties);
     }
 
     // ---- 辅助方法 ----

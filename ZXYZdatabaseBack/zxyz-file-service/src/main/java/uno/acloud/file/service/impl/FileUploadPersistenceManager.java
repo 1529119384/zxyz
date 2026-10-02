@@ -66,7 +66,10 @@ public class FileUploadPersistenceManager {
      * 因此 Redis/MQ 抖动不会把一次成功的上传变成 500（缓存 30s 自然过期兜底）。
      */
     private void invalidateUsageCachesAfterCommit(FileItem fileItem) {
-        TransactionUtils.runAfterCommit(() -> storageCacheService.invalidateAllStorageCaches());
+        // F12（P3 缓存粒度）：上传时 scope 完全已知（就在 fileItem 上）⇒ 精确失效该 scope，
+        // 不再 SCAN + 清空整个 file:storage:* 命名空间（那会让其余用户的容量条缓存一起失效）。
+        TransactionUtils.runAfterCommit(() -> storageCacheService.invalidateStorageScope(
+                fileItem.getSpaceType(), fileItem.getTeamId(), fileItem.getProjectId(), fileItem.getUploadUserId()));
         if (fileResourceChangedPublisher == null) {
             return;
         }

@@ -6,9 +6,10 @@
  * import 的都是那些具名导出：比较场景写 `type === TEAM` 比 `CONVERSATION_TYPE.TEAM` 短，
  * 也更容易被静态检查发现拼错。
  *
- * `CONVERSATION_TYPE` 本身供**枚举**场景使用 —— 见 `NOTIFICATION_CONVERSATION_TYPES`。
+ * `CONVERSATION_TYPE` 本身仅作本文件内部的取值源，不对外导出（C-9 裁定：纯前端
+ * 常量表，外部应使用具名导出；保留本表是为了让具名导出单一取值、不可能漂移）。
  */
-export const CONVERSATION_TYPE = Object.freeze({
+const CONVERSATION_TYPE = Object.freeze({
   SYSTEM: 'SYSTEM',
   DIRECT: 'DIRECT',
   TEAM: 'TEAM',

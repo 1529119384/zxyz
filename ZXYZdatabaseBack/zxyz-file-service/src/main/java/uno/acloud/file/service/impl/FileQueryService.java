@@ -333,9 +333,31 @@ public class FileQueryService implements FileQueryPort {
         return fileMapper.getFileNodesByIds(fileIds);
     }
 
+    /**
+     * 流式下载取节点（{@code GET /api/files/{id}/stream}）。
+     *
+     * <h2>F3（P2）为什么要在这里显式拒绝非活跃节点</h2>
+     * <p>修复前本方法只做 {@code requireNode(fileId, userId, guard)}：它查的是
+     * {@code FileMapper.getFileNodeById}（<b>不带</b> {@code deleted} 谓词），随后只校验读权限。
+     * 于是 {@code deleted = 1}（回收站）与 {@code deleted = 2}（已彻底删除）的文件
+     * 在 OSS 物理删除发生<b>之前</b>的窗口内，仍可经 {@code /api/files/{id}/stream} 被完整下载
+     * —— 「彻底删除」这一用户可见的不可逆承诺被绕过。</p>
+     * <p>同类的 {@code getFileDownloadUrl} / {@code getSharedFileDownloadUrl} 一律强制
+     * {@code deleted = 0}，本方法此前是唯一漏网的一条读路径。</p>
+     *
+     * <h2>为什么先鉴权、再判状态（而不是直接 {@code requireActiveNode} 打头）</h2>
+     * <p>刻意保持<b>鉴权在前</b>：若先判状态，则「别人的、已进回收站的」文件会返回
+     * 「当前文件状态不可操作」，而「别人的、活跃的」文件返回权限错误 ——
+     * 两者响应不同，等于向非授权调用者泄露了「该 id 存在且已被删除」这一信息。
+     * 先走 {@code requireReadAccess} 可让未授权调用者对所有已存在文件得到一致的拒绝。</p>
+     */
     @Override
     public FileNode getFileNodeForStream(Long fileId, Long userId) {
-        return fileDomainValidator.requireNode(fileId, userId, fileAccessGuardService);
+        FileNode fileNode = fileDomainValidator.requireNode(fileId, userId, fileAccessGuardService);
+        if (!fileNode.isActive()) {
+            throw new BusinessException(ErrorCode.FILE_STATE_INVALID, "当前文件状态不可操作");
+        }
+        return fileNode;
     }
 
     public PageResult<FileSearchItemVO> searchFiles(String keyword, Integer page, Integer pageSize, long userId) {
@@ -389,11 +411,47 @@ public class FileQueryService implements FileQueryPort {
         return typeComparator.thenComparing(fieldComparator);
     }
 
+    /**
+     * 归一化搜索关键词，并把 LIKE 通配符转义为字面量（F16，P3 数据正确性）。
+     *
+     * <h2>修复前的缺陷</h2>
+     * <p>{@code countByKeyword} / {@code searchByKeyword} 的 SQL 是
+     * {@code original_name LIKE CONCAT(#{keyword}, '%')}，而用户输入原样绑定。于是搜索
+     * {@code %} 会匹配<b>全部</b>文件、{@code _} 会匹配任意单字符 —— 搜索结果与用户意图不符。
+     * （作用域仍受限本人/本团队，无越权，属功能失真。）</p>
+     *
+     * <h2>为什么在服务层转义而不是在 SQL 里</h2>
+     * <p>两个语句是必须同形的「孪生对」（{@code countByKeyword} ↔ {@code searchByKeyword}，
+     * 不一致会出现「总条数与翻页结果对不上」）。转义放在唯一调用点，天然保证两者拿到<b>同一个</b>
+     * 转义后的值；若放 SQL 里就得靠 {@code REPLACE} 嵌套写两遍，且容易漏改一处。</p>
+     *
+     * <h2>转义顺序很关键</h2>
+     * <p>必须<b>先转义反斜杠自身</b>，再转义 {@code %}/{@code _}。反过来的话，
+     * 原本输入的 {@code \%} 会先变成 {@code \\%}（把用户的转义字符本身也变成了通配符前缀），
+     * 语义就错了。三个字符各自成对出现（{@code \}→{@code \\}、{@code %}→{@code \%}、
+     * {@code _}→{@code \_}）保证转义可逆。</p>
+     *
+     * <p>配套：SQL 里的 {@code LIKE ... ESCAPE '\\'} 显式声明反斜杠为转义字符
+     * （MySQL 默认即反斜杠，写出来是为了让意图自明、且不依赖隐式默认）。</p>
+     */
     private String normalizeKeyword(String keyword) {
         if (keyword == null || keyword.trim().isEmpty()) {
             throw new BusinessException(ErrorCode.SEARCH_KEYWORD_EMPTY, "搜索关键字不能为空");
         }
-        return keyword.trim();
+        return escapeLikeWildcards(keyword.trim());
+    }
+
+    /**
+     * 转义 LIKE 元字符：反斜杠 → {@code \\}、百分号 → {@code \%}、下划线 → {@code \_}。
+     * <p>⚠️ 顺序固定：先 {@code \}，再 {@code %}/{@code _}（见 {@link #normalizeKeyword} 说明）。</p>
+     */
+    static String escapeLikeWildcards(String raw) {
+        if (raw == null || raw.isEmpty()) {
+            return raw;
+        }
+        return raw.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
     }
 
     private Comparator<FileListItemVO> buildSortFieldComparator(SortOption sortOption) {

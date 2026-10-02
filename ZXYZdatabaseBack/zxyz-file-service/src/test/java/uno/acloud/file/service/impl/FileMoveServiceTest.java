@@ -43,11 +43,14 @@ class FileMoveServiceTest {
 
     private FileMoveService fileMoveService;
 
+    /** 与 {@code app.file.copy.max-nodes-per-tx} 默认值一致（F10 复用它作为移动上限）。 */
+    private static final int MAX_NODES_PER_TX = 500;
+
     @BeforeEach
     void setUp() {
         fileMoveService = new FileMoveService(
                 fileMapper, fileDomainValidator, filePathResolver,
-                fileAccessGuardService, helper, transactionHelper);
+                fileAccessGuardService, helper, transactionHelper, MAX_NODES_PER_TX);
         // Mock TransactionHelper to execute lambdas directly
         lenient().when(transactionHelper.execute(any())).thenAnswer(invocation -> {
             TransactionHelper.TransactionCallback<?> callback = invocation.getArgument(0);
@@ -97,7 +100,7 @@ class FileMoveServiceTest {
         assertNotNull(result);
         // Verify the file was NOT actually moved (no mapper call)
         verify(fileMapper, never()).moveNodeById(anyLong(), anyString(), anyLong(), anyString(), any(), any(), any());
-        verify(helper).publishByIdsAfterCommit(eq("MOVED"), anyList());
+        verify(helper).publishByIdsAfterCommit(eq("MOVED"), anyList(), anyList());
     }
 
     // ==================== Move file across folders — should succeed ====================
@@ -149,7 +152,7 @@ class FileMoveServiceTest {
         assertNotNull(result);
         verify(fileMapper).moveNodeById(eq(fileNodeId), eq("test.txt"), eq(targetParentId),
                 eq("/target/test.txt"), eq(teamId), eq(FileSpaceType.TEAM), isNull());
-        verify(helper).publishByIdsAfterCommit(eq("MOVED"), anyList());
+        verify(helper).publishByIdsAfterCommit(eq("MOVED"), anyList(), anyList());
     }
 
     // ==================== Move file to different space type — should reject ====================
@@ -218,5 +221,58 @@ class FileMoveServiceTest {
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> fileMoveService.moveFiles(List.of(fileNodeId), targetParentId, 10L, userId));
         assertEquals(ErrorCode.NO_PERMISSION, ex.getErrorCode());
+    }
+
+    // ==================== F10：单次移动的顶层节点上限 ====================
+
+    /**
+     * F10（P3 无界输入）：{@code moveFiles} 必须在<b>任何查询/权限校验之前</b>拒绝超过上限的请求。
+     *
+     * <h2>为什么需要</h2>
+     * <p>复制路径早有 {@code app.file.copy.max-nodes-per-tx}（默认 500）护栏，移动路径完全没有：
+     * {@code collectDescendantNodes} 会把整棵子树<b>全量预载入内存</b>，随后在<b>单个事务</b>内
+     * 逐行 UPDATE 每个后代。一个「移动大目录」的请求 = 长事务 + 大结果集，占着 DB 连接并放大锁范围。</p>
+     *
+     * <p>关键断言：fail-fast —— 一项都不得被处理，否则「先预载全树再报错」依然会造成内存与连接占用。</p>
+     */
+    @Test
+    void moveFiles_exceedingNodeLimit_shouldFailFastBeforeAnyQuery() {
+        List<Long> tooMany = new java.util.ArrayList<>();
+        for (long i = 0; i < MAX_NODES_PER_TX + 1; i++) {
+            tooMany.add(i + 1);
+        }
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> fileMoveService.moveFiles(tooMany, 200L, 10L, 1L));
+
+        assertEquals(ErrorCode.BAD_REQUEST, ex.getErrorCode());
+        assertTrue(ex.getMessage().contains(String.valueOf(MAX_NODES_PER_TX)),
+                "错误信息必须给出实际上限，便于前端拆分批次；实际：" + ex.getMessage());
+        // fail-fast：不得先做任何**数据查询/权限校验**（否则上限就只是"事后报错"而非防护）。
+        // 注意 validateUserId / validateTargetParentId 是纯本地参数校验，位于上限检查之前属正常，
+        // 因此这里不能对 fileDomainValidator 用 verifyNoInteractions。
+        verify(fileDomainValidator, never()).requireMovableNodes(anyList());
+        verifyNoInteractions(fileAccessGuardService);
+        verifyNoInteractions(fileMapper);
+        verifyNoInteractions(helper);
+    }
+
+    /** 边界对照：恰好等于上限不得被上限拒绝（避免写成「小于」而误伤合法批次）。 */
+    @Test
+    void moveFiles_atExactNodeLimit_shouldNotBeRejectedByLimit() {
+        List<Long> atLimit = new java.util.ArrayList<>();
+        for (long i = 0; i < MAX_NODES_PER_TX; i++) {
+            atLimit.add(i + 1);
+        }
+        // 让后续校验抛一个**非上限**的异常，以此证明没有命中上限分支
+        when(fileDomainValidator.requireMovableNodes(anyList()))
+                .thenThrow(new BusinessException(ErrorCode.NOT_FOUND, "文件不存在"));
+
+        try {
+            fileMoveService.moveFiles(atLimit, 200L, 10L, 1L);
+        } catch (BusinessException e) {
+            assertFalse(e.getMessage() != null && e.getMessage().contains("数量过多"),
+                    "恰好 " + MAX_NODES_PER_TX + " 条不得被上限拒绝（边界写成了 > 而非 >=）：" + e.getMessage());
+        }
     }
 }

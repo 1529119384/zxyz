@@ -281,10 +281,18 @@ class FileMapperIntegrationTest extends AbstractIntegrationTest {
 
         assertEquals(3, fileMapper.countActiveChildren(root.getId()), "三个活跃子节点");
 
+        // F1（P1）：软删的子节点**仍然占用**父目录 ⇒ 计数不得下降。
+        // 旧口径 `deleted = 0` 会让「只剩回收站子节点」的活跃父文件夹被 cleanupOrphanFolders 直接置 deleted=2，
+        // 绕过回收站 30 天 TTL（用户无感知丢失文件夹，还原文件后还会成为孤儿）。
         fileMapper.logicalDeleteByIds(List.of(c.getId()), userId);
-        assertEquals(2, fileMapper.countActiveChildren(root.getId()),
-                "countActiveChildren 必须只数 deleted = 0");
+        assertEquals(3, fileMapper.countActiveChildren(root.getId()),
+                "回收站（deleted = 1）的子节点仍占用父目录 —— 口径必须是 deleted IN (0, 1)");
         assertEquals(0, fileMapper.countActiveChildren(nextId()), "不存在的父 id 应返回 0");
+
+        // 彻底删除（deleted = 2）后才真正不再占用
+        fileMapper.reallyDeleteByIds(List.of(c.getId()), userId);
+        assertEquals(2, fileMapper.countActiveChildren(root.getId()),
+                "deleted = 2 的行已离开计数口径（deleted IN (0, 1)）");
 
         assertEquals(root.getId(), fileMapper.getParentId(a.getId()), "getParentId 应返回直接父 id");
         assertEquals(-1L, fileMapper.getParentId(root.getId()), "根节点 parent_id 为哨兵 -1");

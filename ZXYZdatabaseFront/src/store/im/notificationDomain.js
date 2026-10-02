@@ -25,21 +25,32 @@ import {
 export function createNotificationDomain(state, deps) {
   const { notifications, unreadCount } = state
   const { resolveTeamScopedParams } = deps
+  // 过期响应令牌（J-4，与 usePagedList 同法）：快速切换团队时先发起的慢响应
+  // 不得覆盖后发起请求已写入的通知列表 / 未读数。
+  let latestNotificationsToken = 0
 
   /** @param {number|string|null} [teamId] 缺省时由 resolveTeamScopedParams 决定作用域 */
   async function loadUnreadCount(teamId) {
+    const requestToken = ++latestNotificationsToken
     const response = await fetchSystemNotificationUnreadCount(resolveTeamScopedParams(teamId))
+    if (requestToken !== latestNotificationsToken) {
+      return unreadCount.value
+    }
     unreadCount.value = Number(response?.data?.unreadCount || 0)
     return unreadCount.value
   }
 
   /** @param {number|string|null} [teamId] 缺省时由 resolveTeamScopedParams 决定作用域 */
   async function loadNotifications(teamId) {
+    const requestToken = ++latestNotificationsToken
     const response = await fetchSystemNotifications({
       page: 1,
       pageSize: 50,
       ...resolveTeamScopedParams(teamId),
     })
+    if (requestToken !== latestNotificationsToken) {
+      return notifications.value
+    }
     notifications.value = Array.isArray(response?.data) ? response.data : []
     await loadUnreadCount()
     return notifications.value

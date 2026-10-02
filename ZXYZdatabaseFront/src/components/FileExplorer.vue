@@ -335,6 +335,9 @@ watch(
 
     await runRefreshSafely({
       prefetchedList: latestResolvedNavigation.value?.prefetchedList ?? null,
+      // J-16：把预取响应的分页字段一并透传，预取路径不再让分页器停在上一个目录的值
+      prefetchedTotal: latestResolvedNavigation.value?.prefetchedTotal,
+      prefetchedPageSize: latestResolvedNavigation.value?.prefetchedPageSize,
     })
   },
   { immediate: true },

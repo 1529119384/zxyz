@@ -53,7 +53,7 @@ jobs:
     if: github.event.inputs.confirm == 'RUN'
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # --- 与 ci-cd.yml 逐字一致的凭据模式（本仓既定契约，勿自创）---
       - name: Determine deploy target
@@ -102,7 +102,7 @@ jobs:
       # --- 前置守卫 + 在服务器上执行演练 ---
       - name: Run restore drill on server
         id: drill
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         env:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/www/zxyz' }}
         with:
@@ -181,13 +181,21 @@ jobs:
           DEPLOY_USER: ${{ secrets.DEPLOY_USERNAME }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || 22 }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/www/zxyz' }}
+          # 审计 I-7：主机密钥固化到稳定路径（TOFU）。若需预置受控 known_hosts，
+          # 用与 backup.sh 同名的 BACKUP_SSH_KNOWN_HOSTS secret/vars 指向它。
+          KNOWN_HOSTS_FILE: ${{ vars.BACKUP_SSH_KNOWN_HOSTS || format('{0}/.ssh/known_hosts', github.workspace) }}
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_drill
           chmod 600 ~/.ssh/id_drill
+          # 审计 I-7（2026-10-03）：原为 `-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null`
+          # —— 完全不校验主机密钥，私钥在 MITM 下可被收割；而同一仓库的
+          # scripts/backup.sh:326 早已按审计 2.3.3 改为 accept-new，此处成了残留的反模式。
+          # 口径拉齐：accept-new = 首次连接 TOFU 固化，之后主机密钥变化即**硬失败**。
+          # known_hosts 用受控路径（可用 BACKUP_SSH_KNOWN_HOSTS 预置，与 backup.sh 同款）。
           ssh -i ~/.ssh/id_drill -p "$DEPLOY_PORT" \
-            -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile=${KNOWN_HOSTS_FILE}" \
             "$DEPLOY_USER@$DEPLOY_HOST" \
             "cat '${DEPLOY_PATH}/backups/restore-drill.log'" > restore-drill.log 2>&1 || true
           echo "--- 演练日志（尾部 40 行）---"
@@ -195,7 +203,7 @@ jobs:
 
       - name: Upload drill log artifact
         if: always() && steps.preflight.outcome == 'success'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: restore-drill-log
           path: restore-drill.log
@@ -209,7 +217,7 @@ jobs:
       - name: Cleanup leftover drill containers
         if: always() && steps.preflight.outcome == 'success'
         continue-on-error: true
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         env:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/www/zxyz' }}
         with:

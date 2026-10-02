@@ -13,7 +13,9 @@ import java.time.LocalDateTime;
 
 @Getter
 @Setter
-@ToString
+// B-13(email侧)：passwordCipher 是 SMTP 授权码密文；@JsonProperty(WRITE_ONLY) 只管
+// JSON 序列化、不管 toString()，密文+可解密密钥共存即等效明文，统一 exclude。
+@ToString(exclude = {"passwordCipher"})
 @TableName("email_server_config")
 public class EmailServerConfig implements Serializable {
     private static final long serialVersionUID = 1L;

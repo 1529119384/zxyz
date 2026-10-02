@@ -13,7 +13,10 @@ import lombok.ToString;
 
 import java.io.Serializable;
 
-@Getter @Setter @ToString
+@Getter @Setter
+// B-13(email侧)：@JsonProperty(WRITE_ONLY) 只管 Jackson JSON 序列化、不管 toString()；
+// 审计/日志路径的 Arrays.toString 走 Lombok @ToString，授权码必须显式 exclude。
+@ToString(exclude = {"password"})
 @Schema(description = "SMTP配置请求")
 public class EmailServerConfigRequest implements Serializable {
     private static final long serialVersionUID = 1L;

@@ -41,6 +41,12 @@ public class FileObjectPhysicalDeleteExecutor {
     /** 指标 tag：存储提供者标识，用于定位是哪个存储后端出问题 */
     private static final String TAG_PROVIDER = "provider";
 
+    /**
+     * 指标名：因 provider 未注册/取不到而整组跳过的待删对象数（F14，P3）。
+     * <p>用于告警：这些对象本轮<b>不会</b>被物理删除，需人工确认 provider 配置是否有效。</p>
+     */
+    private static final String METRIC_PROVIDER_UNAVAILABLE = "file.object.delete.provider.unavailable";
+
     private final FileObjectRefMapper fileObjectRefMapper;
     private final StorageProviderRegistry registry;
     private final MeterRegistry meterRegistry;
@@ -65,7 +71,25 @@ public class FileObjectPhysicalDeleteExecutor {
                         ? ref.getStorageProvider() : "oss"));
         int successCount = 0;
         for (Map.Entry<String, List<FileObjectRef>> entry : groupedByProvider.entrySet()) {
-            StorageProvider provider = registry.getProvider(entry.getKey());
+            // F14（P3）：registry.getProvider 对**未注册**的 providerId 抛 BusinessException。
+            // 修复前该异常会从中断整个 for 循环 ⇒ 一行脏 provider 数据（例如已下线的 local）
+            // 就让**其余全部** provider 的待删对象每一轮都被饿死（只有一条 warn）。
+            // 现在改为：该组整体跳过（本组对象保持 PENDING_DELETE，下一轮仍会被捞起），
+            // 按组大小计数告警，其余组照常处理。
+            // F14（P3）：registry.getProvider 对**未注册**的 providerId 抛 BusinessException。
+            // 修复前该异常会从中断整个 for 循环 ⇒ 一行脏 provider 数据（例如已下线的 local）
+            // 就让**其余全部** provider 的待删对象每一轮都被饿死（只有一条 warn）。
+            // 现在改为：该组整体跳过（本组对象保持 PENDING_DELETE，下一轮仍会被捞起），
+            // 按组大小计数告警，其余组照常处理。
+            StorageProvider provider;
+            try {
+                provider = registry.getProvider(entry.getKey());
+            } catch (Exception e) {
+                incrementCounter(METRIC_PROVIDER_UNAVAILABLE, entry.getKey(), entry.getValue().size());
+                log.warn("存储提供者不可用，本轮跳过该组待删对象（其余提供者不受影响），provider={}, pendingCount={}",
+                        entry.getKey(), entry.getValue().size(), e);
+                continue;
+            }
             for (FileObjectRef pendingRef : entry.getValue()) {
                 if (deletePendingObject(pendingRef, provider)) {
                     successCount++;
@@ -157,6 +181,18 @@ public class FileObjectPhysicalDeleteExecutor {
                 .tag(TAG_PROVIDER, StringUtils.isBlank(providerId) ? "unknown" : providerId)
                 .register(meterRegistry)
                 .increment();
+    }
+
+    /**
+     * 记录「某 provider 整组被跳过的待删对象数」（F14）。
+     * <p>用 {@code increment(n)} 而不是循环 {@code increment()}：既如实反映被饿死的对象规模，
+     * 又避免一次任务里对同一个 MeterId 反复 register。</p>
+     */
+    private void incrementCounter(String name, String providerId, int amount) {
+        Counter.builder(name)
+                .tag(TAG_PROVIDER, StringUtils.isBlank(providerId) ? "unknown" : providerId)
+                .register(meterRegistry)
+                .increment(Math.max(0, amount));
     }
 
     private long resolveRetryDelaySeconds(FileObjectRef pendingRef) {

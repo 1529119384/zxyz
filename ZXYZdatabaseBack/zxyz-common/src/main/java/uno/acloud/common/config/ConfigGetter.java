@@ -41,7 +41,16 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 public class ConfigGetter extends AbstractServiceClient {
 
-    private static final String NULL_SENTINEL = "§NULL§";
+    /**
+     * 键不存在的哨兵值。
+     *
+     * <p><b>为什么是实例级随机串而不是固定字面量</b>：Caffeine 的 {@code get(key, loader)}
+     * 用缓存值本身表达「该键不存在」。若哨兵是固定字面量（原为 {@code "§NULL§"}），
+     * 一旦 admin-service 里真有一条配置的值恰好等于哨兵，{@link #get(String)} 会把
+     * 「存在且值为哨兵」误判成「键不存在」并返回 null —— 静默取到 fallback。
+     * 随机串让这种碰撞在实际意义上不可能发生（且每个实例各不相同）。</p>
+     */
+    private final String nullSentinel = "§NULL§" + java.util.UUID.randomUUID();
 
     /** 本地缓存 TTL：1 分钟（配置变更通过 Redis Pub/Sub 主动失效） */
     private final Cache<String, String> cache = Caffeine.newBuilder()
@@ -64,7 +73,7 @@ public class ConfigGetter extends AbstractServiceClient {
     /**
      * 获取字符串配置值。
      * <p>优先从本地 Caffeine 缓存读取，缓存未命中时通过 HTTP 调用 admin-service。
-     * 不存在的键会缓存 NULL_SENTINEL（1 分钟），避免重复请求。</p>
+     * 不存在的键会缓存 nullSentinel（1 分钟），避免重复请求。</p>
      *
      * @param key      配置键
      * @param fallback 键不存在或读取失败时的默认值
@@ -150,7 +159,7 @@ public class ConfigGetter extends AbstractServiceClient {
     /**
      * 获取配置值。
      * <p>优先从本地 Caffeine 缓存读取，缓存未命中时通过 HTTP 调用 admin-service。
-     * 不存在的键会缓存 NULL_SENTINEL（1 分钟），避免重复请求。</p>
+     * 不存在的键会缓存 nullSentinel（1 分钟），避免重复请求。</p>
      *
      * @param key 配置键
      * @return 配置值；键不存在或读取失败时返回 null
@@ -160,25 +169,25 @@ public class ConfigGetter extends AbstractServiceClient {
             try {
                 JsonNode root = getJsonOptional("/api/admin/configs/" + k);
                 if (root == null) {
-                    return NULL_SENTINEL;
+                    return nullSentinel;
                 }
                 JsonNode data = root.path("data");
                 if (data.isMissingNode() || data.isNull()) {
-                    return NULL_SENTINEL;
+                    return nullSentinel;
                 }
                 return data.isTextual() ? data.asText() : data.toString();
             } catch (BusinessException e) {
                 if (e.getErrorCode() == ErrorCode.NOT_FOUND) {
-                    return NULL_SENTINEL;
+                    return nullSentinel;
                 }
                 log.warn("读取配置失败（连接 admin-service 不可达，视为键不存在）: key={}, code={}", k, e.getErrorCode());
-                return NULL_SENTINEL;
+                return nullSentinel;
             } catch (Exception e) {
                 log.warn("读取配置失败（异常，视为键不存在）: key={}", k, e);
-                return NULL_SENTINEL;
+                return nullSentinel;
             }
         });
-        return NULL_SENTINEL.equals(value) ? null : value;
+        return nullSentinel.equals(value) ? null : value;
     }
 
     /**

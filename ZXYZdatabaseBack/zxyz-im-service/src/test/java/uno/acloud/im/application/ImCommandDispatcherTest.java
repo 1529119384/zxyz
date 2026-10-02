@@ -16,7 +16,10 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -150,8 +153,87 @@ class ImCommandDispatcherTest {
         )));
 
         assertEquals(ErrorCode.BAD_REQUEST, exception.getErrorCode());
-        assertEquals("不支持的消息类型: SEND_IMAGE", exception.getMessage());
+        // 异常消息经 GlobalExceptionHandler → Result 原样下发给 WS 客户端，
+        // 不得回显用户可控的 type（否则可据此探测服务端支持面）。
+        assertFalse(exception.getMessage().contains("SEND_IMAGE"),
+                "异常消息不得回显 type，实际：" + exception.getMessage());
         verifyNoInteractions(imMessageService, fileCardMessageService, realtimePushService);
+    }
+
+    @Test
+    void shouldNotEchoHostileTypeIntoClientVisibleMessage() throws Exception {
+        String hostileType = "<script>alert(1)</script>";
+        BusinessException exception = assertThrows(BusinessException.class, () -> dispatcher.dispatch(new ImCommandRequest(
+                7L,
+                "Bearer token",
+                hostileType,
+                "request-6b",
+                "client-6b",
+                100L,
+                payload("{}")
+        )));
+
+        assertEquals(ErrorCode.BAD_REQUEST, exception.getErrorCode());
+        assertFalse(exception.getMessage().contains("script"),
+                "用户可控的 type 不得出现在客户端可见的异常消息里，实际：" + exception.getMessage());
+        verifyNoInteractions(imMessageService, fileCardMessageService, realtimePushService);
+    }
+
+    // ==================== payload 数组元素上限 ====================
+
+    @Test
+    void shouldRejectMentionsListExceedingElementLimit() throws Exception {
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> dispatcher.dispatch(textCommandWithMentions(101)));
+
+        assertEquals(ErrorCode.BAD_REQUEST, exception.getErrorCode());
+        verifyNoInteractions(imMessageService, fileCardMessageService, realtimePushService);
+    }
+
+    @Test
+    void shouldAcceptMentionsListAtExactElementLimit() throws Exception {
+        when(imMessageService.storeTextMessage(eq(7L), eq(100L), eq("client-limit"), eq("hello"), anyList()))
+                .thenReturn(new ImMessageService.StoreMessageResult(
+                        300L, message(300L, 100L, MessageType.TEXT), List.of(7L)));
+
+        ImCommandResult result = dispatcher.dispatch(textCommandWithMentions(100));
+
+        assertEquals(300L, result.messageId(), "恰好 100 个元素应当放行（上限不得差一）");
+    }
+
+    @Test
+    void shouldRejectFileIdsListExceedingElementLimit() throws Exception {
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> dispatcher.dispatch(fileCardCommandWithFileIds(101)));
+
+        assertEquals(ErrorCode.BAD_REQUEST, exception.getErrorCode());
+        verifyNoInteractions(imMessageService, fileCardMessageService, realtimePushService);
+    }
+
+    private ImCommandRequest textCommandWithMentions(int count) throws Exception {
+        StringBuilder json = new StringBuilder("{\"content\":\"hello\",\"mentions\":[");
+        for (int i = 0; i < count; i++) {
+            if (i > 0) {
+                json.append(',');
+            }
+            json.append(1000 + i);
+        }
+        json.append("]}");
+        return new ImCommandRequest(7L, "Bearer token", "SEND_TEXT", "request-7", "client-limit", 100L,
+                payload(json.toString()));
+    }
+
+    private ImCommandRequest fileCardCommandWithFileIds(int count) throws Exception {
+        StringBuilder json = new StringBuilder("{\"fileIds\":[");
+        for (int i = 0; i < count; i++) {
+            if (i > 0) {
+                json.append(',');
+            }
+            json.append(2000 + i);
+        }
+        json.append("]}");
+        return new ImCommandRequest(7L, "Bearer token", "SEND_FILE_CARD", "request-8", "client-limit", 100L,
+                payload(json.toString()));
     }
 
     private JsonNode payload(String json) throws Exception {

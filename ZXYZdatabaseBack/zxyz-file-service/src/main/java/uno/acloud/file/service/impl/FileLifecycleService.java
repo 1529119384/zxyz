@@ -77,7 +77,7 @@ public class FileLifecycleService implements FileLifecyclePort {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "删除文件失败");
             }
             renameToTombstone(normalizedFileIds);
-            publishFromSnapshotsAfterCommit("DELETED", snapshots);
+            publishFromSnapshotsAfterCommit("DELETED", snapshots, scopesOf(fileNodes));
             log.info("逻辑删除文件 roots={}, allIds={}", normalizedFileIds, allIds);
             return rows;
         });
@@ -113,7 +113,7 @@ public class FileLifecycleService implements FileLifecyclePort {
             }
             cleanupOrphanFolders(normalizedFileIds, userId);
             fileObjectReferenceService.releaseReferences(ossKeys);
-            publishFromSnapshotsAfterCommit("DELETED", snapshots);
+            publishFromSnapshotsAfterCommit("DELETED", snapshots, scopesOf(fileNodes));
             log.info("彻底删除文件 roots={}, allIds={}", normalizedFileIds, allIds);
             return rows;
         });
@@ -150,7 +150,7 @@ public class FileLifecycleService implements FileLifecyclePort {
             if (updatedRows != allIds.size()) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "恢复文件失败");
             }
-            publishByIdsAfterCommit("RESTORED", normalizedFileIds);
+            publishByIdsAfterCommit("RESTORED", normalizedFileIds, scopesOf(fileNodes));
             log.info("恢复文件 roots={}, allIds={}, userId={}", normalizedFileIds, allIds, userId);
             return updatedRows;
         });
@@ -287,12 +287,12 @@ public class FileLifecycleService implements FileLifecyclePort {
         }
     }
 
-    private void publishByIdsAfterCommit(String eventType, List<Long> fileIds) {
+    private void publishByIdsAfterCommit(String eventType, List<Long> fileIds, List<FileOperationHelper.ScopeRef> scopes) {
         // 存储用量缓存必须随文件变更失效。该缓存（StorageCacheService，TTL 30s）此前
         // **没有任何生产代码调用过它的失效方法** ⇒ 上传/彻底删除后前端重新拉取仍拿到旧值，
         // 表现为「删除/上传后顶部容量条不刷新」（用户报障）。
         // 刻意放在 publisher 判空之前：即使 MQ 发布器缺席（如单测），失效也必须照做。
-        invalidateStorageUsageAfterCommit();
+        invalidateStorageUsageAfterCommit(scopes);
         if (fileResourceChangedPublisher == null || fileIds == null || fileIds.isEmpty()) {
             return;
         }
@@ -300,8 +300,9 @@ public class FileLifecycleService implements FileLifecyclePort {
         TransactionUtils.runAfterCommit(() -> fileResourceChangedPublisher.publishByIds(eventType, eventFileIds));
     }
 
-    private void publishFromSnapshotsAfterCommit(String eventType, List<FileInfoDTO> snapshots) {
-        invalidateStorageUsageAfterCommit();
+    private void publishFromSnapshotsAfterCommit(String eventType, List<FileInfoDTO> snapshots,
+                                                 List<FileOperationHelper.ScopeRef> scopes) {
+        invalidateStorageUsageAfterCommit(scopes);
         if (fileResourceChangedPublisher == null || snapshots == null || snapshots.isEmpty()) {
             return;
         }
@@ -314,9 +315,38 @@ public class FileLifecycleService implements FileLifecyclePort {
      *
      * <p><b>为什么必须等提交后</b>：事务内失效会让并发请求把「未提交的旧数据」重新查回来并写进缓存，
      * 反而把脏值固化整整一个 TTL；提交后失效才是 read-your-writes 语义。</p>
+     *
+     * <p><b>F12（P3 缓存粒度）</b>：调用方已知受影响节点时传 {@code scopes} ⇒ 只失效这些 scope；
+     * {@code scopes} 为空（无法推导，如 MQ 发布器缺席的降级路径）时退回全量失效兜底，
+     * 保证「宁可多失效，绝不漏失效」。</p>
      */
-    private void invalidateStorageUsageAfterCommit() {
-        TransactionUtils.runAfterCommit(() -> storageCacheService.invalidateAllStorageCaches());
+    private void invalidateStorageUsageAfterCommit(List<FileOperationHelper.ScopeRef> scopes) {
+        if (scopes == null || scopes.isEmpty()) {
+            TransactionUtils.runAfterCommit(() -> storageCacheService.invalidateAllStorageCaches());
+            return;
+        }
+        List<FileOperationHelper.ScopeRef> distinct = scopes.stream()
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+        TransactionUtils.runAfterCommit(() -> {
+            for (FileOperationHelper.ScopeRef scope : distinct) {
+                storageCacheService.invalidateStorageScope(
+                        scope.spaceType(), scope.teamId(), scope.projectId(), scope.userId());
+            }
+        });
+    }
+
+    /** 从节点列表推导受影响 scope（F12）。 */
+    private List<FileOperationHelper.ScopeRef> scopesOf(List<FileNode> nodes) {
+        if (nodes == null) {
+            return List.of();
+        }
+        return nodes.stream()
+                .map(FileOperationHelper.ScopeRef::fromNode)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
     }
 
     private record RestoreNameScope(Long parentId, SpaceTarget target, Integer fileType, Long ownerUserId) {

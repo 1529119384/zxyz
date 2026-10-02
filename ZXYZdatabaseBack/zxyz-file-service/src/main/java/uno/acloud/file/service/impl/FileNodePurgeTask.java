@@ -3,6 +3,7 @@ package uno.acloud.file.service.impl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import uno.acloud.common.util.TransactionHelper;
 import uno.acloud.file.infrastructure.mapper.FileMapper;
 import uno.acloud.file.infrastructure.mapper.UsageLedgerMapper;
 
@@ -40,13 +41,16 @@ public class FileNodePurgeTask {
     private final FileMapper fileMapper;
     private final UsageLedgerMapper usageLedgerMapper;
     private final FileObjectReferenceManager fileObjectReferenceManager;
+    private final TransactionHelper transactionHelper;
 
     public FileNodePurgeTask(FileMapper fileMapper,
                              UsageLedgerMapper usageLedgerMapper,
-                             FileObjectReferenceManager fileObjectReferenceManager) {
+                             FileObjectReferenceManager fileObjectReferenceManager,
+                             TransactionHelper transactionHelper) {
         this.fileMapper = fileMapper;
         this.usageLedgerMapper = usageLedgerMapper;
         this.fileObjectReferenceManager = fileObjectReferenceManager;
+        this.transactionHelper = transactionHelper;
     }
 
     /**
@@ -71,20 +75,40 @@ public class FileNodePurgeTask {
         }
     }
 
+    /**
+     * 清理一棵回收站子树。
+     *
+     * <h2>F2（P2）为什么必须包在一个事务里</h2>
+     * <p>修复前 {@code reallyDeleteByIds}（把 {@code file_node} 置 {@code deleted = 2}）是<b>自动提交</b>的，
+     * 之后的 {@code releaseReferences}（{@code file_object_ref.ref_count} 减 1）才另起事务。
+     * 两者之间崩溃/异常，就留下「{@code file_node} 已删、{@code ref_count} 未减」的形态：
+     * ref 行永停在 {@code ACTIVE}（{@code refCount >= 1}），物理删除管道永不拾取它，
+     * 而 {@code OrphanObjectReconcileTask} 只处理<b>无 ref 行</b>的孤儿 ⇒ 对此泄漏完全不可见，
+     * <b>OSS 对象永久泄漏</b>。</p>
+     * <p>用户路径 {@code FileLifecycleService#reallyDelete} 早就把这两步放在同一事务里
+     * （{@code transactionHelper.execute}），定时任务这条路径漏了。此处对齐同一事务边界。</p>
+     * <p>注意 {@code releaseReferences} 自身带 {@code @Transactional}（REQUIRED 传播），
+     * 在外层事务内调用会<b>加入</b>该事务而不是另开一个 —— 这正是本修复成立的前提。</p>
+     */
     private void purgeTree(Long rootId) {
         try {
-            List<Long> allIds = fileMapper.collectDescendantIds(List.of(rootId));
-            if (allIds == null || allIds.isEmpty()) {
-                return;
-            }
-            List<String> ossKeys = fileMapper.getOssKeysByIds(allIds);
-            releaseQuota(allIds);
-            int rows = fileMapper.reallyDeleteByIds(allIds, null);
-            // 冗余：真正删除物理行后，墓碑(none) 行已由 reallyDeleteByIds 处理；引用释放
-            if (rows < allIds.size()) {
-                log.warn("回收站清理部分失败 rootId={}, expected={}, actual={}", rootId, allIds.size(), rows);
-            }
-            fileObjectReferenceManager.releaseReferences(ossKeys);
+            transactionHelper.execute(status -> {
+                List<Long> allIds = fileMapper.collectDescendantIds(List.of(rootId));
+                if (allIds == null || allIds.isEmpty()) {
+                    return null;
+                }
+                List<String> ossKeys = fileMapper.getOssKeysByIds(allIds);
+                releaseQuota(allIds);
+                int rows = fileMapper.reallyDeleteByIds(allIds, null);
+                // 冗余：真正删除物理行后，墓碑(none) 行已由 reallyDeleteByIds 处理；引用释放
+                if (rows < allIds.size()) {
+                    log.warn("回收站清理部分失败 rootId={}, expected={}, actual={}", rootId, allIds.size(), rows);
+                }
+                // 与 reallyDeleteByIds 同事务：中途失败整体回滚，不会留下「节点已删但 ref_count 未减」的
+                // 永久泄漏（OrphanObjectReconcileTask 只认无 ref 行的孤儿，对 refCount 泄漏不可见）。
+                fileObjectReferenceManager.releaseReferences(ossKeys);
+                return null;
+            });
         } catch (Exception e) {
             log.warn("回收站清理失败 rootId={}", rootId, e);
         }

@@ -63,22 +63,22 @@ public class InternalUserController {
 
     @Operation(summary = "获取用户基本信息")
     @GetMapping("/{userId}/info")
-    @SuppressWarnings("unchecked")
     public Result<InternalUserInfoVO> getUserInfo(@PathVariable Long userId) {
         User user = userProfileService.getUserById(userId);
         if (user == null) {
-            return (Result<InternalUserInfoVO>) (Result<?>) Result.success();
+            // 契约：用户不存在返回 code=1 + data=null（调用方 UserQueryClient 按 data 判空）
+            return Result.of(null);
         }
         return Result.of(new InternalUserInfoVO(user.getId(), user.getUsername()));
     }
 
     @Operation(summary = "根据ID获取用户")
     @GetMapping("/{id}")
-    @SuppressWarnings("unchecked")
     public Result<UserInfoVO> getUserById(@PathVariable Long id) {
         User user = userMapper.getById(id);
         if (user == null) {
-            return (Result<UserInfoVO>) (Result<?>) Result.success();
+            // 契约：用户不存在返回 code=1 + data=null（调用方 UserQueryClient 按 data 判空）
+            return Result.of(null);
         }
         return Result.of(toUserInfo(user));
     }
@@ -127,11 +127,11 @@ public class InternalUserController {
 
     @Operation(summary = "获取用户配额")
     @GetMapping("/{id}/quota")
-    @SuppressWarnings("unchecked")
     public Result<UserQuotaVO> getUserQuota(@PathVariable Long id) {
         UserQuota quota = userQuotaMapper.getByUserId(id);
         if (quota == null) {
-            return (Result<UserQuotaVO>) (Result<?>) Result.success();
+            // 契约：配额不存在返回 code=1 + data=null
+            return Result.of(null);
         }
         return Result.of(userEntityMapper.toUserQuotaVO(quota));
     }

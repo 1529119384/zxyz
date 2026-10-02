@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
@@ -79,8 +80,9 @@ class FileUploadPersistenceManagerTest {
         FileItem saved = manager.saveFileItem(item);
 
         assertSame(item, saved);
-        // 上传改变了 SUM(file_size) 口径 ⇒ file-service 侧缓存必须失效
-        verify(storageCacheService).invalidateAllStorageCaches();
+        // 上传改变了 SUM(file_size) 口径 ⇒ file-service 侧缓存必须失效。
+        // F12：改为按 scope 精确失效（scope 就来自 fileItem：spaceType=2 / teamId=10 / userId=1）。
+        verify(storageCacheService).invalidateStorageScope(2, 10L, null, 1L);
         // 同时广播 file.resource.changed，驱动 project-service 侧配额缓存失效
         verify(fileResourceChangedPublisher)
                 .publishByIds(FileUploadPersistenceManager.EVENT_TYPE_CREATED, List.of(77L));
@@ -111,7 +113,8 @@ class FileUploadPersistenceManagerTest {
 
         withoutPublisher.saveFileItem(item);
 
-        verify(storageCacheService).invalidateAllStorageCaches();
+        // F12：无 MQ 发布器时缓存失效必须照做（刻意放在 publisher 判空之前）
+        verify(storageCacheService).invalidateStorageScope(2, 10L, null, 1L);
     }
 
     @Test
@@ -119,7 +122,8 @@ class FileUploadPersistenceManagerTest {
         FileItem item = newFileItem(101L);
         when(fileMapper.insertFileItem(item)).thenReturn(1);
         when(usageLedgerMapper.incrementWhenUnderLimit(anyString(), anyLong())).thenReturn(1);
-        doThrow(new IllegalStateException("redis down")).when(storageCacheService).invalidateAllStorageCaches();
+        doThrow(new IllegalStateException("redis down"))
+                .when(storageCacheService).invalidateStorageScope(any(), any(), any(), any());
 
         // 文件已落库是既成事实，Redis 抖动不能把一次成功的上传变成 500（缓存 30s 自然过期兜底）
         assertDoesNotThrow(() -> manager.saveFileItem(item));

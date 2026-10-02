@@ -195,7 +195,9 @@ class FileCopyServiceTest {
         fileCopyService.copyFiles(List.of(fileNodeId), targetParentId, teamId, userId);
 
         // 复制新增了 file_node 行 ⇒ SUM(file_size) 变化，必须用「新建节点 id」失效用量缓存并广播变更事件。
-        verify(helper).publishByIdsAfterCommit(FileOperationHelper.ACTION_COPIED, List.of(createdNodeId));
+        // F12：改为带 scope 的重载（只失效目标 scope）—— 断言仍然钉住「用新建节点 id」与目标 scope。
+        verify(helper).publishByIdsAfterCommit(eq(FileOperationHelper.ACTION_COPIED),
+                eq(List.of(createdNodeId)), anyList());
     }
 
     @Test
@@ -260,8 +262,9 @@ class FileCopyServiceTest {
                 fileCopyService.copyFiles(sourceIds, targetParentId, teamId, userId));
 
         // 已提交的第一批必须失效（否则这 30 个节点的用量永久停在旧值），且不得把回滚批次的 id 算进去。
+        // F12：带 scope 的重载，第三个参数是受影响 scope 列表。
         verify(helper).publishByIdsAfterCommit(eq(FileOperationHelper.ACTION_COPIED),
-                argThat(ids -> ids != null && ids.size() == 30));
+                argThat(ids -> ids != null && ids.size() == 30), anyList());
     }
 
     // ==================== copyFiles — exceeding MAX_COPY_NODES_PER_TRANSACTION ====================

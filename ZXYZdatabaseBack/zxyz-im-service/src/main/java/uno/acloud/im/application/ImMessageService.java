@@ -2,13 +2,12 @@ package uno.acloud.im.application;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.common.ErrorCode;
-import org.springframework.beans.factory.annotation.Value;
 import uno.acloud.exception.BusinessException;
+import uno.acloud.im.config.ImProperties;
 import uno.acloud.im.domain.event.ImDomainEventType;
 import uno.acloud.im.domain.enums.MessageType;
 import uno.acloud.im.domain.enums.SystemNotificationType;
@@ -28,13 +27,20 @@ import java.util.List;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
+/**
+ * 消息写读服务。
+ *
+ * <p><b>为什么去掉 {@code @RefreshScope}（B-4）</b>：本类持有
+ * {@code serialExecutor → ConversationLockManager → DistributedLockTemplate → RedissonClient}
+ * 依赖链，且 {@code storeTextMessage} 在<b>分布式锁临界区内</b>执行 DB 事务。
+ * {@code @RefreshScope} 的刷新语义是销毁旧实例、重建新实例，刷新瞬间到达的消息
+ * 会在临界区里被中断，或抛 {@code BeanCreationNotAllowedException}。
+ * 故改由 {@link ImProperties} 在使用时刻读取上限 ——
+ * {@code @ConfigurationProperties} 由 Spring Cloud 就地回填，不重建本 Bean。</p>
+ */
 @Slf4j
 @Service
-@RefreshScope
 public class ImMessageService {
-
-    /** IM 消息最大文本长度 fallback */
-    private static final int FALLBACK_MAX_TEXT_LENGTH = 5000;
 
     private final ConversationService conversationService;
     private final ConversationMapper conversationMapper;
@@ -45,7 +51,7 @@ public class ImMessageService {
     private final TeamMapper teamMapper;
     private final SystemNotificationService notificationService;
     private final ImDomainEventPublisher domainEventPublisher;
-    private final int maxTextLength;
+    private final ImProperties imProperties;
 
     public ImMessageService(ConversationService conversationService,
                             ConversationMapper conversationMapper,
@@ -56,7 +62,7 @@ public class ImMessageService {
                             TeamMapper teamMapper,
                             SystemNotificationService notificationService,
                             ImDomainEventPublisher domainEventPublisher,
-                            @Value("${app.im.message.max-text-length:5000}") int maxTextLength) {
+                            ImProperties imProperties) {
         this.conversationService = conversationService;
         this.conversationMapper = conversationMapper;
         this.imMessageMapper = imMessageMapper;
@@ -66,10 +72,17 @@ public class ImMessageService {
         this.teamMapper = teamMapper;
         this.notificationService = notificationService;
         this.domainEventPublisher = domainEventPublisher;
-        this.maxTextLength = maxTextLength;
+        this.imProperties = imProperties;
     }
 
-    @Transactional(rollbackFor = Exception.class)
+    /**
+     * 便捷重载：不 @ 任何人。委托给 5 参版本。
+     *
+     * <p><b>刻意不加 {@code @Transactional}（B-17）</b>：本方法是同类内的自调用，
+     * 不经过 Spring AOP 代理，注解在这里<b>不可能生效</b>；写了只会制造
+     * 「看起来有事务保护」的假象。事务边界由被委托的 5 参版本承担（那是外部调用，
+     * 走代理生效）。</p>
+     */
     public StoreMessageResult storeTextMessage(Long senderUserId,
                                                Long conversationId,
                                                String clientMessageId,
@@ -204,6 +217,7 @@ public class ImMessageService {
         if (value.isEmpty()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "消息内容不能为空");
         }
+        int maxTextLength = imProperties.getMessage().getMaxTextLength();
         if (value.length() > maxTextLength) {
             throw new BusinessException(ErrorCode.BAD_REQUEST,
                     "消息内容长度不能超过 " + maxTextLength);

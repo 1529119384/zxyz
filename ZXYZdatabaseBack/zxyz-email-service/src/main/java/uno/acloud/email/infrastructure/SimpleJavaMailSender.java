@@ -1,6 +1,7 @@
 package uno.acloud.email.infrastructure;
 
 import jakarta.mail.Message;
+import lombok.extern.slf4j.Slf4j;
 import org.simplejavamail.api.email.Email;
 import org.simplejavamail.api.email.Recipient;
 import org.simplejavamail.api.mailer.Mailer;
@@ -20,6 +21,7 @@ import uno.acloud.exception.BusinessException;
 import java.time.LocalDateTime;
 import java.util.Locale;
 
+@Slf4j
 @Component
 public class SimpleJavaMailSender {
 
@@ -72,7 +74,24 @@ public class SimpleJavaMailSender {
         synchronized (this) {
             current = mailerCacheEntry;
             if (current == null || !current.matches(config)) {
+                // B-15（2026-10-03）：替换缓存槽前先 close 旧 Mailer —— 否则旧凭据的
+                // SMTP/TLS 连接池无人释放，滞留到 GC。simple-java-mail 9.x 的
+                // Mailer extends AutoCloseable（MailerImpl#close 已核实：内部即
+                // shutdownConnectionPool 的同步包装）。close 失败只记日志：
+                // 旧池交给 GC 兜底，不得让「善后失败」阻断新 Mailer 上线。
+                Mailer previous = current == null ? null : current.mailer();
                 mailerCacheEntry = new MailerCacheEntry(config.getId(), config.getUpdateTime(), createMailer(config));
+                if (previous != null) {
+                    try {
+                        previous.close();
+                        log.info("已关闭旧 SMTP 连接池并切换到新配置: configId={}", config.getId());
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        log.warn("关闭旧 SMTP 连接池时被中断（交由 GC 兜底）: configId={}", config.getId());
+                    } catch (Exception e) {
+                        log.warn("关闭旧 SMTP 连接池失败（交由 GC 兜底）: configId={}", config.getId(), e);
+                    }
+                }
             }
             return mailerCacheEntry.mailer();
         }

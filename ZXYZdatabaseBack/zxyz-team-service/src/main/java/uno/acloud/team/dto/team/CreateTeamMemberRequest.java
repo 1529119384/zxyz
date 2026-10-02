@@ -10,7 +10,9 @@ import java.io.Serializable;
 
 @Getter
 @Setter
-@ToString
+// B-13(team侧)：审计切面经 Arrays.toString(getArgs()) 记录入参，走 Lombok @ToString；
+// 密码不 exclude 会明文持久化进 operate_log.method_params（JSON 形态正则对 toString 无效）。
+@ToString(exclude = {"password"})
 @Schema(description = "添加团队成员请求")
 public class CreateTeamMemberRequest implements Serializable {
     private static final long serialVersionUID = 1L;

@@ -4,7 +4,7 @@
 
 ## 技术栈
 
-Vue 3.5 (Composition API + `<script setup>`)、Vite 7.3、Element Plus 2.11（auto-import）、Pinia 3.0、Axios 1.13、Vitest 4.1。
+Vue 3.5 (Composition API + `<script setup>`)、Vite 8.3、Element Plus 2.11（auto-import）、Pinia 3.0、Axios 1.20、Vitest 5.0（vue-router 5.3、TypeScript 6 + vue-tsc typecheck）。
 
 ## HTTP 客户端
 

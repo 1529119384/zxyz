@@ -76,7 +76,7 @@ team-service → project-service    （团队项目列表）
 ## Docker 部署
 
 详见 `DEPLOYMENT.md`。
-- `docker-compose.yml` 编排：MySQL, Redis, RabbitMQ, Nacos, Nacos-log-cleanup, Gateway, 9 业务服务（含 admin-service）, frontend-nginx, Loki, Promtail
+- `docker-compose.yml` 编排：MySQL, Redis, RabbitMQ, Nacos, Nacos-log-cleanup, Flyway（tools profile，默认不启动）, Gateway, 9 业务服务（含 admin-service）, frontend-nginx；Loki/Promtail 已迁出至 `docker-compose.observability.yml`（默认不启动）
 - 统一 Dockerfile（`ZXYZdatabaseBack/Dockerfile`），`MODULE` 参数选择模块
 - 环境变量：根目录 `.env`（基于 `.env.example`），密码类变量必须修改
 - 认证相关：`INTERNAL_SERVICE_TOKEN`（服务间鉴权）、`SHARE_COOKIE_SECRET`（Cookie 签名）、`JASYPT_PASSWORD`（配置加密密钥）、`AUTH_COOKIE_SECURE`/`AUTH_COOKIE_DOMAIN`/`AUTH_TOKEN_TIMEOUT`/`AUTH_LONG_LIVED_TIMEOUT`（Sa-Token 会话）

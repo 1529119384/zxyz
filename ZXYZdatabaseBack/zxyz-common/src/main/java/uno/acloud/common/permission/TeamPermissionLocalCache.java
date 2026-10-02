@@ -80,6 +80,24 @@ public class TeamPermissionLocalCache {
         return cache.estimatedSize();
     }
 
+    /**
+     * 按前缀失效。
+     *
+     * <p><b>为什么保留 O(n) 遍历（B-20 结论）</b>：Caffeine 的 {@code Cache} 没有
+     * 「按键前缀批量失效」的原生支持，能 O(1) 做到这件事的前提是把 key 组织成
+     * 两级结构（{@code Cache<Long, Cache<String, Boolean>>}，外层按 teamId）。
+     * 但本类的 key 还带 userId（{@code teamId:userId:permissionCode}），
+     * 而 {@link #invalidateMember} 需要「失效某个 team 下某个成员的全部 code」、
+     * {@link #invalidateTeam} 需要「失效整个 team」—— 两者是不同的切分维度，
+     * 两级结构只能优化其中一个。改造会把一处遍历换成另一处遍历，
+     * 却让「key 拼装」这条鉴权语义散到多层，收益不抵复杂度。</p>
+     *
+     * <p><b>量级前提（可接受的理由）</b>：{@code maximumSize=10000} 是硬上限，
+     * 每次遍历至多 1 万个 String key 的 {@code startsWith} 比较（微秒级）。
+     * 该操作由 team-service 的权限变更广播触发，属低频管理动作，
+     * 而非每请求路径。团队规模增长到万级以上、或权限变更变成高频操作时，
+     * 再按「外层按 teamId 分层 + 内层按 userId 分层」重构。</p>
+     */
     private void removeByPrefix(String prefix) {
         cache.asMap().keySet().removeIf(k -> k.startsWith(prefix));
     }

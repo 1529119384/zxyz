@@ -10,8 +10,11 @@
  * ⚠️ 别拿这张表去套**邮件记录**的状态：`views/setting/components/EmailRecordPanel.vue`
  * 用的是另一套词表 `PENDING / SENDING / SENT / FAILED`，只是恰好有两个词重名，
  * 语义（IM 消息投递 vs 邮件发送）并不相干。
+ *
+ * `MESSAGE_STATUS` 本身仅作本文件内部的取值源，不对外导出（C-9 裁定：外部应使用
+ * 具名导出；保留本表是为了让具名导出单一取值、不可能漂移）。
  */
-export const MESSAGE_STATUS = Object.freeze({
+const MESSAGE_STATUS = Object.freeze({
   SENDING: 'SENDING',
   FAILED: 'FAILED',
   STORED: 'STORED',

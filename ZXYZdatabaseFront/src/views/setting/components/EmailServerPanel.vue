@@ -184,6 +184,7 @@ import {
   updateEmailServerConfig,
 } from '@/api/emailAdmin'
 import { handleBusinessError } from '@/utils/error'
+import { fmtTime } from '@/utils/format'
 
 const transportStrategyOptions = [
   { label: 'STARTTLS', value: 'SMTP_TLS' },
@@ -377,8 +378,7 @@ function getEmailRuntimeStatusType() {
   return emailRuntimeStatus.value.sendingEnabled ? 'success' : 'danger'
 }
 
-function formatDateTime(value) {
-  if (!value) return '-'
-  return new Date(value).toLocaleString('zh-CN', { hour12: false })
-}
+// J-11：改用 utils/format 的 fmtTime —— 与本函数逐字等价（空值 '-' 分支 fmtTime 同样覆盖），
+// 收口后 fmtTime 若修 bug/改格式，本面板自动跟进，不再漂移。
+const formatDateTime = fmtTime
 </script>

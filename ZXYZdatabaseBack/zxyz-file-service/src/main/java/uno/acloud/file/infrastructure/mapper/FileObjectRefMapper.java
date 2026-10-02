@@ -160,6 +160,33 @@ public interface FileObjectRefMapper extends BaseMapper<FileObjectRef> {
     List<String> selectObjectKeysByPrefix(@Param("prefix") String prefix);
 
     /**
+     * 批量查询给定对象键中<b>哪些已存在</b> file_object_ref 行（任意状态）。
+     *
+     * <p>F11（P3 可扩展性）：{@code OrphanObjectReconcileTask} 原本用
+     * {@link #selectObjectKeysByPrefix} 把平台<b>全部</b> object_key 载入内存做 Set 比对 ——
+     * 对象数随平台线性增长，百万级时每日任务有 OOM 风险。
+     * 改为「按 ListObjects 每页的候选键批量查存在性」，内存占用被限制在单页（1000）量级。</p>
+     *
+     * <p>⚠️ 空集合守卫：{@code <foreach>} 在空集合上会整段消失（连括号一起），
+     * 留下悬空 {@code IN} ⇒ 语法错。此处用 {@code <choose>} 显式兜底为 {@code 1 = 0}（匹配 0 行）。</p>
+     *
+     * @param objectKeys 待检查的对象键（调用方保证已去重、非空；为空时返回空列表）
+     * @return 其中确实存在 ref 行的对象键
+     */
+    @Select({"<script>",
+            "SELECT object_key",
+            "FROM file_object_ref",
+            "WHERE",
+            "<choose>",
+            "  <when test='objectKeys == null or objectKeys.isEmpty()'>1 = 0</when>",
+            "  <otherwise>object_key IN",
+            "    <foreach collection='objectKeys' item='objectKey' open='(' separator=',' close=')'>#{objectKey}</foreach>",
+            "  </otherwise>",
+            "</choose>",
+            "</script>"})
+    List<String> selectExistingObjectKeys(@Param("objectKeys") List<String> objectKeys);
+
+    /**
      * 孤儿对象登记：仅当 object_key 尚不存在任何行时插入一条 PENDING_DELETE 记录。
      * <p>
      * 已存在的行（无论 ACTIVE/DELETING/DELETED 等状态）一律不修改（INSERT IGNORE 被忽略，

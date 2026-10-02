@@ -215,10 +215,80 @@ public class FileOperationHelper {
     // ---- MQ event publishing ----
 
     public void publishByIdsAfterCommit(String eventType, List<Long> fileIds) {
-        // 统一策略：任何用户发起的文件变更（含移动/重命名）都失效存储用量缓存。
-        // 移动/重命名本身不改变 SUM(file_size) 口径，但失效成本极小（SCAN 一个很小的 key 空间），
-        // 换来的是「口径将来变了也不会静默返回旧值」的鲁棒性。
+        // 统一策略：任何用户发起的文件变更都失效存储用量缓存。
+        // 移动/重命名本身不改变 SUM(file_size) 口径，但失效成本极小，换来的是
+        // 「口径将来变了也不会静默返回旧值」的鲁棒性。
+        // F12（P3 缓存粒度）：无法从 fileIds 反推 scope（需要额外查询），保留全量失效兜底。
+        // 已知 scope 的调用方应改用 publishByIdsAfterCommit(eventType, fileIds, spaceType, teamId, projectId, userId)。
         TransactionUtils.runAfterCommit(() -> storageCacheService.invalidateAllStorageCaches());
+        publishEventAfterCommit(eventType, fileIds);
+    }
+
+    /**
+     * F12（P3 缓存粒度）：带 scope 的变更发布 —— 只失效<b>受影响 scope</b> 的用量缓存。
+     *
+     * <p>与全量版语义相同，唯一差别是缓存失效范围。调用方在「已知目标/源 scope」时应当用本重载，
+     * 避免每次文件变更都 SCAN + 清空整个 {@code file:storage:*} 命名空间
+     * （写热点下会让全体 scope 的命中率趋近 0）。</p>
+     *
+     * <p>发布 MQ 事件的部分与全量版完全一致（fileId 仍然逐一发布）。</p>
+     */
+    public void publishByIdsAfterCommit(String eventType, List<Long> fileIds,
+                                        Integer spaceType, Long teamId, Long projectId, Long userId) {
+        publishByIdsAfterCommit(eventType, fileIds, List.of(new ScopeRef(spaceType, teamId, projectId, userId)));
+    }
+
+    /**
+     * F12：一次变更可能同时影响<b>多个</b> scope，此重载一次失效全部。
+     *
+     * <p>典型场景是「团队空间 → 项目空间」的移动：源与目标的 {@code space_type}/{@code project_id}
+     * 不同，{@code usage_ledger} 的 {@code scope_key} 也随之不同 ⇒ 两边口径都变了，
+     * 只失效目标会让源空间的容量显示停在旧值。</p>
+     *
+     * @param scopes 受影响的作用域；去重与 null 处理由本方法内部完成
+     */
+    public void publishByIdsAfterCommit(String eventType, List<Long> fileIds, List<ScopeRef> scopes) {
+        List<ScopeRef> distinct = scopes == null ? List.of()
+                : scopes.stream().filter(java.util.Objects::nonNull).distinct().toList();
+        TransactionUtils.runAfterCommit(() -> {
+            for (ScopeRef scope : distinct) {
+                storageCacheService.invalidateStorageScope(
+                        scope.spaceType(), scope.teamId(), scope.projectId(), scope.userId());
+            }
+        });
+        publishEventAfterCommit(eventType, fileIds);
+    }
+
+    /**
+     * 受影响作用域的四元组（F12）。
+     * <p>{@code spaceType} 语义与 {@code UsageLedger.scopeKeyOf} 一致；个人空间的
+     * {@code teamId}/{@code projectId} 为 null。</p>
+     */
+    public record ScopeRef(Integer spaceType, Long teamId, Long projectId, Long userId) {
+
+        /** 从节点取作用域（节点自身携带空间归属）。 */
+        public static ScopeRef fromNode(FileNode node) {
+            if (node == null) {
+                return null;
+            }
+            SpaceTarget target = SpaceTarget.fromNode(node);
+            return new ScopeRef(target.spaceType(), target.teamId(), target.projectId(),
+                    target.ownerUserId(node.getUploadUserId()));
+        }
+
+        /** 从已解析的目标作用域取（如下发目标空间）。 */
+        public static ScopeRef fromTarget(SpaceTarget target, Long userId) {
+            if (target == null) {
+                return null;
+            }
+            return new ScopeRef(target.spaceType(), target.teamId(), target.projectId(),
+                    target.ownerUserId(userId));
+        }
+
+        /** 去重键：record 的 equals 已覆盖四元组，无需额外逻辑。 */
+    }
+
+    private void publishEventAfterCommit(String eventType, List<Long> fileIds) {
         if (fileResourceChangedPublisher == null || fileIds == null || fileIds.isEmpty()) {
             return;
         }

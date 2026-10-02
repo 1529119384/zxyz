@@ -107,10 +107,20 @@ else
     echo "WARN: FLUSH BINARY LOGS 失败，仍尝试拷贝现有 binlog" >&2
   fi
   # 记录当前位点（人工 PITR 时的参考锚点；权威锚点在 dump 头注释里）
-  docker exec -e MYSQL_PWD zxyz-mysql mysql -uroot -N -e "SHOW MASTER STATUS" \
+  # ⚠️ 2026-10-03 修复（审计 I-3）：必须用 SHOW BINARY LOG STATUS，**不能**用 SHOW MASTER STATUS。
+  #   MySQL 8.4 已移除 SHOW MASTER STATUS（官方文档原文："no longer supported, replaced by
+  #   SHOW BINARY LOG STATUS"）。用旧语句时的实测后果是一条静默失败链：
+  #     ① 本次调用报错（被 2>/dev/null 吞掉）⇒ binlog_pos_*.txt 恒为**空文件**；
+  #     ② CURRENT_BINLOG 用 awk 取第一列 ⇒ 恒为空 ⇒ 走 "无法获取当前 binlog 文件名，跳过 binlog 备份"；
+  #     ③ 此时 MYSQL_BINLOG_OK=true（FLUSH BINARY LOGS 是成功的）⇒ 置 FAILED=1
+  #        ⇒ **每晚 cron 备份在 dump/Redis/OSS 全部成功后仍 exit 1**，且 PITR 增量从未产出
+  #        （RPO 名义分钟级、实际仍是 24h）。
+  #   ⇒ 两处都用 8.4 的新语句。第 138 行的 SHOW BINARY LOGS 是**另一个**语句，8.4 未变，无需动。
+  #   冒烟命令（Docker 环境）：docker exec zxyz-mysql mysql -uroot -e "SHOW BINARY LOG STATUS"
+  docker exec -e MYSQL_PWD zxyz-mysql mysql -uroot -N -e "SHOW BINARY LOG STATUS" \
     > "$BACKUP_DIR/binlog_pos_$DATE.txt" 2>/dev/null || true
   CURRENT_BINLOG=$(docker exec -e MYSQL_PWD zxyz-mysql mysql -uroot -N -e \
-      "SHOW MASTER STATUS" 2>/dev/null | awk 'NR==1{print $1}')
+      "SHOW BINARY LOG STATUS" 2>/dev/null | awk 'NR==1{print $1}')
   BINLOG_STATE_FILE="$BACKUP_DIR/.last_binlog"
 
   if [ -z "$CURRENT_BINLOG" ]; then
@@ -157,21 +167,27 @@ else
 fi
 fi
 
-# Redis 备份 — 轮询 LASTSAVE 确认 BGSAVE 完成
+# --- Redis 备份 — 轮询 LASTSAVE 确认 BGSAVE 完成 ---
 # 注意: LASTSAVE 是 Unix 秒级时间戳。BGSAVE 完成后若与下一次轮询落在同一秒内，
 # LASTSAVE 可能与变更前相等（同秒）。因此"前移判定"采用严格随大——只要某次
 # 读到的 LASTSAVE 已较基线前移即可判定完成；同秒未前移则继续轮询，靠 60s 总
 # 上限兜底超时（不因单次同秒而误判失败）。
 # --mysql-only 时跳过：预部署只需 MySQL 状态核心，redis 非必须且耗时。
+#
+# ⚠️ 2026-10-03 修复（审计 I-15）：三处曾写作
+#     `REDISCLI_AUTH="$REDIS_PASSWORD" docker exec -e REDISCLI_AUTH zxyz-redis redis-cli ...`
+#   这个**前缀赋值**作用在**宿主机上的 docker 客户端进程**上（进入它的环境/argv 上下文），
+#   而第 48 行早已 `export REDISCLI_AUTH` —— 前缀纯属多余，且平白让口令多经一次宿主机进程。
+#   容器侧本来就靠 `-e REDISCLI_AUTH` 拿到口令（那是干净的），故删前缀不改变任何行为。
 if [ "$MYSQL_ONLY" = false ]; then
 echo "备份 Redis..."
-PREV_SAVE=$(REDISCLI_AUTH="$REDIS_PASSWORD" docker exec -e REDISCLI_AUTH zxyz-redis redis-cli LASTSAVE) || { echo "ERROR: Redis LASTSAVE 失败" >&2; FAILED=1; exit 1; }
-REDISCLI_AUTH="$REDIS_PASSWORD" docker exec -e REDISCLI_AUTH zxyz-redis redis-cli BGSAVE >/dev/null
+PREV_SAVE=$(docker exec -e REDISCLI_AUTH zxyz-redis redis-cli LASTSAVE) || { echo "ERROR: Redis LASTSAVE 失败" >&2; FAILED=1; exit 1; }
+docker exec -e REDISCLI_AUTH zxyz-redis redis-cli BGSAVE >/dev/null
 
 echo "等待 Redis BGSAVE 完成..."
 for i in $(seq 1 60); do
   sleep 1
-  CURR_SAVE=$(REDISCLI_AUTH="$REDIS_PASSWORD" docker exec -e REDISCLI_AUTH zxyz-redis redis-cli LASTSAVE 2>/dev/null || echo "$PREV_SAVE")
+  CURR_SAVE=$(docker exec -e REDISCLI_AUTH zxyz-redis redis-cli LASTSAVE 2>/dev/null || echo "$PREV_SAVE")
   if [ "$CURR_SAVE" -gt "$PREV_SAVE" ]; then
     echo "Redis BGSAVE 完成 (${i}s, LASTSAVE=$CURR_SAVE)"
     BACKUP_READY=1
@@ -280,7 +296,7 @@ if [ "$MYSQL_ONLY" = false ]; then
 if [ -z "$OSS_BUCKET" ] || [ -z "$OSS_ACCESS_KEY_ID" ] || [ -z "$OSS_ACCESS_KEY_SECRET" ]; then
   echo "WARN: 未配置完整 OSS 参数 (OSS_BUCKET/OSS_ACCESS_KEY_ID/OSS_ACCESS_KEY_SECRET)，跳过 OSS 异地推送" >&2
 elif [ -z "$OSSUTIL" ]; then
-  echo "WARN: 已配置 OSS 但未找伪造 ossutil（PATH 或 OSS_ALIYUN），无法推送异地备份。" >&2
+  echo "WARN: 已配置 OSS 但未找到 ossutil（PATH 或 OSS_ALIYUN），无法推送异地备份。" >&2
   echo "     安装 ossutil 后设置 OSS_ALIYUN=<ossutil 路径>，或在 PATH 中提供 ossutil。" >&2
   echo "     （可选）配置 BACKUP_REMOTE_HOST 走旧的 ssh/scp 异地路径也可。" >&2
   FAILED=1

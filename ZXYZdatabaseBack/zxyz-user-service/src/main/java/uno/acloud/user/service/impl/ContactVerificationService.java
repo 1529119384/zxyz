@@ -102,32 +102,28 @@ public class ContactVerificationService {
     /**
      * 生成手机验证码。
      *
-     * <p><b>⚠️ 当前生产不可用</b>：本项目未接入短信通道（见 {@code docs/known-limitations.md} §1），
-     * 本方法只生成并**哈希落库**，<b>没有任何发送动作</b>。生产环境下
-     * （{@code VERIFICATION_RETURN_CODE=false}）用户既拿不到返回、也收不到短信
-     * ⇒ <b>手机验证流程走不通</b>，且是静默失败（接口不报错）。</p>
+     * <p><b>⚠️ 当前响亮失败（B-5，2026-10-03 用户拍板）</b>：本项目未接入短信通道
+     * （见 {@code docs/known-limitations.md} §1）。原实现「生成 + 哈希落库、无任何发送动作、
+     * 接口返回成功」属静默失败——生产环境（{@code VERIFICATION_RETURN_CODE=false}）用户
+     * 既拿不到返回、也收不到短信，却被告知「已发送」，属误导性 UX。现改为直接抛
+     * {@link BusinessException}（{@code ErrorCode.BAD_REQUEST}，HTTP 400）。
+     * 前端 {@code useContactVerification.requestPhoneCode} 已有 catch + 错误提示路径，
+     * 无需配合改动（2026-10-03 已核查全部调用方：后端仅 UserController，前端仅该 composable）。</p>
      *
-     * <p>TODO(短信通道) 接入时须三件事：① 实现真实发送（sms-service 或第三方 SMS API）；
-     * ② <b>发送成功后才返回</b>，失败要抛业务异常并释放冷却键（照抄 {@link #createEmailVerificationCode} 的写法）；
-     * ③ 视需要把静默失败改为响亮失败（未启用通道时直接抛"手机验证码暂未开放"）——
-     * 该改动会改变运行行为，需单独确认。</p>
+     * <p><b>TODO(短信通道) 接入时按以下条件恢复原实现</b>（三条缺一不可，恢复所需
+     * 的冷却键 acquire/release 与 {@code createContactVerificationCode} 均保留在本类未删）：</p>
+     * <ol>
+     *   <li>实现真实发送（自建 sms-service 或第三方 SMS API）；</li>
+     *   <li><b>发送成功后才返回</b>；失败要抛业务异常并释放冷却键
+     *       （照抄 {@link #createEmailVerificationCode} 的 try/catch 写法）；</li>
+     *   <li>删除本 throw，恢复流程：手机号校验 → 冷却键 acquire
+     *       （{@code PHONE_VERIFY_CODE_COOLDOWN_KEY_PREFIX + userId}，时长
+     *       {@code phoneCodeCooldownSeconds}）→ {@code createContactVerificationCode(userId, "phone")}
+     *       （RuntimeException 时 release 冷却键）；保留「通道未启用 → 响亮失败」作兜底。</li>
+     * </ol>
      */
     public ContactVerificationCodeVO createPhoneVerificationCode(Long userId) {
-        User user = userQueryHelper.requireExistingUser(userId);
-        if (!PHONE_PATTERN.matcher(requireText(user.getPhone(), "请先绑定手机号")).matches()) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "手机号格式不正确");
-        }
-        // 发送冷却：没有它，重发接口就等于给爆破者「免费重置尝试次数」，
-        // 上限再严也只是把爆破成本除以 10 分钟一次的重置频率。
-        Duration cooldown = Duration.ofSeconds(
-                serviceProperties.getVerification().getPhoneCodeCooldownSeconds());
-        String cooldownKey = acquireVerifyCodeCooldown(PHONE_VERIFY_CODE_COOLDOWN_KEY_PREFIX + userId, cooldown);
-        try {
-            return createContactVerificationCode(userId, "phone");
-        } catch (RuntimeException e) {
-            releaseVerifyCodeCooldown(cooldownKey);
-            throw e;
-        }
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "手机验证码暂未开放");
     }
 
     public CurrentUserVO verifyContact(Long userId, ContactVerifyRequest request) {

@@ -60,6 +60,13 @@ class FileUploadServiceTest {
     @Mock
     private RestClient restClient;
 
+    /**
+     * F8：配额校验统一委托给本客户端（带 Resilience4j 重试/熔断），
+     * FileUploadService 不再自建裸 RestClient 调用。
+     */
+    @Mock
+    private ProjectStorageCheckClient projectStorageCheckClient;
+
     @Mock
     private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
@@ -91,7 +98,7 @@ class FileUploadServiceTest {
 
         fileUploadService = new FileUploadService(
                 registry, fileUploadPersistenceService, fileDomainValidator,
-                filePathResolver, fileAccessGuardService, restClient,
+                filePathResolver, fileAccessGuardService, projectStorageCheckClient,
                 objectMapper, serviceProperties, usageLedgerMapper, redisTemplate, "", "", 524288000L);
     }
 
@@ -151,6 +158,73 @@ class FileUploadServiceTest {
 
     // ==================== Upload exceeding quota — should throw ====================
 
+    // ==================== F5：批量确认上传的条目上限 ====================
+
+    /**
+     * F5（P2 无界输入）：{@code confirmUpload} 入口必须拒绝超过
+     * {@link BatchConfirmUploadRequest#MAX_FILES_PER_BATCH} 的批次。
+     *
+     * <h2>为什么必须在服务层再校验一次</h2>
+     * <p>DTO 上的 {@code @Size} 只在走 {@code @Valid} 的 HTTP 路径生效；服务层被内部调用
+     * 或测试直调时不受其保护。而本方法对每一项<b>串行</b>执行「OSS HEAD（远程）+ DB 写 +
+     * 唯一名重试」—— 单请求 1 万项就是 1 万次串行远程调用，请求必然超时，
+     * 期间还持续占满工作线程与 DB 连接。复制路径早有 500 上限，确认上传此前完全没有。</p>
+     *
+     * <p>关键断言：必须在<b>任何远程/DB 调用之前</b>就拒绝（fail-fast），
+     * 否则「先跑一半再报错」依然会造成上面描述的资源占用。</p>
+     */
+    @Test
+    void confirmUpload_exceedingBatchLimit_shouldFailFastBeforeAnyRemoteCall() {
+        List<ConfirmUploadRequest> tooMany = new java.util.ArrayList<>();
+        for (int i = 0; i < BatchConfirmUploadRequest.MAX_FILES_PER_BATCH + 1; i++) {
+            ConfirmUploadRequest item = new ConfirmUploadRequest();
+            item.setObjectKey("files/uuid-" + i + ".txt");
+            item.setOriginalName("f" + i + ".txt");
+            item.setFileSize(1L);
+            item.setParentId(100L);
+            tooMany.add(item);
+        }
+        BatchConfirmUploadRequest request = new BatchConfirmUploadRequest();
+        request.setSpaceType(uno.acloud.common.FileSpaceType.PERSONAL);
+        request.setFiles(tooMany);
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> fileUploadService.confirmUpload(request, 1L));
+
+        assertEquals(ErrorCode.BAD_REQUEST, ex.getErrorCode());
+        assertTrue(ex.getMessage().contains(String.valueOf(BatchConfirmUploadRequest.MAX_FILES_PER_BATCH)),
+                "错误信息必须给出实际上限，便于前端拆分批次；实际：" + ex.getMessage());
+        // fail-fast：一项都不许被处理（否则限额就只是「事后报错」而非防护）
+        verifyNoInteractions(fileUploadPersistenceService);
+        verifyNoInteractions(fileDomainValidator);
+    }
+
+    /** 边界对照：恰好等于上限必须放行（不能把上限写成「小于」而误伤合法批次）。 */
+    @Test
+    void confirmUpload_atExactBatchLimit_shouldNotBeRejectedByLimit() {
+        List<ConfirmUploadRequest> atLimit = new java.util.ArrayList<>();
+        for (int i = 0; i < BatchConfirmUploadRequest.MAX_FILES_PER_BATCH; i++) {
+            ConfirmUploadRequest item = new ConfirmUploadRequest();
+            item.setObjectKey("files/uuid-" + i + ".txt");
+            item.setOriginalName("f" + i + ".txt");
+            item.setFileSize(1L);
+            item.setParentId(100L);
+            atLimit.add(item);
+        }
+        BatchConfirmUploadRequest request = new BatchConfirmUploadRequest();
+        request.setSpaceType(uno.acloud.common.FileSpaceType.PERSONAL);
+        request.setFiles(atLimit);
+
+        try {
+            fileUploadService.confirmUpload(request, 1L);
+        } catch (BusinessException e) {
+            assertFalse(e.getMessage() != null && e.getMessage().contains("不能超过"),
+                    "恰好 " + BatchConfirmUploadRequest.MAX_FILES_PER_BATCH
+                            + " 条不得被上限拒绝（边界写成了 > 而非 >=）：" + e.getMessage());
+        }
+        // 上游未配桩导致的其它异常（配额/存储）与 F5 无关，刻意不在此断言。
+    }
+
     @Test
     void confirmUpload_exceedingQuota_shouldThrow() {
         Long userId = 1L;
@@ -168,20 +242,20 @@ class FileUploadServiceTest {
         request.setSpaceType(uno.acloud.common.FileSpaceType.TEAM);
         request.setFiles(List.of(item));
 
-        // Must create service AFTER setting the URL, since it's captured at construction
+        // F8：配额校验已改为委托 ProjectStorageCheckClient（带重试/熔断），
+        // 因此这里对**该客户端**造桩，而不是对裸 RestClient 造 403。
+        // 403→「鉴权失败」与 409→「空间不足」的区分由 ProjectStorageCheckClientTest 覆盖。
         ServiceProperties quotaProps = new ServiceProperties();
         quotaProps.getProjectService().setBaseUrl("http://project-service:18080");
         quotaProps.setInternalServiceToken("test-token");
 
-        // Throw 403 directly from post() — the catch block catches RestClientResponseException
-        doThrow(HttpClientErrorException.create(
-                HttpStatus.FORBIDDEN, "Forbidden",
-                HttpHeaders.EMPTY, new byte[0], StandardCharsets.UTF_8))
-                .when(restClient).post();
+        doThrow(new BusinessException(ErrorCode.BAD_REQUEST, "存储空间不足，请清理后重试"))
+                .when(projectStorageCheckClient)
+                .checkQuota(any(), any(), any(), any(), anyLong());
 
         FileUploadService quotaService = new FileUploadService(
                 registry, fileUploadPersistenceService, fileDomainValidator,
-                filePathResolver, fileAccessGuardService, restClient,
+                filePathResolver, fileAccessGuardService, projectStorageCheckClient,
                 objectMapper, quotaProps, usageLedgerMapper, redisTemplate, "", "", 524288000L);
 
         BusinessException ex = assertThrows(BusinessException.class,
@@ -467,14 +541,14 @@ class FileUploadServiceTest {
         quotaProps.getProjectService().setBaseUrl("http://project-service:18080");
         quotaProps.setInternalServiceToken("test-token");
 
-        doThrow(HttpClientErrorException.create(
-                HttpStatus.FORBIDDEN, "Forbidden",
-                HttpHeaders.EMPTY, new byte[0], StandardCharsets.UTF_8))
-                .when(restClient).post();
+        // F8：配额校验委托给 ProjectStorageCheckClient（带重试/熔断）
+        doThrow(new BusinessException(ErrorCode.BAD_REQUEST, "存储空间不足，请清理后重试"))
+                .when(projectStorageCheckClient)
+                .checkQuota(any(), any(), any(), any(), anyLong());
 
         FileUploadService quotaService = new FileUploadService(
                 registry, fileUploadPersistenceService, fileDomainValidator,
-                filePathResolver, fileAccessGuardService, restClient,
+                filePathResolver, fileAccessGuardService, projectStorageCheckClient,
                 objectMapper, quotaProps, usageLedgerMapper, redisTemplate, "", "", 524288000L);
 
         when(fileDomainValidator.validateInputName("quota-test.txt")).thenReturn("quota-test.txt");
@@ -675,7 +749,7 @@ class FileUploadServiceTest {
         // 声明 8 字节（不超上限）但实际写 16 字节：应被逐字节计数拦下并清理
         FileUploadService tinyLimitService = new FileUploadService(
                 registry, fileUploadPersistenceService, fileDomainValidator,
-                filePathResolver, fileAccessGuardService, restClient,
+                filePathResolver, fileAccessGuardService, projectStorageCheckClient,
                 objectMapper, serviceProperties, usageLedgerMapper, redisTemplate, "", "", 8L);
 
         when(fileDomainValidator.validateInputName("tiny.txt")).thenReturn("tiny.txt");

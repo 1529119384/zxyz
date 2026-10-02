@@ -111,23 +111,33 @@ export const useCurrentUserStore = defineStore('currentUser', () => {
     displayUserRef.value = null
   }
 
+  // 在途 profile 请求的共享 Promise（J-6）：并发去重不能只看 loading 布尔并返回当前同步值 ——
+  // 第二个调用方会拿到 null/旧账号的 profile，被 session 快照误判成「无团队」。
+  // 与 store/session.js 的 pendingSessionReady 同一模式：在途时复用同一 Promise。
+  /** @type {Promise<CurrentUserPayload|null>|null} */
+  let pendingProfileLoad = null
+
   async function loadProfile() {
-    if (loading.value) {
-      return profile.value
+    if (pendingProfileLoad) {
+      return pendingProfileLoad
     }
 
     loading.value = true
+    pendingProfileLoad = (async () => {
+      try {
+        const response = await fetchCurrentUser()
+        setProfile(response?.data || null)
+        return profile.value
+      } catch (error) {
+        clearProfile()
+        throw error
+      } finally {
+        loading.value = false
+        pendingProfileLoad = null
+      }
+    })()
 
-    try {
-      const response = await fetchCurrentUser()
-      setProfile(response?.data || null)
-      return profile.value
-    } catch (error) {
-      clearProfile()
-      throw error
-    } finally {
-      loading.value = false
-    }
+    return pendingProfileLoad
   }
 
   /** @param {{force?: boolean}} [options] */

@@ -10,7 +10,9 @@ import java.io.Serializable;
 
 @Getter
 @Setter
-@ToString
+// B-13(team侧)：ownerPassword 为「大管理员初始密码」，同样经审计切面的 Arrays.toString
+// 记录 —— 不 exclude 会明文持久化进 operate_log.method_params。
+@ToString(exclude = {"ownerPassword"})
 @Schema(description = "创建团队请求")
 public class CreateTeamRequest implements Serializable {
     private static final long serialVersionUID = 1L;

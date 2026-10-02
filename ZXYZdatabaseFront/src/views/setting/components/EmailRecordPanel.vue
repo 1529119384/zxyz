@@ -155,6 +155,7 @@ import { usePagedList } from '@/composables/usePagedList'
 import { mapEmailRecordPage } from '@/models/emailRecord'
 import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import { handleBusinessError } from '@/utils/error'
+import { fmtTime } from '@/utils/format'
 
 const emailRecordStatusOptions = [
   { label: '待发送', value: 'PENDING' },
@@ -248,8 +249,7 @@ function getEmailRecordStatusType(status) {
   return 'info'
 }
 
-function formatDateTime(value) {
-  if (!value) return '-'
-  return new Date(value).toLocaleString('zh-CN', { hour12: false })
-}
+// J-11：改用 utils/format 的 fmtTime —— 与本函数逐字等价（空值 '-' 分支 fmtTime 同样覆盖），
+// 收口后 fmtTime 若修 bug/改格式，本面板自动跟进，不再漂移。
+const formatDateTime = fmtTime
 </script>

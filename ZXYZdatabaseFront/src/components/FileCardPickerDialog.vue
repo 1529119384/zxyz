@@ -62,6 +62,7 @@ import { ElMessage } from 'element-plus'
 
 import { fetchFileList } from '@/api/files'
 import { getFileIcon } from '@/models/file'
+import { getErrorMessage } from '@/utils/errorModel'
 import { formatSize, fmtTime } from '@/utils/format'
 
 const props = defineProps({
@@ -90,6 +91,10 @@ const currentParentId = computed(
 )
 const currentPathLabel = computed(() => pathStack.value.map((item) => item.name).join(' / '))
 
+// 过期响应令牌（J-7，与 useFileSearch 同法）：快速进入子目录/回退时两个 loadItems 同时在飞，
+// 先发起的慢响应不得把旧目录的列表挂到当前路径下（选中后会发错文件）。
+let latestLoadToken = 0
+
 watch(
   () => props.visible,
   async (visible) => {
@@ -105,12 +110,25 @@ watch(
 )
 
 async function loadItems() {
+  const requestToken = ++latestLoadToken
   loading.value = true
   try {
     const response = await fetchFileList(currentParentId.value, { teamId: props.teamId || null })
+    if (requestToken !== latestLoadToken) {
+      return
+    }
     items.value = Array.isArray(response?.data) ? response.data : []
+  } catch (error) {
+    // 此前只有 try/finally：失败时 loading 结束、列表空白、无任何提示（未处理 rejection），
+    // 用户表现为「功能坏了」。加载失败必须响亮失败。
+    if (requestToken === latestLoadToken) {
+      items.value = []
+      ElMessage.error(getErrorMessage(error, '加载文件列表失败，请稍后重试'))
+    }
   } finally {
-    loading.value = false
+    if (requestToken === latestLoadToken) {
+      loading.value = false
+    }
   }
 }
 

@@ -58,6 +58,21 @@ spring:
                 max-age: 3600
           routes:
             # IM WebSocket 路由：/ws → im-service Netty 端口（lb:// 不适用于 WebSocket，使用环境变量）
+            #
+            # ⚠️ 为什么这里保留 localhost 默认值，而不用必填写法 ${IM_WEBSOCKET_URI:?...}（B-10 有意决策，勿"顺手修正"）：
+            #   瓶颈在于该值有**两个**消费场景且需求相反 ——
+            #     · 本地开发：scripts/run-local.sh gateway 不起 compose，必须能零配置跑起来；
+            #     · 生产：compose 始终注入 ws://im-service:19090，但**非 compose 部署**若漏配，
+            #       会静默连到 localhost:19090（配错却"看起来正常"，握手全失败而配置无可疑之处）。
+            #   `:?` 能让生产响亮失败，但会连本地开发路径一起打断（一刀切）。
+            #   故拆解为「prod 档 fail-closed + 非 prod 保留 localhost」，两者同时满足：
+            #   见下方 app.gateway.websocket-uri 探针与 ImWebSocketRouteValidator。
+            #   若改成 `:?`，必须同步确认 run-local.sh 会注入该变量，否则本地开发即断。
+            #
+            # ⚠️ SetPath=/ws 不是可选项：Netty 只注册精确路径 /ws（ImNettyProperties.websocketPath）。
+            #   nginx 的 location /ws 是**前缀**匹配，会把 /ws/xxx 透传进来；
+            #   少了这条过滤器，/ws/** 会在 Netty 侧握手 404。
+            #   （实测更正 2026-10-03：该过滤器已在位，故 /ws/xxx 实际不会 404 —— 报告 B-10 的该条描述不成立。）
             - id: im-websocket
               uri: ${IM_WEBSOCKET_URI:ws://localhost:19090}
               predicates:
@@ -178,3 +193,10 @@ app:
   # 例如：app.gateway.trusted-proxies: 172.18.0.0/16
   gateway:
     trusted-proxies: ${GATEWAY_TRUSTED_PROXIES:}
+    # B-10：IM_WEBSOCKET_URI 的显式性探针（**不是**路由地址本身）。
+    # 路由用的是上面 im-websocket 的 `${IM_WEBSOCKET_URI:ws://localhost:19090}`——
+    # 那个 localhost 默认值本地开发必须保留，但 compose 之外的 prod 部署若漏配，
+    # WS 会静默连到 localhost:19090（配错也「看起来正常」）。
+    # 此处单独取一次原值：空 ⇒ 环境变量从未被显式注入。prod 档由
+    # ImWebSocketRouteValidator 在启动期 fail-closed（compose 始终注入，不受影响）。
+    websocket-uri: ${IM_WEBSOCKET_URI:}

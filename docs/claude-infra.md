@@ -4,22 +4,21 @@
 
 ## Docker 服务编排
 
-`docker-compose.yml` 编排 18 个服务，统一网络 `zxyz-net`：
+`docker-compose.yml` 编排 17 个服务，统一网络 `zxyz-net`：
 
-**基础设施层（5）**：
-- `zxyz-mysql` — MySQL 8.4.0, utf8mb4, 1G 内存限制, 数据持久化到 `${DATA_DIR}/mysql`
-- `zxyz-nacos` — Nacos v3.2.1 standalone 模式, 使用 MySQL 后端, 1024M 限制
+**基础设施层（6）**：
+- `zxyz-mysql` — MySQL 8.4.0, utf8mb4, **896M 内存限制**, 数据持久化到 `${DATA_DIR}/mysql`
+- `zxyz-nacos` — Nacos v3.2.1 standalone 模式, 使用 MySQL 后端, **768M 限制**
 - `nacos-log-cleanup` — sidecar, 定期清理 Nacos 日志（保留 7 天，单文件限 100MB）
-- `zxyz-redis` — Redis 7.4 Alpine, AOF 持久化, 256M 限制
-- `zxyz-rabbitmq` — RabbitMQ 3.13 + management 插件, 512M 限制
+- `zxyz-redis` — Redis 8.10 Alpine, AOF 持久化, 256M 限制
+- `zxyz-rabbitmq` — RabbitMQ 3.13 + management 插件, **384M 限制**
+- `flyway` — 手动迁移工具容器（`profiles: [tools]`，默认不启动）
 
-**业务服务层（10）**：使用统一 `ZXYZdatabaseBack/Dockerfile`，通过 `MODULE` build arg 选择 Maven 子模块。各服务独立 MySQL 数据库、隔离的 Redis database 编号。端口范围 18080-18088 + gateway 18000。生产 compose 后端服务仅在容器内监听端口（`SERVER_PORT`），无 host 端口映射；对外仅 `frontend-nginx:80`。
+**业务服务层（10）**：使用统一 `ZXYZdatabaseBack/Dockerfile`，通过 `MODULE` build arg 选择 Maven 子模块。各服务独立 MySQL 数据库、隔离的 Redis database 编号。端口范围 18080-18088 + gateway 18000。生产 compose 后端服务仅在容器内监听端口（`SERVER_PORT`），无 host 端口映射；对外仅 `frontend-nginx:80`。10 个服务 + gateway 统一 **448M 内存限制**（2026-10-03 由 512M 压降，见下文《维护窗口》）。
 
 **前端层（1）**：`frontend-nginx` — 唯一对外暴露端口（`${HTTP_PORT:-80}:80`）。
 
-**可观测性（2）**：
-- `loki` — Grafana Loki 3.0.0 日志聚合
-- `promtail` — 通过 Docker socket 抓取容器日志，推送到 Loki
+**可观测性（0，已迁出）**：`loki`/`promtail`/`prometheus`/`alertmanager`/`grafana` 自 2026-09-18 起迁入独立文件 `docker-compose.observability.yml`（`profiles: [observability]`，默认不启动、不随 CI 部署）。
 
 **启动顺序**：基础设施层 → 业务服务 + gateway（并行）→ frontend-nginx。所有 Java 服务 30s 优雅停机。
 
@@ -70,8 +69,14 @@
 **回滚**: `scripts/rollback.sh` 回滚到上一个部署版本，依赖 CI/CD 生成的 `.env.previous`，支持 `--no-pull`/`--validate`/指定服务。
 
 **其他脚本**:
-- `backup.sh` — MySQL + Redis 备份
-- `health-check.sh` — 轮询 16 容器健康
+- `backup.sh` — MySQL（含 binlog 增量，PITR 用）+ Redis 备份；`--mysql-only` 仅备 MySQL（预部署用）。
+  ⚠️ 位点查询用 `SHOW BINARY LOG STATUS` —— `SHOW MASTER STATUS` 已随 MySQL 8.4 移除（2026-10-03 修复）
+- `health-check.sh` — 巡检 **14 个容器**（基础设施 4 + 后端 8 + gateway + frontend-nginx）：
+  全部 healthy → exit 0，否则列出 unhealthy 并 exit 1。`loki`/`promtail` 已随可观测性栈迁出，
+  **不在**巡检清单内（2026-10-03 清理陈旧条目）
+- `check-nacos-config-sync.py` — nacos-config/ 与后端代码默认值的等价性门禁（阻断 [DIFF]）
+- `check-env-example-values.py` — `.env.example` 取值形态断言（gitleaks 整文件豁免的补偿门禁，CI 调用）
+- `check-nacos-drift.sh` — 线上 Nacos 与仓库 nacos-config/ 的只读逐份 md5 对账
 - `setup-acr.sh` — GHCR / 阿里云 ACR 切换
 - `validate-env.sh .env` — 校验 `CHANGE_ME_*` 占位符与缺失变量；会从 `.env.example` 自动补全缺失 KEY（会修改 .env），`--sync-only` 仅补全不校验
 - `dev-up.sh` / `dev-up.ps1` — 本地 dev 启动基础设施（MySQL / Nacos / Redis / RabbitMQ），`down` 停止、`reset` 重置数据卷、`logs [服务]` 查看日志
@@ -94,3 +99,133 @@
 - **JVM 启动优化**: docker-compose.yml 中 10 个后端服务配置了 `JAVA_OPTS="-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1"`，牺牲少量峰值性能换启动速度；Dockerfile 中 Maven 使用 `-T 1C` 并发编译
 - **Nginx DNS cache**: 重启后端容器后它们的 Docker 网络 IP 会变，Nginx 在启动时缓存 DNS 解析——服务变更后需 `docker compose restart frontend-nginx`
 - **RabbitMQ health check**: RabbitMQ 在高负载下经常超时 Docker health check 但仍正常工作，依赖它的服务可能显示 unhealthy 实则正常；用 `docker exec zxyz-rabbitmq rabbitmq-diagnostics -q ping` 验证
+
+---
+
+## 维护窗口：内存 limits 压降 + Redis 库隔离 + config 库最小权限（2026-10-03 批）
+
+### 为什么是「一批」
+
+本批三件事**必须同一次执行**，因为它们都要求**全量重建**、且半更新会让线上停在新旧混合状态：
+
+| # | 改动 | 位置 | 为什么不能单独做 |
+|---|---|---|---|
+| ① | 内存 `limits` 压降（15 组） | `docker-compose.yml` | 改 compose ⇒ CI 判 `docker-config` ⇒ **11 服务全量重建** |
+| ② | 删除 `REDIS_DATABASE=0` | 服务器 `/www/zxyz/.env` | 该键存在时**覆盖** compose 的 9 处 per-service 兜底 ⇒ 10 服务全挤在 db 0 |
+| ③ | `CONFIG_DB_USERNAME` 切 `zxyz_config` | 服务器 `/www/zxyz/.env` | admin-service/flyway 现仍以 MySQL **root** 跑 config 库 DDL |
+
+> ⚠️ **`docker compose restart` 不重载环境变量**（②③ 改的是 `.env`）⇒ 必须 `up -d`。
+
+### 一、内存算术（含具体数字，请逐项核对）
+
+| 项 | 改前 | 改后 |
+|---|---|---|
+| `mysql` | 1024 MiB | **896 MiB** |
+| `nacos` | 1024 MiB | **768 MiB** |
+| `redis` | 256 MiB | 256 MiB（不动） |
+| `rabbitmq` | 512 MiB | **384 MiB** |
+| 10 后端 + gateway（每个） | 512 MiB | **448 MiB**（共 10 个，4480 MiB） |
+| `frontend-nginx` | 128 MiB | 128 MiB（不动） |
+| **limits 累加** | **8064 MiB = 7.875 GiB** | **6912 MiB = 6.750 GiB** |
+| **占物理内存**（7.94 GB ≈ 8130.56 MiB） | 8064 / 8130.56 = **99.2%** | 6912 / 8130.56 = **85.0%** |
+| **余量** | 8130.56 − 8064 = **66.56 MiB（0.8%）** | 8130.56 − 6912 = **1218.56 MiB ≈ 1.190 GiB（15.0%）** |
+
+计算式：`896 + 768 + 256 + 384 + 448×10 + 128 = 6912 MiB`（降幅 1152 MiB = 1.125 GiB）。
+
+> ⚠️ **口径提醒**：448M 那组是 **10 个**（project/im/email/share/file/team/audit/admin/user + gateway），
+> 不是 11 个 —— `frontend-nginx` 是 128M，**不要**并入 448 那组。本表数字由
+> `scripts/` 抽取脚本从 `docker-compose.yml` 实测核算，勿手算。
+
+> **实测前提**：`deploy.resources.limits.memory` 在**非 swarm** 模式下**生效**
+> （`docker inspect` 的 `HostConfig.Memory` 为对应字节数）；同为 `deploy.resources` 下的
+> `reservations` **不生效**（`MemoryReservation: 0`）。故上表 limits 累加 = 真实约束。
+>
+> ⚠️ **不要上调 `JAVA_OPTS` 的 `-XX:MaxRAMPercentage`**（现为 75.0）：堆 = limit × 百分比，
+> limit 压到 448M 后，百分比上调会把**不可压缩的**非堆开销（Metaspace/CodeCache/线程栈/Direct）
+> 挤没 —— 80% 时非堆余量只剩 90 MiB（比改前的 128 MiB 紧 38 MiB），OOM 风险**高于改前**。
+> 详见 `docker-compose.yml` 顶部「内存 limits 压降」注释里的数字化反例表。
+
+### 二、执行步骤（服务器上，一次性窗口）
+
+```bash
+# 0) 预检：确保凭据齐全（会从 .env.example 补全缺失 KEY）
+cd /www/zxyz
+bash scripts/validate-env.sh .env
+
+# 1) ② 删除 REDIS_DATABASE 键（让 compose 的 per-service 兜底生效）
+sed -i '/^REDIS_DATABASE=/d' .env
+grep -c '^REDIS_DATABASE=' .env || echo "OK: REDIS_DATABASE 已移除"
+
+# 2) ③ 切换 config 库专用账户（账户已由 grant-least-privilege.sh 建好）
+sed -i 's/^CONFIG_DB_USERNAME=.*/CONFIG_DB_USERNAME=zxyz_config/' .env
+grep '^CONFIG_DB_USERNAME=' .env
+
+# 3) 同步最新 docker-compose.yml（CI 部署会自动做；手工操作需先 git pull）
+#    然后一次性全量重建（不带 --no-deps：本批就是要连基础设施一起确认）
+docker compose up -d
+
+# 4) 等待并观察（10 个 JVM 冷启约 3~5 分钟）
+docker compose ps
+```
+
+> `docker compose up -d` 会**重建全部 17 个服务**（含 mysql/redis/nacos/rabbitmq 等基础设施容器）。
+> 数据在 `DATA_DIR` 数据卷内，不受影响。
+
+### 三、上线后验证（逐条，可直接复制）
+
+```bash
+# ① 容器健康：应输出 14 个容器名、末尾 Healthy: 14 / 14、退出码 0
+bash scripts/health-check.sh; echo "EXIT=$?"
+
+# ② 复核新 limits 已落到容器（应见 896/768/448/384 MiB，非旧值）
+for c in zxyz-mysql zxyz-nacos zxyz-rabbitmq zxyz-gateway zxyz-frontend-nginx; do
+  printf '%-24s %s\n' "$c" \
+    "$(docker inspect --format='{{.HostConfig.Memory}}' "$c")"
+done
+# 期望：zxyz-mysql=939524096(896M) zxyz-nacos=805306368(768M)
+#       zxyz-rabbitmq=402653184(384M) zxyz-gateway=469762048(448M)
+#       zxyz-frontend-nginx=134217728(128M)
+
+# ③ Redis 库隔离实测：9 个服务应分别落在 db 0,1,2,3,4,5,6,7,8（不再是全 0）
+for c in zxyz-gateway zxyz-project-service zxyz-im-service zxyz-email-service \
+         zxyz-user-service zxyz-share-service zxyz-file-service \
+         zxyz-team-service zxyz-audit-service; do
+  printf '%-26s REDIS_DATABASE=%s\n' "$c" \
+    "$(docker inspect --format='{{range .Config.Env}}{{println .}}{{end}}' "$c" \
+       | sed -n 's/^REDIS_DATABASE=//p')"
+done
+# 期望：gateway=0 project=1 im=2 email=3 user=4 share=5 file=6 team=7 audit=8
+
+# ④ 宿主机余量：容器起来后 MemAvailable 应显著为正（改前余量仅 66 MiB）
+free -m
+docker stats --no-stream --format '{{.Name}}\t{{.MemUsage}}'
+
+# ⑤ config 库最小权限：应不再有 WARN（该 WARN 由 validate-env.sh 在 root 时打印）
+bash scripts/validate-env.sh .env 2>&1 | grep -i 'CONFIG_DB_USERNAME' || echo "OK: 无 root WARN"
+
+# ⑥ 数据库能连（admin-service 与 flyway 用的是新账户）
+docker compose logs --tail=50 zxyz-admin-service | grep -iE 'flyway|migrat|error' || true
+```
+
+### 四、回退
+
+```bash
+cd /www/zxyz
+# 回退 ③：config 库改回 root（密码必须显式写 MYSQL_ROOT_PASSWORD 同值，
+#         compose 不支持嵌套 ${A:-${B}}）
+sed -i 's/^CONFIG_DB_USERNAME=.*/CONFIG_DB_USERNAME=root/' .env
+sed -i "s/^CONFIG_DB_PASSWORD=.*/CONFIG_DB_PASSWORD=$(grep '^MYSQL_ROOT_PASSWORD=' .env | cut -d= -f2-)/" .env
+
+# 回退 ①：git 回退 docker-compose.yml 到本批之前的提交
+git -C /www/zxyz-repo checkout <本批之前的 sha> -- docker-compose.yml
+cp /www/zxyz-repo/docker-compose.yml /www/zxyz/docker-compose.yml
+
+# 回退 ②：恢复 REDIS_DATABASE=0（会重新把所有服务收回 db 0；仅在确认库隔离有问题时用）
+echo 'REDIS_DATABASE=0' >> .env
+
+docker compose up -d
+bash scripts/health-check.sh
+```
+
+> **整批快速回退**：`scripts/rollback.sh` 会按 `.env.previous` 里的上一版 sha 回滚全部应用服务，
+> 并在成功路径写入 `DEPLOYED_REVISION`（`ROLLBACK=true`）作为审计锚点。

@@ -199,6 +199,22 @@ class AdminTeamServiceTest {
     }
 
     @Test
+    void broadcastSystemMessage_shouldKeepTryingRemainingNotificationBatchesWhenOneBatchFails() {
+        // B-11：站内通知批失败必须可观测（与邮件路径的 failedBatches 计数对齐），
+        // 且不得打断后续批次 —— 否则某一批 im-service 抖动会让其余用户收不到广播。
+        when(userServiceClient.getAllUserIds()).thenReturn(List.of(1L, 2L, 3L, 4L));
+        when(userServiceClient.getVerifiedEmails()).thenReturn(List.of());
+        doThrow(new RuntimeException("im-service down")).when(imSystemNotificationClient)
+                .sendBatch(anyList(), any(), any(), any(), any(), any(), any());
+
+        adminTeamService.broadcastSystemMessage(broadcastRequest());
+
+        // 4 个用户 / 每批 2 ⇒ 2 批，全部尝试，不因首批失败而中断
+        verify(imSystemNotificationClient, times(2))
+                .sendBatch(anyList(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
     void broadcastSystemMessage_shouldDispatchEmailsInBatchesToo() {
         when(userServiceClient.getAllUserIds()).thenReturn(List.of(1L));
         when(userServiceClient.getVerifiedEmails())

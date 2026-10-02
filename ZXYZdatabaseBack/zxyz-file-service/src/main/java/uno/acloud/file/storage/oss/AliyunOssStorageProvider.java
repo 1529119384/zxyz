@@ -43,7 +43,21 @@ public class AliyunOssStorageProvider implements StorageProvider {
     private final GetSignUrl getSignUrl;
     private final OSSDeleter ossDeleter;
     private final OSSMetadataUpdater ossMetadataUpdater;
-    private final Set<String> blockedExtensions;
+
+    /**
+     * Nacos 注入的黑名单<b>原始 JSON 串</b>（F15，P3 并发/配置一致性）。
+     *
+     * <h2>为什么存原始串而不是解析后的 Set</h2>
+     * <p>修复前这是构造期一次性固化的 {@code Set}：本类没有 {@code @RefreshScope}，
+     * 于是 Nacos 热更黑名单后，<b>FileUploadService 立刻用新值、本 provider 层却仍用旧值</b>
+     * （直到重启）。两层校验口径不一致 —— 例如动态把 {@code .svg} 加入黑名单，
+     * 上传入口已拒绝，但若请求绕过入口直接走 provider，或将来入口改回宽松，provider 层仍是旧的允许集。</p>
+     * <p>改为存原始串、<b>每次调用时解析</b>（与 {@code FileUploadService.allowedExtensions()}/
+     * {@code blockedExtensions()} 的做法一致）。@RefreshScope 会让本 bean 在配置变更时重建，
+     * 但那会连带重建依赖 {@link GetSignUrl} 的整条链；逐次解析更轻且与上传入口同源同频。</p>
+     * <p>解析成本可忽略：仅在「生成上传签名」这一低频路径上发生，且解析结果与上传入口出自同一段逻辑。</p>
+     */
+    private final String blockedExtensionsRaw;
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -54,7 +68,12 @@ public class AliyunOssStorageProvider implements StorageProvider {
         this.getSignUrl = getSignUrl;
         this.ossDeleter = ossDeleter;
         this.ossMetadataUpdater = ossMetadataUpdater;
-        this.blockedExtensions = new LinkedHashSet<>(parseBlockedExtensions(blockedExtensionsRaw, FALLBACK_BLOCKED_EXTENSIONS));
+        this.blockedExtensionsRaw = blockedExtensionsRaw;
+    }
+
+    /** 每次调用时解析，使 Nacos 热更立即生效（F15）。 */
+    private Set<String> blockedExtensions() {
+        return new LinkedHashSet<>(parseBlockedExtensions(blockedExtensionsRaw, FALLBACK_BLOCKED_EXTENSIONS));
     }
 
     /**
@@ -105,7 +124,7 @@ public class AliyunOssStorageProvider implements StorageProvider {
             return;
         }
         String ext = lower.substring(lastDot);
-        if (blockedExtensions.contains(ext)) {
+        if (blockedExtensions().contains(ext)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的文件类型");
         }
     }

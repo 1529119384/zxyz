@@ -118,6 +118,7 @@ import { useTeamStore } from '@/store/team'
 import { logout as logoutApi } from '@/api/auth'
 import { IM_WS_STATUS } from '@/utils/imWebSocket'
 import { logger } from '@/utils/logger'
+import { sanitizeRedirectPath } from '@/utils/sanitizeRedirect'
 import { getRouteQueryText, withRouteQueryText } from '@/utils/routeQuery'
 
 const route = useRoute()
@@ -226,7 +227,9 @@ async function logout() {
   router.replace({
     name: 'login',
     query: {
-      redirect: route.fullPath,
+      // J-12：写入侧与全仓其余 redirect 写入对齐，过 sanitizeRedirectPath ——
+      // 消费端虽有兜底，但该不变量不应只靠消费端单点维持。
+      redirect: sanitizeRedirectPath(route.fullPath),
     },
   })
 }

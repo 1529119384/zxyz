@@ -6,7 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
-import org.mockito.InjectMocks;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -122,6 +123,43 @@ class AuditEventPublisherTest {
         // One more should evict oldest
         failPublisher.addToBufferForTest("event-overflow");
         assertEquals(10_000, failPublisher.getBufferSize());
+    }
+
+    // ==================== B-12：判满必须 O(1)，容量上限由队列自身保证 ====================
+
+    @Test
+    void addToBuffer_neverExceedsCapacityUnderManyOverflows() {
+        AuditEventPublisher failPublisher = new AuditEventPublisher(
+                rabbitTemplate, objectMapper, "/nonexistent/deep/path/audit.jsonl");
+
+        for (int i = 0; i < 12_000; i++) {
+            failPublisher.addToBufferForTest("event-" + i);
+        }
+
+        assertEquals(10_000, failPublisher.getBufferSize(),
+                "无论溢出多少次，缓冲区都不得突破上限");
+    }
+
+    @Test
+    void addToBuffer_evictsOldestFirst_leavingNewestPresent() {
+        AuditEventPublisher failPublisher = new AuditEventPublisher(
+                rabbitTemplate, objectMapper, "/nonexistent/deep/path/audit.jsonl");
+
+        failPublisher.addToBufferForTest("oldest");
+        for (int i = 0; i < 10_000; i++) {
+            failPublisher.addToBufferForTest("event-" + i);
+        }
+        assertEquals(10_000, failPublisher.getBufferSize());
+
+        // 排空缓冲区并记录实际发出的顺序：「丢最早的」这条语义不能因为换成有界队列而改变。
+        ArgumentCaptor<String> sent = ArgumentCaptor.forClass(String.class);
+        failPublisher.retryBufferedEvents();
+        verify(rabbitTemplate, atLeastOnce()).convertAndSend(anyString(), anyString(), sent.capture());
+
+        List<String> payloads = sent.getAllValues();
+        assertFalse(payloads.contains("oldest"), "溢出时应淘汰最早的一条，实际仍在：" + payloads.get(0));
+        assertEquals("event-0", payloads.get(0), "淘汰后队首应为第二条（event-0）");
+        assertEquals(0, failPublisher.getBufferSize());
     }
 
     @Test

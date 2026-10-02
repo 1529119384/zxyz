@@ -117,8 +117,9 @@ export function createImWebSocketClient(options = {}) {
 
   /**
    * 心跳超时后的收尾：停心跳、丢弃旧 socket、按退避重连。
-   * 旧 socket 的 onclose 晚到时 socket 已被置空，且 reconnectTimer 已存在，
-   * scheduleReconnect 内部的守卫会拦住重复调度。
+   * 旧 socket 的 onclose/onerror/onmessage 事件在真实浏览器里是**异步**到达的（TCP 半开的
+   * close 帧可能迟到数秒）：connect() 里为每个 handler 绑定了实例守卫（socket !== 该实例
+   * 直接忽略），迟到事件不会清掉新连接的心跳、不会置空 socket、也不会重复调度重连。
    */
   function handleDeadConnection() {
     clearHeartbeat()
@@ -150,10 +151,26 @@ export function createImWebSocketClient(options = {}) {
     }, delay)
   }
 
-  async function connect() {
+  // connect() 的 in-flight 守卫（J-2）：票据请求 fetchWsTicket() 走 imRequest（10s 超时），
+  // 期间 socket 尚未创建，OPEN/CONNECTING 守卫拦不住重入 —— 用户点『重新连接』、
+  // online/visibilitychange 事件都会再次调用 connect()/reconnect()，若不防护会并行跑两个
+  // connect，后完成者覆盖前者 → 双连接、双心跳、消息重复。在途时所有重入复用同一 Promise。
+  let connectInFlight = null
+
+  function connect() {
     if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) {
-      return
+      return Promise.resolve()
     }
+    if (connectInFlight) {
+      return connectInFlight
+    }
+    connectInFlight = doConnect().finally(() => {
+      connectInFlight = null
+    })
+    return connectInFlight
+  }
+
+  async function doConnect() {
     // 首次发起连接时绑定网络/可见性恢复监听，disconnect() 负责解绑
     bindRecoveryListeners()
     let ticket
@@ -191,13 +208,19 @@ export function createImWebSocketClient(options = {}) {
       return
     }
 
-    socket.onopen = () => {
+    // 实例守卫（J-1）：onclose/onerror/onmessage 在真实浏览器里异步到达，若本实例已被
+    // handleDeadConnection()/新一轮 connect() 丢弃，迟到事件不得触碰当前连接状态。
+    const current = socket
+
+    current.onopen = () => {
+      if (socket !== current) return
       reconnectAttempt = 0
       emitStatus(IM_WS_STATUS.CONNECTED)
       startHeartbeat()
     }
 
-    socket.onmessage = (event) => {
+    current.onmessage = (event) => {
+      if (socket !== current) return
       try {
         const envelope = JSON.parse(event.data)
         // 记录 PONG 时刻，供心跳看护判断连接是否仍有响应（L6）
@@ -210,12 +233,14 @@ export function createImWebSocketClient(options = {}) {
       }
     }
 
-    socket.onerror = (event) => {
+    current.onerror = (event) => {
+      if (socket !== current) return
       emitStatus(IM_WS_STATUS.CONNECTION_ERROR)
       onError?.(event)
     }
 
-    socket.onclose = () => {
+    current.onclose = () => {
+      if (socket !== current) return
       clearHeartbeat()
       socket = null
       if (manualClose) {

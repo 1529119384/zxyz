@@ -285,45 +285,30 @@ class ContactVerificationServiceTest {
         verify(userMapper, never()).verifyPhone(anyLong());
     }
 
-    // ==================== Send phone code — cooldown ====================
+    // ==================== Send phone code — no SMS channel: fail loudly (B-5) ====================
+    // （原 cooldownActive / cooldownAcquired 两用例断言的是 2026-09-14 拍板的「静默失败」行为，
+    //   已随 B-5 响亮失败一并废弃：通道未开放时方法在触碰冷却键之前就抛异常。）
 
+    /**
+     * B-5（2026-10-03 拍板）：无短信通道时必须「响亮失败」，不再静默生成落库。
+     * 断言：抛 BusinessException，错误码 ErrorCode.BAD_REQUEST(4000)（GlobalExceptionHandler
+     * 经 resolveHttpStatus 映射为 HTTP 400），文案含「手机验证码暂未开放」；
+     * 且绝不触发冷却键与验证码落库。
+     */
     @Test
-    void createPhoneVerificationCode_cooldownActive_shouldThrowAndNotTouchCode() {
+    void createPhoneVerificationCode_noSmsChannel_shouldFailLoudly() {
         Long userId = 1L;
-        User user = userWithPhone(userId, "+8613800138000");
-        when(userQueryHelper.requireExistingUser(userId)).thenReturn(user);
-
-        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.setIfAbsent(anyString(), eq("1"), any(Duration.class))).thenReturn(false);
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> contactVerificationService.createPhoneVerificationCode(userId));
+
         assertEquals(ErrorCode.BAD_REQUEST, ex.getErrorCode());
-        assertTrue(ex.getMessage().contains("秒后再试"));
-        // 冷却被拒时绝不能写库：否则重发接口就成了「免费重置尝试次数」的入口
+        assertEquals(4000, ex.getErrorCode());
+        assertEquals(400, ex.getHttpStatus());
+        assertTrue(ex.getMessage().contains("手机验证码暂未开放"));
+        // 响亮失败路径不触碰 Redis 冷却键，也不落库
+        verifyNoInteractions(stringRedisTemplate);
         verify(userMapper, never()).upsertContactVerificationCode(anyLong(), anyString(), anyString());
-    }
-
-    @Test
-    void createPhoneVerificationCode_cooldownAcquired_shouldUpsertCode() {
-        Long userId = 1L;
-        User user = userWithPhone(userId, "+8613800138000");
-        when(userQueryHelper.requireExistingUser(userId)).thenReturn(user);
-
-        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.setIfAbsent(anyString(), eq("1"), any(Duration.class))).thenReturn(true);
-
-        ContactVerificationCodeVO result = contactVerificationService.createPhoneVerificationCode(userId);
-
-        assertNotNull(result);
-        assertEquals("phone", result.getType());
-        ArgumentCaptor<String> digestCaptor = ArgumentCaptor.forClass(String.class);
-        verify(userMapper).upsertContactVerificationCode(eq(userId), eq("phone"), digestCaptor.capture());
-        String stored = digestCaptor.getValue();
-        assertTrue(stored.matches("[0-9a-f]{64}"), "库里必须是 64 位十六进制摘要：" + stored);
-        assertNotNull(result.getCode(), "回显开启时应返回明文，用于与本用例交叉校验");
-        assertEquals(verifyCodeHasher.hash(result.getCode()), stored);
-        assertNotEquals(result.getCode(), stored, "库里绝不能是明文验证码");
     }
 
     // ==================== Verify phone with blank code — attempt must still be counted ====================
@@ -349,13 +334,5 @@ class ContactVerificationServiceTest {
         // 关键：空码也要先计一次尝试 —— 否则「提交空码」就是不计数的免费探测
         verify(userMapper).bumpContactVerificationAttempt(userId, "phone", maxAttempts);
         verify(userMapper, never()).verifyPhone(anyLong());
-    }
-
-    private User userWithPhone(Long id, String phone) {
-        User user = new User();
-        user.setId(id);
-        user.setUsername("testuser");
-        user.setPhone(phone);
-        return user;
     }
 }

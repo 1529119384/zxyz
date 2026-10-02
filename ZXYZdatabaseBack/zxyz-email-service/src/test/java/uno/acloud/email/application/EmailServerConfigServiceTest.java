@@ -120,6 +120,55 @@ class EmailServerConfigServiceTest {
         verify(configMapper).updateLastTest(any(), any(), any(), any());
     }
 
+    // ==================== B-18：传输策略入库白名单校验 ====================
+
+    /**
+     * B-18（2026-10-03）：拼错/乱填的 transportStrategy 不允许入库 ——
+     * 原实现只做 toUpperCase 就落库，错误配置要到发送时才以「连不上」暴露，排查成本高。
+     * 白名单：SMTP / SMTPS / SMTP_SSL / SMTP_TLS（null 视为缺省 SMTP_TLS，允许）。
+     */
+    @Test
+    void createConfigShouldRejectUnknownTransportStrategy() {
+        EmailServerConfigService service = newService();
+        EmailServerConfigRequest request = new EmailServerConfigRequest();
+        request.setConfigName("拼错策略");
+        request.setHost("smtp.example.com");
+        request.setPort(587);
+        request.setUsername("user@example.com");
+        request.setPassword("auth-code");
+        request.setTransportStrategy("STARTTLS");
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.createConfig(request));
+
+        assertTrue(exception.getMessage().contains("SMTP") || exception.getMessage().contains("传输策略"),
+                "错误信息应说明合法取值：" + exception.getMessage());
+        org.mockito.Mockito.verify(configMapper, org.mockito.Mockito.never()).insert(any(EmailServerConfig.class));
+    }
+
+    @Test
+    void createConfigShouldAcceptAllWhitelistedTransportStrategies() {
+        for (String strategy : new String[]{"SMTP", "SMTPS", "SMTP_SSL", "SMTP_TLS", "smtp_tls", null}) {
+            EmailServerConfigService service = newService();
+            org.mockito.Mockito.reset(configMapper);
+            when(configMapper.insert(any(EmailServerConfig.class))).thenAnswer(invocation -> {
+                EmailServerConfig config = invocation.getArgument(0);
+                config.setId(7L);
+                return 1;
+            });
+            EmailServerConfigRequest request = new EmailServerConfigRequest();
+            request.setConfigName("合法策略");
+            request.setHost("smtp.example.com");
+            request.setPort(587);
+            request.setUsername("user@example.com");
+            request.setPassword("auth-code");
+            request.setTransportStrategy(strategy);
+
+            EmailServerConfigVO response = service.createConfig(request);
+
+            assertEquals(false, response.getActive());
+        }
+    }
+
     private EmailServerConfigService newService() {
         EmailProperties properties = new EmailProperties();
         properties.setConfigSecret("unit-test-secret");

@@ -34,12 +34,12 @@ export function createTeamDomain(state, deps = {}) {
     userSearchResults,
   } = state
 
-  const {
-    clearActiveConversation = () => {},
-    loadConversations = async () => [],
-    loadNotifications = async () => [],
-    emitter,
-  } = deps
+  // J-8 收口：本域不再持有 clearActiveConversation / loadConversations / loadNotifications
+  // 依赖 —— 此前 team.js 组装时只传 { emitter }，这三个依赖永远落在 no-op 默认值上，
+  // 「leaveSelectedTeam 等会刷新聊天数据」是假象。真实调用路径（useTeamSettingsActions /
+  // useTeamMemberActions / useImWorkspace）都在 composable 层自行编排 chatStore 刷新，
+  // 且向 team.js 注入 chat 依赖会与 chatBridge 的运行时桥接形成循环初始化风险。
+  const { emitter } = deps
 
   const selectedTeam = computed(
     () => teams.value.find((team) => normalizePositiveId(team.id) === selectedTeamId.value) || null,
@@ -124,14 +124,22 @@ export function createTeamDomain(state, deps = {}) {
     return teams.value
   }
 
+  // 过期响应令牌（J-4，与 usePagedList 同法）：快速切换团队时两个 loadTeamMembers 同时在飞，
+  // 先发起的慢响应不得覆盖后发起团队的成员列表，也不得把 selectedTeamId 拽回旧团队。
+  let latestTeamMembersToken = 0
+
   async function loadTeamMembers(teamId = selectedTeamId.value) {
     const normalizedTeamId = normalizePositiveId(teamId)
     if (!normalizedTeamId) {
       clearTeamMembers()
       return []
     }
+    const requestToken = ++latestTeamMembersToken
     selectedTeamId.value = normalizedTeamId
     const response = await fetchTeamMembers(normalizedTeamId)
+    if (requestToken !== latestTeamMembersToken) {
+      return teamMembers.value
+    }
     teamMembers.value = Array.isArray(response?.data)
       ? response.data.map((item) => normalizeTeamMember(item))
       : []
@@ -169,7 +177,8 @@ export function createTeamDomain(state, deps = {}) {
 
   async function createNewTeam(payload) {
     const response = await createAdminTeam(payload)
-    await Promise.all([loadTeams(), loadConversations()])
+    // 团队列表刷新在域内完成；会话列表刷新由调用方（composable 层）编排（J-8）。
+    await loadTeams()
     const createdTeamId = normalizePositiveId(response?.data?.id)
     if (createdTeamId) {
       selectedTeamId.value = createdTeamId
@@ -216,36 +225,33 @@ export function createTeamDomain(state, deps = {}) {
 
   async function leaveSelectedTeam(teamId = selectedTeamId.value) {
     await leaveTeam(requireTeamId(teamId))
+    // 激活会话清空与会话列表刷新由调用方（useTeamSettingsActions.leaveTeam）编排（J-8）。
     selectedTeamId.value = null
-    clearActiveConversation()
-    await Promise.all([loadTeams(), loadConversations()])
+    await loadTeams()
   }
 
   async function removeMember(teamId, userId) {
     const normalizedTeamId = requireTeamId(teamId)
     await removeTeamMember(normalizedTeamId, userId)
-    await Promise.all([
-      loadTeamMembers(normalizedTeamId),
-      loadTeamManagement(normalizedTeamId),
-      loadConversations(),
-    ])
+    // 会话列表刷新由调用方（useTeamMemberActions.removeMember）编排（J-8）。
+    await Promise.all([loadTeamMembers(normalizedTeamId), loadTeamManagement(normalizedTeamId)])
   }
 
   async function acceptInvitation(invitationId) {
     const response = await acceptTeamInvitation(invitationId)
-    await Promise.all([loadNotifications(), loadTeams(), loadConversations()])
+    // 通知与会话刷新由调用方编排（J-8）；本域只负责团队列表与成员。
+    await loadTeams()
     return response?.data
   }
 
   async function rejectInvitation(invitationId) {
     const response = await rejectTeamInvitation(invitationId)
-    await loadNotifications()
     return response?.data
   }
 
   async function publishAnnouncement(teamId, payload) {
     const response = await publishTeamAnnouncement(requireTeamId(teamId), payload)
-    await Promise.all([loadConversations(), loadNotifications()])
+    // 会话/通知刷新由调用方（useTeamSettingsActions.publishAnnouncement）编排（J-8）。
     return response?.data
   }
 
@@ -275,7 +281,8 @@ export function createTeamDomain(state, deps = {}) {
 
   async function approveJoinRequest(requestId) {
     const response = await approveTeamJoinRequest(requestId)
-    const tasks = [loadTeams(), loadConversations()]
+    // 会话列表刷新由调用方（useTeamMemberActions.approveJoinRequest）编排（J-8）。
+    const tasks = [loadTeams()]
     if (selectedTeamId.value) {
       tasks.push(loadTeamManagement(selectedTeamId.value))
     }

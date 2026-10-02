@@ -51,7 +51,12 @@ export function useFileDownload(options) {
       return
     }
 
-    const link = directDownload === false ? `/api/files/${row.id}/stream` : downloadUrl
+    // J-15：directDownload===false 时原本复制相对路径 `/api/files/{id}/stream`，
+    // 粘到浏览器/IM 里无法打开（缺 origin）。补全成绝对 URL 再复制。
+    const link =
+      directDownload === false
+        ? new URL(`/api/files/${row.id}/stream`, window.location.origin).href
+        : downloadUrl
     await copyText(link)
     ElMessage.success('下载链接已复制')
   }

@@ -14,7 +14,7 @@
 | **上下文冒烟测试** | 验证 Spring 上下文能加载 | 1 类（`ZxyzImApplicationTests`） | 中（需 Spring） |
 | **组件测试** | 验证 Vue 组件渲染和交互 | 已建立（`@vue/test-utils`；见「组件测试模式」） | 中 |
 
-> **规模口径（2026-09-22）**：后端按 `ZXYZdatabaseBack/**/src/test/java/**/*.java` 实测（137 个文件，含抽象基类 `AbstractIntegrationTest`）；剔除该基类与 failsafe 的 `*IT` 后约 **135 个测试类** —— `*IntegrationTest` 10、`*ConsumerTest` 8、冒烟 1，其余约 116 为单元测试。前端为 `*.spec.js` 共 **65** 个文件（权威计数见 `CLAUDE.md`，由 `npm run doc-count:check` 校验）。
+> **规模口径（2026-10-03 复测）**：后端按 `ZXYZdatabaseBack/**/src/test/java/**/*.java` 实测（**162 个文件**，含抽象基类 `AbstractIntegrationTest` 与 2 个非 `*Test` 命名的辅助类）；`*Test.java` 命名的**测试类 160 个** —— `*IntegrationTest` 10、`*ConsumerTest` 8、冒烟 1，其余为单元测试。前端为 `*.spec.js` 共 **68** 个文件（权威计数见 `CLAUDE.md`，由 `npm run doc-count:check` 校验）。
 
 **回归测试**：修改代码后运行全量测试（`mvn test` + `npm run test`），确保未引入破坏性变更。
 
@@ -24,7 +24,7 @@
 
 | 方向 | 框架/工具 | 版本 |
 |---|---|---|
-| 后端测试 | JUnit 5 (Jupiter) | 5.12.2（由 Spring Boot 3.5.7 BOM 管理，未在 pom 显式指定） |
+| 后端测试 | JUnit 5 (Jupiter) | 5.12.2（由 Spring Boot 3.5.14 BOM 管理，未在 pom 显式指定） |
 | 后端 Mock | Mockito | 5.17.0（同上） |
 | 后端集成 | Spring Boot Test + Testcontainers | MySQL 8.4 + Redis 7 |
 | 前端测试 | Vitest | 5.0（`package.json` `^5.0.0`，实测安装 5.0.1） |
@@ -1311,35 +1311,36 @@ Vitest 5 已**移除** `coverage.all` 选项（`CoverageOptions` 里已无 `all`
 
 ### 测试文件清单（实测，按模块）
 
-#### 后端（共 137 个文件）
+#### 后端（共 162 个文件 / 160 个 `*Test.java` 测试类）
 
-> **2026-09-22 实测**（口径：`ZXYZdatabaseBack/**/src/test/java/**/*.java`，含抽象基类 `AbstractIntegrationTest`）。原文记 83 个、且各模块「拆分」列已随代码演进失真，故本次只保留**文件数**（按模块）：
+> **2026-10-03 实测**（口径：`ZXYZdatabaseBack/**/src/test/java/**/*.java`，含抽象基类 `AbstractIntegrationTest` 与 2 个非 `*Test` 命名的辅助类）。上一次实测（2026-09-22）为 137 个文件 / 135 测试类；2026-10-03 修复批次新增大量测试后为当前值。文件数按模块：
 
-| 模块 | 文件数 |
-|---|---|
-| `zxyz-common` | 20（含 1 抽象基类 `AbstractIntegrationTest`） |
-| `zxyz-admin-service` | 7 |
-| `zxyz-audit-service` | 4 |
-| `zxyz-email-service` | 10 |
-| `zxyz-file-service` | 19 |
-| `zxyz-gateway` | 7 |
-| `zxyz-im-service` | 13 |
-| `zxyz-project-service` | 12 |
-| `zxyz-share-service` | 15 |
-| `zxyz-starter` | 5 |
-| `zxyz-team-service` | 14 |
-| `zxyz-user-service` | 11 |
+| 模块 | 文件数 | 其中 `*Test.java` |
+|---|---|---|
+| `zxyz-common` | 25（含 1 抽象基类 `AbstractIntegrationTest`） | 25 |
+| `zxyz-admin-service` | 7 | 7 |
+| `zxyz-audit-service` | 4 | 4 |
+| `zxyz-email-service` | 12 | 11 |
+| `zxyz-file-service` | 30 | 30 |
+| `zxyz-gateway` | 9 | 9 |
+| `zxyz-im-service` | 16 | 15 |
+| `zxyz-project-service` | 12 | 12 |
+| `zxyz-share-service` | 15 | 15 |
+| `zxyz-starter` | 5 | 5 |
+| `zxyz-team-service` | 15 | 15 |
+| `zxyz-user-service` | 12 | 12 |
 
-总和：20 + 7 + 4 + 10 + 19 + 7 + 13 + 12 + 15 + 5 + 14 + 11 = **137**
+总和（文件数）：25 + 7 + 4 + 12 + 30 + 9 + 16 + 12 + 15 + 5 + 15 + 12 = **162**
+总和（`*Test.java`）：160（162 − 2 个非 `*Test` 命名辅助类：im 1 + email 1）
 
-#### 前端（共 65 个文件）
+#### 前端（共 68 个文件）
 
-> **2026-09-22 实测**（口径：`ZXYZdatabaseFront/src/**/*.spec.js`）。原文记 26 个是**已过时**的旧读数（`CLAUDE.md` 早已指出应为 65）。
+> **2026-10-03 实测**（口径：`ZXYZdatabaseFront/src/**/*.spec.js`）。原文记 26 个是**已过时**的旧读数（`CLAUDE.md` 早已指出应为 65，2026-10-03 修复批次后为 68）。
 
 | 目录 | 文件数 |
 |---|---|
-| `src/api/__tests__/` | 5 |
-| `src/components/__tests__/` | 6 |
+| `src/api/__tests__/` | 6 |
+| `src/components/__tests__/` | 7 |
 | `src/composables/__tests__/` | 23 |
 | `src/constants/__tests__/` | 1 |
 | `src/models/__tests__/` | 3 |
@@ -1348,9 +1349,9 @@ Vitest 5 已**移除** `coverage.all` 选项（`CoverageOptions` 里已无 `all`
 | `src/store/__tests__/` | 2（`chat` / `currentUser`） |
 | `src/store/im/__tests__/` | 7 |
 | `src/utils/__tests__/` | 9 |
-| `src/views/**/__tests__/` | 5（permission 1 + permission/components 2 + not-found 1 + setting/components 1） |
+| `src/views/**/__tests__/` | 6（permission 1 + permission/components 2 + not-found 1 + setting/components 1 + chat/composables 1） |
 
-总和：5 + 6 + 23 + 1 + 3 + 3 + 1 + 2 + 7 + 9 + 5 = **65**（与 `CLAUDE.md` 一致，由 `npm run doc-count:check` 校验）
+总和：6 + 7 + 23 + 1 + 3 + 3 + 1 + 2 + 7 + 9 + 6 = **68**（与 `CLAUDE.md` 一致，由 `npm run doc-count:check` 校验）
 
 ### 涉及的核心 FQN 速查
 

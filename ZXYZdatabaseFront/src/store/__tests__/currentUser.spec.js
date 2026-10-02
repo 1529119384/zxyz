@@ -275,6 +275,43 @@ describe('useCurrentUserStore', () => {
       // fetchCurrentUser should only be called once
       expect(fetchCurrentUser).toHaveBeenCalledTimes(1)
     })
+
+    it('应在并发去重时把在途 Promise 返回给第二个调用方，而不是同步旧值（J-6）', async () => {
+      let resolveFetch
+      fetchCurrentUser.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveFetch = () => resolve({ data: fullProfileData })
+          }),
+      )
+
+      const store = useCurrentUserStore()
+      // store 初始 profile 为 null：缺陷形态下第二个调用方拿到的就是 null（同步值），
+      // 会被 session 快照误判成「无团队」导向 /no-team。
+      const p1 = store.loadProfile()
+      const p2 = store.loadProfile()
+      expect(fetchCurrentUser).toHaveBeenCalledTimes(1)
+
+      resolveFetch()
+      const [result1, result2] = await Promise.all([p1, p2])
+
+      // 两个调用方必须拿到同一份完整 profile
+      expect(result2).toMatchObject({ id: 1, username: 'testuser' })
+      expect(result2).toEqual(result1)
+    })
+
+    it('应在请求失败后清理 pending 状态，后续调用能重新发起请求（J-6）', async () => {
+      fetchCurrentUser.mockRejectedValueOnce(new Error('network error'))
+      fetchCurrentUser.mockResolvedValueOnce({ data: fullProfileData })
+
+      const store = useCurrentUserStore()
+      await expect(store.loadProfile()).rejects.toThrow('network error')
+
+      // 失败后 pending 必须被清空：下一次调用重新发请求（缺陷形态下 loading 可能残留）
+      const result = await store.loadProfile()
+      expect(fetchCurrentUser).toHaveBeenCalledTimes(2)
+      expect(result).toMatchObject({ id: 1 })
+    })
   })
 
   describe('hasSystemPermission / hasAnySystemPermission', () => {

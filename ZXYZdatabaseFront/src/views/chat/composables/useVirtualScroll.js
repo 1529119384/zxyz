@@ -18,6 +18,13 @@ export function useVirtualScroll({ messages, chatStore, listRef }) {
     if (isLoadingOlder.value || !hasMoreOlder.value) return
     const firstMessage = messages.value[0]
     if (!firstMessage) return
+    // J-13 卫语句：首条消息缺 messageId 时 beforeMessageId=undefined 会让
+    // loadConversationMessages 走「无游标=全量替换」分支 —— 丢弃已加载的历史分页、
+    // 且 length 比较会让 hasMoreOlder 判定紊乱（极端时在顶部反复触发无意义请求）。
+    if (!firstMessage.messageId) {
+      hasMoreOlder.value = false
+      return
+    }
 
     const anchorId = firstMessage.messageId || firstMessage.clientMessageId
     isLoadingOlder.value = true

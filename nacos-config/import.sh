@@ -52,23 +52,44 @@ NACOS_PASS=${NACOS_PASS:-$(load_env NACOS_PASSWORD)}
 ID_KEY=${NACOS_AUTH_IDENTITY_KEY:-$(load_env NACOS_AUTH_IDENTITY_KEY)}
 ID_VAL=${NACOS_AUTH_IDENTITY_VALUE:-$(load_env NACOS_AUTH_IDENTITY_VALUE)}
 
+# --- 凭据不进 argv（审计 I-6 / 2026-10-03）---
+# 原写法把口令与 accessToken 直接拼进 curl 的 argv（`--data-urlencode "password=..."` /
+# `"${AUTH_ARGS[@]}"`）⇒ 执行窗口内**同机任意进程**都能从 /proc/<pid>/cmdline 读到。
+# 这与仓库自己为 MySQL/Redis 修掉的同类问题（审计 2.3.3：backup.sh / compose healthcheck
+# 已全部改走 MYSQL_PWD / REDISCLI_AUTH 环境变量）标准不一致 —— import.sh 在生产服务器上
+# 运行，同机还有 nginx 与业务容器等常住进程，且 Nacos 口令是**长期有效**的。
+# 修法：口令/令牌先落到 umask 077 的临时文件，再用 curl 的 `name@filename` 形式读取
+# （curl 从文件取内容并自行 URL 编码），argv 里只剩**参数名**。
+umask 077
+CRED_TMP="$(mktemp -d)"
+cleanup_cred() { rm -rf "$CRED_TMP"; }
+trap cleanup_cred EXIT INT TERM
+
 # --- 鉴权：先 token，失败再 identity ---
 TOKEN=""
 if [ -n "$NACOS_USER" ] && [ -n "$NACOS_PASS" ]; then
   echo "尝试 accessToken 登录: http://${NACOS_CONSOLE}/v3/auth/user/login"
+  # 只落盘口令（用户名非机密，可留在 argv）；printf 不加换行，避免 curl 把 \n 一并编码进去
+  printf '%s' "$NACOS_PASS" > "$CRED_TMP/pass"
   login_resp=$(curl -s --retry 2 --retry-delay 1 -X POST "http://${NACOS_CONSOLE}/v3/auth/user/login" \
     --data-urlencode "username=${NACOS_USER}" \
-    --data-urlencode "password=${NACOS_PASS}" || true)
+    --data-urlencode "password@$CRED_TMP/pass" || true)
   TOKEN=$(printf '%s' "$login_resp" | "$PY" -c "import sys,json;print(json.load(sys.stdin).get('accessToken',''))" 2>/dev/null || true)
 fi
 
 AUTH_ARGS=()
 if [ -n "$TOKEN" ]; then
   echo "✓ 鉴权通道：accessToken（用户 ${NACOS_USER}）"
-  AUTH_ARGS+=(--data-urlencode "accessToken=${TOKEN}")
+  # 同上：令牌落盘，argv 里不出现取值
+  printf '%s' "$TOKEN" > "$CRED_TMP/token"
+  AUTH_ARGS+=(--data-urlencode "accessToken@$CRED_TMP/token")
 elif [ -n "$ID_KEY" ] && [ -n "$ID_VAL" ]; then
   echo "⚠ 登录不可用，回退 server-identity 通道（请求头 ${ID_KEY}）"
-  AUTH_ARGS+=(-H "${ID_KEY}: ${ID_VAL}")
+  # 该通道走**请求头**：header 值不进 argv 做不到（curl -H 必须带值），
+  # 故改用 `-K <(config)` 从进程替换的**文件**读配置，argv 里只留 -K 与其路径。
+  ID_CFG="$CRED_TMP/identity.conf"
+  printf 'header = "%s: %s"\n' "$ID_KEY" "$ID_VAL" > "$ID_CFG"
+  AUTH_ARGS+=(-K "$ID_CFG")
 else
   echo "✗ 鉴权失败：既无法用 NACOS_USERNAME/NACOS_PASSWORD 登录（用户体系可能未初始化），"
   echo "  也缺少 NACOS_AUTH_IDENTITY_KEY/NACOS_AUTH_IDENTITY_VALUE。"

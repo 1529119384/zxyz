@@ -27,11 +27,16 @@ ZXYZdatabaseBack/**
 ZXYZdatabaseFront/**
 deploy/**
 docker-compose.yml
+docker-compose.observability.yml
 .env.example
+.gitleaks.toml
 .github/workflows/**
+nacos-config/**
+scripts/**
+sql/**
 ```
 
-不在此白名单内的文件变更（如 `CLAUDE.md`、`docs/**`、`scripts/**`、`sql/**`）**不触发** workflow。`dorny/paths-filter` 进一步按服务目录判断哪些镜像需要重建。
+不在此白名单内的文件变更（如 `CLAUDE.md`、`docs/**`）**不触发** workflow。`dorny/paths-filter` 进一步按服务目录判断哪些镜像需要重建。
 
 > `nacos-config/**` 自 2026-09-13 起**已纳入白名单**：它不参与镜像构建，但改它必须导入 Nacos 才对线上生效，故由 `nacos-config-check`（等价性门禁）与 `nacos-import`（自动导入 + 逐份回读校验）两个作业接管。详见 `nacos-config/README.md`。
 
@@ -72,7 +77,7 @@ cd ZXYZdatabaseFront && git diff HEAD --stat && cd ..
 
 ```bash
 mvn clean -DskipTests compile                   # baseline compile check
-mvn test                                         # all tests（135 个测试类 / 137 个测试源文件，见 docs/testing.md）
+mvn test                                         # all tests（160 个测试类 / 162 个测试源文件，见 docs/testing.md）
 mvn test -pl zxyz-team-service                   # single module tests
 mvn test -pl zxyz-file-service -Dtest=FileUploadServiceTest  # single test class
 mvn clean package -DskipTests                    # package for Docker build
@@ -114,15 +119,16 @@ npm run test:coverage # Vitest + @vitest/coverage-v8 coverage
 
 ## Architecture
 
-**Backend**: Java 17, Spring Boot 3.5.7, Spring Cloud 2025.0.0, Maven multi-module. Group: `uno.acloud`, base package: `uno.acloud.{service}`.
+**Backend**: Java 17, Spring Boot 3.5.14, Spring Cloud 2025.0.3, Maven multi-module. Group: `uno.acloud`, base package: `uno.acloud.{service}`.
 
 **Frontend**: Vue 3.5 (Composition API + `<script setup>`), Vite 8.3, Element Plus 2.11 (auto-import), Pinia 3.0, Axios 1.20, Vitest 5.0.
 
-### Backend: 11 Maven Modules
+### Backend: 12 Maven Modules
 
 | Module | Port | Database | Architecture |
 |---|---|---|---|
 | `zxyz-common` | — | — | Shared: error codes, Result, permissions, OSS client, service clients, ConfigServiceClient, audit, MQ constants |
+| `zxyz-starter` | — | — | Library: RestClient 自动装配 + 跨服务 client（TeamServiceClient/UserQueryClient/FileStorageClient 等） |
 | `zxyz-gateway` | 18000 | — | Spring Cloud Gateway (WebFlux), Sa-Token auth, Redis rate limiting |
 | `zxyz-project-service` | 18080 | zxyz_project | Traditional layering |
 | `zxyz-im-service` | 18081/19090 | zxyz_im | **DDD** (interfaces → application → domain) + Netty WebSocket |
@@ -144,14 +150,14 @@ WHEN 测试命名, DO 使用 `*Test.java`（非 `*Tests.java`）。
 WHEN 编写 MapStruct 转换器, DO 使用 `*Converter`/`*Assembler` 类名，与 Lombok 兼容。
 WHEN email-service 或 im-service 需要新功能, DO 使用 DDD 风格；其他服务使用传统分层。
 WHEN 服务间调用, DO 通过 `*ServiceClient` + `X-Internal-Service-Token` 鉴权；异步用 RabbitMQ Topic Exchange `zxyz.topic`。
-WHEN 新增 Maven 模块, DO 同时加入根 `pom.xml` 的 `<modules>` 列表（参考 `zxyz-web-tools/` 反例：未注册构建、包名 `uno.acloud.monitor.platform.web.tools.*` 违反 `uno.acloud.{service}` 约定，应清理）。
+WHEN 新增 Maven 模块, DO 同时加入根 `pom.xml` 的 `<modules>` 列表。历史反例 `zxyz-web-tools/`（未注册构建、包名违反 `uno.acloud.{service}` 约定）**已于 2026-09 清理删除**，勿再重建同类模块。
 WHEN 修改 Gateway 路由, DO 同步更新 `docs/infrastructure.md` 中的路由表。
 
 **安全强制**：
 - 敏感字段（密码/token/密文）加 `@JsonProperty(access = WRITE_ONLY)` 或 `@JsonIgnore`，实体 `@ToString(exclude = {...})`，不序列化的配置类用 `@JsonIgnore`
 - `INTERNAL_SERVICE_TOKEN` 在 YAML 中**禁止默认值**（勿用 `${INTERNAL_SERVICE_TOKEN:dev-internal-token}`），含 `application-dev.yml`
 - 用户文件/文件夹名必须过 `FileDomainValidator.validateInputName()` / `FileRenameService.validateRenameName()`（拒绝 `< > " ' &`）
-- 上传白名单：`.js` 在 `BLOCKED_EXTENSIONS`（浏览器 XSS 风险）勿加入 `ALLOWED`；`GetSignUrl.java` 有重复 BLOCKED 集合需同步
+- 上传白名单：`.js` 在 `BLOCKED_EXTENSIONS`（浏览器 XSS 风险）勿加入 `ALLOWED`；仓库内 BLOCKED 扩展名集合如有新增副本须同步保持一致
 
 **关键坑位**：
 - Config 绑定用平铺 `app.internal-service-token`，勿嵌套 `app.internal.service-token`
@@ -183,8 +189,8 @@ WHEN 添加 setting 子路由, DO 确保 `route.name` 在 Setting 组件 watcher
 
 - **MySQL 8.4**: 10 个独立库（含 zxyz_config），表结构**仅由 Flyway 管理**（勿维护 `sql/schema_*.sql`）；DB init: `sql/00-init-zxyz.sh`
 - **Redis**: localhost:6379（Sa-Token sessions + Redisson 锁）；**Nacos**: localhost:8848 注册中心 + Config（`spring.config.import:nacos:`，10 服务接入，模板在 `nacos-config/`）；**RabbitMQ**: localhost:5672（Topic `zxyz.topic`）
-- **Auth**: Sa-Token 1.45.0（UUID token，Redis session，HttpOnly cookie）；API Docs: Knife4j 4.5.0 + springdoc 2.8.9
-- **Docker**: `docker-compose.yml` 编排 18 服务（5 基础设施 + 10 后端 + frontend-nginx + loki/promtail），统一 `Dockerfile` with `MODULE` build arg，镜像推 GHCR
+- **Auth**: Sa-Token 1.46.0（UUID token，Redis session，HttpOnly cookie）；API Docs: Knife4j 4.5.0 + springdoc 2.8.9
+- **Docker**: `docker-compose.yml` 编排 17 个服务（基础设施 6：mysql/nacos/nacos-log-cleanup/flyway/redis/rabbitmq + 10 后端 + frontend-nginx 唯一对外入口），统一 `Dockerfile` with `MODULE` build arg，镜像推 GHCR；可观测栈（loki/prometheus/grafana 等）**已迁出**至 `docker-compose.observability.yml`（默认不启动，需显式 `--profile observability`）
 - **Nginx CSP**: `deploy/nginx/default.conf` 用 `envsubst` 模板化，`OSS_PUBLIC_BASE_URL` 启动时注入，勿硬编码 OSS 域名
 
 **强制部署项**：
@@ -193,11 +199,12 @@ WHEN 添加 setting 子路由, DO 确保 `route.name` 在 Setting 组件 watcher
 - 服务器 `.env` 在 `/www/zxyz/.env`，独立于仓库维护，CI/CD 不同步
 - 镜像标签：dev → `dev`，main → `latest`，tag → 版本号；每镜像双 tag（`${tag}` + `${git_sha}` 供精确回滚）；本地改 `.env` 的 `APP_IMAGE_TAG`/`IMAGE_PREFIX` 控制部署目标
 
-**前端测试**: 65 个测试文件，1209 个用例（`npm run test`）。⚠️ 文件数由 `npm run doc-count:check`（`ZXYZdatabaseFront/scripts/check-doc-test-count.mjs`）对着 `src/**/*.spec.js` 实测校验 —— 此前这里写的是 26 个，实测已 65 个，是无人发现的 2.5 倍偏差。用例数无法静态推导，改测试后请跑一次 `npm run test` 并同步这里的数字（`vite.config.mjs` 覆盖率注释里的同类数字是**历史快照**，不要改）。命名 `*.spec.js` 放对应目录 `__tests__/` 下，`vi.mock()` 外部依赖，测试名中文。import 顺序：vitest/vue 最前 → `vi.mock()` 紧跟 → 再 `@/` 与第三方（`element-plus` import 须在 `vi.mock()` 后，否则 `import-x/order` 报错）。详见 [docs/testing.md](docs/testing.md)。
+**前端测试**: 68 个测试文件，1228 个用例（`npm run test`）。⚠️ 文件数由 `npm run doc-count:check`（`ZXYZdatabaseFront/scripts/check-doc-test-count.mjs`）对着 `src/**/*.spec.js` 实测校验 —— 此前这里写的是 26 个，实测已 65 个（2026-10-03 起为 68），是无人发现的 2.5 倍偏差。用例数无法静态推导，改测试后请跑一次 `npm run test` 并同步这里的数字（`vite.config.mjs` 覆盖率注释里的同类数字是**历史快照**，不要改）。命名 `*.spec.js` 放对应目录 `__tests__/` 下，`vi.mock()` 外部依赖，测试名中文。import 顺序：vitest/vue 最前 → `vi.mock()` 紧跟 → 再 `@/` 与第三方（`element-plus` import 须在 `vi.mock()` 后，否则 `import-x/order` 报错）。详见 [docs/testing.md](docs/testing.md)。
 
-**CI/CD**: `.github/workflows/ci-cd.yml` 按路径变更选择性构建部署。push 到 dev/main、`v*` tag、PR、手动 dispatch；`dorny/paths-filter` 按服务目录判断重建；backend-common 变更触发全部后端重建；docker-compose.yml 变更不触发重建；workflow_dispatch 输入 `tag`（必填）/`skip_quality`/`fast_deploy`。
+**CI/CD**: `.github/workflows/ci-cd.yml` 按路径变更选择性构建部署。push 到 dev/main、`v*` tag、PR、手动 dispatch；`dorny/paths-filter` 按服务目录判断重建；backend-common 变更触发全部后端重建；**`docker-compose.yml`/`.env.example` 变更会触发全量 11 服务重建与部署（docker-config），改它（哪怕只改注释）前须知晓此代价**；workflow_dispatch 输入 `tag`（必填）/`skip_quality`/`fast_deploy`/`force_deploy`/`run_e2e`。辅助 workflow：`lint-workflows.yml`（actionlint）、`ghcr-cleanup.yml`、`restore-drill.yml`（手动恢复演练，带凭据 fail-closed 断言）。
 
-> Gateway 路由表与服务间调用图：`docs/infrastructure.md`；技术栈：`docs/architecture.md`；部署指南：`DEPLOYMENT.md`。项目历史审查报告见 `ISSUE/`（`PROJECT-REVIEW-2026-07-27.md` 全面审查、`PROJECT-DEEP-REVIEW-2026-07-28.md` 深度审查；目录已 gitignore，仅本机保留）。
+> Gateway 路由表与服务间调用图：`docs/infrastructure.md`；技术栈：`docs/architecture.md`；部署指南：`DEPLOYMENT.md`。
+> 项目审查/台账报告在 `ISSUE/`（目录已 gitignore，仅本机保留）：**现行入口 = `38-CODE-REVIEW-2026-10-02.md`（多智能体全项目审查总报告）与 `39-UNFINISHED-2026-10-02.md`（未完成项清单）**，配套证据包在 `ISSUE/review-2026-10-02/`；`07` 号与 `18~37` 号属历史台账（2026-09 系列），已于 2026-10 归档移出。**归档区的等价原件在仓库外 `D:\code\databaseZXYZ\oldmd\`**（含早期 `PROJECT-REVIEW-2026-07-27.md` / `PROJECT-DEEP-REVIEW-2026-07-28.md` 全份）。
 > docker-compose 服务编排详情、deploy-fast/rollback/backup/dev-up 脚本参数、部署注意事项与运维提示详见 [docs/claude-infra.md](docs/claude-infra.md)。
 
 ## 服务间接口设计规范

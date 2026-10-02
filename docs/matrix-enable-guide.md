@@ -94,7 +94,7 @@ SVC_GATEWAY_KEY=...
 
 - `StripInternalHeadersFilter` 会先剥外部伪造内部头，再由 route filters 补回受信身份（时序：GlobalFilter 先剥、route filter 后补，成立）。
 - **`admin-email` 的密钥是嵌套默认值**：优先取 `SVC_GATEWAY_KEY`，过渡期未设时回退 `INTERNAL_SERVICE_TOKEN`。
-  已实测 Spring Boot 3.5.7 的 `PropertySourcesPlaceholdersResolver` 支持这种嵌套（`${A:${B}}` 会被递归解析），
+  已实测 Spring Boot 3.5.14 的 `PropertySourcesPlaceholdersResolver` 支持这种嵌套（`${A:${B}}` 会被递归解析），
   过渡态无需改网关即可启动。禁止改写字面量默认值。
 - **`admin-database` 的头已移除而非补齐**：project-service 的 `InternalServiceAuthInterceptor` 只注册在
   `/api/internal/**`（`SaTokenConfigure` 硬编码），`/api/admin/database/**` 不参与服务间鉴权，

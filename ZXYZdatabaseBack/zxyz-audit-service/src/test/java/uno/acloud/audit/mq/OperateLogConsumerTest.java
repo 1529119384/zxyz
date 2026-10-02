@@ -3,11 +3,12 @@ package uno.acloud.audit.mq;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -35,7 +36,9 @@ class OperateLogConsumerTest {
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
 
-    @InjectMocks
+    /** 真实注册表：可直接读回计数器值做断言，不依赖 mock 的交互。 */
+    private SimpleMeterRegistry meterRegistry;
+
     private OperateLogConsumer operateLogConsumer;
 
     @Captor
@@ -43,6 +46,12 @@ class OperateLogConsumerTest {
 
     @Captor
     private ArgumentCaptor<String> hashCaptor;
+
+    @BeforeEach
+    void setUp() {
+        meterRegistry = new SimpleMeterRegistry();
+        operateLogConsumer = new OperateLogConsumer(operateLogMapper, objectMapper, meterRegistry);
+    }
 
     // ==================== handleAuditLog — happy path ====================
 
@@ -90,6 +99,102 @@ class OperateLogConsumerTest {
                 .when(operateLogMapper).insertWithHash(any(OperateLog.class), anyString());
 
         // 命中唯一键＝重复消息，正常返回（ACK），不再抛异常、不重投
+        assertDoesNotThrow(() -> operateLogConsumer.handleAuditLog(json));
+        verify(operateLogMapper).insertWithHash(any(OperateLog.class), anyString());
+    }
+
+    // ==================== B-1：幂等命中必须可观测（不能只有一行静默 WARN） ====================
+
+    @Test
+    void handleAuditLog_duplicateKey_incrementsDuplicateMetric() throws Exception {
+        OperateLog input = new OperateLog();
+        input.setServiceName("file-service");
+        input.setMethodName("uploadFile");
+        String json = objectMapper.writeValueAsString(input);
+
+        doThrow(new DuplicateKeyException("Duplicate entry for key uk_operate_log_message_hash"))
+                .when(operateLogMapper).insertWithHash(any(OperateLog.class), anyString());
+
+        operateLogConsumer.handleAuditLog(json);
+        operateLogConsumer.handleAuditLog(json);
+
+        double duplicates = meterRegistry.get(OperateLogConsumer.METRIC_DUPLICATE_MESSAGES)
+                .counter().count();
+        assertEquals(2.0, duplicates,
+                "每次重复投递都要计入 audit.duplicate.messages，否则重复投递链路不可观测");
+    }
+
+    @Test
+    void handleAuditLog_duplicateMetricNotTouchedOnHappyPath() throws Exception {
+        OperateLog input = new OperateLog();
+        input.setServiceName("file-service");
+        String json = objectMapper.writeValueAsString(input);
+
+        operateLogConsumer.handleAuditLog(json);
+
+        assertEquals(0.0, meterRegistry.get(OperateLogConsumer.METRIC_DUPLICATE_MESSAGES)
+                        .counter().count(),
+                "正常写入不得被计入重复指标");
+    }
+
+    // ==================== B-2：消费端第二道脱敏防线 ====================
+
+    @Test
+    void handleAuditLog_masksJsonPasswordBeforePersisting() throws Exception {
+        // 模拟「发布端漏脱敏」：消息体里带明文密码
+        String json = "{\"serviceName\":\"user-service\",\"methodName\":\"login\","
+                + "\"methodParams\":\"[username=bob, password=s3cr3t]\","
+                + "\"returnValue\":\"{\\\"token\\\":\\\"tok-abc\\\"}\"}";
+
+        operateLogConsumer.handleAuditLog(json);
+
+        verify(operateLogMapper).insertWithHash(logCaptor.capture(), anyString());
+        OperateLog persisted = logCaptor.getValue();
+        assertFalse(persisted.getMethodParams().contains("s3cr3t"),
+                "落库的 method_params 不得含明文密码，实际：" + persisted.getMethodParams());
+        assertFalse(String.valueOf(persisted.getReturnValue()).contains("tok-abc"),
+                "落库的 return_value 不得含明文 token，实际：" + persisted.getReturnValue());
+    }
+
+    @Test
+    void handleAuditLog_masksLombokToStringPasswordBeforePersisting() throws Exception {
+        // B-13 泄露路径的真实形态：Arrays.toString(DTO) 产出 password=xxx（无引号），
+        // 发布端的 JSON 正则对它完全无效 —— 消费端必须自己再挡一次。
+        String json = "{\"serviceName\":\"user-service\",\"methodName\":\"trustLinkedAccount\","
+                + "\"methodParams\":\"[uno.acloud.user.dto.LinkedAccountTrustRequest(password=PlainTextPwd)]\"}";
+
+        operateLogConsumer.handleAuditLog(json);
+
+        verify(operateLogMapper).insertWithHash(logCaptor.capture(), anyString());
+        OperateLog persisted = logCaptor.getValue();
+        assertFalse(persisted.getMethodParams().contains("PlainTextPwd"),
+                "Lombok toString 形态的密码也必须被消费端拦住，实际：" + persisted.getMethodParams());
+        assertTrue(persisted.getMethodParams().contains("password=***"));
+    }
+
+    @Test
+    void handleAuditLog_keepsNonSensitiveParamsIntact() throws Exception {
+        String json = "{\"serviceName\":\"file-service\",\"methodName\":\"upload\","
+                + "\"methodParams\":\"[projectId=1, fileName=report.pdf]\"}";
+
+        operateLogConsumer.handleAuditLog(json);
+
+        verify(operateLogMapper).insertWithHash(logCaptor.capture(), anyString());
+        assertEquals("[projectId=1, fileName=report.pdf]", logCaptor.getValue().getMethodParams(),
+                "打码不得误伤普通参数");
+    }
+
+    // ==================== B-19：insertWithHash 返回 0 时不得静默当成功 ====================
+
+    @Test
+    void handleAuditLog_doesNotThrowButKeepsGoingWhenRowsIsZero() throws Exception {
+        OperateLog input = new OperateLog();
+        input.setServiceName("file-service");
+        String json = objectMapper.writeValueAsString(input);
+
+        when(operateLogMapper.insertWithHash(any(OperateLog.class), anyString())).thenReturn(0);
+
+        // 返回 0 属防御性场景：不改变 ACK 语义（避免把幂等消息打进 DLQ），但必须有留痕
         assertDoesNotThrow(() -> operateLogConsumer.handleAuditLog(json));
         verify(operateLogMapper).insertWithHash(any(OperateLog.class), anyString());
     }

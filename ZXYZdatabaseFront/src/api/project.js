@@ -41,6 +41,7 @@ export const submitProjectCreateRequest = (teamId, payload) =>
 /**
  * @param {string|number} teamId - 团队 ID
  */
+// 后端端点存在（GET /api/project-create-requests/teams/{teamId}/pending），前端暂无消费者；保留以便将来做审批列表页（见 ISSUE C-9）
 export const fetchPendingProjectCreateRequests = (teamId) =>
   request.get(`/api/project-create-requests/teams/${teamId}/pending`)
 
@@ -61,6 +62,7 @@ export const rejectProjectCreateRequest = (applicationId, payload = {}) =>
 /**
  * @param {string|number} projectId - 项目 ID
  */
+// 后端端点存在（GET /api/project-members/projects/{projectId}/members），前端暂无消费者；保留以便将来做成员管理页（见 ISSUE C-9）
 export const fetchProjectMembers = (projectId) =>
   request.get(`/api/project-members/projects/${projectId}/members`)
 
@@ -68,6 +70,7 @@ export const fetchProjectMembers = (projectId) =>
  * @param {string|number} projectId - 项目 ID
  * @param {Record<string, unknown>} payload - 成员添加请求体
  */
+// 后端端点存在（POST /api/project-members/projects/{projectId}/members），前端暂无消费者；保留以便将来做成员管理页（见 ISSUE C-9）
 export const addProjectMember = (projectId, payload) =>
   request.post(`/api/project-members/projects/${projectId}/members`, payload)
 
@@ -75,6 +78,7 @@ export const addProjectMember = (projectId, payload) =>
  * @param {string|number} projectId - 项目 ID
  * @param {Record<string, unknown>} payload - 移交请求体
  */
+// 后端端点存在（PATCH /api/project-members/projects/{projectId}/leader），前端暂无消费者；保留以便将来做成员管理页（见 ISSUE C-9）
 export const transferProjectLeader = (projectId, payload) =>
   request.patch(`/api/project-members/projects/${projectId}/leader`, payload)
 

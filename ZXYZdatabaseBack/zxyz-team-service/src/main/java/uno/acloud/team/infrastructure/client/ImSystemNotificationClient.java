@@ -60,18 +60,18 @@ public class ImSystemNotificationClient extends AbstractServiceClient {
         body.put("businessId", businessId);
         body.put("teamId", teamId);
 
-        try {
-            restClient().post()
-                    .uri(baseUrl() + "/api/internal/im/system-notifications/batch")
-                    .headers(this::internalHeaders)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .accept(MediaType.APPLICATION_JSON)
-                    .body(body)
-                    .retrieve()
-                    .toBodilessEntity();
-        } catch (Exception e) {
-            log.warn("发送 IM 系统通知失败: type={}, businessType={}, businessId={}, teamId={}",
-                    type, businessType, businessId, teamId, e);
-        }
+        // B-11（2026-10-03）：不再 catch 静默吞 —— 原实现把 HTTP 失败降级成一条 warn，
+        // 「全站广播」里某批通知失败后调用方（AdminTeamService）既不知道也无从计数，
+        // 广播「部分成功」完全不可观测。现把异常抛给调用方，由其在批粒度 try/catch
+        // 计数（与 EmailServiceClient.sendBatchByTemplate 的批失败计数口径对齐）。
+        // 配额变更等「失败不影响主流程」的调用点已由 TransactionUtils.runAfterCommit 统一吞异常，不受影响。
+        restClient().post()
+                .uri(baseUrl() + "/api/internal/im/system-notifications/batch")
+                .headers(this::internalHeaders)
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.APPLICATION_JSON)
+                .body(body)
+                .retrieve()
+                .toBodilessEntity();
     }
 }

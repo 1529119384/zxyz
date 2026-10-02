@@ -93,7 +93,12 @@ deliverables/
 # 把工作区视为"脏"从而拒推。
 .last_ci_run
 
-# ===== .qoder：只保留 rules，AI 生成的 repowiki 不再入库 =====
+# ===== .qoder：只保留 rules，其余 AI 产物不入库 =====
 # repowiki = 311 文件 / 5.88 MB，纯 AI 生成的代码 wiki，且曾因"整目录豁免"造成 Gitleaks 311 文件盲区。
+# better-harness/ = AI 评审跑批产出（canvas.json/findings.json/report.canvas.tsx），同属 AI 产物。
 # 文件仍保留在本地磁盘，只是不再被 git 跟踪（见 ISSUE/24 §五 D-5）。
-.qoder/repowiki/
+# 注意：gitignore 不回溯已跟踪文件 —— 见下方「已知残留」。
+.qoder/*
+!.qoder/rules/
+# 已知残留：.qoder/better-harness/**（12 文件）与 .qoder/settings.json 早于本规则已被跟踪，
+# gitignore 不回溯 —— 如需停止跟踪须显式 `git rm --cached`（待用户拍板，见 39 号 A-1）。

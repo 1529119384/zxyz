@@ -231,12 +231,27 @@ public class EmailDispatchService {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    emailTaskExecutor.execute(() -> dispatchRecord(record.getId()));
+                    // B-14（2026-10-03）：CLAUDE.md 强制「afterCommit 回调必须 try-catch」——
+                    // 此刻事务已提交、记录已落库为 PENDING；提交线程池被拒（原 CallerRuns 改 Abort 后
+                    // 队列满会抛 RejectedExecutionException）绝不能冒泡进 Spring 事务同步链。
+                    // 记录保持 PENDING，由 EmailRetryTask 定时 dispatchDueRecords 兜底发送。
+                    try {
+                        emailTaskExecutor.execute(() -> dispatchRecord(record.getId()));
+                    } catch (Exception e) {
+                        log.warn("邮件异步发送任务提交失败（记录保持 PENDING，等待定时重试兜底）：recordId={}",
+                                record.getId(), e);
+                    }
                 }
             });
             return;
         }
-        emailTaskExecutor.execute(() -> dispatchRecord(record.getId()));
+        // 无事务上下文的同步提交路径同样不得把拒绝异常抛给调用方（B-14）
+        try {
+            emailTaskExecutor.execute(() -> dispatchRecord(record.getId()));
+        } catch (Exception e) {
+            log.warn("邮件异步发送任务提交失败（记录保持 PENDING，等待定时重试兜底）：recordId={}",
+                    record.getId(), e);
+        }
     }
 
     private void handleSendFailure(EmailRecord record, Exception e) {

@@ -102,16 +102,14 @@ public class OrphanObjectReconcileTask {
             }
 
             Instant ageCutoff = Instant.now().minus(Duration.ofHours(MIN_AGE_HOURS));
-            Set<String> knownKeys = new HashSet<>(fileObjectRefMapper.selectObjectKeysByPrefix(UPLOAD_PREFIX));
-            ListResult listResult = listOrphanCandidates(bucket, UPLOAD_PREFIX, ageCutoff, knownKeys);
+            ListResult listResult = listOrphanCandidates(bucket, UPLOAD_PREFIX, ageCutoff);
             if (listResult.orphanKeys().isEmpty()) {
-                log.debug("孤儿对象对账完成，无孤儿对象（扫描 OSS 对象数量={}，已知对象键数量={}）",
-                        listResult.scannedCount(), knownKeys.size());
+                log.debug("孤儿对象对账完成，无孤儿对象（扫描 OSS 对象数量={}）", listResult.scannedCount());
                 return;
             }
             int reconciled = enqueueOrphans(listResult.orphanKeys(), storageProvider);
-            log.info("孤儿对象对账完成，扫描 OSS 对象数量={}，孤儿对象={}，已登记待删除={}，已知对象键数量={}",
-                    listResult.scannedCount(), listResult.orphanKeys().size(), reconciled, knownKeys.size());
+            log.info("孤儿对象对账完成，扫描 OSS 对象数量={}，孤儿对象={}，已登记待删除={}",
+                    listResult.scannedCount(), listResult.orphanKeys().size(), reconciled);
         } catch (Exception e) {
             log.warn("孤儿对象对账任务异常", e);
         }
@@ -141,18 +139,24 @@ public class OrphanObjectReconcileTask {
 
     /**
      * 分页列出 OSS 上传前缀下满足条件的孤儿候选对象键。
-     * <p>
-     * 过滤条件（任一不满足即跳过，绝不删除）：已有 ref 行、缺少 Last-Modified 无法判断
-     * 存活时长、未满 24 小时（可能为在途/未确认上传）。
-     * </p>
      *
-     * @param bucket      OSS bucket
-     * @param prefix      对象键前缀
-     * @param ageCutoff   年龄下限时间点，早于该时间点才算孤儿候选
-     * @param knownKeys   已登记的对象键集合
+     * <h2>F11（P3 可扩展性）：为什么不再预载全部已知键</h2>
+     * <p>修复前先执行 {@code selectObjectKeysByPrefix("files/")} 把平台<b>全部</b> object_key
+     * 载入一个 {@code Set}，再与 OSS 列表比对。对象数随平台线性增长，百万级时每日任务
+     * 有 OOM 风险（且这条 {@code LIKE 'files/%'} 查询本身也会返回全表）。</p>
+     * <p>现在改为<b>每页批量查存在性</b>：只把当前页（≤{@code LIST_PAGE_SIZE} 条）的候选键
+     * 送进一次 {@code object_key IN (...)} 查询。内存占用被限制在单页量级，与平台总量解耦；
+     * DB 侧也只走主键/唯一索引的等值查找，不再需要 {@code LIKE} 全表扫描。</p>
+     *
+     * <p>过滤条件（任一不满足即跳过，绝不删除）：已有 ref 行、缺少 Last-Modified 无法判断
+     * 存活时长、未满 24 小时（可能为在途/未确认上传）。</p>
+     *
+     * @param bucket    OSS bucket
+     * @param prefix    对象键前缀
+     * @param ageCutoff 年龄下限时间点，早于该时间点才算孤儿候选
      * @return 孤儿候选键列表与扫描总数
      */
-    private ListResult listOrphanCandidates(String bucket, String prefix, Instant ageCutoff, Set<String> knownKeys) {
+    private ListResult listOrphanCandidates(String bucket, String prefix, Instant ageCutoff) {
         List<String> orphans = new ArrayList<>();
         int scanned = 0;
         String marker = null;
@@ -166,6 +170,8 @@ public class OrphanObjectReconcileTask {
             }
             ListObjectsResult result = ossClient.listObjects(requestBuilder.build());
             List<ObjectSummary> contents = result.contents() == null ? Collections.emptyList() : result.contents();
+            // 先筛出本页「年龄已够且带 key」的候选，再把它们的 key 一次性送去查存在性。
+            List<String> pageCandidates = new ArrayList<>();
             for (ObjectSummary summary : contents) {
                 if (summary == null) {
                     continue;
@@ -175,9 +181,6 @@ public class OrphanObjectReconcileTask {
                     continue;
                 }
                 scanned++;
-                if (knownKeys.contains(objectKey)) {
-                    continue;
-                }
                 Instant lastModified = summary.lastModified();
                 if (lastModified == null) {
                     log.debug("OSS 对象缺少 Last-Modified，无法判断存活时长，跳过 objectKey={}", objectKey);
@@ -187,7 +190,16 @@ public class OrphanObjectReconcileTask {
                     log.debug("OSS 对象未满 {} 小时，可能是未确认的在途上传，跳过 objectKey={}", MIN_AGE_HOURS, objectKey);
                     continue;
                 }
-                orphans.add(objectKey);
+                pageCandidates.add(objectKey);
+            }
+            if (!pageCandidates.isEmpty()) {
+                Set<String> knownInPage = new HashSet<>(
+                        fileObjectRefMapper.selectExistingObjectKeys(pageCandidates));
+                for (String objectKey : pageCandidates) {
+                    if (!knownInPage.contains(objectKey)) {
+                        orphans.add(objectKey);
+                    }
+                }
             }
             if (!Boolean.TRUE.equals(result.isTruncated())) {
                 break;

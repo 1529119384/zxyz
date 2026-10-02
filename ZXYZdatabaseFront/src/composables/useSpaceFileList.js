@@ -60,9 +60,16 @@ export function useSpaceFileList(options) {
    *
    * @param {Object} [refreshOptions={}] - 刷新选项。
    * @param {Array} [refreshOptions.prefetchedList] - 预取的文件列表，跳过网络请求。
+   * @param {number} [refreshOptions.prefetchedTotal] - 预取响应的分页 total（J-16）。
+   * @param {number} [refreshOptions.prefetchedPageSize] - 预取响应的分页 pageSize（J-16）。
    */
   async function refresh(refreshOptions = {}) {
-    const { prefetchedList = null, force = false } = refreshOptions
+    const {
+      prefetchedList = null,
+      prefetchedTotal,
+      prefetchedPageSize,
+      force = false,
+    } = refreshOptions
     const refreshToken = ++latestRefreshToken
     if (force) {
       forcedRefreshToken = refreshToken
@@ -73,6 +80,14 @@ export function useSpaceFileList(options) {
       if (Array.isArray(prefetchedList)) {
         // 路径解析已经预取目标目录列表，这里直接复用，避免同一路径重复请求。
         list.value = prefetchedList
+        // J-16：同步采纳预取响应的分页字段，否则分页器 total/pageSize 仍停在
+        // 上一个目录的值，中段页码显示错乱（翻页请求参数本身正确，仅显示层错）。
+        if (prefetchedTotal != null) {
+          total.value = Number(prefetchedTotal)
+        }
+        if (Number.isFinite(Number(prefetchedPageSize)) && Number(prefetchedPageSize) >= 1) {
+          pageSize.value = normalizePageSize(Number(prefetchedPageSize))
+        }
         return
       }
 

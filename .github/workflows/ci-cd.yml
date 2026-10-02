@@ -100,6 +100,34 @@ env:
   IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}  # ← GitHub Container Registry
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+# =============================================================================
+# 第三方 action 供应链钉版策略（审计 I-17，2026-10-03）
+# -----------------------------------------------------------------------------
+# 现状：本文件与 restore-drill.yml / lint-workflows.yml / ghcr-cleanup.yml 里的
+#   **全部 26 处 `uses:`** 已从「大版本 tag」改为「commit SHA + 行尾版本注释」：
+#       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+#   动机：tag 是**可变引用**（上游可 force-push 覆盖），而本仓对镜像早已执行
+#   「版本 tag + 不可变 @sha256 digest 双钉」，供应链口径此前只覆盖到镜像、没覆盖 CI 自身。
+#   action 被劫持的爆炸半径是**部署凭据**（GHCR token、DEV_SSH_KEY）。
+#
+# 【SHA 的来源与校验方法】—— 请照此复核，不要凭记忆填 SHA：
+#   git ls-remote https://github.com/<owner>/<repo>.git 'refs/tags/<tag>^{}'
+#   ⇒ 取**解引用后**（^{} 结尾，即 commit）的 SHA，**不是** tag 对象自身的 SHA。
+#     两者不同：例如 aquasecurity/trivy-action 的 v0.36.0，tag 对象是 a9c7b0f0…，
+#     而 commit 是 ed142fd0…；写 tag 对象 SHA 会 404（本仓实测）。
+#   再确认该 SHA 真的指向一个合法 action：
+#   curl -sfI https://raw.githubusercontent.com/<owner>/<repo>/<sha>/action.yml
+#   （⚠️ 少数 action 的清单文件叫 action.yaml —— trivy-action 即如此，用 .yml 会 404。）
+#
+# 【升级方式】由 .github/dependabot.yml 的 `github-actions` 生态每周自动提 PR
+#   （Dependabot **支持** SHA 钉定形式：它认得行尾注释并据此识别版本，升级时会同时
+#    改写 SHA 与注释）。⚠️ 注释必须是**三段式** ` # vX.Y.Z`（一个空格 + # + 一个空格 +
+#    v + 三段版本）；写成两段式（如 `# v7`）会让 Dependabot 静默退化成「只有 SHA 的 diff」、
+#    丢失版本上下文。人工升级请同步改 SHA 与注释两处，勿只改注释。
+#
+# 【本地复跑校验】本仓无网络依赖的静态检查（actionlint）见 .github/workflows/lint-workflows.yml。
+# =============================================================================
+
 jobs:
   # ============================================================
   # Job 1: 检测哪些服务有变更 + 确定镜像标签
@@ -131,7 +159,7 @@ jobs:
       tag: ${{ steps.tag.outputs.tag }}
       skip_quality: ${{ steps.skip-quality.outputs.skip_quality }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # ⚠️ 本步的 force.on 被 OR 进本 job 的**每一行** outputs（见上方 mapping）
       # ⇒ 「是否需要忽略变更检测、按全量处理」集中在这一个输出上，一处生效即可覆盖
@@ -184,7 +212,7 @@ jobs:
       # 若要把它搬进 CI，前提是先引入一个**有跨仓读权限**的 token/App（新增密钥面），
       # 收益只是把本机已有能力复制一份 —— 故当前结论：删除，不修。
       # ---------------------------------------------------------------
-      - uses: dorny/paths-filter@v4
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
           # 关键：显式指定 diff 基线为「本次推送之前的那个提交」。
@@ -205,6 +233,14 @@ jobs:
             backend-common:
               - 'ZXYZdatabaseBack/pom.xml'
               - 'ZXYZdatabaseBack/zxyz-common/**'
+              # ⚠️ 2026-10-03 修复（审计 I-5）：必须含 zxyz-starter/**。
+              #   它是根 pom.xml 注册的正式模块（ZXYZdatabaseBack/pom.xml）且被 9 个业务服务
+              #   依赖（各服务 pom 均 declare zxyz-starter）。此前漏了它 ⇒ starter 单独变更时
+              #   全部 filter 均为 false ⇒ any-change=false ⇒ **不构建、不部署**。
+              #   后果：starter 的 RestClient / 跨服务 client 行为变更永远不上线，直到某次
+              #   无关变更顺带重建时**混入**（新旧行为拼接，难回溯）；也与本 filter 自身
+              #   「backend-common 变更 ⇒ 全部后端重建」的既定语义不一致。
+              - 'ZXYZdatabaseBack/zxyz-starter/**'
               - 'ZXYZdatabaseBack/Dockerfile'
             project-service:
               - 'ZXYZdatabaseBack/zxyz-project-service/**'
@@ -244,8 +280,13 @@ jobs:
             # 刻意**不**并入 any-change：纯配置变更不需要重建任何镜像。
             nacos-config:
               - 'nacos-config/**'
-            # scripts-config：驱动 lint-config 作业。刻意**不**并入 any-change
-            # （纯脚本 / CI 校验类变更不需要重建任何镜像）。
+            # scripts-config：**刻意声明但当前无任何消费者**（审计 I-11 实测：全文件仅此一处
+            # 出现）。lint-config / flyway-check 都是**无条件运行**（不设 needs / if），
+            # 所以不存在「漏挂门禁」的实际漏洞；保留它只是为了让后来的读者一眼看到
+            # 「曾经有个按脚本变更开关 lint 的想法」，而不是误以为有门禁挂在这个开关上。
+            # ⚠️ 不要把它接进 any-change：脚本类变更不需要重建任何镜像，接进去反而会
+            #    造出「起了构建 job 却无镜像可建」的 IMAGE_MISSING。若真要消费它，请在
+            #    lint-config 的 if 里显式引用 detect-changes.outputs.scripts-config。
             scripts-config:
               - 'scripts/**'
               - 'sql/**'
@@ -359,7 +400,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: shellcheck (error level)
         run: |
@@ -381,6 +422,20 @@ jobs:
       - name: strict YAML validation (reject duplicate keys)
         run: python3 scripts/check-yaml-strict.py
 
+      # 审计 I-19：`.gitleaks.toml` 把 `.env.example` **整文件**豁免成了永久扫描盲区
+      # （该文件头部自己也写着「请定期复核」，但复核没有触发器 ⇒ 等于没有）。
+      # 取舍：**不取消豁免** —— 取消会让模板里本就必须存在的占位符/URL 变成误报，
+      # 反而逼人往 .gitleaks.toml 再加豁免（盲区不减反增）。
+      # 改为把「该文件里只允许出现哪几类取值」变成**硬断言**（实现在脚本里，
+      # CI 与本地跑的是同一份逻辑，不存在两套口径漂移）：
+      #   合法取值 = 空 / CHANGE_ME_* / 布尔 / 数字 / 纯 URL / ${...} 引用 /
+      #              本就公开的标识（桶名、区域、路径）/ 注释。
+      #   任何「像真实凭证」的取值都会让本步失败 ⇒ 盲区不再依赖人的记忆力。
+      #   完整判据（含高熵单串拦截，与「敏感键名额外只允许占位值」）见脚本 docstring：
+      #   scripts/check-env-example-values.py
+      - name: .env.example 取值形态断言（gitleaks 整文件豁免的补偿门禁）
+        run: python3 scripts/check-env-example-values.py .env.example
+
   # ============================================================
   # Job 1.5: Flyway 迁移门禁
   # 守卫两类会导致生产 Flyway 失败 / 非确定性的提交：
@@ -395,7 +450,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0  # full history so we can diff against the base branch
 
@@ -528,7 +583,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: 校验 nacos-config/ 与代码非 dev 档等价
         run: |
@@ -590,7 +645,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Import nacos-config into Nacos
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         env:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/www/zxyz' }}
         with:
@@ -657,12 +712,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0   # 需完整历史才能正确计算本次 push 的提交区间
 
       - name: Gitleaks
-        uses: gitleaks/gitleaks-action@v3
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # 仓库根是 `.gitleaks.toml`（带点），而 action 的自动探测只认 `gitleaks.toml`，
@@ -687,10 +742,10 @@ jobs:
       needs.detect-changes.outputs.skip_quality != 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup JDK 17
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: 17
@@ -730,7 +785,7 @@ jobs:
 
       - name: Upload backend coverage report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: backend-jacoco-report
           path: ZXYZdatabaseBack/**/target/site/jacoco/
@@ -750,12 +805,16 @@ jobs:
       run:
         working-directory: ZXYZdatabaseFront
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 20
+          # 审计 I-16：原为 20。Node 20 已于 2026-04 结束维护（EOL），且与
+          #   ZXYZdatabaseFront/Dockerfile 的 `FROM node:22-alpine`、docs/claude-infra.md:50
+          #   的「Node 22」各自为政 —— lint/测试结果可能与真实构建环境不一致。
+          #   统一为 22（= 构建镜像与文档口径）。升级此值时请同步这三处。
+          node-version: 22
           cache: npm
           cache-dependency-path: ZXYZdatabaseFront/package-lock.json
 
@@ -828,12 +887,13 @@ jobs:
       run:
         working-directory: ZXYZdatabaseFront
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 20
+          # 与 quality-check-frontend 同步（审计 I-16）：Node 20 已 EOL，统一升到 22。
+          node-version: 22
           cache: npm
           cache-dependency-path: ZXYZdatabaseFront/package-lock.json
 
@@ -852,7 +912,7 @@ jobs:
       # 失败时也要把报告捞出来，否则只能看日志里的截断输出
       - name: Upload Playwright report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-report
           path: |
@@ -977,15 +1037,15 @@ jobs:
 
       - name: Checkout code
         if: steps.should-build.outputs.build == 'true'
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Docker Buildx
         if: steps.should-build.outputs.build == 'true'
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Login to GHCR
         if: steps.should-build.outputs.build == 'true'
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -1003,7 +1063,7 @@ jobs:
 
       - name: Build and push
         if: steps.should-build.outputs.build == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
@@ -1102,7 +1162,7 @@ jobs:
 
       - name: Login to GHCR
         if: steps.was-built.outputs.built == 'true'
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -1112,7 +1172,7 @@ jobs:
         if: steps.was-built.outputs.built == 'true'
         # tag 必须带 v 前缀（aquasecurity/trivy-action 的 release tag 均为 vX.Y.Z，
         # 无前缀的 0.29.0 从未存在，会导致 unable to resolve action）
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.IMAGE_PREFIX }}/zxyz-${{ matrix.name }}:${{ needs.detect-changes.outputs.tag }}
           severity: HIGH,CRITICAL
@@ -1135,7 +1195,7 @@ jobs:
 
       - name: Upload Trivy report (SARIF output with HIGH/CRITICAL summary)
         if: always() && steps.was-built.outputs.built == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: trivy-${{ matrix.name }}
           path: trivy-${{ matrix.name }}.txt
@@ -1181,7 +1241,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         env:
           FAST_DEPLOY: ${{ github.event.inputs.fast_deploy || 'false' }}
           BACKEND_COMMON: ${{ needs.detect-changes.outputs.backend-common }}
@@ -1264,7 +1324,7 @@ jobs:
       - name: Prune old images on server
         # 仅当部署成功后才清理：部署失败时可能需要靠旧镜像回滚，不能删
         if: success()
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ steps.target.outputs.host }}
           username: ${{ secrets.DEPLOY_USERNAME }}

@@ -14,9 +14,12 @@ import uno.acloud.email.infrastructure.EmailRecordMapper;
 import uno.acloud.email.infrastructure.EmailTemplateMapper;
 import uno.acloud.email.infrastructure.SimpleJavaMailSender;
 import uno.acloud.exception.BusinessException;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.concurrent.RejectedExecutionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -147,5 +150,62 @@ class EmailDispatchServiceTest {
 
         verify(emailRecordMapper).markRetry(eq(12L), eq(EmailSendingAvailabilityService.SEND_DISABLED_MESSAGE), any(LocalDateTime.class));
         verify(emailRecordMapper, never()).markSent(12L);
+    }
+
+    // ==================== B-14：afterCommit 提交路径被拒绝执行时不得冒泡 ====================
+
+    /**
+     * B-14（2026-10-03）：记录已落库、事务已提交后，若线程池拒绝任务
+     * （B-14 同批把 CallerRunsPolicy 改为 Abort——请求线程不该亲自发 SMTP），
+     * 该拒绝异常绝不能从 afterCommit 回调冒泡进 Spring 事务同步链。
+     * 记录保持 PENDING，由 EmailRetryTask 的定时 dispatchDueRecords 兜底重试。
+     */
+    @Test
+    void sendShouldNotPropagateRejectedExecutionFromAfterCommit() {
+        EmailTemplate template = new EmailTemplate();
+        template.setTemplateCode("SYSTEM_MESSAGE");
+        template.setSubjectTemplate("{{title}}");
+        template.setContentHtml("<p>{{content}}</p>");
+        template.setStatus(0);
+        when(emailTemplateMapper.getActiveByCode("SYSTEM_MESSAGE")).thenReturn(template);
+        when(emailRecordMapper.insert(any(EmailRecord.class))).thenAnswer(invocation -> {
+            EmailRecord record = invocation.getArgument(0);
+            record.setId(21L);
+            return 1;
+        });
+        EmailProperties properties = new EmailProperties();
+        properties.setAsync(true);
+        // 模拟线程池队列已满 + Abort 策略：提交即抛 RejectedExecutionException
+        java.util.concurrent.Executor rejectingExecutor = task -> {
+            throw new RejectedExecutionException("email-send pool exhausted");
+        };
+        EmailDispatchService service = new EmailDispatchService(
+                emailRecordMapper,
+                emailTemplateMapper,
+                new EmailTemplateRenderer(),
+                simpleJavaMailSender,
+                properties,
+                emailSendingAvailabilityService,
+                rejectingExecutor,
+                MAX_RETRY_COUNT
+        );
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            // 无事务上下文时走同步执行路径（triggerAsyncIfDue 的 else 分支），同样不得冒泡
+            Long recordId = service.sendByTemplate(
+                    "user@example.com", "SYSTEM_MESSAGE",
+                    Map.of("title", "标题", "content", "内容"),
+                    "SYSTEM", "1", null);
+
+            assertEquals(21L, recordId);
+            assertEquals(1, TransactionSynchronizationManager.getSynchronizations().size());
+            TransactionSynchronization sync =
+                    TransactionSynchronizationManager.getSynchronizations().get(0);
+            // 关键断言：afterCommit 内部吞掉拒绝异常，不向事务同步链传播
+            org.junit.jupiter.api.Assertions.assertDoesNotThrow(sync::afterCommit);
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 }

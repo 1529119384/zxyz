@@ -145,4 +145,53 @@ class InternalFileControllerTest {
         assertTrue(ex.getMessage().contains("不支持文件夹下载"));
         verifyNoInteractions(registry);
     }
+
+    // ==================== F3 复核：内部窄端点的删除状态口径 ====================
+
+    /**
+     * F3 复核结论（<b>本组端点「实测已不成立」</b>）：内部三个窄端点
+     * {@code /stream-info}、{@code /stream}、{@code /share-download-url} 走的
+     * {@code FileQueryPort#getFileNodeById} <b>并不</b>包含已删除行。
+     *
+     * <h2>为什么分报告会看错，以及为什么必须钉住</h2>
+     * <p>存在一对<b>同名但语义相反</b>的方法，这是本仓最容易看错的命名陷阱：</p>
+     * <ul>
+     *   <li>{@code FileMapper#getFileNodeById} —— XML 里 {@code WHERE id = #{fileId}}，
+     *       <b>不带</b> {@code deleted} 谓词（含 deleted=1/2）；</li>
+     *   <li>{@code FileQueryPort#getFileNodeById} —— 名字一模一样，实现却是
+     *       {@code fileMapper.getActiveFileNodeById(fileId)}，即 {@code WHERE id = ? AND deleted = 0}。</li>
+     * </ul>
+     * <p>分报告按名字推断成前者，故判「内部端点可下载已彻底删除文件」。实际按后者。</p>
+     * <p>但正因为这个命名歧义，将来任何人「顺手把实现改成 mapper 的同名方法」都会
+     * <b>静默</b>引入 F3 描述的那个真实缺陷 ⇒ 本用例把「port 层必须只返回活跃节点」的行为钉死：
+     * 删除状态由 <b>port 实现</b>保证，控制器拿到的 {@code null} 就是「不存在或已删除」，
+     * 统一走 {@code NOT_FOUND}（不区分两者，避免向调用方泄露「该 id 存在但已删除」）。</p>
+     */
+    @Test
+    void internalNarrowEndpointsTreatRecycledAndHardDeletedNodesAsNotFound() {
+        InternalFileController controller = new InternalFileController(fileQueryPort, registry, fileAccessGuard);
+
+        // port 层已按 deleted = 0 过滤 ⇒ 回收站(1) / 彻底删除(2) 的节点到这里都是 null
+        when(fileQueryPort.getFileNodeById(1L)).thenReturn(null);
+
+        BusinessException streamInfo = assertThrows(BusinessException.class,
+                () -> controller.getFileStreamInfo(1L));
+        assertEquals(ErrorCode.NOT_FOUND, streamInfo.getErrorCode(),
+                "/stream-info 对回收站/已彻底删除节点必须报 NOT_FOUND");
+
+        BusinessException stream = assertThrows(BusinessException.class,
+                () -> controller.streamFile(1L, new MockHttpServletResponse()));
+        assertEquals(ErrorCode.NOT_FOUND, stream.getErrorCode(),
+                "/stream 对回收站/已彻底删除节点必须报 NOT_FOUND");
+
+        BusinessException shareUrl = assertThrows(BusinessException.class,
+                () -> controller.getShareDownloadUrl(1L));
+        assertEquals(ErrorCode.NOT_FOUND, shareUrl.getErrorCode(),
+                "/share-download-url 对回收站/已彻底删除节点必须报 NOT_FOUND");
+
+        // 三个端点都必须经 port 的活跃查询；一旦有人把它换成不过滤 deleted 的实现，
+        // 本断言不会失败但行为会变 —— 故再用「绝不触碰 registry」兜住「没走到发链接那步」。
+        verify(fileQueryPort, times(3)).getFileNodeById(1L);
+        verifyNoInteractions(registry);
+    }
 }

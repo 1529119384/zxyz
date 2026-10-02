@@ -40,16 +40,18 @@ public class InternalSystemNotificationService {
         String content = requireText(request.getContent(), "content 不能为空");
         String normalizedBusinessType = optionalText(request.getBusinessType());
         String businessType = normalizedBusinessType == null ? type : normalizedBusinessType;
-        for (Long userId : userIds) {
-            systemNotificationService.createNotification(
-                    userId,
-                    type,
-                    title,
-                    content,
-                    businessType,
-                    request.getBusinessId(),
-                    request.getTeamId()
-            );
-        }
+        // 走批量插入版本（B-22）：原先循环逐用户调 createNotification，
+        // 每用户 2 条 SQL（insert + appendNotification 的会话写入）；
+        // team-service 广播按 500/批调用本端点 ⇒ 1000 次 SQL/批。
+        // 批量版本把通知行收敛为单条 batchInsert（appendNotification 仍需逐条，语义如此）。
+        systemNotificationService.batchCreateNotifications(
+                userIds,
+                type,
+                title,
+                content,
+                businessType,
+                request.getBusinessId(),
+                request.getTeamId()
+        );
     }
 }

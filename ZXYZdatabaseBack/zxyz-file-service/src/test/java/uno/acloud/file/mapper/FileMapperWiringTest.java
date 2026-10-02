@@ -434,6 +434,44 @@ class FileMapperWiringTest {
     }
 
     /**
+     * F1（P1）定点回归网：{@code countActiveChildren} 的删除口径必须是 {@code deleted IN (0, 1)}，
+     * <b>不能</b>是 {@code deleted = 0}。
+     *
+     * <h2>为什么值得单独钉一条 SQL 文本</h2>
+     * <p>这条 SQL 只被 {@code FileLifecycleService#cleanupOrphanFolders} 一处消费，而它的语义是
+     * 「父目录是否已经没有占用它的子节点了」。一旦把回收站（{@code deleted = 1}）的子节点算作「不存在」，
+     * 下面这条真实攻击/误操作路径就会静默成立：</p>
+     * <ol>
+     *   <li>父文件夹（活跃）下唯一的一个文件进回收站 ⇒ {@code deleted = 1}；</li>
+     *   <li>用户对该文件点「彻底删除」⇒ {@code reallyDeleteByIds} 把它置 {@code deleted = 2}；</li>
+     *   <li>同一事务里 {@code cleanupOrphanFolders} 数子节点 ⇒ 旧写法得 0 ⇒ 把<b>仍然活跃</b>的父文件夹
+     *       直接置 {@code deleted = 2}，<b>绕过回收站 30 天 TTL</b>，用户无感知、不可恢复。</li>
+     * </ol>
+     * <p>随后把回收站里的文件还原，它会挂到这个已被物理删除的父节点下成为孤儿。</p>
+     *
+     * <h2>为什么断言 SQL 文本而不是行为</h2>
+     * <p>行为断言（{@code FileMapperIntegrationTest}）需要真实 MySQL，而本仓 CI 在无 Docker 时会跳过
+     * 整个集成测试类 —— 也就是说「口径被改回去」这件事在无 Docker 环境下<b>测不出来</b>。
+     * 本用例直接读 BoundSql，把口径钉在装配期，任何一次无 Docker 的 {@code mvn test} 都能拦住回退。</p>
+     */
+    @Test
+    void countActiveChildrenTreatsRecycleBinChildrenAsOccupied() {
+        Configuration configuration = assemble();
+
+        MappedStatement statement = require(configuration, "countActiveChildren");
+        String sql = statement.getBoundSql(Map.of("parentId", 1L)).getSql()
+                .replaceAll("\\s+", " ")
+                .trim();
+
+        assertTrue(sql.contains("deleted IN (0, 1)"),
+                "countActiveChildren 的口径必须是 deleted IN (0, 1)（回收站子节点也算占用），实际 SQL：" + sql
+                        + "\n⇒ 改回 `deleted = 0` 会让「只剩回收站子节点」的活跃父文件夹被 cleanupOrphanFolders "
+                        + "直接置 deleted=2，绕过回收站 30 天 TTL（F1，P1 数据丢失）");
+        assertFalse(sql.contains("deleted = 0"),
+                "countActiveChildren 不得退回 `deleted = 0`（会把回收站子节点误判为不存在）：" + sql);
+    }
+
+    /**
      * 钉住「下划线→驼峰」的<b>真实</b>生效值。
      *
      * <p>2026-09-20 实测：本仓依赖树里只有 {@code com.baomidou:mybatis-plus-spring-boot-autoconfigure}，

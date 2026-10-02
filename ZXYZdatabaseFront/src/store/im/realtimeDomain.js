@@ -1,7 +1,5 @@
 import { computed } from 'vue'
 
-import { fetchMyPresence } from '@/api/im'
-import { NOTIFICATION_CONVERSATION_TYPES } from '@/constants/conversationTypes'
 import { FAILED, RECALLED, SENDING, STORED } from '@/constants/messageStatus'
 import { useCurrentUserStore } from '@/store/currentUser'
 import { createClientId } from '@/utils/id'
@@ -17,7 +15,6 @@ export function createRealtimeDomain(state, deps) {
     lastWsError,
     myPresence,
     conversations,
-    unreadCount,
     activeConversationId,
   } = state
   const {
@@ -113,23 +110,21 @@ export function createRealtimeDomain(state, deps) {
       return
     }
     activeOutboundTask = task
-  }
-
-  function enqueueOutboundTask(task) {
-    outboundTaskByRequestId.set(task.requestId, task)
-    outboundQueue.push(task)
+    // 超时起点 = 实际发送时刻（J-3）：此前 setTimeout 在 enqueueOutboundTask 入队时就挂上，
+    // 排队任务要等前面所有任务各自 30s 超时/ACK 依次释放，等真正发出去时剩余等待窗口已被
+    // 排队时间吃掉 —— 半开连接下连发 N 条，第 2 条起实际只等 30s-(N-2)×30s 甚至刚发出就判
+    // 超时。现在每条任务从「真正 send」起算完整的 30s ACK 等待。
     task._timeoutId = setTimeout(() => {
       if (outboundTaskByRequestId.has(task.requestId)) {
         resolveOutboundTask(task.requestId, false, new Error('消息发送超时'))
       }
     }, OUTBOUND_TASK_TIMEOUT_MS)
-    drainOutboundQueue()
   }
 
-  async function loadMyPresence() {
-    const response = await fetchMyPresence()
-    myPresence.value = response?.data || null
-    return myPresence.value
+  function enqueueOutboundTask(task) {
+    outboundTaskByRequestId.set(task.requestId, task)
+    outboundQueue.push(task)
+    drainOutboundQueue()
   }
 
   function handleAck(envelope) {
@@ -172,9 +167,10 @@ export function createRealtimeDomain(state, deps) {
     if (shouldAutoRead) {
       scheduleReadSync(conversationId)
     }
-    if (!selfMessage && NOTIFICATION_CONVERSATION_TYPES.includes(receivedConversation?.type)) {
-      unreadCount.value = Math.max(0, Number(unreadCount.value || 0) + 1)
-    }
+    // J-10：不再对全局 unreadCount 做实时累加 —— 它是服务端系统通知未读数的真源
+    // （notificationDomain.loadUnreadCount 整体覆盖写入），此前同一条通知会在这里
+    // 再 +1 一次，两个口径互相打架。侧栏徽标实际展示的
+    // totalConversationUnreadCount 由会话未读求和得出，上面 updateConversationUnread 已覆盖。
   }
 
   function handleReadUpdated(envelope) {
@@ -186,10 +182,6 @@ export function createRealtimeDomain(state, deps) {
     }
     if (readerUserId === currentUserId) {
       updateConversationUnread(conversationId, 0)
-      const conversation = conversations.value.find((item) => item.id === conversationId)
-      if (NOTIFICATION_CONVERSATION_TYPES.includes(conversation?.type)) {
-        unreadCount.value = 0
-      }
       return
     }
     if (isConversationEffectivelyVisible(conversationId)) {
@@ -437,7 +429,6 @@ export function createRealtimeDomain(state, deps) {
 
   return {
     wsConnected,
-    loadMyPresence,
     ensureWebSocketConnected,
     disconnectWebSocket,
     reconnectWebSocket,

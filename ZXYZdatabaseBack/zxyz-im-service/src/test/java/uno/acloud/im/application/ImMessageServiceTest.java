@@ -11,6 +11,7 @@ import org.mockito.quality.Strictness;
 import uno.acloud.common.ErrorCode;
 import static uno.acloud.common.TeamErrorCode.*;
 import uno.acloud.exception.BusinessException;
+import uno.acloud.im.config.ImProperties;
 import uno.acloud.im.infrastructure.persistence.entity.ImConversation;
 import uno.acloud.im.infrastructure.persistence.entity.ImMessage;
 import uno.acloud.im.infrastructure.mapper.ConversationMapper;
@@ -55,10 +56,13 @@ class ImMessageServiceTest {
     @SuppressWarnings("unchecked")
     void setUp() {
         objectMapper = new ObjectMapper();
+        ImProperties imProperties = new ImProperties();
+        imProperties.getMessage().setMaxTextLength(5000);
+        imProperties.getMessage().setRecallWindowSeconds(120);
         service = new ImMessageService(
                 conversationService, conversationMapper, imMessageMapper,
                 objectMapper, serialExecutor, mutePolicyService,
-                teamMapper, notificationService, domainEventPublisher, 5000);
+                teamMapper, notificationService, domainEventPublisher, imProperties);
 
         // By default, make the serial executor just run the supplier directly
         when(serialExecutor.executeMessageWrite(anyLong(), any(Supplier.class)))

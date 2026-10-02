@@ -9,6 +9,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 import uno.acloud.common.RabbitMqConstants;
 import uno.acloud.common.event.UserProfileUpdatedEvent;
+import uno.acloud.common.mq.MqIdempotencyKeys;
 import uno.acloud.share.config.RabbitMqConfig;
 import uno.acloud.share.service.ShareUserProfileSyncService;
 
@@ -75,8 +76,8 @@ public class UserProfileUpdatedEventConsumer {
                 userProfileSyncService.syncUsername(userId, event.username());
                 log.info("MQ: 用户分享用户名同步完成: userId={}", userId);
             } catch (Exception e) {
-                // 处理失败释放幂等 key，允许后续重试
-                redisTemplate.delete(idempotencyKey);
+                // 处理失败释放幂等 key，允许后续重试（公共实现，Redis 异常不会盖掉原始业务异常）
+                MqIdempotencyKeys.release(redisTemplate, idempotencyKey, log);
                 log.error("处理用户资料更新事件 RabbitMQ 消息失败（将重试）, userId={}, message={}", userId, message, e);
                 throw new RuntimeException("处理用户资料更新事件消息失败", e);
             }

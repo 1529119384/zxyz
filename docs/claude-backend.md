@@ -57,6 +57,31 @@ zxyz-common 中的事件定义（`uno.acloud.common.event`）：
 - `UserProfileUpdatedEvent`
 - `FileResourceChangedEvent`
 
+## 业务语义决策记录
+
+### `listVisibleProjects`：团队内项目全员可见（2026-10-03 用户拍板保留）
+
+`ProjectMapper.listVisibleProjects`（`ZXYZdatabaseBack/zxyz-project-service/src/main/java/uno/acloud/project/mapper/ProjectMapper.java:18-26`）
+的 SQL 仅按 `p.team_id = #{teamId} AND p.status = 0` 过滤，**`userId` 参数不参与可见性过滤**
+⇒ 团队内**所有**活跃项目对团队**全体成员**可见（不区是否为该项目成员）。
+
+- **这是用户 2026-10-03 明确拍板保留的业务语义，不是 bug**（决策记录：`ISSUE/39-UNFINISHED-2026-10-02.md` B-2，原审查编号 C-21）。勿在后续审查或重构中当作「越权/漏过滤」「修复」。
+- ⚠️ **若将来要收紧为「仅项目成员可见」**：必须同步核对 `ProjectMapper.listMemberProjectIds`（同文件 :67-75）——
+  其 Javadoc 声明「与 `listVisibleProjects` 结果集语义等价」（用于列表页 N+1 批量装配的 JOIN 判据）。
+  收紧可见性后该等价性即失效，两处 SQL 必须同批修改，否则列表页的「已加入」标记与可见列表互相矛盾。
+
+### 邀请链接宿主：取 `window.location.origin`（2026-10-03 用户拍板保留）
+
+前端生成团队邀请链接时宿主取自浏览器 `window.location.origin`
+（`ZXYZdatabaseFront/src/composables/team/useTeamPermissionState.js:89`）。
+
+- **这是用户 2026-10-03 明确拍板保留的实现，不是 bug**（决策记录：`ISSUE/39-UNFINISHED-2026-10-02.md` B-3，原审查编号 F4）。
+- **成立前提（部署形态约束）**：本系统按「**同源反向代理**」形态部署——用户经 `frontend-nginx`
+  同一域名/端口访问前端与 API（生产为 nginx 唯一对外入口），浏览器 Origin 即站点对外地址。
+- ⚠️ **若将来支持自定义域名/多域名、或前后端分离跨域部署**，`window.location.origin` 不再恒等于
+  对外 canonical 地址，届时需改为由配置项（如 `.env`/Nacos 注入的 base-url）提供链接宿主——
+  而非继续依赖浏览器 Origin。
+
 ## 后端约定与坑位
 
 ### 配置绑定

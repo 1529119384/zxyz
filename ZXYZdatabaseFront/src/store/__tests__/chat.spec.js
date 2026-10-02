@@ -24,7 +24,6 @@ vi.mock('@/api/im', () => ({
   updateConversationRead: vi.fn(),
   fetchSystemNotifications: vi.fn(),
   fetchSystemNotificationUnreadCount: vi.fn(),
-  fetchMyPresence: vi.fn(),
   fetchUserPresence: vi.fn(),
   markSystemNotificationRead: vi.fn(),
 }))
@@ -336,7 +335,6 @@ describe('useChatStore 对外暴露的域方法透传', () => {
       'createDirectConversationAndOpen',
       'resolveFileCardMessage',
       'recallConversationMessage',
-      'loadMyPresence',
       'cleanup',
     ]) {
       expect(typeof store[name], `${name} 应为函数`).toBe('function')

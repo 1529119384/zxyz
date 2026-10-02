@@ -169,6 +169,34 @@ echo "--- 认证 ---"
 check_not_placeholder "INTERNAL_SERVICE_TOKEN"
 check_not_placeholder "SHARE_COOKIE_SECRET"
 
+# 服务级白名单矩阵密钥（审计 I-12 / 2026-10-03）：
+# docker-compose.yml 对这 10 个键**全部**用 `:?` 硬失败
+# （如 `${SVC_PROJECT_KEY:?启用矩阵必须设置 SVC_PROJECT_KEY}`），
+# 但本脚本此前**完全不校验**它们（grep 0 命中）⇒ 手工维护 .env 的环境要等到
+# `docker compose up` 才以「插值报错」的形式炸出，报错晚一拍、离根因远。
+# 本脚本的定位正是「把问题拦在部署之前」，故在此补齐同一套 fail-closed 校验。
+# 注意：compose 的 :? 只在「键缺失或为空」时触发，**占位符值不会**触发 ——
+# 所以这里必须用 check_not_placeholder（而非 check_required），才能拦住
+# 「.env 里还是 CHANGE_ME_SVC_PROJECT_KEY」这种 compose 拦不住的情形。
+echo ""
+echo "--- 服务级白名单矩阵密钥（SVC_*_KEY，compose 侧 :? 硬失败） ---"
+for _svc in ADMIN AUDIT EMAIL FILE IM PROJECT SHARE TEAM USER GATEWAY; do
+  check_not_placeholder "SVC_${_svc}_KEY"
+done
+
+# CONFIG 库仍以 root 跑 Flyway 的可见性提醒（审计 I-9 / 2026-10-03）：
+# 不阻断（回退 root 是文档明列的可选项，阻断会让既有环境无法部署），
+# 但必须**每次都看得见** —— 否则 compose:177 那句「待运维窗口」会永久停在待办状态。
+if [ "${CONFIG_DB_USERNAME:-}" = "root" ]; then
+  echo ""
+  echo "  WARN: CONFIG_DB_USERNAME=root —— admin-service 与 flyway 容器正以 MySQL root 跑"
+  echo "        zxyz_config 的 Flyway DDL（U1 最小权限改造在 config 库未闭合）。"
+  echo "        切换：把 .env 改成 CONFIG_DB_USERNAME=zxyz_config（账户已由"
+  echo "        grant-least-privilege.sh 建好）后执行 docker compose up -d admin-service flyway。"
+  echo "        见 docker-compose.yml 的 flyway 服务注释与 docs/claude-infra.md 维护窗口章节。"
+  WARNINGS=$((WARNINGS + 1))
+fi
+
 # U3：Cookie Secure 与 TLS 的一致性校验。
 # 当前部署为 IP 直连 HTTP，故默认 false（置 true 会因浏览器不回传 Secure Cookie 直接导致登录失效）。
 # 一旦启用容器内 nginx TLS（TLS_ENABLED=true + 证书挂载），必须同步置 true，否则安全收益归零。

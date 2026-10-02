@@ -68,13 +68,24 @@ NACOS_PASS=${NACOS_PASS:-$(load_env NACOS_PASSWORD)}
 ID_KEY=${NACOS_AUTH_IDENTITY_KEY:-$(load_env NACOS_AUTH_IDENTITY_KEY)}
 ID_VAL=${NACOS_AUTH_IDENTITY_VALUE:-$(load_env NACOS_AUTH_IDENTITY_VALUE)}
 
+# --- 凭据不进 argv（审计 I-6 / 2026-10-03）---
+# 原写法把口令拼进 curl 的 argv（`--data-urlencode "password=..."`）⇒ 执行窗口内同机
+# 任意进程都能从 /proc/<pid>/cmdline 读到。与仓库已为 MySQL/Redis 修掉的同类问题
+# （审计 2.3.3）口径拉齐：口令落 umask 077 临时文件，curl 用 `password@<file>` 读取，
+# argv 里只剩参数名。
+umask 077
+CRED_TMP="$(mktemp -d)"
+cleanup_cred() { rm -rf "$CRED_TMP"; }
+trap cleanup_cred EXIT INT TERM
+
 # --- 鉴权：先 accessToken，失败再 server-identity（与 import.sh 完全同口径）---
 TOKEN=""
 if [ -n "$NACOS_USER" ] && [ -n "$NACOS_PASS" ]; then
   echo "尝试 accessToken 登录: http://${NACOS_CONSOLE}/v3/auth/user/login"
+  printf '%s' "$NACOS_PASS" > "$CRED_TMP/pass"
   login_resp=$(curl -s --retry 2 --retry-delay 1 -X POST "http://${NACOS_CONSOLE}/v3/auth/user/login" \
     --data-urlencode "username=${NACOS_USER}" \
-    --data-urlencode "password=${NACOS_PASS}" || true)
+    --data-urlencode "password@$CRED_TMP/pass" || true)
   TOKEN=$(printf '%s' "$login_resp" | "$PY" -c "import sys,json;print(json.load(sys.stdin).get('accessToken',''))" 2>/dev/null || true)
 fi
 

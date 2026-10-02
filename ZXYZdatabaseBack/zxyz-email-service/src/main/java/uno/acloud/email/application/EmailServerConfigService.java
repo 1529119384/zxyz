@@ -208,11 +208,22 @@ public class EmailServerConfigService {
         return port;
     }
 
+    /** B-18（2026-10-03）：传输策略合法值白名单 —— 与 SimpleJavaMailSender.resolveTransportStrategy 的映射一一对应。 */
+    private static final java.util.Set<String> ALLOWED_TRANSPORT_STRATEGIES =
+            java.util.Set.of("SMTP", "SMTPS", "SMTP_SSL", "SMTP_TLS");
+
     private String normalizeTransportStrategy(String value) {
         String strategy = optionalText(value, MAX_TRANSPORT_STRATEGY_LENGTH, "传输策略不能超过 32 个字符");
         if (strategy == null) {
             return DEFAULT_TRANSPORT_STRATEGY;
         }
-        return strategy.toUpperCase(Locale.ROOT);
+        String normalized = strategy.toUpperCase(Locale.ROOT);
+        // B-18：入库前校验白名单。原实现只做 toUpperCase 就落库，拼错值（如 STARTTLS）
+        // 会在发送时被 SimpleJavaMailSender 静默降级为 SMTP_TLS，以「连不上」的形式才暴露。
+        if (!ALLOWED_TRANSPORT_STRATEGIES.contains(normalized)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                    "传输策略非法：" + strategy + "（合法取值：SMTP / SMTPS / SMTP_SSL / SMTP_TLS）");
+        }
+        return normalized;
     }
 }

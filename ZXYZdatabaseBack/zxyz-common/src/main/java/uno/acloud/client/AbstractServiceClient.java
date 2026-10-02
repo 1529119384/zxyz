@@ -92,7 +92,12 @@ public abstract class AbstractServiceClient {
      * 避免非幂等写入因读超时/连接重置时服务端可能已执行而重复产生副作用。</p>
      */
     private <T> T executeWithResilience(Supplier<T> action, boolean allowRetry) {
-        String name = "serviceClient-" + serviceName();
+        // B-9：key 必须带上子类类型名。此前只用 serviceName()，
+        // 而 serviceName() 是**人类可读的服务名**（"用户服务"、"团队服务"），
+        // 同进程内两个指向同一目标服务的客户端会命中同一个 key ⇒
+        // 共享 Retry/CircuitBreaker 实例，熔断统计互相污染（一个客户端把另一个拖进熔断）。
+        // 加上具体类型名后每个客户端类各自独立，不再依赖「同进程内 serviceName 唯一」这条隐式契约。
+        String name = getClass().getSimpleName() + "-" + serviceName();
         Retry retry = null;
         if (allowRetry) {
             retry = RETRY_CACHE.computeIfAbsent(name, key -> Retry.of(key, RetryConfig.custom()

@@ -70,8 +70,16 @@
 
     <!-- ===== 标量返回：计数 / 取单列 ===== -->
 
+    <!--
+      F1（P1）：「父目录是否已空」的口径必须是 deleted IN (0, 1) —— 回收站里的子节点**仍然占用**父目录。
+      ⚠️ 曾经是 `deleted = 0`，后果是：父文件夹自身活跃，其唯一子文件先进回收站、再被「彻底删除」，
+      此时 cleanupOrphanFolders 数到 0 个子节点，就把**活跃的**父文件夹直接置 deleted=2
+      —— 绕过回收站 30 天 TTL，用户无感知丢失文件夹且无法恢复；之后还原回收站文件还会挂到已死父节点下成为孤儿。
+      调用方仅 FileLifecycleService#cleanupOrphanFolders（方法名保留 countActiveChildren 以免大范围改名，
+      语义按本注释为准）。回归网：FileMapperWiringTest#countActiveChildrenTreatsRecycleBinChildrenAsOccupied。
+    -->
     <select id="countActiveChildren" resultType="java.lang.Integer">
-        SELECT COUNT(*) FROM file_node WHERE parent_id = #{parentId} AND deleted = 0
+        SELECT COUNT(*) FROM file_node WHERE parent_id = #{parentId} AND deleted IN (0, 1)
     </select>
 
     <select id="getParentId" resultType="java.lang.Long">
@@ -88,6 +96,12 @@
         </choose>
     </select>
 
+    <!--
+      F16（P3）：两个 LIKE 语句都显式声明 ESCAPE '\'。
+      关键词里的 % / _ / \ 已由 FileQueryService#normalizeKeyword 转义为字面量，
+      这里显式声明转义字符使意图自明，且不依赖 MySQL「反斜杠默认即转义字符」这一隐式默认。
+      ⚠️ 两条语句必须保持同形（孪生对：不同步会出现「总条数与翻页结果对不上」）。
+    -->
     <select id="countByKeyword" resultType="java.lang.Integer">
         SELECT COUNT(*) FROM file_node
         WHERE deleted = 0
@@ -95,7 +109,7 @@
             <when test="teamId == null">AND team_id IS NULL AND upload_user_id = #{userId}</when>
             <otherwise>AND team_id = #{teamId}</otherwise>
         </choose>
-        AND original_name LIKE CONCAT(#{keyword}, '%')
+        AND original_name LIKE CONCAT(#{keyword}, '%') ESCAPE '\\'
     </select>
 
     <select id="getActiveNamesByParentIdAndFileType" resultType="java.lang.String">
@@ -357,7 +371,7 @@
             <when test="teamId == null">AND team_id IS NULL AND upload_user_id = #{userId}</when>
             <otherwise>AND team_id = #{teamId}</otherwise>
         </choose>
-        AND original_name LIKE CONCAT(#{keyword}, '%')
+        AND original_name LIKE CONCAT(#{keyword}, '%') ESCAPE '\\'
         ORDER BY modify_time DESC
         LIMIT #{pageSize} OFFSET #{offset}
     </select>

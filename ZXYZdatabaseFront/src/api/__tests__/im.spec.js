@@ -19,7 +19,6 @@ import {
   recallMessage,
   fetchSystemNotifications,
   fetchSystemNotificationUnreadCount,
-  fetchMyPresence,
   fetchUserPresence,
   markSystemNotificationRead,
 } from '@/api/im'
@@ -71,12 +70,6 @@ describe('im API', () => {
     expect(imRequest.get).toHaveBeenCalledWith('/api/im/system-notifications', {
       params: { status: 0 },
     })
-  })
-
-  it('应调用 GET 获取在线状态', async () => {
-    vi.mocked(imRequest.get).mockResolvedValue({ data: {} })
-    await fetchMyPresence()
-    expect(imRequest.get).toHaveBeenCalledWith('/api/im/presence/me')
   })
 
   it('应调用 GET 检查 IM 服务健康状态', async () => {

@@ -2,36 +2,38 @@
 
 ## 项目简介
 
-指绣云章（ZXYZ）是一个云端文件管理平台，支持团队协作与即时通讯。后端采用 Java Spring Boot 多模块微服务架构，包含 9 个子模块，通过 API Gateway 统一路由，使用 Nacos 作为服务注册中心，支持服务间同步调用（HTTP）和异步事件驱动（RabbitMQ）。
+指绣云章（ZXYZ）是一个云端文件管理平台，支持团队协作与即时通讯。后端采用 Java Spring Boot 多模块微服务架构，包含 12 个 Maven 模块，通过 API Gateway 统一路由，使用 Nacos 作为服务注册中心，支持服务间同步调用（HTTP）和异步事件驱动（RabbitMQ）。
 
 ## 技术栈
 
 | 类别 | 技术 | 版本 |
 |---|---|---|
 | 运行时 | JDK | 17 |
-| 框架 | Spring Boot | 3.5.7 |
-| 云原生 | Spring Cloud | 2025.0.0 |
+| 框架 | Spring Boot | 3.5.14 |
+| 云原生 | Spring Cloud | 2025.0.3 |
 | 服务注册 | Nacos | v3.2.1 |
 | 网关 | Spring Cloud Gateway | - |
-| ORM | MyBatis（注解方式） | 3.0.3 |
+| ORM | MyBatis-Plus（注解为主，少量 XML） | 3.5.17 |
 | 数据库 | MySQL | 8.4 |
-| 缓存 | Redis | 7.4 |
+| 缓存 | Redis | 8.10 |
 | 消息队列 | RabbitMQ | 3.13 |
-| 认证 | Sa-Token（token-style: uuid） | 1.44.0 |
-| 文件存储 | 阿里云 OSS v2 | 0.3.1 |
+| 表结构迁移 | Flyway | 10.22.0 |
+| 认证 | Sa-Token（token-style: uuid） | 1.46.0 |
+| 文件存储 | 阿里云 OSS v2 | 0.6.0 |
 | 分布式锁 | Redisson | 3.35.0 |
 | 实时通信 | Netty WebSocket | - |
-| 邮件 | Simple Java Mail | 8.12.6 |
+| 邮件 | Simple Java Mail | 9.3.4 |
 | API 文档 | Knife4j + springdoc | 4.5.0 / 2.8.9 |
-| 工具库 | Lombok、commons-lang3 | 1.18.42 / 3.18.0 |
+| 工具库 | Lombok、commons-lang3 | 1.18.42 / 3.20.0 |
 
 ## 模块结构
 
-本项目包含 9 个子模块，各模块职责如下：
+本项目包含 12 个 Maven 模块，各模块职责如下：
 
 | 模块 | 端口 | 数据库 | 职责 |
 |---|---|---|---|
 | `zxyz-common` | — | — | 共享错误码、响应结构、权限码、工具类、OSS 签名 |
+| `zxyz-starter` | — | — | RestClient 自动装配 + 跨服务 client（TeamServiceClient/UserQueryClient/FileStorageClient 等） |
 | `zxyz-gateway` | 18000 | 无 | API Gateway（Spring Cloud Gateway），Sa-Token 全局鉴权前置 |
 | `zxyz-project-service` | 18080 | zxyz_project | 项目 CRUD、成员管理、配额、创建审批、存储用量 |
 | `zxyz-im-service` | 18081 / 19090 | zxyz_im | IM 会话、Netty WebSocket 实时消息、团队通知、在线状态 |
@@ -40,6 +42,8 @@
 | `zxyz-share-service` | 18084 | zxyz_share | 分享链接创建/访问/下载 |
 | `zxyz-file-service` | 18085 | zxyz_file | 文件上传/下载/删除、文件夹管理、回收站、IM 文件卡片 |
 | `zxyz-team-service` | 18086 | zxyz_team | 团队 CRUD、成员管理、RBAC 权限、系统角色管理 |
+| `zxyz-audit-service` | 18087 | zxyz_audit | RabbitMQ 消费操作日志并持久化（无 Controller） |
+| `zxyz-admin-service` | 18088 | zxyz_config | 配置管理：ConfigService + Jasypt + Caffeine 缓存 + Redis Pub/Sub |
 
 ## 本地开发环境搭建
 
@@ -50,31 +54,23 @@
 - **JDK 17**（推荐 Eclipse Temurin）
 - **Maven 3.9+**
 - **MySQL 8.4**
-- **Redis 7.4**
+- **Redis 8.10**
 - **RabbitMQ 3.13**
 - **Nacos v3.2.1**（Docker 部署必需，docker-compose 中所有业务服务均依赖；本地直接运行服务时如已配置静态地址可跳过）
 
 ### 2. 数据库初始化
 
-执行 SQL 初始化脚本创建 8 个数据库（含 nacos）：
+数据库初始化分两层（`sql/` 目录现位于**根仓库** `sql/`，后端子仓内无 SQL 文件）：
 
 ```bash
-# 进入 SQL 目录
-cd ZXYZdatabaseBack/sql
+# ① 建库（不建表）：00-init-zxyz.sh 是 bash 脚本（不是 SQL 文件），
+#    Docker 部署时挂载到 MySQL 容器的 /docker-entrypoint-initdb.d/，
+#    在 MySQL 首次启动时自动执行；本地手动执行也可以：
+bash sql/00-init-zxyz.sh
 
-# 方式一：手动执行各 schema 文件（本地开发推荐）
-mysql -u root -p < schema_project.sql
-mysql -u root -p < schema_im.sql
-mysql -u root -p < schema_email.sql
-mysql -u root -p < schema_share.sql
-mysql -u root -p < schema_file.sql
-mysql -u root -p < schema_team.sql
-mysql -u root -p < schema_user.sql
-mysql -u root -p < schema_nacos.sql
-
-# 方式二：Docker 部署时由容器自动执行
-# 00-init-zxyz.sh 是 bash 脚本（不是 SQL 文件），在 MySQL 容器首次启动时
-# 由 docker-entrypoint-initdb.d 自动执行，无需手动运行。
+# ② 建表：表结构 100% 由各服务的 Flyway 迁移在服务启动时管理
+#    （各服务 src/main/resources/db/migration/V<n>__<desc>.sql）。
+#    ⚠️ 勿手动维护/执行 schema_*.sql —— 该类文件已废除。
 ```
 
 ### 3. 配置文件
@@ -401,11 +397,11 @@ zxyz-team-service/src/main/resources/
 
 **MyBatis 配置：**
 - 驼峰命名映射：`map-underscore-to-camel-case: true`
-- 使用注解方式 Mapper，无 XML 映射文件
+- MyBatis-Plus 注解 Mapper 为主；`zxyz-file-service` 与 `zxyz-im-service` 存在 XML 映射（`resources/mapper/*.xml`）
 
 ## 数据库说明
 
-项目使用 8 个独立数据库，各服务拥有独立的数据源：
+项目使用 10 个独立数据库，各服务拥有独立的数据源：
 
 | 数据库 | 服务 | 主要表 |
 |---|---|---|
@@ -416,6 +412,8 @@ zxyz-team-service/src/main/resources/
 | `zxyz_share` | share-service | `share`、`share_item` |
 | `zxyz_file` | file-service | `file_node`、`file_object_ref`、`operate_log` |
 | `zxyz_team` | team-service | `team`、`team_member`、`team_quota`、`permission`、`role`、`user_role`、`role_permission`、`permission_audit`、`operate_log`、`team_permission`、`team_role`、`team_member_role`、`team_role_permission` |
+| `zxyz_audit` | audit-service | 操作审计日志表（RabbitMQ 消费落库） |
+| `zxyz_config` | admin-service | 配置管理表（ConfigService + Jasypt 加密） |
 | `nacos` | Nacos 服务注册中心 | `config_info`、`tenant_info`、`tenant_capacity` 等（Nacos 内部管理表） |
 
 **关键业务常量：**
@@ -601,17 +599,8 @@ MySQL → Redis → RabbitMQ → Nacos → 业务服务 → Gateway → Frontend
 
 ```
 ZXYZdatabaseBack/
-├── pom.xml                              # Maven 根工程（聚合 9 个子模块）
+├── pom.xml                              # Maven 根工程（聚合 12 个子模块）
 ├── Dockerfile                           # 通用 Docker 构建文件
-├── sql/                                 # 数据库 Schema 文件
-│   ├── 00-init-zxyz.sh                  # 数据库初始化脚本
-│   ├── schema_project.sql               # 项目服务 Schema
-│   ├── schema_im.sql                    # IM 服务 Schema
-│   ├── schema_email.sql                 # 邮件服务 Schema
-│   ├── schema_share.sql                 # 分享服务 Schema
-│   ├── schema_file.sql                  # 文件服务 Schema
-│   ├── schema_team.sql                  # 团队服务 Schema
-│   └── schema_user.sql                  # 用户服务 Schema
 ├── zxyz-common/                         # 公共模块
 │   └── src/main/java/uno/acloud/
 │       ├── common/                      # 共享常量、工具类

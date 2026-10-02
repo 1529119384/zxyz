@@ -4,19 +4,20 @@
 
 ## 后端技术栈
 
-- JDK 17, Spring Boot 3.5.7, Spring Cloud 2025.0.0, Spring Cloud Alibaba 2025.0.0.0, Maven 3.9+
+- JDK 17, Spring Boot 3.5.14, Spring Cloud 2025.0.3, Spring Cloud Alibaba 2025.0.0.0, Maven 3.9+
 - Lombok 1.18.42 + MapStruct 1.6.3（注解处理器在 compiler plugin 中配置）
-- MyBatis-Plus 3.5.9（注解 Mapper，无 XML），MySQL 8.4
-- Sa-Token 1.45.0（token-style: uuid），Redis 存储会话
+- MyBatis-Plus 3.5.17（注解 Mapper 为主，`zxyz-file-service`/`zxyz-im-service` 保留少量 XML），MySQL 8.4
+- Sa-Token 1.46.0（token-style: uuid），Redis 存储会话
 - 阿里云 OSS v2, Redisson 3.35.0, Flyway 10.22.0
 - Netty WebSocket（IM 服务）, Resilience4j 2.2.0（重试 3×500ms，熔断 50%）
 - Knife4j 4.5.0 + springdoc 2.8.9（`KNIFE4J_ENABLE=true` 开启增强 UI）
 
-## 模块结构（11 模块）
+## 模块结构（12 模块）
 
 | 模块 | 端口 | 数据库 | 职责 |
 |---|---|---|---|
 | `zxyz-common` | — | — | 共享错误码、响应结构、权限码、工具类 |
+| `zxyz-starter` | — | — | RestClient 自动装配 + 跨服务 client（TeamServiceClient/UserQueryClient/FileStorageClient 等） |
 | `zxyz-gateway` | 18000 | 无 | API Gateway, Sa-Token 鉴权前置, Redis 限流 |
 | `zxyz-project-service` | 18080 | zxyz_project | 项目 CRUD、成员管理、配额、创建审批 |
 | `zxyz-im-service` | 18081/19090 | zxyz_im | IM 会话、Netty WebSocket、团队通知 |
@@ -49,7 +50,7 @@ MapStruct 用于 DTO↔Entity 转换（`*Converter`/`*Assembler` 类）。
 
 ## 前端技术栈
 
-- Vue 3（Composition API + `<script setup>`）, Vite 7, Vue Router 4, Pinia 3
+- Vue 3（Composition API + `<script setup>`）, Vite 8, Vue Router 5, Pinia 3
 - Element Plus 2.11（unplugin-vue-components 自动导入）, Axios
 
 ## 前端架构

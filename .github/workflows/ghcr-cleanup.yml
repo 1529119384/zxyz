@@ -52,7 +52,9 @@ jobs:
       # 删掉会让 `docker compose pull <svc>` 找不到 tag。
       - name: 裁剪 ${{ matrix.package }} 的历史版本
         id: cleanup
-        uses: actions/delete-package-versions@v5
+        # 审计 I-17（2026-10-03）：钉到 commit SHA（= refs/tags/v5^{} 解引用后的提交，
+        # 非 tag 对象本身的 SHA）。解析方式：git ls-remote <repo> 'refs/tags/v5^{}'。
+        uses: actions/delete-package-versions@e5bc658cc4c965c472efe991f8beea3981499c55 # v5.0.0
         with:
           package-name: ${{ matrix.package }}
           package-type: container

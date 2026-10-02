@@ -26,6 +26,7 @@ import uno.acloud.common.TeamPermissionCodes;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.common.audit.Log;
 import uno.acloud.common.permission.RequiresTeamPermission;
+import uno.acloud.common.util.LogSanitizer;
 import uno.acloud.file.dto.BatchConfirmUploadRequest;
 import uno.acloud.file.dto.BatchFileRequest;
 import uno.acloud.file.dto.FileUpdateRequest;
@@ -82,7 +83,13 @@ public class FileController {
     public Result<UploadInfo> getUploadSign(@CurrentUser Long userId,
                                             @RequestParam String originalName,
                                             @RequestParam(required = false) Long fileSize) {
-        log.info("用户 {} 请求获取上传签名，原始文件名: {}, 声明大小: {}", userId, originalName, fileSize);
+        // F13（P3 日志伪造）：originalName 是**未经校验的用户输入**，且校验发生在下游
+        // fileUploadPort.getUploadSign 内部。此前这里直接把它写进日志，等于给了
+        // 「换行/控制字符注入伪造日志行」的窗口 —— 仓库既有的 LogSanitizer 未被使用。
+        // 这里先清洗（CRLF→空格、去控制字符、截断 1024）再落日志；
+        // 参数是否合法仍由下游 validateInputName 判定，二者职责不重叠。
+        log.info("用户 {} 请求获取上传签名，原始文件名: {}, 声明大小: {}",
+                userId, LogSanitizer.sanitize(originalName), fileSize);
         UploadInfo signInfo = fileUploadPort.getUploadSign(originalName, fileSize, userId);
         return Result.of(signInfo);
     }

@@ -182,11 +182,43 @@ class SimpleJavaMailSenderTest {
         assertEquals(2, sender.mailerCreations.get(), "配置 updateTime 变化后必须重建 Mailer");
     }
 
+    // ===== 5. B-15：替换 Mailer 时旧实例必须被 close（释放 SMTP 连接池） =====
+
+    @Test
+    void sendShouldClosePreviousMailerWhenConfigChanges() throws Exception {
+        EmailServerConfig config = config();
+        when(emailServerConfigService.requireActiveConfig()).thenReturn(config);
+        RecordingSender sender = new RecordingSender(enabledProperties(), emailServerConfigService);
+
+        sender.send(record());
+        Mailer firstMailer = sender.createdMailers.get(0);
+        config.setUpdateTime(config.getUpdateTime().plusMinutes(1));
+        sender.send(record());
+
+        assertEquals(2, sender.mailerCreations.get(), "配置变化后应创建新 Mailer");
+        // 关键断言：旧 Mailer 被替换时必须 close —— 否则旧凭据的 TLS 连接池滞留到 GC
+        org.mockito.Mockito.verify(firstMailer).close();
+    }
+
+    @Test
+    void sendShouldNotCloseActiveMailerWhileConfigUnchanged() throws Exception {
+        EmailServerConfig config = config();
+        when(emailServerConfigService.requireActiveConfig()).thenReturn(config);
+        RecordingSender sender = new RecordingSender(enabledProperties(), emailServerConfigService);
+
+        sender.send(record());
+        sender.send(record());
+
+        assertEquals(1, sender.mailerCreations.get());
+        org.mockito.Mockito.verify(sender.createdMailers.get(0), org.mockito.Mockito.never()).close();
+    }
+
     /** 用替身 Mailer 替掉真实 SMTP：只验证「发给谁、发了什么」与缓存语义。 */
     private static final class RecordingSender extends SimpleJavaMailSender {
 
         private final List<Email> sent = new ArrayList<>();
         private final AtomicInteger mailerCreations = new AtomicInteger();
+        private final List<Mailer> createdMailers = new ArrayList<>();
 
         private RecordingSender(EmailProperties properties, EmailServerConfigService configService) {
             super(properties, configService);
@@ -200,6 +232,7 @@ class SimpleJavaMailSenderTest {
                 sent.add(invocation.getArgument(0));
                 return null;
             });
+            createdMailers.add(mailer);
             return mailer;
         }
     }

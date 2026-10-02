@@ -23,7 +23,6 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
-
 @ExtendWith(MockitoExtension.class)
 class FileLifecycleServiceTest {
 
@@ -250,8 +249,108 @@ class FileLifecycleServiceTest {
 
         // 只有「彻底删除」才真正释放配额（回收站条目仍计入 SUM(file_size)，故逻辑删除不失效是正确的），
         // 因此彻底删除后必须失效用量缓存，否则前端容量条会停在旧值。
-        verify(storageCacheService).invalidateAllStorageCaches();
+        // F12：改为按受影响 scope 精确失效 —— 该节点是个人空间（spaceType=1, teamId=null）
+        // 且 uploadUserId=100 ⇒ scope = (1, null, null, 100)。
+        verify(storageCacheService).invalidateStorageScope(1, null, null, 100L);
+        // 同时不得退回全量失效（否则等于没收敛粒度）
+        verify(storageCacheService, never()).invalidateAllStorageCaches();
         verify(fileResourceChangedPublisher).publishFromSnapshots(eq("DELETED"), anyList());
+    }
+
+    // ============ F1（P1）：cleanupOrphanFolders 不得把活跃父文件夹绕过回收站 TTL 物理删除 ============
+
+    /**
+     * F1（P1，数据丢失）端到端守卫。
+     *
+     * <h2>真实的误操作/攻击路径</h2>
+     * <p>父文件夹 P 仍然<b>活跃</b>（{@code deleted = 0}），它下面有两个子节点：</p>
+     * <ul>
+     *   <li>{@code F}：本次被「彻底删除」的文件（先 {@code deleted = 1} 进入回收站，再被永久删除）；</li>
+     *   <li>{@code S}：仍留在回收站里的兄弟节点（{@code deleted = 1}）。</li>
+     * </ul>
+     * <p>{@code reallyDelete(F)} 在同一事务末尾调用 {@code cleanupOrphanFolders} 判断 P 是否已成孤儿。
+     * 修复前 {@code countActiveChildren} 的 WHERE 只有 {@code deleted = 0} ⇒ 把 S 判成「不存在」
+     * ⇒ 计数 0 ⇒ P 被 {@code reallyDeleteByIds} 直接置 {@code deleted = 2}，
+     * <b>完全绕过回收站 30 天 TTL</b>：用户从未删除过 P，却无感知地永久丢失它且无法恢复。
+     * 之后把 S 从回收站还原，还会挂到这个已死父节点下成为孤儿。</p>
+     *
+     * <h2>本用例的角色（避免误读覆盖面）</h2>
+     * <p>Java 侧的守卫（{@code countActiveChildren(parentId) == 0} 才回收）本身是对的 ——
+     * 缺陷在 SQL 的删除口径。因此这里把<b>修复后的 SQL 口径</b>（回收站子节点仍占用 ⇒ 返回 1）
+     * 作为 {@code fileMapper.countActiveChildren} 的桩，钉住「满足该口径时 P 必须被保留」这一端到端契约。</p>
+     * <p>而「SQL 口径本身」由无数据库可达的两道门禁钉住，它们才是本缺陷回退时会变红的用例：</p>
+     * <ul>
+     *   <li>{@code FileMapperWiringTest#countActiveChildrenTreatsRecycleBinChildrenAsOccupied}
+     *       —— 装配期读 BoundSql 断言 {@code deleted IN (0, 1)}（无需 Docker）；</li>
+     *   <li>{@code FileMapperIntegrationTest#countActiveChildrenAndGetParentId}
+     *       —— 真实 MySQL 上断言软删子节点后计数不下降（需 Docker）。</li>
+     * </ul>
+     */
+    @Test
+    void reallyDelete_shouldNotPurgeActiveParentFolderWhoseRemainingChildrenAreInRecycleBin() {
+        List<Long> fileIds = List.of(1L);
+        List<Long> allIds = List.of(1L);
+        List<String> ossKeys = List.of("uuid-abc");
+
+        // 被彻底删除的文件 F：已经在回收站（deleted = 1），父目录是活跃文件夹 10
+        FileItem purged = fileNode(1L, FileDeleteStatus.RECYCLE);
+        purged.setUuidName("uuid-abc");
+        purged.setParentId(10L);
+
+        when(fileDomainValidator.normalizeFileIds(fileIds)).thenReturn(fileIds);
+        when(fileDomainValidator.requireNodes(fileIds)).thenReturn(List.of(purged));
+        when(fileConverter.toFileInfoDTO(purged)).thenReturn(
+                new uno.acloud.dto.FileInfoDTO(1L, 1, "uuid-abc", "test.txt", null, null,
+                        "/test.txt", null, null, FileDeleteStatus.RECYCLE, null, null));
+        when(fileMapper.collectDescendantIds(fileIds)).thenReturn(allIds);
+        when(fileMapper.getOssKeysByIds(allIds)).thenReturn(ossKeys);
+        when(fileMapper.reallyDeleteByIds(allIds, 100L)).thenReturn(1);
+
+        // P = 10；其兄弟节点 S 仍在回收站（deleted = 1）⇒ 修复后的口径下 P **仍有占用的子节点**
+        when(fileMapper.getParentId(1L)).thenReturn(10L);
+        when(fileMapper.countActiveChildren(10L)).thenReturn(1);
+
+        service.reallyDelete(fileIds, 100L);
+
+        verify(fileMapper, never()).reallyDeleteByIds(eq(List.of(10L)), any());
+        verify(fileMapper, never()).reallyDeleteByIds(eq(List.of(10L)), eq(100L));
+    }
+
+    /**
+     * F1 对照用例（保留既有正确行为）：当父文件夹 P 下确实<b>没有任何</b>
+     * {@code deleted IN (0, 1)} 的子节点时，{@code cleanupOrphanFolders} 仍应把它回收，
+     * 并沿祖先链继续上溯、直到遇到非空父目录或 {@code parent_id = -1} 哨兵为止。
+     * <p>两个用例合起来才说明修复是「收紧口径」而不是「把清理整个关掉」。</p>
+     */
+    @Test
+    void reallyDelete_shouldStillPurgeParentFolderWhenNoChildOccupiesIt() {
+        List<Long> fileIds = List.of(1L);
+        List<Long> allIds = List.of(1L);
+        List<String> ossKeys = List.of("uuid-abc");
+
+        FileItem purged = fileNode(1L, FileDeleteStatus.RECYCLE);
+        purged.setUuidName("uuid-abc");
+        purged.setParentId(10L);
+
+        when(fileDomainValidator.normalizeFileIds(fileIds)).thenReturn(fileIds);
+        when(fileDomainValidator.requireNodes(fileIds)).thenReturn(List.of(purged));
+        when(fileConverter.toFileInfoDTO(purged)).thenReturn(
+                new uno.acloud.dto.FileInfoDTO(1L, 1, "uuid-abc", "test.txt", null, null,
+                        "/test.txt", null, null, FileDeleteStatus.RECYCLE, null, null));
+        when(fileMapper.collectDescendantIds(fileIds)).thenReturn(allIds);
+        when(fileMapper.getOssKeysByIds(allIds)).thenReturn(ossKeys);
+        when(fileMapper.reallyDeleteByIds(allIds, 100L)).thenReturn(1);
+
+        // P = 10 已无占用子节点 ⇒ 应被回收；再上溯到 P 的父 = 20，20 仍有占用子节点 ⇒ 停止
+        when(fileMapper.getParentId(1L)).thenReturn(10L);
+        when(fileMapper.countActiveChildren(10L)).thenReturn(0);
+        when(fileMapper.getParentId(10L)).thenReturn(20L);
+        when(fileMapper.countActiveChildren(20L)).thenReturn(1);
+
+        service.reallyDelete(fileIds, 100L);
+
+        verify(fileMapper).reallyDeleteByIds(List.of(10L), 100L);
+        verify(fileMapper, never()).reallyDeleteByIds(eq(List.of(20L)), any());
     }
 
     // ---- restoreFiles tests ----

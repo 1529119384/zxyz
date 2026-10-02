@@ -411,6 +411,33 @@ describe('conversationDomain', () => {
       expect(await domain.loadConversations()).toEqual([])
       expect(messageDomain.pruneOrphanBuckets).toHaveBeenCalledTimes(2)
     })
+
+    it('应丢弃过期响应：后发起的 loadConversations 先返回时，先发起的慢响应不得覆盖（J-4）', async () => {
+      const { state, domain } = createDomain()
+      let resolveA
+      vi.mocked(fetchMyConversations).mockImplementation(
+        (_params) =>
+          new Promise((resolve) => {
+            resolveA = () => resolve({ data: [{ id: 1, name: 'teamA' }] })
+          }),
+      )
+
+      // 切到团队 A（慢请求在途）
+      const promiseA = domain.loadConversations(10)
+      // 切到团队 B（请求已 resolve）
+      vi.mocked(fetchMyConversations).mockResolvedValue({
+        data: [{ id: 2, name: 'teamB' }],
+      })
+      const promiseB = domain.loadConversations(20)
+      await promiseB
+      expect(state.conversations.value.map((c) => c.id)).toEqual([2])
+
+      // 团队 A 的慢响应此刻才回来：不得把 B 的会话列表整表覆盖
+      resolveA()
+      await promiseA
+      expect(state.conversations.value.map((c) => c.id)).toEqual([2])
+      expect(state.conversations.value[0].name).toBe('teamB')
+    })
   })
 
   describe('ensureConversation', () => {

@@ -4,9 +4,7 @@ import { ref } from 'vue'
 import { createRealtimeDomain } from '@/store/im/realtimeDomain'
 import { IM_WS_STATUS } from '@/utils/imWebSocket'
 
-vi.mock('@/api/im', () => ({
-  fetchMyPresence: vi.fn(),
-}))
+vi.mock('@/api/im', () => ({}))
 
 // 让 clientId 可预测：sendTextMessage 依次生成 clientMessageId、requestId，
 // 故第一条消息为 cid-1(clientMessageId)/cid-2(requestId)，第二条为 cid-3/cid-4。
@@ -166,7 +164,7 @@ describe('realtimeDomain', () => {
       expect(state.unreadCount.value).toBe(0)
     })
 
-    it('非自我的 SYSTEM 会话：全局 unreadCount 累加', () => {
+    it('非自我的 SYSTEM 会话：只累加会话未读，全局 unreadCount 不再实时累加（J-10）', () => {
       const { state, deps, domain } = createDomain()
       state.conversations.value = [{ id: 'c1', type: 'SYSTEM', unreadCount: 0 }]
       connect(domain)
@@ -176,7 +174,9 @@ describe('realtimeDomain', () => {
         payload: { senderUserId: 200, content: 'x' },
       })
       expect(deps.updateConversationUnread).toHaveBeenCalledWith('c1', 1)
-      expect(state.unreadCount.value).toBe(1)
+      // 全局 unreadCount 是服务端系统通知未读数的真源（loadUnreadCount 整体覆盖），
+      // MESSAGE_RECEIVED 不再实时 +1（J-10 裁定：单一真源，避免双口径打架）
+      expect(state.unreadCount.value).toBe(0)
     })
   })
 
@@ -283,8 +283,8 @@ describe('realtimeDomain', () => {
       expect(deps.loadConversationMessages).not.toHaveBeenCalled()
     })
 
-    it('读者是当前用户且为 SYSTEM 会话：全局 unreadCount 清零', () => {
-      const { state, domain } = createDomain()
+    it('读者是当前用户且为 SYSTEM 会话：只清会话未读，全局 unreadCount 保持服务端真源（J-10）', () => {
+      const { state, deps, domain } = createDomain()
       state.conversations.value = [{ id: 'c1', type: 'SYSTEM' }]
       state.unreadCount.value = 5
       connect(domain)
@@ -293,7 +293,9 @@ describe('realtimeDomain', () => {
         conversationId: 'c1',
         payload: { readerUserId: 100 },
       })
-      expect(state.unreadCount.value).toBe(0)
+      expect(deps.updateConversationUnread).toHaveBeenCalledWith('c1', 0)
+      // 全局 unreadCount 不再被实时事件清零（J-10）：下次 loadUnreadCount 会以服务端为准刷新
+      expect(state.unreadCount.value).toBe(5)
     })
 
     it('读者非当前用户且会话可见：触发重载会话消息', () => {
@@ -704,6 +706,45 @@ describe('realtimeDomain', () => {
       expect(state.lastWsError.value).toBe('消息发送超时')
     })
 
+    it('应从实际发送起算超时：队列中任务在发送前到点不失败，发送后才有完整 30s 等待 ACK（J-3）', () => {
+      const { state, deps, domain } = createDomain()
+      const { wsClient } = connect(domain)
+      state.wsStatus.value = IM_WS_STATUS.CONNECTED
+
+      // 第 1 条立即发送；第 2 条排队
+      domain.sendTextMessage('c1', 'first')
+      domain.sendTextMessage('c1', 'second')
+      expect(wsClient.sendEnvelope).toHaveBeenCalledTimes(1)
+      const firstEnvelope = wsClient.sendEnvelope.mock.calls[0][0]
+
+      // 第 1 条一直不 ACK。第 30s：第 1 条超时失败、释放队列 → 第 2 条**此刻才被发送**。
+      vi.advanceTimersByTime(30_000)
+      expect(deps.updatePendingMessageStatus).toHaveBeenCalledWith(
+        'c1',
+        firstEnvelope.clientMessageId,
+        { status: 'FAILED' },
+      )
+      expect(wsClient.sendEnvelope).toHaveBeenCalledTimes(2)
+      const secondEnvelope = wsClient.sendEnvelope.mock.calls[1][0]
+
+      // 缺陷形态（修复前）：第 2 条的超时从入队起算 —— 它在第 30s 入队、第 31s 才发送，
+      // 却在第 40s（入队后 30s）就被判超时，实际只等了 10s ACK。
+      // 期望形态：从实际发送（第 30s）起算完整 30s → 第 60s 才失败，第 40s 时仍在等待。
+      vi.advanceTimersByTime(10_000)
+      expect(deps.updatePendingMessageStatus).not.toHaveBeenCalledWith(
+        'c1',
+        secondEnvelope.clientMessageId,
+        { status: 'FAILED' },
+      )
+      vi.advanceTimersByTime(20_000)
+      expect(deps.updatePendingMessageStatus).toHaveBeenCalledWith(
+        'c1',
+        secondEnvelope.clientMessageId,
+        { status: 'FAILED' },
+      )
+      expect(state.lastWsError.value).toBe('消息发送超时')
+    })
+
     it('任务已完成后再超时不会重复失败', () => {
       const { state, deps, domain } = createDomain()
       const { wsClient } = connect(domain)
@@ -726,26 +767,6 @@ describe('realtimeDomain', () => {
       ).length
       expect(after).toBe(0)
       expect(deps.updatePendingMessageStatus.mock.calls.length).toBe(before)
-    })
-  })
-
-  describe('loadMyPresence', () => {
-    it('返回并写入 myPresence', async () => {
-      const { state, domain } = createDomain()
-      const { fetchMyPresence } = await import('@/api/im')
-      fetchMyPresence.mockResolvedValue({ data: { userId: 100, online: true } })
-      const result = await domain.loadMyPresence()
-      expect(result).toEqual({ userId: 100, online: true })
-      expect(state.myPresence.value).toEqual({ userId: 100, online: true })
-    })
-
-    it('响应无 data 时写入 null', async () => {
-      const { state, domain } = createDomain()
-      const { fetchMyPresence } = await import('@/api/im')
-      fetchMyPresence.mockResolvedValue({})
-      const result = await domain.loadMyPresence()
-      expect(result).toBeNull()
-      expect(state.myPresence.value).toBeNull()
     })
   })
 

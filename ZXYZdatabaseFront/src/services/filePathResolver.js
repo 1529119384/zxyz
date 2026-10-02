@@ -135,6 +135,10 @@ export async function resolvePathWithFetch(path, options = {}) {
     resolvedPath: normalizedPath,
     exactMatched: true,
     prefetchedList: listFromResponse(fileList),
+    // J-16：把分页信封提升字段一并透传 —— 预取快速路径此前只赋 list，
+    // 分页器 total/pageSize 停在上一个目录的值，直到下一次完整刷新才自愈。
+    prefetchedTotal: fileList?.total,
+    prefetchedPageSize: fileList?.pageSize,
     changeSet,
   }
 }

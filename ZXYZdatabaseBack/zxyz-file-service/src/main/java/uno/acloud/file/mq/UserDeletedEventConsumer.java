@@ -40,13 +40,22 @@ public class UserDeletedEventConsumer {
             String username = event.username();
 
             if (!cleanupService.tryAcquireIdempotencyKey(userId)) {
-                log.warn("MQ: 重复用户删除事件，跳过处理: userId={}", userId);
+                // F4：区分「已真正完成」与「另一个消费者正在处理」，不要把两者都误报成「重复事件」——
+                // 后者在上一消费者崩溃时只是短 TTL 未过期的暂时状态，误报会掩盖真实故障。
+                if (cleanupService.isCleanupCompleted(userId)) {
+                    log.info("MQ: 用户删除事件已处理完成，跳过: userId={}", userId);
+                } else {
+                    log.warn("MQ: 用户删除事件正在处理中（并发或上次崩溃的短 TTL 未过期），本次跳过: userId={}", userId);
+                }
                 return;
             }
 
             try {
                 log.info("MQ: 开始清理用户个人空间文件: userId={}, username={}", userId, username);
                 cleanupService.cleanupUserPersonalFiles(userId);
+                // 关键（F4）：清理**成功**后才写长 TTL 的 done 键；此前只有一个 24h 的「认领」键，
+                // 进程若在清理完成前崩溃，键会残留 24 小时压制全部重投递，「半途而废」被误报成「重复事件」。
+                cleanupService.markCleanupCompleted(userId);
                 log.info("MQ: 用户个人空间文件清理完成: userId={}, username={}", userId, username);
             } catch (Exception e) {
                 cleanupService.releaseIdempotencyKey(userId);

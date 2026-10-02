@@ -203,7 +203,12 @@ public class AdminTeamService implements AdminTeamPort {
         String content = requireText(request == null ? null : request.getContent(), "系统消息内容不能为空", 5000, "内容长度不能超过 5000");
         // 审计 L10：不再把全部用户 id 塞进一个请求 —— 分批交给下游，单批规模被钉在常数上。
         List<Long> allUserIds = userServiceClient.getAllUserIds();
-        int batches = broadcastBatchDispatcher.dispatch(allUserIds, batch ->
+        // B-11（2026-10-03）：站内通知批失败计数，与下方邮件路径的 failedBatches 口径对齐 ——
+        // ImSystemNotificationClient.sendBatch 现在会把异常抛上来（不再静默吞），
+        // 这里逐批承接：批内失败只跳过该批、不打断后续批次，最后汇总告警给运维补偿。
+        java.util.concurrent.atomic.AtomicInteger failedNotificationBatches = new java.util.concurrent.atomic.AtomicInteger();
+        int batches = broadcastBatchDispatcher.dispatch(allUserIds, batch -> {
+            try {
                 imSystemNotificationClient.sendBatch(
                         batch,
                         GLOBAL_BROADCAST_TYPE,
@@ -212,9 +217,14 @@ public class AdminTeamService implements AdminTeamPort {
                         GLOBAL_BROADCAST_BUSINESS,
                         null,
                         null
-                ));
-        log.info("全站系统消息已分批派发：目标用户数={}, 批数={}, 每批上限={}",
-                allUserIds.size(), batches, broadcastBatchDispatcher.batchSize());
+                );
+            } catch (Exception e) {
+                failedNotificationBatches.incrementAndGet();
+                log.warn("全站系统消息站内通知投递失败（该批已跳过）：batchSize={}", batch.size(), e);
+            }
+        });
+        log.info("全站系统消息已分批派发：目标用户数={}, 批数={}, 每批上限={}, 站内通知失败批数={}",
+                allUserIds.size(), batches, broadcastBatchDispatcher.batchSize(), failedNotificationBatches.get());
         sendBroadcastEmail(title, content);
     }
 

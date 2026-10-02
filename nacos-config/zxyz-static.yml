@@ -53,43 +53,57 @@ sa-token:
   redis:
     prefix: ${SA_TOKEN_REDIS_PREFIX:satoken:}
 
-# 服务间调用地址（保留环境变量覆盖能力，Docker 网络中使用默认值即可）
-services:
-  user-service:
-    base-url: ${USER_SERVICE_BASE_URL:http://zxyz-user-service}
-  team-service:
-    base-url: ${TEAM_SERVICE_BASE_URL:http://zxyz-team-service}
-  file-service:
-    base-url: ${FILE_SERVICE_BASE_URL:http://zxyz-file-service}
-  im-service:
-    base-url: ${IM_SERVICE_BASE_URL:http://zxyz-im-service}
-  email-service:
-    base-url: ${EMAIL_SERVICE_BASE_URL:http://zxyz-email-service}
-  project-service:
-    base-url: ${PROJECT_SERVICE_BASE_URL:http://zxyz-project-service}
-  share-service:
-    base-url: ${SHARE_SERVICE_BASE_URL:http://zxyz-share-service}
-  admin-service:
-    base-url: ${ADMIN_SERVICE_BASE_URL:http://zxyz-admin-service}
-  # 注意：share-service 有双 token 路径，详见第 1.3.1 节迁移策略
+# 服务间调用地址 —— 2026-10-03 删除顶层 `services:` 块（审计 I-8）
+# -----------------------------------------------------------------------------
+# 原内容（8 个键，已删除）：
+#   services.user-service.base-url / team-service / file-service / im-service /
+#   email-service / project-service / share-service / admin-service
+#
+# 为什么删：这 8 个键是**死键**，没有任何消费方。
+#   · 全仓 grep `services.` 在 Java/YAML 里 **0 命中**（唯一的 @ConfigurationProperties
+#     前缀是 `app.*-service.base-url`，见 zxyz-common/application-common.yml:170-186）。
+#   · check-nacos-config-sync.py 把这 8 个键逐条判为 [EXTRA]（nacos 有、代码里没有）。
+#   危害：真源里躺着无人消费的键，会让后来者误以为改它能生效 ——
+#   例如改 `services.user-service.base-url` 想切流量，实际什么都不会发生。
+#   import.sh 的「字面量机密护栏」拦不住这类漂移（它只看值像不像机密）。
+#
+# 行为不变（已核对）：运行期真正生效的是
+#   · application-common.yml 的 `app.<svc>-service.base-url: ${<SVC>_SERVICE_BASE_URL:...}`
+#   · compose 各服务 environment 注入的 `*_SERVICE_BASE_URL`
+#   两者都不经过本文件，故删除这 8 个键**不改变任何运行期取值**。
 
 # 服务间鉴权（注意：必须用扁平格式 app.internal-service-token，不能嵌套！）
 # 原因：Java 端 @ConfigurationProperties(prefix="app") 绑定扁平字段 internalServiceToken
 # 生产环境替换为: app.internal-service-token: ENC(encrypted_value)
 app:
   internal-service-token: ${INTERNAL_SERVICE_TOKEN}
-  # IM Netty 启动期绑定（绑定路径：ImNettyProperties.maxContentLength，prefix="app.im.ws"）
+  # IM Netty 启动期绑定（**消费方是 @Value，不是 @ConfigurationProperties**）：
+  #   zxyz-im-service/.../infrastructure/netty/ImNettyServer.java:45
+  #     @Value("${app.im.ws.max-content-length:65536}") int maxContentLength
   # 静态配置：Netty 通道初始化时一次性读取，热更新无效，故置于 static 配置。
+  # ⚠️ 本键会被 check-nacos-config-sync.py 判为 [EXTRA]（该脚本只扫 yml，看不到 @Value）
+  #    —— 这是**已核实**的假阳性：消费方确实存在，勿再"清理"它。
   im:
     ws:
       max-content-length: 65536
 
-# share-service 专用：TeamServiceProperties 绑定（@ConfigurationProperties(prefix="share.team-service")）
-# ShareUserQueryClient / ShareFileServiceClient 出站调用时使用此 token
-# 生产环境替换为: share.team-service.internal-service-token: ENC(encrypted_value)
-share:
-  team-service:
-    internal-service-token: ${INTERNAL_SERVICE_TOKEN}
+# 服务间鉴权（share-service）—— 2026-10-03 删除 `share.team-service.*`（审计 I-8）
+# -----------------------------------------------------------------------------
+# 原内容（已删除）：share.team-service.internal-service-token: ${INTERNAL_SERVICE_TOKEN}
+#
+# 为什么删：**键路径错了，从来没被绑定过**。share-service 的绑定前缀是
+#   `app.share.team-service`（见 zxyz-share-service/.../config/TeamServiceProperties.java:6
+#    `@ConfigurationProperties(prefix = "app.share.team-service")`），
+#   而这里写的是顶层 `share.team-service`（缺 `app.` 前缀）⇒ 永不匹配 ⇒ 死键。
+#   （被删掉的注释自身把前缀写成 `share.team-service`，与代码不一致 ——
+#     这正是该键被"照抄注释"写进真源、却始终无人消费的原因。）
+#
+# 行为不变（已核对）：真实取值来自
+#   · zxyz-share-service/.../application-prod.yml:17-19
+#       app.share.team-service.internal-service-token: ${INTERNAL_SERVICE_TOKEN}
+#       app.share.team-service.base-url: ${TEAM_SERVICE_BASE_URL:http://zxyz-team-service}
+#   · application-common.yml:174 app.team-service.internal-service-token（其他服务）
+#   均不经过本文件。
 
 # Resilience4j
 resilience4j:

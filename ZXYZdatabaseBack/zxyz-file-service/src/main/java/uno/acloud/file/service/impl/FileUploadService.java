@@ -105,14 +105,18 @@ public class FileUploadService implements FileUploadPort {
     private final FileDomainValidator fileDomainValidator;
     private final FilePathResolver filePathResolver;
     private final FileAccessGuard fileAccessGuardService;
-    private final RestClient restClient;
+    /**
+     * F8：配额校验统一走 {@link ProjectStorageCheckClient}（带 Resilience4j 重试+熔断）。
+     *
+     * <p>此前这里是裸 {@code RestClient} + 一套就地实现的请求体/错误映射，与
+     * {@code ProjectStorageCheckClient} 构成同一调用的两套实现：裸调用没有重试与熔断，
+     * 且 403 的语义在两处漂移（一处「鉴权失败」、一处「空间不足」）。
+     * 现在收敛到该客户端一处，与复制路径（{@code FileCopyService}）同源。</p>
+     */
+    private final ProjectStorageCheckClient projectStorageCheckClient;
     private final ObjectMapper objectMapper;
+    /** 仅用于判断「配额服务是否已配置」以决定跳过校验（未配置时 client 会因 baseUrl 为空而抛异常）。 */
     private final String projectServiceBaseUrl;
-    private final String internalServiceToken;
-    @org.springframework.beans.factory.annotation.Value("${app.internal-service-key:}")
-    private String selfServiceKey;
-    @org.springframework.beans.factory.annotation.Value("${spring.application.name:unknown}")
-    private String sourceService;
     /** 允许上传的文件扩展名白名单（Nacos 注入的原始 JSON 数组字符串，缺省时回退到 FALLBACK_ALLOWED_EXTENSIONS） */
     private final String allowedExtensionsRaw;
     /** 危险文件扩展名黑名单（Nacos 注入的原始 JSON 数组字符串，缺省时回退到 FALLBACK_BLOCKED_EXTENSIONS） */
@@ -131,7 +135,7 @@ public class FileUploadService implements FileUploadPort {
                              FileDomainValidator fileDomainValidator,
                              FilePathResolver filePathResolver,
                              FileAccessGuard fileAccessGuardService,
-                             RestClient restClient,
+                             ProjectStorageCheckClient projectStorageCheckClient,
                              ObjectMapper objectMapper,
                              ServiceProperties serviceProperties,
                              UsageLedgerMapper usageLedgerMapper,
@@ -144,10 +148,9 @@ public class FileUploadService implements FileUploadPort {
         this.fileDomainValidator = fileDomainValidator;
         this.filePathResolver = filePathResolver;
         this.fileAccessGuardService = fileAccessGuardService;
-        this.restClient = restClient;
+        this.projectStorageCheckClient = projectStorageCheckClient;
         this.objectMapper = objectMapper;
         this.projectServiceBaseUrl = serviceProperties.getProjectService().getBaseUrl();
-        this.internalServiceToken = serviceProperties.getInternalServiceToken();
         this.allowedExtensionsRaw = allowedExtensionsRaw;
         this.blockedExtensionsRaw = blockedExtensionsRaw;
         this.maxUploadFileSizeBytes = maxFileSizeBytes;
@@ -497,6 +500,14 @@ public class FileUploadService implements FileUploadPort {
         if (request.getFiles() == null || request.getFiles().isEmpty()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "files 不能为空");
         }
+        // F5（P2 无界输入）：服务层显式复核一次上限。Bean Validation 的 @Size 只在走 @Valid
+        // 的 HTTP 路径生效，内部调用与测试直调服务层不受其保护；而本方法对每一项都要串行执行
+        // OSS HEAD（远程）+ DB 写 + 唯一名重试，无上限时单请求即可占满工作线程与 DB 连接。
+        if (request.getFiles().size() > BatchConfirmUploadRequest.MAX_FILES_PER_BATCH) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                    "单次批量确认上传的文件数不能超过 " + BatchConfirmUploadRequest.MAX_FILES_PER_BATCH
+                            + "，当前 " + request.getFiles().size());
+        }
 
         List<UploadConfirmItemResultVO> items = new ArrayList<>();
         Map<Long, Set<String>> reservedNamesByParent = new HashMap<>();
@@ -526,10 +537,6 @@ public class FileUploadService implements FileUploadPort {
                 items.size() - successCount,
                 items
         );
-    }
-
-    private String effectiveInternalToken() {
-        return (selfServiceKey != null && !selfServiceKey.isBlank()) ? selfServiceKey : internalServiceToken;
     }
 
     private void checkBatchQuota(BatchConfirmUploadRequest request, Long userId) {
@@ -564,70 +571,35 @@ public class FileUploadService implements FileUploadPort {
         }
     }
 
+    /**
+     * 校验目标空间配额（本地校验入口）。
+     *
+     * <h2>F8（P3 解耦/重复）：委托给 {@link ProjectStorageCheckClient}，不再自建裸 RestClient</h2>
+     * <p>修复前本方法用裸 {@code RestClient} 直接 POST，且把请求体/错误映射又实现了一遍，
+     * 与 {@link ProjectStorageCheckClient} 构成同一调用的<b>两套实现</b>：</p>
+     * <ul>
+     *   <li>裸调用<b>没有</b> Resilience4j 的重试与熔断 ⇒ project-service 抖动时
+     *       没有熔断保护，每个上传请求都会实打实压过去；</li>
+     *   <li>两套实现的口径会漂移（例如 403 的语义在一处是「鉴权失败」、另一处是「空间不足」）。</li>
+     * </ul>
+     * <p>现在统一走 {@code ProjectStorageCheckClient.checkQuota}，与复制路径
+     * （{@code FileCopyService}）用的是同一实现；错误映射也收敛到该客户端一处。</p>
+     *
+     * <h2>保留的既有行为</h2>
+     * <ul>
+     *   <li>{@code app.project-service.base-url} 未配置时<b>跳过</b>校验并告警
+     *       （本地/单测环境的既有降级语义，不能因为换成 client 就抛 {@code IllegalStateException}）；</li>
+     *   <li>把解析出的有效上限埋进配额台账（P2-C2），供 confirm 阶段同事务原子扣减使用。</li>
+     * </ul>
+     */
     private void checkUploadQuotaViaHttp(Long userId, Long teamId, Integer spaceType, Long projectId, long totalSize) {
         if (projectServiceBaseUrl == null || projectServiceBaseUrl.isBlank()) {
             log.warn("存储配额校验服务未配置(app.project-service.base-url)，跳过配额校验");
             return;
         }
-        try {
-            Map<String, Object> body = new HashMap<>();
-            body.put("userId", userId);
-            body.put("teamId", teamId);
-            body.put("spaceType", spaceType);
-            body.put("projectId", projectId);
-            body.put("totalSize", totalSize);
-            QuotaCheckResponse response = restClient.post()
-                    .uri(normalizeBaseUrl(projectServiceBaseUrl) + "/api/internal/storage/check-quota")
-                    .header(InternalServiceHeaders.TOKEN_HEADER, effectiveInternalToken())
-                    .header(InternalServiceHeaders.CALLER_SERVICE_HEADER, sourceService)
-                    .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-                    .body(body)
-                    .retrieve()
-                    .toEntity(QuotaCheckResponse.class)
-                    .getBody();
-            // P2-C2：把配额校验解析出的有效存储上限写入台账，供 confirm 同事务原子扣减守卫使用
-            upsertLedgerLimit(userId, teamId, spaceType, projectId, response);
-        } catch (RestClientResponseException e) {
-            int statusCode = e.getStatusCode().value();
-            String responseBody = e.getResponseBodyAsString();
-            log.error("调用存储配额校验失败(status={}, body={})", statusCode, responseBody, e);
-
-            // 403: 内部服务鉴权失败 或 存储空间不足
-            if (statusCode == 403) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "存储空间不足");
-            }
-            // 409: 配额超限（FILE_STATE_INVALID 映射为 409）
-            if (statusCode == 409) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "存储空间不足，请清理后重试");
-            }
-            // 400: 参数校验失败
-            if (statusCode == 400) {
-                // 注意：responseBody 是**下游内部服务**的原始响应体，可能含类名 / SQL 片段 /
-                // 内网地址 / 堆栈等实现细节，只允许写日志（见方法入口的 log.error），
-                // 绝不拼进对外消息。此处曾写成 "上传参数异常：" + responseBody。
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "上传参数异常，请检查文件名或类型后重试");
-            }
-            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "存储配额校验服务异常，请稍后重试");
-        } catch (Exception e) {
-            log.error("调用存储配额校验失败", e);
-            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "存储配额校验服务不可用，请稍后重试");
-        }
-    }
-
-    /** 内部 check-quota 响应体（Result<T> 的投影，data 为有效存储上限字节，NULL=不限制）。 */
-    private record QuotaCheckResponse(Long data) {
-    }
-
-    /** 把内部校验返回的有效存储上限埋入配额台账对应作用域。 */
-    private void upsertLedgerLimit(Long userId, Long teamId, Integer spaceType, Long projectId, QuotaCheckResponse response) {
-        try {
-            String scopeKey = UsageLedger.scopeKeyOf(spaceType, teamId, projectId, userId);
-            Long limit = response == null ? null : response.data();
-            usageLedgerMapper.ensureScopeAndLimit(scopeKey, limit);
-        } catch (Exception ex) {
-            // 台账写入失败不回阻断上传（原子扣减会以"行缺失=不限制"兜底，对账任务校正）
-            log.warn("写入配额台账上限失败，本次按不限制处理: scopeKey={}", scopeKeyOfOrSkip(userId, teamId, spaceType, projectId), ex);
-        }
+        Long storageLimit = projectStorageCheckClient.checkQuota(userId, teamId, spaceType, projectId, totalSize);
+        // P2-C2：把配额校验解析出的有效存储上限写入台账，供 confirm 同事务原子扣减守卫使用
+        upsertLedgerLimit(userId, teamId, spaceType, projectId, storageLimit);
     }
 
     private String scopeKeyOfOrSkip(Long userId, Long teamId, Integer spaceType, Long projectId) {
@@ -638,9 +610,16 @@ public class FileUploadService implements FileUploadPort {
         }
     }
 
-    private String normalizeBaseUrl(String baseUrl) {
-        String trimmed = baseUrl.trim();
-        return trimmed.endsWith("/") ? trimmed.substring(0, trimmed.length() - 1) : trimmed;
+    /** 把内部校验返回的有效存储上限埋入配额台账对应作用域（F8 后由 client 返回 Long）。 */
+    private void upsertLedgerLimit(Long userId, Long teamId, Integer spaceType, Long projectId, Long storageLimit) {
+        try {
+            String scopeKey = UsageLedger.scopeKeyOf(spaceType, teamId, projectId, userId);
+            usageLedgerMapper.ensureScopeAndLimit(scopeKey, storageLimit);
+        } catch (Exception ex) {
+            // 台账写入失败不阻断上传（原子扣减会以"行缺失=不限制"兜底，对账任务校正）
+            log.warn("写入配额台账上限失败，本次按不限制处理: scopeKey={}",
+                    scopeKeyOfOrSkip(userId, teamId, spaceType, projectId), ex);
+        }
     }
 
     private UploadConfirmItemResultVO confirmSingleFile(ConfirmUploadRequest request,

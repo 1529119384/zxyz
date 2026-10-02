@@ -21,7 +21,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
@@ -34,7 +34,20 @@ public class AuditEventPublisher {
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
     private final String fallbackPath;
-    private final ConcurrentLinkedDeque<String> retryBuffer = new ConcurrentLinkedDeque<>();
+    /**
+     * 重试缓冲区（B-12）。
+     *
+     * <p><b>为什么从 {@code ConcurrentLinkedDeque} 换成 {@code LinkedBlockingDeque}</b>：
+     * 旧实现用 {@code ConcurrentLinkedDeque} + {@code size() >= MAX} 判满，而
+     * {@code ConcurrentLinkedDeque.size()} 是 <b>O(n) 遍历</b>且并发下不保证准确。
+     * {@link #publish} 跑在<b>请求线程</b>上，缓冲区长期接近 10k 时每次判满都要遍历全表
+     * ⇒ 请求尾延迟被放大。</p>
+     *
+     * <p>{@code LinkedBlockingDeque} 自带容量上限与 O(1) 的 {@code size()}（内部维护计数），
+     * 判满由 {@code offerLast} 的返回值直接给出，既消除了 O(n) 遍历，
+     * 也不用再自己维护一个可能与队列漂移的计数器。</p>
+     */
+    private final LinkedBlockingDeque<String> retryBuffer = new LinkedBlockingDeque<>(MAX_BUFFER_SIZE);
     private final AtomicInteger droppedCount = new AtomicInteger(0);
     private final RetryTemplate retryTemplate;
 
@@ -107,7 +120,7 @@ public class AuditEventPublisher {
             addToBuffer(json);
         }
         if (successCount > 0 || !stillFailed.isEmpty()) {
-            log.info("审计事件缓冲区重试: 成功={}, 失败={}, 缓冲区剩余={}", successCount, stillFailed.size(), retryBuffer.size());
+            log.info("审计事件缓冲区重试: 成功={}, 失败={}, 缓冲区剩余={}", successCount, stillFailed.size(), getBufferSize());
         }
         return successCount;
     }
@@ -143,12 +156,18 @@ public class AuditEventPublisher {
     }
 
     private void addToBuffer(String json) {
-        if (retryBuffer.size() >= MAX_BUFFER_SIZE) {
-            retryBuffer.pollFirst();
-            droppedCount.incrementAndGet();
-            log.warn("审计事件缓冲区已满（{}条），丢弃最早事件，累计丢弃={}", MAX_BUFFER_SIZE, droppedCount.get());
+        // offerLast 在队列满时返回 false（O(1) 判满，无需遍历），此时丢弃最早事件腾位后重试一次。
+        if (retryBuffer.offerLast(json)) {
+            log.debug("审计事件已加入缓冲区: 缓冲区大小={}", retryBuffer.size());
+            return;
         }
-        retryBuffer.addLast(json);
-        log.debug("审计事件已加入缓冲区: 缓冲区大小={}", retryBuffer.size());
+        retryBuffer.pollFirst();
+        droppedCount.incrementAndGet();
+        log.warn("审计事件缓冲区已满（{}条），丢弃最早事件，累计丢弃={}", MAX_BUFFER_SIZE, droppedCount.get());
+        if (!retryBuffer.offerLast(json)) {
+            // 极端并发下腾位后仍被别处抢满：本条只能丢弃，同样计数。
+            droppedCount.incrementAndGet();
+            log.warn("审计事件缓冲区竞争激烈，本条事件被丢弃，累计丢弃={}", droppedCount.get());
+        }
     }
 }

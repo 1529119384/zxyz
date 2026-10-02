@@ -83,6 +83,25 @@ describe('useSpaceFileList', () => {
     expect(fetchFileList).not.toHaveBeenCalled()
   })
 
+  it('应在预取快速路径同步采纳 total/pageSize，分页器不停在上一个目录的值（J-16）', async () => {
+    fetchFileList.mockResolvedValue({ code: 1, msg: 'success', data: [], total: 500 })
+    const { total, pageSize, handleCurrentChange, refresh } = createComposable()
+
+    // 先在旧目录翻到某页，让 total/pageSize 有「上一个目录」的旧值
+    await handleCurrentChange(2)
+    expect(total.value).toBe(500)
+    const callsAfterOldDir = fetchFileList.mock.calls.length
+
+    // 经路径解析预取进入新目录：带 prefetchedList 与预取响应的分页字段
+    const prefetched = [{ id: 9, fileName: '新目录项', type: 1 }]
+    await refresh({ prefetchedList: prefetched, prefetchedTotal: 12, prefetchedPageSize: 100 })
+
+    // 预取路径不发起网络请求
+    expect(fetchFileList.mock.calls.length).toBe(callsAfterOldDir)
+    expect(total.value).toBe(12)
+    expect(pageSize.value).toBe(100)
+  })
+
   it('clears the list and stops loading when the request fails', async () => {
     fetchFileList.mockRejectedValue(new Error('boom'))
 

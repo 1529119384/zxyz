@@ -1,19 +1,27 @@
 package uno.acloud.im.application;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.exception.BusinessException;
+import uno.acloud.im.domain.enums.ImCommandType;
 
 import java.util.ArrayList;
 import java.util.List;
 
+@Slf4j
 @Service
 public class ImCommandDispatcher {
 
-    private static final String SEND_TEXT = "SEND_TEXT";
-    private static final String SEND_FILE_CARD = "SEND_FILE_CARD";
+    /**
+     * payload 内数组字段（mentions/fileIds）的元素上限。
+     * <p>WS 帧总长只受 {@code app.im.ws.max-content-length}（默认 65536）约束，
+     * 单个数组可塞约 7k 个元素，随后每个元素都要走一次 HashSet.contains / 逐条远程调用。
+     * 显式封顶，避免客户端用「合法大小的帧」放大服务端工作量。</p>
+     */
+    private static final int MAX_PAYLOAD_LIST_SIZE = 100;
 
     private final ImMessageService imMessageService;
     private final FileCardMessageService fileCardMessageService;
@@ -31,13 +39,16 @@ public class ImCommandDispatcher {
         if (request == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "消息请求不能为空");
         }
-        if (SEND_TEXT.equals(request.type())) {
-            return handleSendText(request);
+        ImCommandType commandType = ImCommandType.fromWireName(request.type()).orElse(null);
+        if (commandType == null) {
+            // 落日志保留排查所需的 type 现场；回客户端的文案不含任何外部输入（防探测/防注入）。
+            log.warn("IM command 不支持的消息类型: type={}, requestId={}", request.type(), request.requestId());
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的消息类型");
         }
-        if (SEND_FILE_CARD.equals(request.type())) {
-            return handleSendFileCard(request);
-        }
-        throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的消息类型: " + request.type());
+        return switch (commandType) {
+            case SEND_TEXT -> handleSendText(request);
+            case SEND_FILE_CARD -> handleSendFileCard(request);
+        };
     }
 
     private ImCommandResult handleSendText(ImCommandRequest request) {
@@ -103,7 +114,13 @@ public class ImCommandDispatcher {
         if (node == null || !node.isArray()) {
             return List.of();
         }
-        List<Long> result = new ArrayList<>();
+        if (node.size() > MAX_PAYLOAD_LIST_SIZE) {
+            log.warn("IM command payload 数组超限: field={}, size={}, limit={}",
+                    fieldName, node.size(), MAX_PAYLOAD_LIST_SIZE);
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                    fieldName + " 数量不能超过 " + MAX_PAYLOAD_LIST_SIZE);
+        }
+        List<Long> result = new ArrayList<>(node.size());
         node.forEach(item -> result.add(item.asLong()));
         return result;
     }

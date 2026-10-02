@@ -12,6 +12,8 @@ export const useChatStore = defineStore('chat', () => {
   const notifications = ref([])
   const unreadCount = ref(0)
   const wsStatus = ref(IM_WS_STATUS.DISCONNECTED)
+  // ⚠️ 仅观测字段（J-9）：PONG 到达时刻，供调试/未来在线状态面板读取；
+  // 客户端心跳判活用的是 imWebSocket 内部的 lastPongAt，与本字段互不相干，勿在此接逻辑。
   const lastPongTime = ref(null)
   const lastWsError = ref(null)
   const myPresence = ref(null)
@@ -152,7 +154,6 @@ export const useChatStore = defineStore('chat', () => {
     sendFileCardMessage: realtimeDomain.sendFileCardMessage,
     resolveFileCardMessage: conversationDomain.resolveFileCardMessage,
     recallConversationMessage: conversationDomain.recallConversationMessage,
-    loadMyPresence: realtimeDomain.loadMyPresence,
     ensureConnected: realtimeDomain.ensureWebSocketConnected,
     disconnect: realtimeDomain.disconnectWebSocket,
     // 透传给 UI 的『重新连接』入口（P1-E2）

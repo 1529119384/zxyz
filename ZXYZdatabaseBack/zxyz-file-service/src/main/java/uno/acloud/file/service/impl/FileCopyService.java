@@ -187,7 +187,9 @@ public class FileCopyService {
             // publishByIdsAfterCommit 内部走 TransactionUtils.runAfterCommit（吞异常），
             // 因此这里不会掩盖上面抛出的批次异常。
             if (!copiedNodeIds.isEmpty()) {
-                helper.publishByIdsAfterCommit(FileOperationHelper.ACTION_COPIED, copiedNodeIds);
+                // F12：副本全部落在**目标** scope（复制不改变源的容量口径）⇒ 只失效目标 scope。
+                helper.publishByIdsAfterCommit(FileOperationHelper.ACTION_COPIED, copiedNodeIds,
+                        List.of(FileOperationHelper.ScopeRef.fromTarget(target, userId)));
             }
         }
         return helper.buildBatchResult(details, targetParentId);

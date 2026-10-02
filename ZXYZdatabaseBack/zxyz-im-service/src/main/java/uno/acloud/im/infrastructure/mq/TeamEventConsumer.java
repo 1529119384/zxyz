@@ -13,6 +13,7 @@ import uno.acloud.common.event.TeamCreatedEvent;
 import uno.acloud.common.event.TeamMemberAddedEvent;
 import uno.acloud.common.event.TeamMemberRemovedEvent;
 import uno.acloud.common.event.TeamUpdatedEvent;
+import uno.acloud.common.mq.MqIdempotencyKeys;
 import uno.acloud.im.application.InternalTeamSyncService;
 import uno.acloud.im.config.RabbitMqConfig;
 import uno.acloud.im.dto.InternalTeamMemberRemovalRequest;
@@ -112,7 +113,7 @@ public class TeamEventConsumer {
             } catch (Exception e) {
                 // 处理失败必须释放幂等占位键，否则 MQ 重投会被判成「重复消息」而静默丢弃，
                 // 数据分歧被永久固化。范本：file-service 的 UserDeletedEventConsumer。
-                releaseIdempotencyKey(idempotencyKey);
+                MqIdempotencyKeys.release(redisTemplate, idempotencyKey, log);
                 throw e;
             }
 
@@ -126,19 +127,6 @@ public class TeamEventConsumer {
         } catch (Exception e) {
             log.error("处理团队事件 RabbitMQ 消息失败（将重试）, message={}", message, e);
             throw new RuntimeException("处理团队事件消息失败", e);
-        }
-    }
-
-    /**
-     * 释放幂等占位键，使失败消息在 MQ 重投时能被真正重新处理。
-     * Redis 自身异常只记日志，不得掩盖原始业务异常。
-     */
-    private void releaseIdempotencyKey(String idempotencyKey) {
-        try {
-            redisTemplate.delete(idempotencyKey);
-            log.warn("MQ: 团队事件处理失败，已释放幂等占位键以便重投重试: key={}", idempotencyKey);
-        } catch (Exception e) {
-            log.error("MQ: 释放幂等占位键失败（该消息重投将被判为重复而跳过）: key={}", idempotencyKey, e);
         }
     }
 

@@ -1,13 +1,12 @@
 package uno.acloud.im.application;
 
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.TeamErrorCode;
 import uno.acloud.common.TeamPermissionCodes;
 import uno.acloud.exception.BusinessException;
+import uno.acloud.im.config.ImProperties;
 import uno.acloud.im.domain.enums.ConversationType;
 import uno.acloud.im.infrastructure.persistence.entity.ImConversation;
 import uno.acloud.im.infrastructure.persistence.entity.ImMessage;
@@ -24,29 +23,35 @@ import java.util.List;
 
 import static uno.acloud.common.InputNormalizer.optionalText;
 
+/**
+ * 消息撤回/审核。
+ *
+ * <p><b>为什么去掉 {@code @RefreshScope}（B-4）</b>：{@code recall} 带
+ * {@code @Transactional}，刷新会销毁并重建本 Bean，落在刷新窗口内的事务会被中断。
+ * 撤回窗口改由 {@link ImProperties} 在使用时刻读取，热更新依旧生效。</p>
+ */
 @Service
-@RefreshScope
 public class MessageModerationService {
 
     private final ImMessageMapper imMessageMapper;
     private final ConversationMapper conversationMapper;
     private final TeamMapper teamMapper;
     private final ConversationService conversationService;
-    private final int recallWindowSeconds;
     private final TeamPermissionService teamPermissionService;
+    private final ImProperties imProperties;
 
     public MessageModerationService(ImMessageMapper imMessageMapper,
                                     ConversationMapper conversationMapper,
                                     TeamMapper teamMapper,
                                     ConversationService conversationService,
                                     TeamPermissionService teamPermissionService,
-                                    @Value("${app.im.message.recall-window-seconds:120}") int recallWindowSeconds) {
+                                    ImProperties imProperties) {
         this.imMessageMapper = imMessageMapper;
         this.conversationMapper = conversationMapper;
         this.teamMapper = teamMapper;
         this.conversationService = conversationService;
         this.teamPermissionService = teamPermissionService;
-        this.recallWindowSeconds = recallWindowSeconds;
+        this.imProperties = imProperties;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -101,7 +106,8 @@ public class MessageModerationService {
         if (createTime == null) {
             return true;
         }
-        return Duration.between(createTime, LocalDateTime.now()).getSeconds() > recallWindowSeconds;
+        return Duration.between(createTime, LocalDateTime.now()).getSeconds()
+                > imProperties.getMessage().getRecallWindowSeconds();
     }
 
     public record RecallResult(MessageRecallVO recall, List<Long> memberUserIds) {

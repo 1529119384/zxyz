@@ -102,8 +102,19 @@ pick_script() {
 # 键，不会补空值 → 后续 grant 读到空用户名 → 报「未设置」→ 部署中止。
 # 提前 pull 后，后续 pull 已是最新（无副作用），init-secrets/validate-env/grant 才是本次代码。
 if [ -d "$REPO_DIR" ]; then
-  if ! git -C "$REPO_DIR" pull --ff-only -q; then
-    echo "::error::REPO_PULL_FAILED: 无法更新 $REPO_DIR（常见原因：工作区有漂移改动）。已中止，后续脚本需最新版本"
+  # 审计 I-20（2026-10-03）：同一次 push 若同时改了代码与 nacos-config，会**同时**触发
+  #   deploy 与 nacos-import 两个 job，两个 SSH 会话并发对同一个 $REPO_DIR 执行 git pull。
+  #   nacos-import 侧（ci-cd.yml 的 Import 步骤）早已做了 5 次退避重试，deploy 侧没有 ——
+  #   撞上 git 锁（index.lock / shallow lock）会让整次部署以 REPO_PULL_FAILED 中止
+  #   （失败面是全量部署，而概率本可忽略）。此处套同款 3×5s 重试把两处口径拉齐。
+  PULL_OK=0
+  for _i in 1 2 3; do
+    if git -C "$REPO_DIR" pull --ff-only -q; then PULL_OK=1; break; fi
+    echo "pull 第 ${_i} 次失败（疑与 nacos-import 作业的 git 操作竞争），5s 后重试"
+    sleep 5
+  done
+  if [ "$PULL_OK" != "1" ]; then
+    echo "::error::REPO_PULL_FAILED: 无法更新 $REPO_DIR（常见原因：工作区有漂移改动，或持续抢不到 git 锁）。已中止，后续脚本需最新版本"
     git -C "$REPO_DIR" status --porcelain 2>/dev/null || true
     exit 1
   fi
@@ -624,11 +635,29 @@ else
         sed -i "s|^APP_IMAGE_TAG=.*|APP_IMAGE_TAG=$PREV_TAG|" .env 2>/dev/null || true
 
         # 拉取上一版本镜像
+        # ⚠️ 2026-10-03 修复（审计 I-10①，与主路径 :341-353 同款纪律）：
+        #   原来是 `docker compose pull "$svc" &` + **无参 wait**。无参 wait 只等所有子进程结束，
+        #   **不会把任一子进程的非零退出码透传出来**（本文件 :331-340 的注释已把这条教训写在
+        #   主路径上，这里是修好主路径之后**遗留的同一处缺陷**）。故改为逐 pid `wait "$pid"`。
+        #   与主路径的差异（有意保留）：回滚路径**不**因 pull 失败而中止 —— 回滚的首要目标是
+        #   尽快回到可用版本，旧 sha 的镜像通常已在本地（promote 过），此时 pull 返回非零
+        #   不应阻断回滚。故这里只把失败**显式打印**出来，而不是静默吞掉。
         echo "===== Pulling previous version images ====="
+        ROLLBACK_PULL_PIDS=()
         for svc in "${UPDATE_SVC[@]}"; do
           docker compose pull "$svc" &
+          ROLLBACK_PULL_PIDS+=("$!:$svc")
         done
-        wait
+        ROLLBACK_PULL_FAILED=()
+        for entry in "${ROLLBACK_PULL_PIDS[@]}"; do
+          pid="${entry%%:*}"; svc="${entry#*:}"
+          if ! wait "$pid"; then
+            ROLLBACK_PULL_FAILED+=("$svc")
+          fi
+        done
+        if [ ${#ROLLBACK_PULL_FAILED[@]} -gt 0 ]; then
+          echo "::warning::回滚时以下服务 pull 返回非零（若本地已有旧 sha 镜像则不影响回滚）：${ROLLBACK_PULL_FAILED[*]}"
+        fi
         echo "Pull complete"
 
         # 重启服务

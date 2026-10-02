@@ -34,8 +34,22 @@ public class GatewayProperties {
         /** 可信代理 IP（支持单个 IP 或 CIDR 网段，逗号/空格分隔）。默认关：解析基于真实远程地址。 */
         private String trustedProxies = "";
 
+        /**
+         * {@code IM_WEBSOCKET_URI} 的显式性探针（B-10）。
+         *
+         * <p>注意：这<b>不是</b> IM WS 路由实际使用的地址 —— 路由用的是
+         * {@code spring.cloud.gateway...routes[im-websocket].uri} 里的
+         * {@code ${IM_WEBSOCKET_URI:ws://localhost:19090}}（那个 localhost 默认值
+         * 本地开发必须保留）。本字段只回答一个问题：<b>环境变量到底有没有被显式注入</b>。
+         * 空 ⇒ 从未注入。prod 档下由 {@code ImWebSocketRouteValidator} fail-closed。</p>
+         */
+        private String websocketUri = "";
+
         public String getTrustedProxies() { return trustedProxies; }
         public void setTrustedProxies(String trustedProxies) { this.trustedProxies = trustedProxies; }
+
+        public String getWebsocketUri() { return websocketUri; }
+        public void setWebsocketUri(String websocketUri) { this.websocketUri = websocketUri; }
 
         /**
          * 是否已配置可信代理（feature on 判定）。
