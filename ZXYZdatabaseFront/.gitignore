@@ -59,3 +59,7 @@ playwright-report/
 test-results/
 blob-report/
 .playwright/
+
+# Playwright storageState：里面是**真实会话 Cookie**（等同于凭据），绝不入库。
+# 由 e2e/smoke-authed/authed-auth.setup.e2e.js 在每次 smoke-authed 运行前生成。
+e2e/.auth/

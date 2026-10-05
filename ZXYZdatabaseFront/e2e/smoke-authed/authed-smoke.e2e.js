@@ -33,6 +33,13 @@
 //   E2E_BASE_URL=http://127.0.0.1:8081 E2E_USERNAME=... E2E_PASSWORD=... \
 //     npx playwright test --project=smoke-authed
 //   npx playwright test --project=smoke-authed --list     # 只列用例（凭据缺失也能列）
+//
+//   # 本地凭据放 ZXYZdatabaseFront/.env.e2e.local（已 gitignore），然后：
+//   npm run test:e2e:smoke:authed
+//
+// ⚠️ 「未登录」的判据以**生产实测**为准（2026-10-05）：网关过滤器拦截时返回
+//    **HTTP 200 + code 4010**，不是 401/403。详见 expectNotAuthenticated() 的注释 ——
+//    那里记录了这条判据的来由，以及「桩与断言共享同一错误假设 → 测试必然假绿」的教训。
 import { test, expect, request as playwrightRequest } from '@playwright/test'
 
 // ---------------------------------------------------------------- 守卫与登录
@@ -68,20 +75,41 @@ if (!HAS_CREDS) {
 test.skip(!HAS_CREDS, '未提供 E2E_USERNAME/E2E_PASSWORD，跳过登录态只读冒烟')
 
 /**
- * 登录一次：共享 context 的 Cookie jar 里拿到服务端下发的 HttpOnly Cookie。
+ * 断言「该请求代表未登录」。
  *
- * 服务端 `setAuthCookies(response, ...)` 下发 HttpOnly Cookie，同一 context 的
- * 后续请求自动携带 —— 全程不接触 token 明文、不手工拼 Authorization Header。
- * 响应体不打印（LoginVO 含 token）。
+ * <p>🔴 这里**必须同时接受两种形态**，不能用「HTTP 401/403」单一判据 ——
+ * 这是本项目真实契约（2026-10-05 对生产实测后修正，见下）：
+ *
+ * <ul>
+ *   <li>网关过滤器直接拦截（SaReactorFilter.setError）→ 返回
+ *       <b>HTTP 200</b> + body <code>{"code":4010,"msg":"未登录或登录已过期"}</code>；
+ *       生产实测 8 个端点全为此形态。</li>
+ *   <li>Spring 侧 GlobalExceptionHandler 抛 NoLoginException 时 → HTTP 401
+ *       （{@code ErrorCode.resolveHttpStatus(NO_LOGIN)} 映射）。</li>
+ * </ul>
+ *
+ * <p>因此判据是「HTTP 401/403 <b>或</b> 业务码 4010/4030」。
+ * 前端 <code>createApiClient.js:44-48</code> 也是这两条并列判定
+ * （<code>httpStatus === 401</code> 与 <code>code === 4010</code>），与本断言同口径。</p>
+ *
+ * <p><b>为什么改这条</b>：初版只断言 HTTP 401/403，而生产返回的是 200+4010 ⇒
+ * 8 条对照用例全部失败。更值得记的是它**为什么没在自测里暴露**：当时的桩服务器
+ * 是自写的，而这同一个错误假设也被写进了桩（匿名一律回 401）——
+ * 桩与断言共享同一个错误前提时，测试必然「通过」。这是「自证」的典型失效模式：
+ * 桩必须取材于**真实契约取证**，不能取材于被验对象的假设。
+ * 同一次生产取证还揪出了第二个同源缺陷：手动 newContext 会继承 project 的
+ * storageState（详见对照用例里的注释）。两个缺陷都只在**打真实服务**时才暴露。</p>
  */
-async function login(apiContext) {
-  const response = await apiContext.post('/api/users/login', {
-    data: { username: USERNAME, password: PASSWORD, rememberMe: false },
-  })
-  expect(response.status()).toBe(200)
-  const body = await response.json()
-  expect(body.code).toBe(1)
-  // Cookie 已写入共享 context 的 Cookie jar；这里只确认状态，不消费 token 字段。
+async function expectNotAuthenticated(response) {
+  const status = response.status()
+  // 形态 A：网关过滤器直接回 HTTP 200 + 业务码 4010/4030
+  if (status === 200) {
+    const body = await response.json()
+    expect([4010, 4030]).toContain(body.code)
+    return
+  }
+  // 形态 B：Spring 异常处理器映射出的 HTTP 401/403
+  expect([401, 403]).toContain(status)
 }
 
 // ---------------------------------------------------------------- 白名单
@@ -102,6 +130,14 @@ async function login(apiContext) {
  * | GET /api/im/system-notifications/unread-count | SystemNotificationController#getUnreadCount(:41) | → systemNotificationMapper.countUnread（SELECT COUNT）|
  *
  * 刻意**不**加入（读码结论）：
+ * - GET /api/im/conversations —— 🔴 **2026-10-05 对生产实测后移出**：它带
+ *   `@SaCheckPermission(IM_CONVERSATION_READ)`（`ConversationController.java:52`），
+ *   而 `im:conversation:read` **不在** `PermissionDataInitializer.BASIC_PERMISSIONS`
+ *   里（该类 :21-30 只给 `system_user` 8 个 file/trash/share 权限）⇒ 普通用户
+ *   （含只读测试账号）访问它**合法地**得到 403 / code 4030。
+ *   实测：`{"code":4030,"msg":"无操作权限: im:conversation:read"}`。
+ *   这不是产品的缺陷，也不是账号配置漏项 —— 是**白名单选错了端点**：
+ *   只读冒烟只应收「任何已登录普通用户都能成功读取」的端点，不该要求特权。
  * - GET /api/im/presence/me、/api/im/presence/users —— UserPresenceService.getPresence/
  *   listPresence 本身是纯 SELECT，**技术上纯读**；但在线状态属易变语义，白名单保持最小、
  *   不给「看似读、将来可能被加成心跳刷新」的端点开门，故不入列。
@@ -114,36 +150,25 @@ const READONLY_ENDPOINTS = [
   { path: '/api/files?parentId=-1', dataKind: 'object' },
   { path: '/api/trash/files', dataKind: 'object' },
   { path: '/api/storage/usage', dataKind: 'object' },
-  { path: '/api/im/conversations', dataKind: 'array' },
   { path: '/api/im/system-notifications/unread-count', dataKind: 'object' },
 ]
 
 // ---------------------------------------------------------------- 用例
 
 test.describe('登录态只读冒烟', () => {
-  // 套件级共享 context：登录次数 = 1 次/套件（限流风险最低的形态）。
-  // ⚠️ 必须是共享的同一个 APIRequestContext 实例 —— 内置 `request` fixture 是
-  // 「每条用例一个全新 context（独立 Cookie jar）」，靠它做「登录+断言」时
-  // 登录态无法跨用例传递，并行 workers 下会随机 401。
-  let sharedAuthedContext
-
-  test.beforeAll(async () => {
-    // newContext() 来自 playwright.request 命名空间（APIRequestContext 实例上没有它）。
-    // baseURL 显式传入 —— 手动创建的 context 不继承 project 配置。
-    sharedAuthedContext = await playwrightRequest.newContext({
-      baseURL: test.info().project.use.baseURL,
-    })
-    await login(sharedAuthedContext)
-  })
-
-  test.afterAll(async () => {
-    await sharedAuthedContext?.dispose()
-    sharedAuthedContext = undefined
-  })
+  // 🔴 认证来自 setup project（authed-auth.setup.e2e.js）落下的 storageState，
+  //    由 playwright.config.js 的 `use.storageState` 自动注入本 project 的每个
+  //    context —— 本文件**不登录**，所以登录次数恒为 1（与 worker 数无关）。
+  //
+  //    历史教训（2026-10-05 生产实测）：曾在本文件里用 test.beforeAll 登录，
+  //    而 beforeAll 的执行次数是 **worker 进程数**（本机 20 核 ⇒ 10 workers
+  //    ⇒ 10 次登录），越过「每用户名 5 次/分钟」的登录限流 ⇒ 后半段用例
+  //    拿到 code 4000「请求过于频繁，请稍后再试」，表现为随机失败。
 
   for (const { path, dataKind } of READONLY_ENDPOINTS) {
-    test(`已登录 GET ${path} 返回 200 且业务体形状正确`, async () => {
-      const response = await sharedAuthedContext.get(path)
+    test(`已登录 GET ${path} 返回 200 且业务体形状正确`, async ({ request }) => {
+      // request fixture 已由 project 的 use.storageState 注入登录 Cookie
+      const response = await request.get(path)
       expect(response.status()).toBe(200)
 
       const body = await response.json()
@@ -157,16 +182,26 @@ test.describe('登录态只读冒烟', () => {
       // 刻意到此为止：不断言条数、字段值 —— 响应体也不打印（可能含 PII）。
     })
 
-    test(`未登录 GET ${path} 被拒绝（401/403）`, async () => {
+    test(`未登录 GET ${path} 被拒绝`, async () => {
       // 全新匿名 context：证明该端点确实受保护，登录态用例不是白跑。
-      // 🔴 必须用 playwrightRequest 命名空间的 newContext（APIRequestContext 实例上
-      // 没有该方法）；baseURL 需显式传入 —— 匿名 context 不继承 project 配置。
+      //
+      // 🔴 两个都必须显式给，否则这条对照用例是**假绿**（2026-10-05 生产实测）：
+      //   1) newContext() 来自 playwright.request 命名空间（APIRequestContext 实例
+      //      上没有该方法 —— 写成 request.newContext() 会 TypeError）；
+      //   2) **必须传 storageState: { cookies: [], origins: [] }**。
+      //      本以为「手动建的 context 不会继承 project 的 use.storageState」——
+      //      实测是**会继承**的：不带该参数时匿名 context 也带着登录 Cookie，
+      //      于是受保护端点返回 200 + code 1（登录成功态），断言「未登录被拒」
+      //      反而失败。传空 storageState 后才真正匿名（实测 code 变 4010）。
+      //      ⇒ 对照组**静默变成登录态重复验证**是这条最容易踩的坑。
+      //   3) baseURL 也需显式传入 —— 同样不继承 project 配置。
       const anonymous = await playwrightRequest.newContext({
         baseURL: test.info().project.use.baseURL,
+        storageState: { cookies: [], origins: [] },
       })
       try {
         const response = await anonymous.get(path)
-        expect([401, 403]).toContain(response.status())
+        await expectNotAuthenticated(response)
       } finally {
         await anonymous.dispose()
       }

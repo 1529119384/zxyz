@@ -68,9 +68,29 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'], baseURL: REMOTE_BASE_URL },
     },
     {
+      // 认证前置：登录一次并落 storageState（整个运行只登录 1 次）。
+      // 必须在 smoke-authed 之前跑，故冒烟 project 用 dependencies 依赖它。
+      name: 'smoke-authed-auth',
+      testDir: './e2e/smoke-authed',
+      testMatch: '**/*.setup.e2e.js',
+      use: { ...devices['Desktop Chrome'], baseURL: REMOTE_BASE_URL },
+    },
+    {
       name: 'smoke-authed',
       testDir: './e2e/smoke-authed',
-      use: { ...devices['Desktop Chrome'], baseURL: REMOTE_BASE_URL },
+      // 冒烟用例文件；setup 由上面的 project 专职跑
+      testIgnore: '**/*.setup.e2e.js',
+      // 🔴 dependencies + storageState 组合 = 登录次数恒为 1，与 worker 数无关。
+      // 为什么不能在冒烟文件里 test.beforeAll 登录：beforeAll 的执行次数是
+      // **worker 进程数**（本机 20 核 ⇒ 10 workers ⇒ 10 次登录），会越过登录限流的
+      // 「每用户名 5 次/分钟」⇒ 后半段用例拿到 code 4000「请求过于频繁」。
+      // 2026-10-05 对生产实测确认：默认并行 8~11 条失败，--workers=1 则全绿。
+      dependencies: ['smoke-authed-auth'],
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: REMOTE_BASE_URL,
+        storageState: 'e2e/.auth/authed-state.json',
+      },
     },
   ],
 })

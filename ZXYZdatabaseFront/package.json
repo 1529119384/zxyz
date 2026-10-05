@@ -19,6 +19,7 @@
     "test:e2e": "playwright test --project=ui-mocked",
     "test:e2e:smoke": "playwright test --project=smoke-readonly",
     "test:e2e:smoke:authed": "playwright test --project=smoke-authed",
+    "test:e2e:smoke:authed:local": "node --env-file=.env.e2e.local node_modules/@playwright/test/cli.js test --project=smoke-authed",
     "test:e2e:list": "playwright test --list",
     "prepare": "husky"
   },
