@@ -1,3 +1,8 @@
+// @ts-check
+// ⚠️ 首行 `// @ts-check` 是必需的：`src/api/` 属
+// scripts/check-typecheck-scope.mjs 的 FULLY_LIT_DIRS（规则 1），
+// 该目录下所有 .js 都必须显式点亮，否则 `npm run typecheck:scope` 会失败
+// （CI 的 quality-check-frontend 第 7 步会红）。
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@/utils/request', () => ({
@@ -26,7 +31,7 @@ describe('C-9 死导出裁定守门', () => {
   })
 
   it('应保留 fetchConfig 并按 key 请求配置详情端点', async () => {
-    request.get.mockResolvedValue({ code: 1, data: {} })
+    vi.mocked(request.get).mockResolvedValue({ code: 1, data: {} })
 
     await fetchConfig('smtp.host')
 
@@ -34,7 +39,7 @@ describe('C-9 死导出裁定守门', () => {
   })
 
   it('应保留 fetchPendingProjectCreateRequests 并请求待审批列表端点', async () => {
-    request.get.mockResolvedValue({ code: 1, data: [] })
+    vi.mocked(request.get).mockResolvedValue({ code: 1, data: [] })
 
     await fetchPendingProjectCreateRequests(7)
 
@@ -42,7 +47,7 @@ describe('C-9 死导出裁定守门', () => {
   })
 
   it('应保留 fetchProjectMembers 并请求项目成员列表端点', async () => {
-    request.get.mockResolvedValue({ code: 1, data: [] })
+    vi.mocked(request.get).mockResolvedValue({ code: 1, data: [] })
 
     await fetchProjectMembers(88)
 
@@ -50,7 +55,7 @@ describe('C-9 死导出裁定守门', () => {
   })
 
   it('应保留 addProjectMember 并 POST 项目成员添加端点', async () => {
-    request.post.mockResolvedValue({ code: 1 })
+    vi.mocked(request.post).mockResolvedValue({ code: 1 })
 
     await addProjectMember(88, { userId: 3 })
 
@@ -60,7 +65,7 @@ describe('C-9 死导出裁定守门', () => {
   })
 
   it('应保留 transferProjectLeader 并 PATCH 项目负责人移交端点', async () => {
-    request.patch.mockResolvedValue({ code: 1 })
+    vi.mocked(request.patch).mockResolvedValue({ code: 1 })
 
     await transferProjectLeader(88, { targetUserId: 5 })
 
@@ -73,8 +78,13 @@ describe('C-9 死导出裁定守门', () => {
     const conversationTypes = await import('@/constants/conversationTypes')
     const messageStatus = await import('@/constants/messageStatus')
 
-    expect(conversationTypes.CONVERSATION_TYPE).toBeUndefined()
-    expect(messageStatus.MESSAGE_STATUS).toBeUndefined()
+    // ⚠️ 这里刻意用 hasOwnProperty 而不是 `expect(mod.X).toBeUndefined()`：
+    //    在 `@ts-check` 下直接访问一个**已被移除**的导出会报 TS2339
+    //    （属性不存在于模块类型上）；且「断言 undefined」无法区分
+    //    「真的没导出」与「导出了但值是 undefined」。用属性存在性判定更准，
+    //    也让该文件在 typecheck 门禁下保持干净。
+    expect(Object.prototype.hasOwnProperty.call(conversationTypes, 'CONVERSATION_TYPE')).toBe(false)
+    expect(Object.prototype.hasOwnProperty.call(messageStatus, 'MESSAGE_STATUS')).toBe(false)
 
     // 具名导出必须保持：它们才是全仓 13+6 个消费点的真实依赖
     expect(conversationTypes.SYSTEM).toBe('SYSTEM')
