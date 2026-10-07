@@ -14,7 +14,9 @@
 - `zxyz-rabbitmq` — RabbitMQ 3.13 + management 插件, **384M 限制**
 - `flyway` — 手动迁移工具容器（`profiles: [tools]`，默认不启动）
 
-**业务服务层（10）**：使用统一 `ZXYZdatabaseBack/Dockerfile`，通过 `MODULE` build arg 选择 Maven 子模块。各服务独立 MySQL 数据库、隔离的 Redis database 编号。端口范围 18080-18088 + gateway 18000。生产 compose 后端服务仅在容器内监听端口（`SERVER_PORT`），无 host 端口映射；对外仅 `frontend-nginx:80`。10 个服务 + gateway 统一 **448M 内存限制**（2026-10-03 由 512M 压降，见下文《维护窗口》）。
+**业务服务层（10）**：使用统一 `ZXYZdatabaseBack/Dockerfile`，通过 `MODULE` build arg 选择 Maven 子模块。各服务独立 MySQL 数据库；Redis database 编号隔离（⚠️ 实际范围见下），端口范围 18080-18088 + gateway 18000。生产 compose 后端服务仅在容器内监听端口（`SERVER_PORT`），无 host 端口映射；对外仅 `frontend-nginx:80`。10 个服务 + gateway 统一 **448M 内存限制**（2026-10-03 由 512M 压降，见下文《维护窗口》）。
+
+> ⚠️ **Redis database 隔离的实际范围是 9 个服务，不含 admin-service**（2026-10-07 复核）：compose 里 `REDIS_DATABASE` 出现 **9 处** —— gateway 0 / project 1 / im 2 / email 3 / user 4 / share 5 / file 6 / team 7 / audit 8。**admin-service 不消费该键**（只用 Redis Pub/Sub 做配置广播），故「各服务独立编号」对它不成立。相关：`ISSUE` 的 I-4 修复正是把 `.env.example` 里写死的 `REDIS_DATABASE=0` 删除，让这 9 处兜底生效。
 
 **前端层（1）**：`frontend-nginx` — 唯一对外暴露端口（`${HTTP_PORT:-80}:80`）。
 
