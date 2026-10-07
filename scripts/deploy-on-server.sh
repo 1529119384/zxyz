@@ -121,6 +121,14 @@ if [ -d "$REPO_DIR" ]; then
   if [ -d "$REPO_DIR/scripts" ]; then
     mkdir -p "$DEPLOY_DIR/scripts"
     cp -f "$REPO_DIR/scripts/"*.sh "$DEPLOY_DIR/scripts/" 2>/dev/null || true
+    # ⚠️ U-1（2026-10-07 生产实测修复）：`cp -f` **不保留可执行位**，而仓库里
+    #   除 dev-up.sh 外的 22 个 *.sh 在 git 中都是 100644（非可执行）。服务器 crontab
+    #   用相对路径直接调用（`cd /www/zxyz && ./scripts/backup.sh ...`）⇒ 644 无 x 位
+    #   ⇒ 每晚必然 `Permission denied`。
+    #   实证：backup-cron.log 全 28 行均为 `/bin/sh: 1: ./scripts/backup.sh: Permission denied`，
+    #   最后一次成功备份停在 2026-09-22（断档 15 天），binlog 增量从未产出。
+    #   修复：同步后显式补 x 位。这是幂等操作，且与「脚本用法写的是 ./scripts/xxx.sh」一致。
+    chmod +x "$DEPLOY_DIR/scripts/"*.sh 2>/dev/null || true
   fi
 fi
 
