@@ -199,7 +199,7 @@ WHEN 添加 setting 子路由, DO 确保 `route.name` 在 Setting 组件 watcher
 - 服务器 `.env` 在 `/www/zxyz/.env`，独立于仓库维护，CI/CD 不同步
 - 镜像标签：dev → `dev`，main → `latest`，tag → 版本号；每镜像双 tag（`${tag}` + `${git_sha}` 供精确回滚）；本地改 `.env` 的 `APP_IMAGE_TAG`/`IMAGE_PREFIX` 控制部署目标
 
-**前端测试**: 68 个测试文件，1228 个用例（`npm run test`）。⚠️ 文件数由 `npm run doc-count:check`（`ZXYZdatabaseFront/scripts/check-doc-test-count.mjs`）对着 `src/**/*.spec.js` 实测校验 —— 此前这里写的是 26 个，实测已 65 个（2026-10-03 起为 68），是无人发现的 2.5 倍偏差。用例数无法静态推导，改测试后请跑一次 `npm run test` 并同步这里的数字（`vite.config.mjs` 覆盖率注释里的同类数字是**历史快照**，不要改）。命名 `*.spec.js` 放对应目录 `__tests__/` 下，`vi.mock()` 外部依赖，测试名中文。import 顺序：vitest/vue 最前 → `vi.mock()` 紧跟 → 再 `@/` 与第三方（`element-plus` import 须在 `vi.mock()` 后，否则 `import-x/order` 报错）。详见 [docs/testing.md](docs/testing.md)。
+**前端测试**: 68 个测试文件，1241 个用例（`npm run test`）。⚠️ 文件数由 `npm run doc-count:check`（`ZXYZdatabaseFront/scripts/check-doc-test-count.mjs`）对着 `src/**/*.spec.js` 实测校验 —— 此前这里写的是 26 个，实测已 65 个（2026-10-03 起为 68），是无人发现的 2.5 倍偏差。用例数无法静态推导，改测试后请跑一次 `npm run test` 并同步这里的数字（`vite.config.mjs` 覆盖率注释里的同类数字是**历史快照**，不要改）。命名 `*.spec.js` 放对应目录 `__tests__/` 下，`vi.mock()` 外部依赖，测试名中文。import 顺序：vitest/vue 最前 → `vi.mock()` 紧跟 → 再 `@/` 与第三方（`element-plus` import 须在 `vi.mock()` 后，否则 `import-x/order` 报错）。详见 [docs/testing.md](docs/testing.md)。
 
 **CI/CD**: `.github/workflows/ci-cd.yml` 按路径变更选择性构建部署。push 到 dev/main、`v*` tag、PR、手动 dispatch；`dorny/paths-filter` 按服务目录判断重建；backend-common 变更触发全部后端重建；**`docker-compose.yml`/`.env.example` 变更会触发全量 11 服务重建与部署（docker-config），改它（哪怕只改注释）前须知晓此代价**；workflow_dispatch 输入 `tag`（必填）/`skip_quality`/`fast_deploy`/`force_deploy`/`run_e2e`。辅助 workflow：`lint-workflows.yml`（actionlint）、`ghcr-cleanup.yml`、`restore-drill.yml`（手动恢复演练，带凭据 fail-closed 断言）。
 
