@@ -30,6 +30,12 @@ on:
       #    它与 docker-compose.yml 是**两个文件**：后者的 glob 不会匹配到它，
       #    这正是我们要的（后者命中 docker-config ⇒ 全量重建，前者只 lint）。
       - 'docker-compose.observability.yml'
+      # .trivyignore.yaml：Trivy 风险接受清单。**必须**纳入白名单 —— 否则
+      # 「只改豁免清单」的提交会**一条检查都不跑**，而它恰恰是能改变部署门禁
+      # 松紧的文件（加一条豁免 = 让一个 CRITICAL 放行）。属本仓反复强调的
+      # 「零检查变更 = 盲区」形态。它不参与镜像构建，只触发 lint-config
+      # （严格 YAML 校验），代价一次轻量 run。
+      - '.trivyignore.yaml'
   pull_request:
     # 同上（D-3）：只覆盖 dev。Dependabot 的 PR base 本就是 dev。
     branches: [dev]
@@ -57,6 +63,8 @@ on:
       # ⚠️ 与 push.paths 对齐（漏一处 ⇒ 该类 PR 一条 CI 都不跑）。见上方说明：
       #    observability compose 只进 lint、不进构建。
       - 'docker-compose.observability.yml'
+      # ⚠️ 同上对齐：trivyignore 只进 lint、不进构建。见 push.paths 处的说明。
+      - '.trivyignore.yaml'
   workflow_dispatch:
     inputs:
       tag:
@@ -1145,6 +1153,17 @@ jobs:
             change: ${{ needs.detect-changes.outputs.frontend }}
             is_backend: false
     steps:
+      # ⚠️ 本作业此前**没有 checkout**（只做 Login→Scan），因此 runner 工作目录为空。
+      #    2026-10-08 起 Trivy 需要读取 `.trivyignore.yaml`（风险接受清单），
+      #    没有 checkout 时该文件不存在 ⇒ 豁免静默失效、门禁照旧变红。
+      #    fetch-depth: 1 即可（只取工作树，不需要历史）。
+      #    刻意**不用** sparse-checkout：模式写错会让豁免再次静默失效，
+      #    而本步代价仅是一次浅克隆，不值得为省几秒引入这种风险。
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
       # 仅当该镜像真实构建过才扫描（与 build-and-push 的 should-build 逻辑一致）
       - name: Check if image was built
         id: was-built
@@ -1177,6 +1196,11 @@ jobs:
           image-ref: ${{ env.IMAGE_PREFIX }}/zxyz-${{ matrix.name }}:${{ needs.detect-changes.outputs.tag }}
           severity: HIGH,CRITICAL
           ignore-unfixed: true
+          # 风险接受清单（审计 41 号）。当前仅 1 条：CVE-2026-47884
+          # ——「上游 6.2.x 无补丁 + 本应用纯 REST 无视图层 ⇒ 路径不可达」，
+          # 用户 2026-10-08 明确拍板接受；每条豁免都写明了重新评估条件。
+          # ⚠️ 该输入默认值为空串，必须显式传入，否则文件不会被读取。
+          trivyignores: .trivyignore.yaml
           format: table
           exit-code: '1'
           output: trivy-${{ matrix.name }}.txt

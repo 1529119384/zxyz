@@ -1,0 +1,58 @@
+# Trivy 漏洞豁免清单（`.trivyignore.yaml` 结构化格式）
+#
+# 用法：由 .github/workflows/ci-cd.yml 的 security-scan 作业显式传入
+#   with:
+#     trivyignores: .trivyignore.yaml
+# ⚠️ 该作业**没有 actions/checkout**（只做 Login→Scan），因此必须补一个 checkout
+#    步骤，否则本文件在 runner 上不存在、豁免静默失效（门禁会照旧变红）。
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# 豁免即"风险接受"：每一条都必须写明**为什么不可达 / 为什么无药可升**，
+# 以及**什么条件下必须重新评估**。不接受无理由的裸 ID 列表。
+# ─────────────────────────────────────────────────────────────────────────────
+
+vulnerabilities:
+  - id: CVE-2026-47884
+    # spring-webmvc XsltView 路径限制不当 ⇒ SSRF + RCE（CWE-22），CVSS 9.8 CRITICAL
+    paths:
+      - app/app.jar
+    statement: |
+      风险接受（用户 2026-10-08 明确拍板）。两条独立理由，缺一不可：
+
+      ① 上游无药可升（不是"漏升"）
+         该 CVE 披露于 2026-08-27，而 Spring Framework 6.2.x 的开源支持已于
+         2026-06 结束（官方 Versions wiki："Open source support ends in June 2026"）
+         ⇒ 6.2.x 线不存在回补版本。Maven Central 实测：spring-webmvc 的 6.2.x
+         止于 6.2.19，无 6.2.20。本仓所钉 6.2.19 (ZXYZdatabaseBack/pom.xml) 恰是
+         6.2.x 上界，故扫描器只能报出唯一修复版 7.0.9。
+         而要拿到 Framework 7.0.9 必须升到 Spring Boot 4.x：
+           · Boot 3.5 全线（3.5.14/15/16）自带 spring-framework 均为 6.2.19；
+           · 单独顶 -Dspring-framework.version=7.0.9 会在 gateway 编译/运行双红
+             （Framework 7 的 HttpHeaders 不再继承 MultiValueMap，containsKey/get
+             被移除）——已实测；
+           · Boot 4.1.1 升级分支在 POM 解析阶段即失败（同名属性 jackson-bom.version
+             在 Boot 4 语义变为 Jackson 3 BOM）——已实测；
+           · 生态侧另有硬阻塞：knife4j 自 2024-01 停更且硬依赖 springdoc 2.3.0，
+             与 Boot 4 需要的 springdoc 3.x 互斥。
+         ⇒ 属"无药可升"，为关闭一条**不可达**路径而做 Boot 4 全量迁移，成本与收益失衡。
+
+      ② 漏洞路径在本应用不可达
+         CVE 触发需三条同时成立：使用 XsltView、存在 /** 映射导致视图渲染、
+         视图名未显式指定。本仓实测（排除 target/ 的纯文本检索）：
+           · @RestController / @RestControllerAdvice = 44 处；非 REST 的 @Controller = 0；
+           · ViewResolver / ModelAndView( / setViewName / return "redirect: / "forward: = 0；
+           · 源码文本 XsltView / XSLT / xslt / TransformerFactory / javax.xml.transform = 0；
+           · templates/ / webapp/ / .jsp / .xsl / .xslt 资源 = 0。
+         全应用为纯 REST/JSON，@RestController 经 @ResponseBody 语义直接绕过视图
+         解析层 ⇒ 连视图层都不存在，无任何 XsltView 注册点。
+         （口径提醒：grep xslt 在 target/ 下会命中 45 处，但全是构建产物 fat JAR
+          内嵌的 spring-webmvc jar 字节，源码 0 命中。）
+
+      完整论证、实测命令与证据锚点见：
+        ISSUE/41-CVE-2026-47884-SPRING-2026-10-08.md （含 Boot 4 迁移的前置清单）
+
+      ── 重新评估条件（任一满足即须摘掉本条豁免）──
+      1. 引入任何 XSLT / XsltView / 视图解析器（原为 REST-only，若转为 MVC 渲染则前提成立）；
+      2. Spring Boot 升到 4.x（届时自带 spring-framework 7.0.9，CVE 自然消失，本豁免应删除）；
+      3. 上游对 6.2.x 线发布回补版本（届时改为升级而非豁免）；
+      4. 该 CVE 被重新评估为可经非 XSLT 路径触发（NVD/GHSA 更新描述）。
