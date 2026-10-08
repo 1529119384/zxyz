@@ -69,6 +69,19 @@
             <artifactId>mysql-connector-j</artifactId>
             <scope>runtime</scope>
         </dependency>
+        <!-- ⚠️ 本模块刻意只引 sa-token-core，**不引任何 DAO 集成**（无 sa-token-redis-template /
+             sa-token-alone-redis）。原因：audit-service 是纯 MQ 消费者，没有任何 HTTP 端点、
+             main 代码里 0 处会话调用，所以当前完全无害。
+             但它在 classpath 上有 sa-token-core + 共享配置的 token-storage-mode=redis，
+             属「半截 Sa-Token」形态：
+               · 若将来有人给本服务加一个带 @Log 的 Controller（@Log 切面会调
+                 authServicePort.isLogin()，见 AbstractLogAspect），或任何 StpUtil 间接调用；
+               · 由于本模块没有 redis DAO 集成，SaManager 会**静默**落到 JVM 内存 DAO
+                 （SaTokenDaoDefaultImpl）—— 无任何报错，但会话重启即失效、且与全站 db9 不通。
+             ⇒ 禁令：新增任何会话/鉴权调用前，必须先补齐 alone-redis 全套依赖
+               （sa-token-redis-template + sa-token-alone-redis + commons-pool2），
+               否则会得到「登录看起来成功、换实例即 401」的极难定位故障。
+             由 zxyz-common 的 AloneRedisWiringContractTest A 项钉住（audit 不得进入 9 模块清单）。 -->
         <dependency>
             <groupId>cn.dev33</groupId>
             <artifactId>sa-token-core</artifactId>

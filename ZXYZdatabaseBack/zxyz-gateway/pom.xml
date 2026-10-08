@@ -48,6 +48,15 @@
             <groupId>cn.dev33</groupId>
             <artifactId>sa-token-redis-template</artifactId>
         </dependency>
+        <!-- Sa-Token 独立 Redis 数据源：会话统一落 db9，与各服务业务库隔离。
+             本模块**不需要**额外补 commons-pool2 —— 下方「连接池」段已有该依赖。
+             （C 项门禁要求「凡声明 sa-token-redis-template 的模块都必须有 commons-pool2」，
+              gateway 已满足；再声明一次虽不报错（Maven 后者覆盖前者），但属冗余。）
+             版本由父 pom 的 dependencyManagement 管理，模块内不写 version。 -->
+        <dependency>
+            <groupId>cn.dev33</groupId>
+            <artifactId>sa-token-alone-redis</artifactId>
+        </dependency>
         <!-- Redis 连接（Sa-Token 会话存储） -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

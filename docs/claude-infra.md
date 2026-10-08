@@ -17,6 +17,10 @@
 **业务服务层（10）**：使用统一 `ZXYZdatabaseBack/Dockerfile`，通过 `MODULE` build arg 选择 Maven 子模块。各服务独立 MySQL 数据库；Redis database 编号隔离（⚠️ 实际范围见下），端口范围 18080-18088 + gateway 18000。生产 compose 后端服务仅在容器内监听端口（`SERVER_PORT`），无 host 端口映射；对外仅 `frontend-nginx:80`。10 个服务 + gateway 统一 **448M 内存限制**（2026-10-03 由 512M 压降，见下文《维护窗口》）。
 
 > ⚠️ **Redis database 隔离的实际范围是 9 个服务，不含 admin-service**（2026-10-07 复核）：compose 里 `REDIS_DATABASE` 出现 **9 处** —— gateway 0 / project 1 / im 2 / email 3 / user 4 / share 5 / file 6 / team 7 / audit 8。**admin-service 不消费该键**（只用 Redis Pub/Sub 做配置广播），故「各服务独立编号」对它不成立。相关：`ISSUE` 的 I-4 修复正是把 `.env.example` 里写死的 `REDIS_DATABASE=0` 删除，让这 9 处兜底生效。
+>
+> ⚠️ **Sa-Token 会话已独立到 db9（2026-10-08）**：9 个服务（上列 9 个，即除 audit 外全部）通过 `sa-token-alone-redis` 把会话统一落到独立连接 `sa-token.alone-redis`（`database: 9`，配置在 `zxyz-common/application-common.yml`）。⇒ **业务库编号隔离（0-8）不含会话**：`satoken*` 键全在 db9，其余键按 0-8 分库。audit-service 纯 MQ 消费者、刻意不引该依赖。副作用提醒：随依赖补入的 `commons-pool2` 使 Boot 的 `isPoolEnabled()` 翻 true ⇒ 各服务**主** Redis 客户端从「无池」变「有池」，`spring.data.redis.lettuce.pool.*`（max-active 8 / max-idle 8 / min-idle 2）**真生效**（生产 compose/env 无 `REDIS_POOL_*` 覆盖 ⇒ 吃默认值）。部署后验证会话真的迁移：`redis-cli -n 9 --scan --pattern 'satoken*'`（插件对配置异常静默吞，「起来了」≠「迁移了」）。
+>
+> 📍 **长期边界与演进路线**（库号 0–15 硬上限、`maxmemory 0`+`noeviction` 与会话、门禁不变量口径、部署验证不可省略项）集中记档在 **`docs/redis-session-layout.md`**，本节不重复。
 
 **前端层（1）**：`frontend-nginx` — 唯一对外暴露端口（`${HTTP_PORT:-80}:80`）。
 

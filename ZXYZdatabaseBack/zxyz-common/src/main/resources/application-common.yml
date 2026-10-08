@@ -99,6 +99,46 @@ sa-token:
   dynamic-active-timeout: true
   redis:
     prefix: ${SA_TOKEN_REDIS_PREFIX:satoken:}
+  # ---------------------------------------------------------------------------
+  # Sa-Token 独立 Redis 数据源（alone-redis）：会话统一落 db9，与各服务业务库隔离。
+  #
+  # 【为什么必须写在本文件，而不是 nacos-config/zxyz-static.yml】
+  #   网关（zxyz-gateway）**不** import nacos 的 zxyz-static.yml（它只 import
+  #   application-common.yml + zxyz-dynamic.yml），而 zxyz-static.yml 的消费方恰好 9 个、
+  #   不含 gateway。若把本节写进 nacos-static，会出现：
+  #       「写会话的一方（各服务）在 db9，校验会话的一方（gateway）在 db0」
+  #   —— 表现为登录成功但下一次请求 401，且两侧配置各自看都"没问题"，极难定位。
+  #   写在 application-common.yml 才能保证 10 个服务（含 gateway）读到的完全一致。
+  #
+  # 【为什么是 db9】
+  #   主 Redis 库号由 spring.data.redis.database 决定（默认 ${REDIS_DATABASE:0}），
+  #   各服务把业务缓存/锁与主连接混用。会话单独放 db9 后，
+  #   运维清理业务库（FLUSHDB 到 db0）不会连带清掉全站登录态，两者生命周期解耦。
+  #
+  # 【键名与 spring.data.redis.* 同源】
+  #   host/port/password 复用同一套 REDIS_* 环境变量（由 docker-compose 注入），
+  #   保证 alone-redis 与主连接指向**同一个** Redis 实例，只是库号不同。
+  #   切勿在此硬编码 localhost/6379 —— 容器内 Redis 主机名是 compose 注入的。
+  #
+  # 【与主连接的取舍】pattern: single 表示单机 Redis（本轮不做哨兵/集群）。
+  # ⚠️ 本插件的 single 路径会无条件 new GenericObjectPoolConfig()，因此各服务 pom
+  #   必须同时声明 commons-pool2（该项由 AloneRedisWiringContractTest 的 C 项钉住）。
+  # 约束与断言见 zxyz-common 的 AloneRedisWiringContractTest（E 项）。
+  # ---------------------------------------------------------------------------
+  alone-redis:
+    pattern: single
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+    # 会话专用库号：硬编码而非 ${REDIS_DATABASE:0} —— 后者会让会话跟着主库号漂移，
+    # 与环境变量默认值叠加后可能悄悄退回 db0，使"会话隔离"静默失效。
+    database: 9
+    timeout: 3s
+    lettuce:
+      pool:
+        max-active: ${REDIS_POOL_MAX_ACTIVE:8}
+        max-idle: ${REDIS_POOL_MAX_IDLE:8}
+        min-idle: ${REDIS_POOL_MIN_IDLE:2}
 
 # 日志配置：抑制 Nacos 客户端在 Windows 上的文件轮转警告
 logging:

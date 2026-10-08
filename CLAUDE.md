@@ -167,6 +167,9 @@ WHEN 修改 Gateway 路由, DO 同步更新 `docs/infrastructure.md` 中的路�
 - HTTP/MQ 远程调用勿放 `@Transactional` 内（占用 DB 连接），用 `TransactionSynchronizationManager.registerSynchronization(afterCommit)` 延迟并 try-catch
 - MQ 反序列化失败抛 `AmqpRejectAndDontRequeueException` 进 DLQ，勿 log-and-return（会静默 ACK 毒消息）
 - 缓存清理勿用 `@CacheEvict(allEntries = true)`，用 `StringRedisTemplate.scan` 精确删对应 team 的 key
+- `sa-token.alone-redis`（会话独立 db9）必须写在 `zxyz-common/application-common.yml`，**不能**写 nacos 的 `zxyz-static.yml` —— gateway 只 import `application-common.yml` + `zxyz-dynamic.yml`（不引 static），写错落点会导致「业务服务写 db9、gateway 校验读 db0」= 全站登录失效
+- 凡引 `sa-token-alone-redis` 必须同模块显式声明 `commons-pool2`：插件在 pattern 所有分支汇合点**无条件** `new GenericObjectPoolConfig()`，而该项 `optional` 不传递，缺失抛 `NoClassDefFoundError`（Error）不被插件 `catch(Exception)` 捕获 ⇒ **启动失败**；且插件对配置异常是 `printStackTrace()` 后静默吞 ⇒ **「服务起来了」≠「会话已迁 db9」**，部署后须 `redis-cli -n 9 --scan --pattern 'satoken*'` 实测确认
+- **Redis 库号 0–15 是硬上限**（已用 0–9，只剩 6 个空位；Redis Cluster 不支持多库，撞墙须先改键前缀）——演进路线与门禁不变量口径见 `docs/redis-session-layout.md`，新增服务前先看它
 
 > 其余后端约定与坑位（服务 URL 配置、自动配置条件、GlobalExceptionHandler、config 加密/admin 数据源、config 管理 API、Gateway 重写、RestClient 超时、AbstractServiceClient、API 契约、ServiceClient 包位置、投影规范与内部端点清单）详见 [docs/claude-backend.md](docs/claude-backend.md)。
 
@@ -188,7 +191,7 @@ WHEN 添加 setting 子路由, DO 确保 `route.name` 在 Setting 组件 watcher
 ## Infrastructure & CI/CD
 
 - **MySQL 8.4**: 10 个独立库（含 zxyz_config），表结构**仅由 Flyway 管理**（勿维护 `sql/schema_*.sql`）；DB init: `sql/00-init-zxyz.sh`
-- **Redis**: localhost:6379（Sa-Token sessions + Redisson 锁）；**Nacos**: localhost:8848 注册中心 + Config（`spring.config.import:nacos:`，10 服务接入，模板在 `nacos-config/`）；**RabbitMQ**: localhost:5672（Topic `zxyz.topic`）
+- **Redis**: localhost:6379；**Sa-Token 会话已独立到 db9**（`sa-token.alone-redis`，配置在 `zxyz-common/application-common.yml`，9 个服务接入；audit-service 刻意不引）；业务库编号仍按 `REDIS_DATABASE` 隔离（gateway 0 / project 1 / im 2 / email 3 / user 4 / share 5 / file 6 / team 7 / audit 8，admin 不消费）；**Redisson 锁**在业务库；**Nacos**: localhost:8848 注册中心 + Config（`spring.config.import:nacos:`，10 服务接入，模板在 `nacos-config/`）；**RabbitMQ**: localhost:5672（Topic `zxyz.topic`）
 - **Auth**: Sa-Token 1.46.0（UUID token，Redis session，HttpOnly cookie）；API Docs: Knife4j 4.5.0 + springdoc 2.8.9
 - **Docker**: `docker-compose.yml` 编排 17 个服务（基础设施 6：mysql/nacos/nacos-log-cleanup/flyway/redis/rabbitmq + 10 后端 + frontend-nginx 唯一对外入口），统一 `Dockerfile` with `MODULE` build arg，镜像推 GHCR；可观测栈（loki/prometheus/grafana 等）**已迁出**至 `docker-compose.observability.yml`（默认不启动，需显式 `--profile observability`）
 - **Nginx CSP**: `deploy/nginx/default.conf` 用 `envsubst` 模板化，`OSS_PUBLIC_BASE_URL` 启动时注入，勿硬编码 OSS 域名

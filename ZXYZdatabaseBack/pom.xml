@@ -195,6 +195,15 @@
                 <artifactId>sa-token-redis-template</artifactId>
                 <version>${sa-token.version}</version>
             </dependency>
+            <!-- Sa-Token 独立 Redis 数据源（会话统一落 db9，与各服务业务库隔离）。
+                 版本复用 ${sa-token.version}：Sa-Token 各组件必须同版本，
+                 单独引第二个版本属性会让升级时漏改一处即出现运行时 NoSuchMethodError。
+                 由 AloneRedisWiringContractTest 在 D 项钉住，勿改为字面量。 -->
+            <dependency>
+                <groupId>cn.dev33</groupId>
+                <artifactId>sa-token-alone-redis</artifactId>
+                <version>${sa-token.version}</version>
+            </dependency>
             <dependency>
                 <groupId>cn.dev33</groupId>
                 <artifactId>sa-token-reactor-spring-boot3-starter</artifactId>

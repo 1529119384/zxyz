@@ -36,6 +36,12 @@
 > `application.yml`**（路由规则与 Gateway 版本强耦合，刻意不进 Nacos）。
 > 本目录历史上曾有一份 `zxyz-gateway.yml`，但 gateway **从未 import 它**（死配置）⇒ **已于 2026-09-14 删除**。
 
+> ⚠️ **`sa-token.alone-redis.*`（Sa-Token 会话独立 db9）刻意不在本目录**（2026-10-08）：它写在
+> `ZXYZdatabaseBack/zxyz-common/src/main/resources/application-common.yml` —— 因为 **gateway 不 import
+> `zxyz-static.yml`**（上表：static 的消费方是 9 个业务服务，不含 gateway），若把该键放进 `zxyz-static.yml`
+> 会得到「业务服务写 db9、gateway 校验读 db0」= 全站登录失效。**不要把它补进 nacos**；
+> 配套的 `commons-pool2` 硬需求与部署验证命令见 `CLAUDE.md`「关键坑位」。
+
 > `import.sh` 会把目录下**所有** `*.yml` 全量导入（当前 **11 份**，每份都有明确消费方）。
 
 分组固定为 **`group=ZXYZ`**，命名空间为 **public**（`namespaceId` 为空；`NACOS_NAMESPACE` 可用于多环境隔离）。
