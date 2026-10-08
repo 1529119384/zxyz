@@ -1,0 +1,31 @@
+# ==============================================================================
+# 行尾归一（与根仓库 .gitattributes 对齐，2026-10-08）
+# ==============================================================================
+# 为什么子仓库也需要这个文件：
+#   根仓库的 .gitattributes **不会**作用于子仓库的 git 操作 —— 子仓库是独立仓库，
+#   只读自己的 .gitattributes + core.autocrlf。
+#   而本机 core.autocrlf=true，于是子仓库检出时会把 Dockerfile 等转成 CRLF，
+#   造成「根仓库认为干净、子仓库认为 Dockerfile 被改」的假漂移，
+#   进而触发 pre-push 的 SUBREPO_SYNC_DRIFT 拦截（2026-10-08 实测到）。
+#
+# 说明：两边索引里存的 blob 本就一致（实测 sha 相同），本文件只是让**检出行为**
+# 也一致，从而消除这类纯行尾的假漂移。
+#
+# 注：前端全是 .js/.vue/.json，核心是 Dockerfile 与 shell 脚本需要在
+#     Linux 侧（Docker 构建）按 LF 解释。
+# ==============================================================================
+
+# Docker 构建相关
+Dockerfile text eol=lf
+*.dockerfile text eol=lf
+.dockerignore text eol=lf
+
+# Shell 脚本（若有）：CRLF 会让 `set -euo pipefail` 在行尾带 \r 而失效
+*.sh text eol=lf
+
+# nginx 配置
+*.conf text eol=lf
+
+# YAML（CI / 部署用）
+*.yml text eol=lf
+*.yaml text eol=lf
