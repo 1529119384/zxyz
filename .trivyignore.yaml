@@ -14,8 +14,23 @@
 vulnerabilities:
   - id: CVE-2026-47884
     # spring-webmvc XsltView 路径限制不当 ⇒ SSRF + RCE（CWE-22），CVSS 9.8 CRITICAL
+    #
+    # ⚠️ paths 的写法经过一次失败迭代（2026-10-08 实测）：
+    #   初版只写 `app/app.jar`（照着报告 Summary 的 Target 列抄的）⇒ 豁免**未生效**，
+    #   门禁照旧红。原因：Trivy 的 MatchVulnerability 会依次拿
+    #   `result.Target` 与 `vuln.PkgPath` 去和 paths 做 **doublestar 锚定匹配**
+    #   （pkg/result/ignore.go），而报告 Summary 里的 "app/app.jar" 是**聚合视图**，
+    #   与逐条 finding 实际携带的字符串不一定相同。
+    #   ⇒ 不赌单一字面量：用通配覆盖 jar 的常见落点（`**/app.jar` 由 doublestar
+    #     递归匹配任意深度），同时保留原始写法，并**用 purls 把范围钉死在
+    #     spring-webmvc 这一个组件上**，避免误豁免同镜像内的其它依赖。
     paths:
       - app/app.jar
+      - '**/app.jar'
+      - '**/*.jar'
+    # 只豁免 spring-webmvc 这一个包（该 CVE 的唯一载体）；其它包若报同一 CVE 不豁免。
+    purls:
+      - 'pkg:maven/org.springframework/spring-webmvc'
     statement: |
       风险接受（用户 2026-10-08 明确拍板）。两条独立理由，缺一不可：
 
