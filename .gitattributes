@@ -1,0 +1,37 @@
+# ==============================================================================
+# 行尾归一（E-1 修复，2026-10-08）
+# ==============================================================================
+# 背景：Windows 检出时 core.autocrlf=true 会把工作区文件转成 CRLF。对 .sh 脚本
+# 这不是"看起来不同"而已 —— 它是**功能性故障**：
+#
+#   $ bash .husky/pre-push
+#   .husky/pre-push: line 7: set: pipefail: invalid option name
+#
+# `set -euo pipefail` 被解析成 `set -euo $'pipefail\r'` ⇒ 校验体被**静默跳过**，
+# 脚本仍以 exit 0 结束，看起来"通过"了，实际什么都没检查。
+# （2026-10-03 由 Lead 实测发现，登记为 ISSUE/39 的 E-1；2026-10-08 修复。）
+#
+# 为什么用 .gitattributes 而不是逐个 sed：
+#   - .gitattributes 是**声明式**的：新加脚本自动适用，不靠人记得改行尾；
+#   - sed 只修当前工作区，下次 checkout 又变回 CRLF（治标不治本）；
+#   - 索引里本来就存 LF（git ls-files --eol 实测 i/lf），本文件只是让
+#     **工作区**也保持 LF，从而消除"直接 bash 执行"这条真实故障路径。
+#
+# 注意：这不改变仓库内容的历史（索引一直是 LF），只约束检出行为。
+# 服务器/CI（Linux，core.autocrlf 未设或 input）行为不变。
+# ==============================================================================
+
+# Shell 脚本必须 LF：CRLF 会让 `set -euo pipefail` 之类在行尾带 \r 而失效
+*.sh text eol=lf
+.husky/* text eol=lf
+
+# 容器内执行的脚本（Dockerfile 里的 entrypoint 等）同理
+Dockerfile text eol=lf
+*.dockerfile text eol=lf
+
+# nginx 配置由 envsubst 渲染后进容器，同样不能被 CRLF 污染
+*.conf text eol=lf
+
+# YAML（compose / workflows / nacos-config）：Linux 侧工具解析，统一 LF
+*.yml text eol=lf
+*.yaml text eol=lf
