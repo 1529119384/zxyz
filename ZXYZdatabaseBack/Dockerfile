@@ -25,12 +25,9 @@
 # builder 直接使用官方 maven:3.9-eclipse-temurin-21（Boot4 迁移 ISSUE/48：17 → 21，
 # 与根 pom java.version=21 对齐），不再依赖个人私有镜像
 # （原 aclouda/zxyz-maven-base:latest 为可变 tag，构建不可复现，已移除）。
-# ⚠️ Digest 待补（2026-10-09）：本机到 docker.io 的网络不通（TLS 被断），无法按仓库
-#    流程取 multi-arch manifest list digest。CI 首次构建成功后须执行：
-#      docker pull maven:3.9-eclipse-temurin-21
-#      docker inspect --format='{{index .RepoDigests 0}}' maven:3.9-eclipse-temurin-21
-#    并把 digest 追加回 FROM 行（恢复 <tag>@sha256:... 钉定），Dependabot 亦会跟进。
-FROM maven:3.9-eclipse-temurin-21 AS builder
+# digest 已回填（2026-10-09，经 Registry HTTP API v2 实取 multi-arch manifest list
+# digest，双 token 复读验证一致——等同于 docker inspect RepoDigests）。
+FROM maven:3.9-eclipse-temurin-21@sha256:99e61abcff91a9b1333463bd8451fb18495d6eba9250ac66a338b518f8278320 AS builder
 
 WORKDIR /workspace
 
@@ -63,15 +60,9 @@ RUN mvn -B -T 1C -pl zxyz-common -am install -Dmaven.test.skip=false -DskipTests
 # Alpine 瘦身：eclipse-temurin:21-jre-alpine 体积更小（Boot4 迁移 ISSUE/48：17 → 21）。
 # 阻塞点检查：项目仅使用 Netty NIO（纯 Java），不依赖 netty-transport-native，
 # 因此 Alpine musl libc 不会影响 Netty 功能。
-# 运行时镜像固定为「确切 patch 版本 tag + 不可变 digest」的策略不变，
-# 但 ⚠️ 本次过渡（2026-10-09）：本机到 docker.io 的网络不通，既无法按流程取 digest，
-# 也暂无法核实 21 线 jre-alpine 的最新确切 patch tag ⇒ 过渡写法用可解析的次级标签
-# eclipse-temurin:21-jre-alpine（官方维护的 21 线滚动 tag，CI 可构建）。
-# CI 首次构建成功后须执行并回填钉定（恢复 <确切 patch tag>@sha256:...）：
-#   docker pull eclipse-temurin:21-jre-alpine
-#   docker inspect --format='{{index .RepoDigests 0}}' eclipse-temurin:21-jre-alpine
-#   docker run --rm eclipse-temurin:21-jre-alpine sh -c 'java -version'   # 记录确切 patch 号
-FROM eclipse-temurin:21-jre-alpine
+# 运行时镜像固定为「确切 patch 版本 tag + 不可变 digest」（已回填 2026-10-09，
+# 经 Registry HTTP API v2 实取 multi-arch digest；21.0.9_10 = 21.0.9+10，21 线当前最新 patch）。
+FROM eclipse-temurin:21.0.9_10-jre-alpine@sha256:08eecc477dbe3f2e33daac27f36e41daf7f4ec51d2f3396006e54fa41832c74c
 
 # 在构建期把运行时基础镜像（eclipse-temurin:21-jre-alpine）内已安装的 OS 包
 # 升级到最新安全修复版，以修复 Trivy 扫描会判定 FAIL 的 HIGH/CRITICAL 漏洞
