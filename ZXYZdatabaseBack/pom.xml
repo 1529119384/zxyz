@@ -232,7 +232,11 @@
                 <artifactId>simple-java-mail</artifactId>
                 <version>${simple-java-mail.version}</version>
             </dependency>
-            <!-- flyway-core / flyway-mysql：本仓钉版已删，由 Boot 4.0.8 BOM 直接管理（flyway.version=11.14.1） -->
+            <!-- flyway：钉版已删，Boot 4.0.8 BOM 管理 flyway.version=11.14.1。
+                 ⚠️ CI 首跑实证（run 37912603462）：Boot 4 把 FlywayAutoConfiguration 拆到独立
+                 spring-boot-flyway 模块，仅声明 flyway-core（纯 Flyway 库）不会带来自动装配 ⇒
+                 9 个服务的依赖已改用 spring-boot-starter-flyway（= spring-boot-flyway 自动装配
+                 + flyway-core），flyway-mysql 方言仍需各服务显式声明（Boot 4 starter 不再传递）。 -->
             <!-- m54: MapStruct 对象映射框架，逐步替代手动字段拷贝（如 toTeamVO、toMemberVO 等）。
                  各服务模块需同时添加 mapstruct（编译期）和 mapstruct-processor（注解处理器）依赖。 -->
             <dependency>
