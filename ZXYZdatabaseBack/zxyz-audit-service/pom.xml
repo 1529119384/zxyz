@@ -109,6 +109,15 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Boot 4 迁移（ISSUE/48，P3 实证）：spring-boot-starter-test 不再传递 Jackson 2 的
+             jsr310 模块（OperateLogConsumerTest 编译期 new JavaTimeModule() 需要）；common 的
+             spring-boot-jackson2 传递的是 jackson-datatype-jsr310（compile），但 audit 对 common
+             的部分能力刻意不依赖 → 显式补 test 依赖，版本由 Boot 4.0.8 BOM 管理（jackson-2-bom） -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+            <scope>test</scope>
+        </dependency>
         <!-- Nacos 配置中心 -->
         <dependency>
             <groupId>com.alibaba.cloud</groupId>

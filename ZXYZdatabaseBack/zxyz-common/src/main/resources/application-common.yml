@@ -1,6 +1,13 @@
 # 正确处理反向代理转发的请求头（如 Nginx、Kubernetes Ingress）
 server:
   forward-headers-strategy: native
+  # ⚠️ 下面的 trusted-proxies 键【从未生效】（Boot 3.5 与 4.0.8 metadata 双实测：两代 core/web-server
+  #    模块均无此键；真实键名是 server.tomcat.remoteip.trusted-proxies，Boot 4 归 spring-boot-tomcat 模块、
+  #    Boot 3 归 autoconfigure，键名不变）。它是宽松绑定下的静默无效键——意图是补充信任 Docker 网段
+  #    172.18.0.0/16，但从未传到 Tomcat RemoteIpValve。
+  #    【刻意不在本轮改名启用】：trusted-proxies 是**替换** RemoteIpValve 默认 internalProxies 的
+  #    行为变化，且与 gateway 的 ClientIpFilter / ForwardedHeaderFilter 存在交互面，
+  #    属安全语义变更而非「坐标跟平」——是否启用移交 P3 决策（见 48 号文档遗留项）。
   trusted-proxies: 172.18.0.0/16
   shutdown: graceful
 
@@ -239,22 +246,21 @@ resilience4j:
         failure-rate-threshold: 50
         wait-duration-in-open-state: 30s
 
-# SpringDoc + Knife4j API 文档配置
+# SpringDoc API 文档配置（Boot 4 迁移：knife4j 已移除——停更组件不支持 Boot 4，
+# dev 环境改用 springdoc 自带 swagger-ui，用户 2026-10-09 拍板，见 ISSUE/48 §七-1）
 # [安全默认] API 文档默认**关闭**（ISSUE/11 6.2-4 / D1-#3）：
 #   暴露全网 API 契约 = 把完整攻击面白送出去。此处 fail-closed —— 任何未显式开启的
 #   profile（含漏配 profile）都是「关」；dev 在各自的 application-dev.yml 里显式开。
 #   需要临时开启：设 SPRINGDOC_ENABLED=true（或在该服务 profile 文件里覆盖）。
 #   注：gateway 无 dev/prod profile 文件，故其 API 文档在各环境均为关；如需开启设 SPRINGDOC_ENABLED=true。
+#   （原 knife4j.enable/setting 段已删：knife4j 依赖移除后该键无任何消费方，
+#     对应环境变量 KNIFE4J_ENABLE 亦作废——DEPLOYMENT.md 的变量表属 P5 文档同步项。）
 springdoc:
   api-docs:
     enabled: ${SPRINGDOC_ENABLED:false}
   swagger-ui:
     enabled: ${SPRINGDOC_ENABLED:false}
   packages-to-scan: uno.acloud.*.controller
-knife4j:
-  enable: ${KNIFE4J_ENABLE:false}
-  setting:
-    language: zh_cn
 
 # 服务间 RestClient 的基础设施层超时（P2-2）
 # 提取前这段「建 HttpClient 设连接超时 → 包 JdkClientHttpRequestFactory 设读取超时」

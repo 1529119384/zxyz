@@ -100,6 +100,16 @@
             <artifactId>spring-boot</artifactId>
             <scope>provided</scope>
         </dependency>
+        <!-- Boot 4 迁移（ISSUE/48，P3 全量测试实证）：Jackson 2 轨自动配置（提供
+             com.fasterxml ObjectMapper Bean + JavaTimeModule）位于独立的 spring-boot-jackson2 模块，
+             Boot 4 不再经 starter-test/starter-webmvc 传递（im-service 全上下文测试
+             NoSuchBeanDefinitionException: com.fasterxml.jackson.databind.ObjectMapper 实证）。
+             common 以 compile 传递给全部 10 服务，恢复 Boot 3「每个服务都有 ObjectMapper Bean」的等价形态；
+             Jackson 3 轨（spring-boot-jackson）仍由各服务 starter-webmvc 提供，双轨并存不受影响。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-jackson2</artifactId>
+        </dependency>
         <!-- Spring Cache + Redis：CacheConfig 需要，各服务已在自身 pom 声明运行时依赖 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -116,10 +126,15 @@
             <groupId>io.github.resilience4j</groupId>
             <artifactId>resilience4j-spring-boot4</artifactId>
         </dependency>
-        <!-- AuditEventPublisher 直接使用 RabbitTemplate，作为 compile 依赖传递给下游服务 -->
+        <!-- AuditEventPublisher 直接使用 RabbitTemplate，作为 compile 依赖传递给下游服务。
+             Boot 4 迁移（ISSUE/48，P3 实证）：RabbitAutoConfiguration 已从单体 autoconfigure 拆到
+             spring-boot-amqp 模块，裸 spring-rabbit 不再带来 RabbitTemplate 自动装配
+             （im 全上下文测试 NoSuchBeanDefinitionException: RabbitTemplate 实证）。
+             换 starter-amqp（= spring-boot-amqp 自动配置 + spring-rabbit），恢复 Boot 3
+             「每个服务上下文自动提供 RabbitTemplate」的等价形态。 -->
         <dependency>
-            <groupId>org.springframework.amqp</groupId>
-            <artifactId>spring-rabbit</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.retry</groupId>

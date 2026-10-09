@@ -752,11 +752,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup JDK 17
+      # Boot4 迁移（ISSUE/48）：17 → 21，与 ZXYZdatabaseBack/Dockerfile 的 builder/runtime 同步
+      - name: Setup JDK 21
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
-          java-version: 17
+          java-version: 21
           cache: maven
 
       - name: Backend compile and test
@@ -1099,8 +1100,8 @@ jobs:
   #   - ignore-unfixed: true 只告警可修复漏洞，避免噪音
   #   - 若某个已知漏洞已在外部组件修复但尚无新镜像，可在必要时通过
   #     ignore 配置临时豁免（见下方示例，勿长期使用）
-  #   - builder 现已改用官方 maven:3.9-eclipse-temurin-17（在 Docker Hub，
-  #     可被 Trivy 按 tag 拉取扫描）。
+  #   - builder 现已改用官方 maven:3.9-eclipse-temurin-21（在 Docker Hub，
+  #     可被 Trivy 按 tag 拉取扫描；Boot4 迁移 ISSUE/48：17 → 21）。
   # ============================================================
   security-scan:
     needs: [detect-changes, build-and-push]
