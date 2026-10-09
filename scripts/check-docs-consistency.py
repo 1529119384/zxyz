@@ -16,6 +16,9 @@
 2. 前端测试文件数：CLAUDE.md 声明 == 实测 ZXYZdatabaseFront/src/**/*.spec.js。
 3. 路径引用有效性：CLAUDE.md + docs/**/*.md 里的 ISSUE|docs|scripts|.github/workflows|
    nacos-config|deploy 引用目标必须存在；例外：所在行或前 2 行含「已归档」/「oldmd」。
+   ⚠️ ISSUE/ 前缀引用按目录存在性条件校验（见检查 7 的说明）：ISSUE/ 被 .gitignore，
+   CI runner 上必然缺席 ⇒ 缺席时跳过 ISSUE/ 引用并计入提示，仓库内路径
+   （docs|scripts|deploy|nacos-config|.github/workflows）仍严格校验。
 4. Redis 库号兜底处数单一真源：docs/redis-session-layout.md 声明数 ==
    docker-compose.yml 非注释真键数。
 5. 健康巡检覆盖完整性：scripts/health-check.sh 的 services 数组必须覆盖 compose 中
@@ -24,8 +27,12 @@
    git checkout <ref> -- 的行，上下 3 行内必须有警示词（⛔/需授权/会部署/不可逆/
    勿自动执行/需用户确认）—— 防「照抄计划步骤就部署到生产」。
 7. CVE 豁免证据锚点：.trivyignore.yaml 引用的 ISSUE/*.md 必须存在，或明确「已归档」
-   + 给出 oldmd 路径。
-8. 门禁自检（--self-check）：违规样本必须红并点名；合规样本必须不误报。
+   + 给出 oldmd 路径。⚠️ ISSUE/ 目录被 .gitignore（仅本机保留），CI runner 上必然缺席：
+   检查 7 对 ISSUE/ 前缀锚点做**条件校验** —— ISSUE/ 目录存在时（本机）照常校验存在性；
+   不存在时（CI）跳过该锚点并输出提示，绝不因「本地台账不入库」在 CI 上悬空报红。
+   oldmd/ 等仓库外锚点维持既有逻辑（归档 + oldmd 路径语境放行，缺席语境不适用）。
+8. 门禁自检（--self-check）：违规样本必须红并点名；合规样本必须不误报；
+   含「ISSUE/ 目录不存在时检查 3/7 不误报」的 CI 形态用例（喂 None 扫描样本模拟）。
 
 ## 输出与退出码
 
@@ -90,6 +97,25 @@ def issue_files() -> list[str]:
         for p in glob.glob(str(REPO / "ISSUE" / "**" / "*.md"), recursive=True)
         if "/audit-docs-" not in p.replace(os.sep, "/")
     )
+
+
+# ISSUE/ 目录存在性：检查 3 / 检查 7 的「ISSUE/ 前缀锚点」条件校验的**单一真源**。
+# ISSUE/ 在 .gitignore（仅本机保留），CI runner 上必然缺席 —— 缺席属预期环境形态，
+# 不是文档缺陷；两个引用类检查据此跳过 ISSUE/ 锚点（仓库内路径仍严格校验）。
+# 本机对 ISSUE/ 内文件的增删即真实状态，无需任何额外开关或缓存。
+def issue_dir_exists() -> bool:
+    return (REPO / "ISSUE").is_dir()
+
+
+# CI 形态下被跳过的 ISSUE/ 锚点记录（「跳过」必须留痕，不静默）。
+# 刻意**不在检查函数里直接 print**：--json 是机器可读输出，混入提示行会破坏可解析性；
+# 由 run_gate 汇入 stats（issue_anchor_skips），print_report 统一以 ℹ 行输出。
+ISSUE_ANCHOR_SKIPS: list[str] = []
+
+
+def skip_issue_anchor(reason: str) -> None:
+    """记录一个被跳过的 ISSUE/ 锚点（CI 形态：ISSUE/ 目录缺席）。"""
+    ISSUE_ANCHOR_SKIPS.append(reason)
 
 
 # ---------------------------------------------------------------------------
@@ -276,8 +302,16 @@ def collect_dangling_refs(rel: str, lines: list[str]) -> list[dict]:
     return out
 
 
-def check_path_refs(docs_texts: dict[str, list[str]], failures: list[dict]) -> int:
+def check_path_refs(docs_texts: dict[str, list[str]], failures: list[dict],
+                    issue_present: bool | None = None) -> int:
     checked = 0
+    # ISSUE/ 前缀引用的条件校验（与检查 7 同一设计、同一真源）：ISSUE/ 被 .gitignore，
+    # CI runner 上必然缺席 —— 缺席时跳过 ISSUE/ 引用并留提示（只提示一次，不刷屏）；
+    # 本机 ISSUE/ 在场时照常校验。docs|scripts|deploy 等仓库内路径任何环境都严格校验。
+    # issue_present=None：探测目录本身（向后兼容）；run_gate 与自检样本显式传值保证确定。
+    if issue_present is None:
+        issue_present = issue_dir_exists()
+    skip_hinted = False
     for rel, lines in docs_texts.items():
         # 文件级免责声明：文件头部（前 20 行）有「ISSUE 引用不入库/无法解析/仅供本地」
         # 的显式说明 ⇒ 该文件的 ISSUE/ 引用是「已声明的本地台账引用」，放行。
@@ -287,6 +321,11 @@ def check_path_refs(docs_texts: dict[str, list[str]], failures: list[dict]) -> i
             re.search(r"ISSUE/?\*", header) and DOC_SCOPE_DISCLAIMER_RE.search(header))
         for d in collect_dangling_refs(rel, lines):
             if issue_scope_exempt and d["ref"].startswith("ISSUE/"):
+                continue
+            if not issue_present and d["ref"].startswith("ISSUE/"):
+                if not skip_hinted:
+                    skip_issue_anchor("ISSUE/ 目录不存在（CI 形态），检查 3 跳过其引用")
+                    skip_hinted = True
                 continue
             fail(failures, "3.路径引用有效性", "目标存在（或已标注归档）", f"悬空引用 {d['ref']}",
                  f"{d['file']}:{d['line']}")
@@ -435,12 +474,27 @@ def check_danger_warnings(issue_texts: dict[str, list[str]], failures: list[dict
 # 检查 7：.trivyignore.yaml 的 ISSUE 证据锚点
 # ---------------------------------------------------------------------------
 
-def check_trivyignore_anchors(lines: list[str], failures: list[dict]) -> int:
+def check_trivyignore_anchors(lines: list[str], failures: list[dict],
+                              issue_present: bool | None = None) -> int:
+    """检查 7：.trivyignore.yaml 的 CVE 证据锚点。
+
+    ⚠️ ISSUE/ 前缀锚点做**条件校验**（与检查 3 同一设计、同一真源）：ISSUE/ 被
+    .gitignore（仅本机保留），CI runner 上必然缺席 ——
+    - issue_present=True（本机）：照常校验锚点文件存在性；
+    - issue_present=False（CI）：跳过 ISSUE/ 锚点并输出提示（每个锚点一行留痕，不静默）；
+    - issue_present=None：保持既有行为（探测文件本身，向后兼容既有调用/自检样本）。
+    oldmd/ 等仓库外锚点维持既有逻辑：归档 + oldmd 路径语境放行，不适用缺席跳过。
+    """
+    if issue_present is None:
+        issue_present = issue_dir_exists()
     checked = 0
     for idx, line in enumerate(lines, 1):
         for m in re.finditer(r"ISSUE/[A-Za-z0-9._\-]+\.md", line):
             checked += 1
             ref = m.group(0)
+            if ref.startswith("ISSUE/") and not issue_present:
+                skip_issue_anchor(f"{ref}（CI 形态，检查 7 跳过该锚点）")
+                continue
             if (REPO / ref).exists():
                 continue
             context = "\n".join(lines[max(0, idx - 3):idx + 2])
@@ -480,6 +534,7 @@ def check_redis_db_count(declared: list[dict], actual: int, failures: list[dict]
 def run_gate(failures: list[dict]) -> dict:
     """跑全部检查（除自检），返回统计字典。failures 原地追加。"""
     stats: dict[str, int] = {}
+    ISSUE_ANCHOR_SKIPS.clear()  # 每轮门禁重算跳过记录（防残留）
 
     # --- 自证非空 + 实测真值 ---
     actual_files, actual_classes, _, _ = scan_backend_tests()
@@ -530,7 +585,9 @@ def run_gate(failures: list[dict]) -> dict:
     check_frontend_count(declared_fe, actual_specs, failures)
 
     # --- 检查 3 ---
-    stats["path_refs_dangling"] = check_path_refs(docs_texts, failures)
+    # ISSUE/ 前缀引用条件校验（ISSUE/50 §四门禁接线）：真源 issue_dir_exists()，
+    # CI 形态（目录缺席）下跳过 ISSUE/ 引用并提示，仓库内路径仍严格校验。
+    stats["path_refs_dangling"] = check_path_refs(docs_texts, failures, issue_dir_exists())
 
     # --- 检查 4 ---
     layout_lines = read_lines("docs/redis-session-layout.md")
@@ -555,7 +612,15 @@ def run_gate(failures: list[dict]) -> dict:
     stats["danger_unwarned"] = check_danger_warnings(issue_texts, failures)
 
     # --- 检查 7 ---
-    stats["trivyignore_anchors"] = check_trivyignore_anchors(read_lines(".trivyignore.yaml"), failures)
+    # ISSUE/ 前缀锚点条件校验（ISSUE/50 §四门禁接线）：ISSUE/ 被 .gitignore（仅本机），
+    # CI runner 上必然缺席 ⇒ 跳过锚点并提示；本机在场 ⇒ 照常校验存在性。
+    # 真源只有一个：issue_dir_exists()（与检查 3 共用）。
+    stats["trivyignore_anchors"] = check_trivyignore_anchors(
+        read_lines(".trivyignore.yaml"), failures, issue_dir_exists())
+
+    # CI 形态跳过留痕：检查 3 每文件至多 1 条、检查 7 每锚点 1 条，全量汇入 stats。
+    # self-check 样本也走同一路径，跑完自检由用例自行断言并清空。
+    stats["issue_anchor_skips"] = len(ISSUE_ANCHOR_SKIPS)
 
     return stats
 
@@ -584,6 +649,12 @@ def print_report(stats: dict, failures: list[dict]) -> None:
     if not failures:
         for line in ok:
             print(line)
+        if stats.get("issue_anchor_skips"):
+            # CI 形态留痕：跳过数 > 0 时逐条输出（本机 ISSUE/ 在场时恒为 0，不打印）。
+            print(f"ℹ ISSUE/ 锚点跳过 {stats['issue_anchor_skips']} 处（ISSUE/ 目录不存在，"
+                  "本地台账不入库、CI runner 上属预期 —— 仓库内路径引用仍严格校验）：")
+            for s in ISSUE_ANCHOR_SKIPS:
+                print(f"  ℹ {s}")
         print("=" * 78)
         print("PASS: 文档与实况一致。")
         return
@@ -675,6 +746,32 @@ def run_self_check() -> int:
     expect_pass("3b.归档指针放行", archived_ok)
     print("  ✓ 合规样本 3b：已归档 + oldmd 语境 → 不误报")
 
+    # --- 3c CI 形态（ISSUE/ 目录不存在）→ 检查 3 不误报 ---
+    # ISSUE/ 被 .gitignore（仅本机保留），CI runner 上文档里的 ISSUE/ 引用必然悬空：
+    # 这是预期环境形态而非文档缺陷 ⇒ issue_present=False 时必须跳过 ISSUE/ 引用并留痕；
+    # 同批样本里的仓库内悬空引用（docs/…）不受豁免，仍必须红（防「CI 豁免」被放大成盲区）。
+    docs_ci = {"FAKE.md": lines_bad, "REAL.md": ["参见 `docs/no-such-file.md` 的结论"]}
+    ci_failures: list[dict] = []
+    check_path_refs(docs_ci, ci_failures, issue_present=False)
+    # failure dict 结构 = {check, expected, actual, where}；悬空引用名在 actual 的
+    # 「悬空引用 <ref>」里（检查 3 的 fail() 语义），断言按 actual 匹配。
+    if any("悬空引用 ISSUE/" in d["actual"] for d in ci_failures):
+        raise SelfCheckError(f"自检失败：3c.ISSUE/ 缺席时检查 3 误报了 ISSUE 引用：{ci_failures}")
+    if not any("悬空引用 docs/no-such-file.md" in d["actual"] for d in ci_failures):
+        raise SelfCheckError(f"自检失败：3c.CI 形态下仓库内悬空引用（docs/…）未被点名：{ci_failures}")
+    if not any("检查 3" in s for s in ISSUE_ANCHOR_SKIPS):
+        raise SelfCheckError(f"自检失败：3c.ISSUE/ 缺席时检查 3 应留下跳过痕迹：{ISSUE_ANCHOR_SKIPS}")
+    ISSUE_ANCHOR_SKIPS.clear()
+    # 对照：ISSUE/ 在场（本机形态）时同一悬空样本必须红 —— 跳过逻辑没有吞掉真违规。
+    local_failures: list[dict] = []
+    check_path_refs(docs_ci, local_failures, issue_present=True)
+    if not any("悬空引用 ISSUE/38-NOPE-REVIEW.md" in d["actual"] for d in local_failures):
+        raise SelfCheckError(f"自检失败：3c.本机形态（ISSUE/ 在场）悬空 ISSUE 引用未被点名：{local_failures}")
+    if not any("悬空引用 docs/no-such-file.md" in d["actual"] for d in local_failures):
+        raise SelfCheckError(f"自检失败：3c.本机形态悬空 docs 引用未被点名：{local_failures}")
+    print("  ✓ 合规样本 3c：ISSUE/ 目录缺席（CI 形态）→ 检查 3 不误报 ISSUE/ 引用且留跳过痕迹；"
+          "同批 docs/ 悬空仍红；本机形态对照 → ISSUE/ 悬空仍红")
+
     # --- 4 Redis 处数 ---
     def redis_violation():
         f: list[dict] = []
@@ -742,6 +839,34 @@ def run_self_check() -> int:
             raise AssertionError(f"归档语境仍被误报：{f}")
     expect_pass("7b.归档锚点放行", anchor_ok)
     print("  ✓ 违规样本 7：trivyignore 悬空 ISSUE 锚点 → 红并点名；归档 + oldmd → 放行")
+
+    # --- 7c CI 形态（ISSUE/ 目录不存在）→ 检查 7 不误报（本任务新增用例） ---
+    # 与 3c 同一设计、同一真源（issue_dir_exists()）：trivyignore 的 ISSUE/ 前缀锚点在
+    # CI runner 上必然悬空 —— issue_present=False 时跳过并留痕，oldmd 語境不受影响；
+    # 对照 issue_present=True（本机形态）时同一锚点必须红 —— 跳过逻辑没吞掉真违规。
+    anchors_ci = ["  证据见 ISSUE/47-CVE-SSE-HEADER-BYPASS-2026-10-09.md（本机台账）"]
+    def anchor_ci_ok():
+        f: list[dict] = []
+        check_trivyignore_anchors(anchors_ci, f, issue_present=False)
+        if f:
+            raise AssertionError(f"ISSUE/ 缺席时检查 7 误报：{f}")
+    expect_pass("7c.CI 形态锚点不误报", anchor_ci_ok)
+    if not any("ISSUE/47-CVE-SSE-HEADER-BYPASS-2026-10-09.md" in s for s in ISSUE_ANCHOR_SKIPS):
+        raise SelfCheckError(f"自检失败：7c.跳过未留痕（应含锚点名）：{ISSUE_ANCHOR_SKIPS}")
+    ISSUE_ANCHOR_SKIPS.clear()
+    # 对照（7c-2）：本机形态（issue_present=True）时悬空锚点必须仍红 —— 跳过逻辑没吞掉真违规。
+    # 刻意用确定不存在的锚点名（47 号在本机真实存在，用它对照会假绿）。
+    anchors_local = ["  证据见 ISSUE/99-DOES-NOT-EXIST.md（本机台账）"]
+    def anchor_ci_present_still_red():
+        f: list[dict] = []
+        check_trivyignore_anchors(anchors_local, f, issue_present=True)
+        if f:
+            raise AssertionError(f"本机形态悬空锚点应红却被放行：{f}")
+    expect_fail("7c-2.本机形态锚点仍红", anchor_ci_present_still_red,
+                "ISSUE/99-DOES-NOT-EXIST.md")
+    ISSUE_ANCHOR_SKIPS.clear()
+    print("  ✓ 合规样本 7c：ISSUE/ 目录缺席（CI 形态）→ 检查 7 不误报且留痕；"
+          "本机形态对照 → 悬空锚点仍红（7c-2）")
 
     # --- compose 重复键 ---
     try:

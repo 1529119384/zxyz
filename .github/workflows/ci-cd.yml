@@ -430,6 +430,23 @@ jobs:
       - name: strict YAML validation (reject duplicate keys)
         run: python3 scripts/check-yaml-strict.py
 
+      # 文档一致性门禁（T-GATE，ISSUE/50 §四门禁接线）：把「文档写 X、实况 Y」的漂移
+      # 变成常驻断言 —— 后端/前端测试规模声明 vs 实测、路径引用有效性、Redis 库号
+      # 兜底处数单一真源、健康巡检覆盖完整性、危险指令警示、CVE 豁免证据锚点，共 7 项。
+      # 纯 Python 标准库实现（scripts/check-docs-consistency.py 的 import 区已核实，
+      # 无 pip 依赖），ubuntu runner 自带 python3，直接跑同一份逻辑（本地 = CI 口径）。
+      #
+      # ⚠️ ISSUE/ 条件校验设计：检查 3（路径引用）与检查 7（CVE 豁免证据锚点）会引用
+      # ISSUE/ 下的本地台账（如 .trivyignore.yaml 注释里的 ISSUE/47、ISSUE/48），
+      # 而 ISSUE/ 被 .gitignore（.gitignore:84，仅本机保留）⇒ CI runner 上必然缺席。
+      # 缺席属**预期环境形态**而非文档缺陷：脚本对 ISSUE/ 前缀锚点按 issue_dir_exists()
+      # 条件校验 —— 本机（ISSUE/ 在场）照常校验存在性；CI（缺席）跳过该锚点并输出
+      # 「ℹ 跳过」提示（不静默）。oldmd/ 等仓库外锚点维持既有逻辑。仓库内路径
+      # （docs|scripts|deploy|nacos-config|.github/workflows）在任何环境都严格校验，
+      # 跳过豁免不会被放大成「CI 盲区」。
+      - name: Docs consistency gate (7 checks)
+        run: python3 scripts/check-docs-consistency.py
+
       # 审计 I-19：`.gitleaks.toml` 把 `.env.example` **整文件**豁免成了永久扫描盲区
       # （该文件头部自己也写着「请定期复核」，但复核没有触发器 ⇒ 等于没有）。
       # 取舍：**不取消豁免** —— 取消会让模板里本就必须存在的占位符/URL 变成误报，
