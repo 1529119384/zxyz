@@ -8,9 +8,9 @@
 
 | 类别 | 技术 | 版本 |
 |---|---|---|
-| 运行时 | JDK | 17 |
-| 框架 | Spring Boot | 3.5.14 |
-| 云原生 | Spring Cloud | 2025.0.3 |
+| 运行时 | JDK | 21 |
+| 框架 | Spring Boot | 4.0.8 |
+| 云原生 | Spring Cloud | 2025.1.3 |
 | 服务注册 | Nacos | v3.2.1 |
 | 网关 | Spring Cloud Gateway | - |
 | ORM | MyBatis-Plus（注解为主，少量 XML） | 3.5.17 |
@@ -23,7 +23,7 @@
 | 分布式锁 | Redisson | 3.35.0 |
 | 实时通信 | Netty WebSocket | - |
 | 邮件 | Simple Java Mail | 9.3.4 |
-| API 文档 | Knife4j + springdoc | 4.5.0 / 2.8.9 |
+| API 文档 | springdoc（knife4j 已于 2026-10-09 移除） | 3.0.3 |
 | 工具库 | Lombok、commons-lang3 | 1.18.42 / 3.20.0 |
 
 ## 模块结构
@@ -593,7 +593,7 @@ MySQL → Redis → RabbitMQ → Nacos → 业务服务 → Gateway → Frontend
 
 - API Gateway：`http://localhost:18000`
 - 各业务服务：`http://localhost:{端口号}`（如项目服务 18080、IM 服务 18081 等）
-- Knife4j API 文档：`http://localhost:18080/doc.html`（需设置 `knife4j.enable=true`）
+- API 文档（swagger-ui）：`http://localhost:18080/swagger-ui/index.html`（dev 设 `SPRINGDOC_ENABLED=true`；knife4j 已移除，`knife4j.enable` 键已无消费方）
 
 ## 目录结构
 
@@ -688,12 +688,11 @@ ZXYZdatabaseBack/
 
 ## API 文档
 
-项目集成了 Knife4j + springdoc OpenAPI，运行时可通过以下地址访问 API 文档：
+项目集成 springdoc OpenAPI（3.0.3，自带 swagger-ui；knife4j 已于 2026-10-09 移除），运行时可通过以下地址访问 API 文档：
 
-- 项目服务：`http://localhost:18080/doc.html`（需设置 `knife4j.enable=true`）
 - Swagger UI：`http://localhost:18080/swagger-ui/index.html`
 
-**注意：** `knife4j.enable` 默认为 `false`，生产环境不建议开启。
+**开关：** `springdoc.api-docs.enabled` / `springdoc.swagger-ui.enabled`（由 `SPRINGDOC_ENABLED` 统一控制，默认 `false`，生产环境不建议开启；`knife4j.enable` 键已随 knife4j 移除而作废）。
 
 ## 健康检查
 

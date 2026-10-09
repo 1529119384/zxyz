@@ -28,6 +28,7 @@ ZXYZdatabaseFront/**
 deploy/**
 docker-compose.yml
 docker-compose.observability.yml
+.trivyignore.yaml
 .env.example
 .gitleaks.toml
 .github/workflows/**
@@ -38,6 +39,7 @@ sql/**
 
 不在此白名单内的文件变更（如 `CLAUDE.md`、`docs/**`）**不触发** workflow。`dorny/paths-filter` 进一步按服务目录判断哪些镜像需要重建。
 
+> `.trivyignore.yaml` **必须**在白名单内（`ci-cd.yml:33-38`）：否则「只改豁免清单」的提交会**一条检查都不跑**，而它恰恰是能改变部署门禁松紧的文件（加一条豁免 = 让一个 CRITICAL 放行）——「零检查变更 = 盲区」形态。它不参与镜像构建，只触发轻量的 lint-config。
 > `nacos-config/**` 自 2026-09-13 起**已纳入白名单**：它不参与镜像构建，但改它必须导入 Nacos 才对线上生效，故由 `nacos-config-check`（等价性门禁）与 `nacos-import`（自动导入 + 逐份回读校验）两个作业接管。详见 `nacos-config/README.md`。
 
 ### 提交规范与同步顺序
@@ -77,7 +79,7 @@ cd ZXYZdatabaseFront && git diff HEAD --stat && cd ..
 
 ```bash
 mvn clean -DskipTests compile                   # baseline compile check
-mvn test                                         # all tests（160 个测试类 / 162 个测试源文件，见 docs/testing.md）
+mvn test                                         # all tests（166 个测试类 / 168 个测试源文件，见 docs/testing.md）
 mvn test -pl zxyz-team-service                   # single module tests
 mvn test -pl zxyz-file-service -Dtest=FileUploadServiceTest  # single test class
 mvn clean package -DskipTests                    # package for Docker build
@@ -119,7 +121,7 @@ npm run test:coverage # Vitest + @vitest/coverage-v8 coverage
 
 ## Architecture
 
-**Backend**: Java 17, Spring Boot 3.5.14, Spring Cloud 2025.0.3, Maven multi-module. Group: `uno.acloud`, base package: `uno.acloud.{service}`.
+**Backend**: Java 21, Spring Boot 4.0.8, Spring Cloud 2025.1.3, Maven multi-module. Group: `uno.acloud`, base package: `uno.acloud.{service}`.
 
 **Frontend**: Vue 3.5 (Composition API + `<script setup>`), Vite 8.3, Element Plus 2.11 (auto-import), Pinia 3.0, Axios 1.20, Vitest 5.0.
 
@@ -191,8 +193,8 @@ WHEN 添加 setting 子路由, DO 确保 `route.name` 在 Setting 组件 watcher
 ## Infrastructure & CI/CD
 
 - **MySQL 8.4**: 10 个独立库（含 zxyz_config），表结构**仅由 Flyway 管理**（勿维护 `sql/schema_*.sql`）；DB init: `sql/00-init-zxyz.sh`
-- **Redis**: localhost:6379；**Sa-Token 会话已独立到 db9**（`sa-token.alone-redis`，配置在 `zxyz-common/application-common.yml`，9 个服务接入；audit-service 刻意不引）；业务库编号仍按 `REDIS_DATABASE` 隔离（gateway 0 / project 1 / im 2 / email 3 / user 4 / share 5 / file 6 / team 7 / audit 8，admin 不消费）；**Redisson 锁**在业务库；**Nacos**: localhost:8848 注册中心 + Config（`spring.config.import:nacos:`，10 服务接入，模板在 `nacos-config/`）；**RabbitMQ**: localhost:5672（Topic `zxyz.topic`）
-- **Auth**: Sa-Token 1.46.0（UUID token，Redis session，HttpOnly cookie）；API Docs: Knife4j 4.5.0 + springdoc 2.8.9
+- **Redis**: localhost:6379；Sa-Token 会话存储**代码已切到独立库 db9**（`sa-token.alone-redis`，配置在 `zxyz-common/application-common.yml`，9 个服务接入；audit-service 刻意不引；`701af68` 合并）——⚠️ **生产生效以部署后实测为准**：`redis-cli -n 9 --scan --pattern 'satoken*'` 见非空 key 才算生效（插件对配置异常静默吞，「服务起来了」≠「会话已迁 db9」；截至 2026-10-09 生产仍在跑旧版、未部署本改造）；业务库编号仍按 `REDIS_DATABASE` 隔离（gateway 0 / project 1 / im 2 / email 3 / user 4 / share 5 / file 6 / team 7 / audit 8，admin 不消费）；**Redisson 锁**在业务库；**Nacos**: localhost:8848 注册中心 + Config（`spring.config.import:nacos:`，10 服务接入，模板在 `nacos-config/`）；**RabbitMQ**: localhost:5672（Topic `zxyz.topic`）
+- **Auth**: Sa-Token 1.46.0（UUID token，Redis session，HttpOnly cookie）；API Docs: springdoc 3.0.3（knife4j 已于 2026-10-09 移除——停更且与 Boot 4/springdoc 3.x 互斥，用户拍板；dev 文档页改用 springdoc 自带 swagger-ui）
 - **Docker**: `docker-compose.yml` 编排 17 个服务（基础设施 6：mysql/nacos/nacos-log-cleanup/flyway/redis/rabbitmq + 10 后端 + frontend-nginx 唯一对外入口），统一 `Dockerfile` with `MODULE` build arg，镜像推 GHCR；可观测栈（loki/prometheus/grafana 等）**已迁出**至 `docker-compose.observability.yml`（默认不启动，需显式 `--profile observability`）
 - **Nginx CSP**: `deploy/nginx/default.conf` 用 `envsubst` 模板化，`OSS_PUBLIC_BASE_URL` 启动时注入，勿硬编码 OSS 域名
 
@@ -204,10 +206,10 @@ WHEN 添加 setting 子路由, DO 确保 `route.name` 在 Setting 组件 watcher
 
 **前端测试**: 68 个测试文件，1241 个用例（`npm run test`）。⚠️ 文件数由 `npm run doc-count:check`（`ZXYZdatabaseFront/scripts/check-doc-test-count.mjs`）对着 `src/**/*.spec.js` 实测校验 —— 此前这里写的是 26 个，实测已 65 个（2026-10-03 起为 68），是无人发现的 2.5 倍偏差。用例数无法静态推导，改测试后请跑一次 `npm run test` 并同步这里的数字（`vite.config.mjs` 覆盖率注释里的同类数字是**历史快照**，不要改）。命名 `*.spec.js` 放对应目录 `__tests__/` 下，`vi.mock()` 外部依赖，测试名中文。import 顺序：vitest/vue 最前 → `vi.mock()` 紧跟 → 再 `@/` 与第三方（`element-plus` import 须在 `vi.mock()` 后，否则 `import-x/order` 报错）。详见 [docs/testing.md](docs/testing.md)。
 
-**CI/CD**: `.github/workflows/ci-cd.yml` 按路径变更选择性构建部署。push 到 dev/main、`v*` tag、PR、手动 dispatch；`dorny/paths-filter` 按服务目录判断重建；backend-common 变更触发全部后端重建；**`docker-compose.yml`/`.env.example` 变更会触发全量 11 服务重建与部署（docker-config），改它（哪怕只改注释）前须知晓此代价**；workflow_dispatch 输入 `tag`（必填）/`skip_quality`/`fast_deploy`/`force_deploy`/`run_e2e`。辅助 workflow：`lint-workflows.yml`（actionlint）、`ghcr-cleanup.yml`、`restore-drill.yml`（手动恢复演练，带凭据 fail-closed 断言）。
+**CI/CD**: `.github/workflows/ci-cd.yml` 按路径变更选择性构建部署。push 到 **dev**、PR、手动 dispatch（⚠️ 只触发 dev：`ci-cd.yml:5-8`——远程**不存在 `main` 分支、0 个 tag**，保留 `main`/`v*` tag 等于留一条「一触发就以空主机 ssh 必失败」的死路，故 2026-09-18 刻意删掉）；`dorny/paths-filter` 按服务目录判断重建；backend-common 变更触发全部后端重建；**`docker-compose.yml`/`.env.example` 变更会触发全量 11 服务重建与部署（docker-config），改它（哪怕只改注释）前须知晓此代价**；workflow_dispatch 输入 `tag`（必填）/`skip_quality`/`fast_deploy`/`force_deploy`/`run_e2e`。辅助 workflow：`lint-workflows.yml`（actionlint）、`ghcr-cleanup.yml`、`restore-drill.yml`（手动恢复演练，带凭据 fail-closed 断言）。
 
 > Gateway 路由表与服务间调用图：`docs/infrastructure.md`；技术栈：`docs/architecture.md`；部署指南：`DEPLOYMENT.md`。
-> 项目审查/台账报告在 `ISSUE/`（目录已 gitignore，仅本机保留）：**现行入口 = `38-CODE-REVIEW-2026-10-02.md`（多智能体全项目审查总报告）与 `39-UNFINISHED-2026-10-02.md`（未完成项清单）**，配套证据包在 `ISSUE/review-2026-10-02/`；`07` 号与 `18~37` 号属历史台账（2026-09 系列），已于 2026-10 归档移出。**归档区的等价原件在仓库外 `D:\code\databaseZXYZ\oldmd\`**（含早期 `PROJECT-REVIEW-2026-07-27.md` / `PROJECT-DEEP-REVIEW-2026-07-28.md` 全份）。
+> 项目审查/台账报告在 `ISSUE/`（目录已 gitignore，仅本机保留）：**现行台账/日报 = `44`–`49` 号 + `DAILY-AUDIT-CHECKLIST.md`（每日审核 SOP）**；`ISSUE/review-2026-10-02/` 现存 6 份均为 **2026-10-08 的 ALONE-REDIS 专项报告**（目录名是 10-02 起稿时的历史遗留，10-02 那批 `review-part-*.md` 已随总报告归档，勿按目录名猜内容）；**`07`、`18~39` 号均属已归档历史台账**（含 `38-CODE-REVIEW` / `39-UNFINISHED` 两份 10-02 总报告），等价原件在仓库外 `D:\code\databaseZXYZ\oldmd\`（含早期 `PROJECT-REVIEW-2026-07-27.md` / `PROJECT-DEEP-REVIEW-2026-07-28.md` 全份）。
 > docker-compose 服务编排详情、deploy-fast/rollback/backup/dev-up 脚本参数、部署注意事项与运维提示详见 [docs/claude-infra.md](docs/claude-infra.md)。
 
 ## 服务间接口设计规范

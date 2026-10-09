@@ -8,7 +8,7 @@
 
 Redis 的逻辑库编号固定为 **0–15（共 16 个）**，这是服务端常量，不是配置项。
 
-**当前占用**（`docker-compose.yml` 实测：`REDIS_DATABASE` 共 **10 处** environment 兜底，9 个服务各一 + gateway 一处；`application-common.yml:52` 主库为 `${REDIS_DATABASE:0}`、`:135` 会话库硬编码 `database: 9`）：
+**当前占用**（`docker-compose.yml` 实测：`REDIS_DATABASE` 共 **9 处** environment 兜底 = 9 个消费服务各一（**gateway 是其中之一**，库号 0）；`application-common.yml:52` 主库为 `${REDIS_DATABASE:0}`、`:135` 会话库硬编码 `database: 9`）：
 
 | 库号 | 用途 |
 |---|---|
@@ -97,7 +97,7 @@ docker exec zxyz-redis redis-cli -n 9 --scan --pattern 'satoken*'
 ## 诚实边界
 
 - **生产 CONFIG 读数与 db10–db15 空置状态**：引用 Lead 的 2026-10-08 生产实测（`docker exec zxyz-redis redis-cli CONFIG GET ...` / `INFO keyspace`），本任务未重跑生产命令；本地无 Docker、无生产 SSH，无法自行复测。
-- **「db10–db15 实测全空」**：同上，采信 Lead 读数；本任务用 `docker-compose.yml`（10 处 `REDIS_DATABASE` 兜底）与 `application-common.yml:135`（`database: 9`）的**静态核对**交叉印证了「已用 0–9」这一面。
+- **「db10–db15 实测全空」**：同上，采信 Lead 读数；本任务用 `docker-compose.yml`（9 处 `REDIS_DATABASE` 兜底 = 9 个消费服务各一，gateway 是其中之一）与 `application-common.yml:135`（`database: 9`）的**静态核对**交叉印证了「已用 0–9」这一面。
 - **Cluster 行为**（`SELECT` 不可用）为 Redis 官方文档口径，未在本仓实测（无集群环境）。
-- **门禁第 3 块引用的行号**：`AloneRedisWiringContractTest.java` 正由另一队友（T10/T13）改造中，本文只引用其**原则口径**（不变量/禁入名单/豁免名单）与当前可见的注释行（:87-113、:135-161、:156-199、:352-471、:915-979），避免行号漂移。
+- **门禁引用以锚点文本为准，不写行号**：`AloneRedisWiringContractTest.java` 在持续演进（行号会漂移），本文只引用其**原则口径**（不变量/禁入名单/豁免名单）。定位方式 = 在该文件内搜索锚点标识符：设计原则与演进史 → 搜 `设计原则：表达不变量`；禁入名单 → 搜 `FORBIDDEN_REDIS_TEMPLATE_MODULES`；豁免名单 → 搜 `NO_SESSION_SERVICE_MODULES`；门禁 H 判定 → 搜 `checkDeployableServicesDeclareSessionDeps`；nacos 落点断言 → 搜 `E2_aloneRedis`；自检样本 → 搜 `G1_门禁自检`。
 - **A′ 的覆盖边界（Lead 定级并要求如实记录）**：「可部署服务」的判据是 `src/main/resources/application.yml` 的**存在性** ⇒ 若新服务**忘了建该文件**、或把配置放到**非标准路径**（如 `config/` 子目录、`application-<env>.yml`），门禁 H 就**看不见它**（会被当成库模块，三件套缺失不红）。反空扫只能兜住「判据整体失效」（可部署集合为 0 ⇒ 红），**兜不住个别模块漏判**。当前 12 个模块均在标准路径、无实际风险——但这条边界要记下来，**别把 A′ 当成万能门禁**：新增服务时，「有没有 `application.yml`」要作为 checklist 的一项人工确认。

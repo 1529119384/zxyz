@@ -51,6 +51,7 @@ Thumbs.db
 data/
 
 # ===== 构建产物 =====
+__pycache__/
 derby.log
 nacos.home_IS_UNDEFINED/
 query

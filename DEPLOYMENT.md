@@ -398,15 +398,11 @@ Nacos 3.x 把鉴权端点**只暴露在 console 端口**（容器 `8080` / 宿�
 5. 重建镜像并滚动部署，验证日志无 403。
 6. 最后才设置 `nacos.core.auth.enabled=true` 并重启 nacos 容器。
 
-### 4.7 Knife4j API 文档
+### 4.7 API 文档（knife4j 已移除）
 
-| 变量 | 默认值 | 说明 |
-|---|---|---|
-| `KNIFE4J_BASIC_ENABLE` | `false` | 是否启用 Knife4j Basic 认证保护，生产环境建议开启 |
-| `KNIFE4J_BASIC_USERNAME` | `admin` | Knife4j Basic 认证用户名 |
-| `KNIFE4J_BASIC_PASSWORD` | （空） | Knife4j Basic 认证密码，启用时必须设置 |
-
-> **注意**：`knife4j.enable` 本身必须保持 `false`（已在代码中硬编码），设为 `true` 会导致启动异常。以上变量仅控制 Basic 认证保护，不影响文档本身是否可用。
+> **2026-10-09 更新**：knife4j 已随 Boot 4 迁移整体移除（停更组件不支持 Boot 4，且与 springdoc 3.x 互斥，用户拍板），API 文档改由 **springdoc 3.0.3 自带 swagger-ui** 提供。
+> dev 环境设 `SPRINGDOC_ENABLED=true` 开启（映射 `springdoc.api-docs.enabled` / `springdoc.swagger-ui.enabled`，默认 `false`；生产保持关闭）。
+> 原 `KNIFE4J_ENABLE` / `KNIFE4J_BASIC_ENABLE` / `KNIFE4J_BASIC_USERNAME` / `KNIFE4J_BASIC_PASSWORD` 变量**全部作废**——服务器 `.env` 若有残留可删（无任何消费方）。
 
 ### 4.8 配置中心数据库与管理服务
 
@@ -468,13 +464,13 @@ docker compose up -d
 
 该 Dockerfile 适用于全部 10 个后端服务，通过 `MODULE` 构建参数选择打包哪个 Maven 子模块。
 
-**构建阶段**（`maven:3.9-eclipse-temurin-17`）：
+**构建阶段**（`maven:3.9-eclipse-temurin-21@sha256:...`，Boot 4 迁移已从 17 升 21，digest 钉定见 Dockerfile）：
 
 1. **依赖缓存优化**：先复制所有模块的 `pom.xml`，执行 `dependency:go-offline` 预下载依赖。后续仅当 `pom.xml` 变化时才会重新下载依赖，利用 Docker layer 缓存。
-2. **源码编译**：复制完整源码后执行 `mvn package`，使用 `-Dmaven.test.skip=true` 跳过测试（测试源码存在编译问题，不影响生产）。
+2. **源码编译**：复制完整源码后执行 `mvn package`，使用 `-DskipTests` 跳过测试执行（仍编译测试源码，测试由 CI 的 quality-check 兜底）。
 3. **提取产物**：从 `target/` 目录中找到可执行 JAR（排除 `original-` 前缀的原始包），复制为 `/tmp/app.jar`。
 
-**运行阶段**（`eclipse-temurin:17-jre`）：
+**运行阶段**（`eclipse-temurin:21.0.9_10-jre-alpine@sha256:...`）：
 
 1. 安装 `curl`（供健康检查使用）
 2. 设置环境变量：`SPRING_PROFILES_ACTIVE=prod`、`JAVA_OPTS`（75% 内存限制、UTF-8 编码）、时区 `Asia/Shanghai`

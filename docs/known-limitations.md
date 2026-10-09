@@ -7,7 +7,7 @@
 >
 > 生成：2026-09-14 · 来源：`ISSUE/18-DECISION-SHEET-2026-09-14.md` 的 B2 / B6 决策
 >
-> 📌 **引用说明**：本仓 `ISSUE/` 目录**不入库**（见 `.gitignore`）⇒ 文中所有 `ISSUE/*` 引用在全新 clone 里**无法解析**，**仅供本地台账对照**。`ISSUE/15`、`ISSUE/16`、`ISSUE/17` 均已不在仓内。
+> 📌 **引用说明**：本仓 `ISSUE/` 目录**不入库**（见 `.gitignore`）⇒ 文中所有 `ISSUE/*` 引用在全新 clone 里**无法解析**，**仅供本地台账对照**。其中 **`ISSUE/15`、`ISSUE/16`、`ISSUE/17`、`ISSUE/18`（含 `ISSUE/18-DECISION-SHEET-2026-09-14.md`）、`ISSUE/39`（含 `ISSUE/39-UNFINISHED-2026-10-02.md`）属「已归档」**范畴，等价原件在仓库外 `D:\code\databaseZXYZ\oldmd\`（如 `oldmd/18-DECISION-SHEET-2026-09-14.md`、`oldmd/39-UNFINISHED-2026-10-02.md`）。⚠️ **`ISSUE/47`、`ISSUE/48` 等 44 号及以后的引用不同**：它们**在库**（`ISSUE/` 目录下真实存在），可直接解析，标注此点以免两类引用被混为一谈。
 
 ---
 
@@ -56,7 +56,11 @@ POST /api/users/phone/verification-code
 
 **已决策接受**（2026-09-14，`ISSUE/18` B6 选 C）。
 
-- 服务器规格：**4 核 / 7.94 GB / 无 swap**；容器 limits 之和 **6.750 GiB**（2026-10-03 B-1 起；此前 7.875 GiB，更早审计口径 8.125 GiB），占物理内存 **85.0%**，余量 **1.190 GiB（15.0%）**。
+- 服务器规格：**4 核 / 8 GB（生产 `free -m` 实测 7941 MiB）/ 无 swap**；容器 limits **声明值**之和 **6912 MiB = 6.750 GiB**（2026-10-03 B-1 起；此前 7.875 GiB，更早审计口径 8.125 GiB），占物理内存 **6912 / 7941 ≈ 87.0%**，余量 **1029 MiB（13.0%）**。
+  ⚠️ **两套口径必须分开看**（2026-10-09 订正：旧文分母 8130.56 MiB 是把 7.94 GB 当 MiB 的混算值，实际物理内存以生产 `free -m` 实测 7941 MiB 为准）：
+  - **声明值**（compose `limits:` 层级机械解析）= 6912 MiB / **87.0%** / 余量 1029 MiB；
+  - **运行值**（infra 容器 mysql/nacos/rabbitmq 未按新限额重建时，`docker inspect HostConfig.Memory` 实测）= **7424 MiB / 93.5% / 余量 517 MiB** —— 生产已真实发生 RabbitMQ 被 cgroup OOM 击杀（2026-10-08），**重建 infra 容器前**应按运行值做容量决策。
+  - 计算式与实测命令详见 `docs/claude-infra.md`《维护窗口》节。
 - **虽已不再超卖，但余量不足以再容纳一个中间件从库** —— 按本仓 limits，一个 MySQL 从库至少还需 896 MiB，加装后余量将从 1218.56 MiB 压至约 **322 MiB**，等于回到 B-1 要消灭的境地。
   ⇒ **物理上加不了 MySQL / RabbitMQ 从库**。
 - 恢复演练脚本 `scripts/restore-drill.sh` **已存在**；**定期执行能力已提供但默认关闭** —— 需**显式开启**才会按周期执行（当前不随日常流程自动跑）。
@@ -96,8 +100,47 @@ POST /api/users/phone/verification-code
 
 ---
 
+## 5. CI security-scan 阻断部署 + 主线冻结（2026-10-09 决策）
+
+**现状（已决策接受，非待办）**：自 2026-10-08 起，CI 的 `security-scan`（Trivy）持续红灯，
+`deploy` 因硬前置条件（`ci-cd.yml:1236-1238`：`needs.security-scan.result == 'success'`）**被拦**，
+⇒ **dev 分支的一切自动部署被阻断**（含与本漏洞无关的后续修复）。用户 2026-10-09 拍板：
+**主线冻结** —— 迁移期间不引入临时豁免，冻结期内生产应急一律用 `scripts/rollback.sh` 回滚镜像。
+
+**两个 CVE**（2026-08-27 披露，NVD 状态 Analyzed，CVSS 3.1 均 **9.8 CRITICAL**）：
+
+| CVE | 触发前提（AND 关系） | 影响组件 |
+|---|---|---|
+| `CVE-2026-47890` | 应用使用 **SSE**（SseEmitter 等）**且** 使用 view fragments 视图渲染 | spring-webmvc / spring-webflux **6.2.0–6.2.19**（本仓恰在区间上界） |
+| `CVE-2026-47892` | **WebFlux functional endpoints**（RouterFunction）**且** 部署在 **DispatcherServlet** 下 | 同上（另含 6.1/6.0/5.3/5.2 线） |
+
+**可达性实测（两条路径均不可达）**：全仓 main 源码排除 `target/` 后 —— SSE 相关（`SseEmitter`/
+`ResponseBodyEmitter`/`StreamingResponseBody`/`text/event-stream`）= **0**；视图层（`ViewResolver`/
+`ModelAndView`/`setViewName`）= **0**；functional endpoint（`RouterFunction` 等）= **0**；XSLT
+（`XsltView`/`TransformerFactory`）= **0**；gateway 是纯 reactive 栈且 pom **两处主动排除**
+`spring-boot-starter-web`（`zxyz-gateway/pom.xml` nacos-config 与 nacos-discovery 的 `<exclusions>`）
+⇒ 无 DispatcherServlet。两个 CVE 的触发前提一个都不成立。
+
+**为什么不能"升个版本"修**：Spring Framework **6.2.x 线止于 6.2.19**（开源支持 2026-06 已结束，
+无 6.2.20 回补版）；唯一修复版 **7.0.9** 只能通过升级 Spring Boot 4 拿到。Boot 4 迁移的可行性
+评估与规划见 `ISSUE/48-BOOT4-MIGRATION-PLAN-2026-10-09.md`（初判的三条硬阻塞已由其 §三
+勘误下调为可执行路线，约 6–9.5 人日）。
+
+**解除条件**：Boot 4 迁移合并到 dev 后**首次扫描**，镜像内 framework = 7.0.9 ⇒ 三条豁免全部
+失效，须同步删除 `.trivyignore.yaml` 里的 `CVE-2026-47884`（既有条目，其"重新评估条件 2"即
+Boot 4）与本节对应的两个 CVE 豁免（若冻结期间曾补登）⇒ CI 转绿、部署恢复。
+
+**应急**：冻结期如需恢复生产版本，用 `scripts/rollback.sh` 回滚镜像（不引入新变更）。
+
+> 背景：Trivy 漏洞库更新（2026-10-04 版）新报出这两个 CVE —— 同一 audit-service 依赖集在
+> 三次连续 CI run 中由绿转红证明这是"新报出"而非"新引入"。完整判定材料见
+> `ISSUE/47-CVE-SSE-HEADER-BYPASS-2026-10-09.md`（本地对照，见文首引用说明）。
+
+---
+
 ## 变更记录
 
 - **2026-09-14** — 首次建立：手机验证码无通道（B2 决策）、中间件单实例（B6 决策）、TLS 未强制（待 D1 收口）。
 - **2026-09-22** — 回代码复核后订正：① §4 改写为 `validate-env.sh:172-199` 的**真实**行为（`ALLOW_INSECURE_HTTP` 显式豁免 + 未设置时 fail-closed ERROR），删除"正在被 `ISSUE/15` D1 子批 2 收口 / 完成后更新"这句**已失效的承诺**；② §3 恢复演练表述改为"定期执行能力已提供但默认关闭"，不再说"未纳入定期执行"；③ 悬空引用统一：`ISSUE/15` → `ISSUE/18-DECISION-SHEET-2026-09-14.md`（文件头、§1、§3），并在文件头声明 `ISSUE/` 不入库、引用仅供本地台账对照。
 - **2026-10-03** — §1 按用户拍板（`ISSUE/39-UNFINISHED-2026-10-02.md` B-5）改写：手机验证码由「静默失败」改为「响亮失败」（无通道时 `HTTP 400 / code=4000 / 手机验证码暂未开放`）；**同日代码已落地**（WS4），本节同步为落地后口径并写明恢复锚点。
+- **2026-10-09** — ① 新增 §5「CI security-scan 阻断部署 + 主线冻结」（两个 CRITICAL CVE 可达性实测为 0、唯一修复路径是 Boot 4、用户拍板不引入临时豁免、冻结期应急用 rollback.sh）；② §3 内存分母订正：物理内存以生产 `free -m` 实测 **7941 MiB** 为准（旧文 8130.56 MiB 是 GB/MiB 混算），并区分**声明值 87.0%** 与**运行值 93.5%** 两套口径（运行值含 2026-10-08 RabbitMQ 被 cgroup OOM 击杀的实证）。

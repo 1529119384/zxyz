@@ -18,7 +18,7 @@
 
 > ⚠️ **Redis database 隔离的实际范围是 9 个服务，不含 admin-service**（2026-10-07 复核）：compose 里 `REDIS_DATABASE` 出现 **9 处** —— gateway 0 / project 1 / im 2 / email 3 / user 4 / share 5 / file 6 / team 7 / audit 8。**admin-service 不消费该键**（只用 Redis Pub/Sub 做配置广播），故「各服务独立编号」对它不成立。相关：`ISSUE` 的 I-4 修复正是把 `.env.example` 里写死的 `REDIS_DATABASE=0` 删除，让这 9 处兜底生效。
 >
-> ⚠️ **Sa-Token 会话已独立到 db9（2026-10-08）**：9 个服务（上列 9 个，即除 audit 外全部）通过 `sa-token-alone-redis` 把会话统一落到独立连接 `sa-token.alone-redis`（`database: 9`，配置在 `zxyz-common/application-common.yml`）。⇒ **业务库编号隔离（0-8）不含会话**：`satoken*` 键全在 db9，其余键按 0-8 分库。audit-service 纯 MQ 消费者、刻意不引该依赖。副作用提醒：随依赖补入的 `commons-pool2` 使 Boot 的 `isPoolEnabled()` 翻 true ⇒ 各服务**主** Redis 客户端从「无池」变「有池」，`spring.data.redis.lettuce.pool.*`（max-active 8 / max-idle 8 / min-idle 2）**真生效**（生产 compose/env 无 `REDIS_POOL_*` 覆盖 ⇒ 吃默认值）。部署后验证会话真的迁移：`redis-cli -n 9 --scan --pattern 'satoken*'`（插件对配置异常静默吞，「起来了」≠「迁移了」）。
+> ⚠️ **Sa-Token 会话存储代码已切到独立库 db9（2026-10-08，`701af68` 合并；生产生效以部署后实测为准）**：9 个服务（上列 9 个，即除 audit 外全部）通过 `sa-token-alone-redis` 把会话统一落到独立连接 `sa-token.alone-redis`（`database: 9`，配置在 `zxyz-common/application-common.yml`）。⇒ 代码层语义为**业务库编号隔离（0-8）不含会话**：`satoken*` 键应全在 db9，其余键按 0-8 分库。⚠️ **生产当前未部署该改造**（截至 2026-10-09：CI 因新 CVE 红灯、deploy 被拦，容器仍跑 e5c97d7、db9 为 0 key），故「satoken* 全在 db9」目前是**目标态**而非实况。audit-service 纯 MQ 消费者、刻意不引该依赖。副作用提醒：随依赖补入的 `commons-pool2` 使 Boot 的 `isPoolEnabled()` 翻 true ⇒ 各服务**主** Redis 客户端从「无池」变「有池」，`spring.data.redis.lettuce.pool.*`（max-active 8 / max-idle 8 / min-idle 2）**真生效**（生产 compose/env 无 `REDIS_POOL_*` 覆盖 ⇒ 吃默认值）。部署后验证会话真的迁移：`redis-cli -n 9 --scan --pattern 'satoken*'` 见非空 key 才算生效（插件对配置异常静默吞，「起来了」≠「迁移了」）。
 >
 > 📍 **长期边界与演进路线**（库号 0–15 硬上限、`maxmemory 0`+`noeviction` 与会话、门禁不变量口径、部署验证不可省略项）集中记档在 **`docs/redis-session-layout.md`**，本节不重复。
 
@@ -77,9 +77,11 @@
 **其他脚本**:
 - `backup.sh` — MySQL（含 binlog 增量，PITR 用）+ Redis 备份；`--mysql-only` 仅备 MySQL（预部署用）。
   ⚠️ 位点查询用 `SHOW BINARY LOG STATUS` —— `SHOW MASTER STATUS` 已随 MySQL 8.4 移除（2026-10-03 修复）
-- `health-check.sh` — 巡检 **14 个容器**（基础设施 4 + 后端 8 + gateway + frontend-nginx）：
+- `health-check.sh` — 巡检 **15 个容器**（基础设施 4 + 后端 9 + gateway + frontend-nginx）：
   全部 healthy → exit 0，否则列出 unhealthy 并 exit 1。`loki`/`promtail` 已随可观测性栈迁出，
-  **不在**巡检清单内（2026-10-03 清理陈旧条目）
+  **不在**巡检清单内（2026-10-03 清理陈旧条目）。⚠️ 该数组曾长期漏 `zxyz-admin-service`（14 项），
+  导致「14/14 全绿」是**假绿灯**；**2026-10-09 已修复**为 15 项（含 admin，实测 `scripts/health-check.sh:39`），
+  并新增 `Checked: N containers` 自打印以便日常对账 —— 生产实跑 `Healthy: 15 / 15`
 - `check-nacos-config-sync.py` — nacos-config/ 与后端代码默认值的等价性门禁（阻断 [DIFF]）
 - `check-env-example-values.py` — `.env.example` 取值形态断言（gitleaks 整文件豁免的补偿门禁，CI 调用）
 - `check-nacos-drift.sh` — 线上 Nacos 与仓库 nacos-config/ 的只读逐份 md5 对账
@@ -133,10 +135,14 @@
 | 10 后端 + gateway（每个） | 512 MiB | **448 MiB**（共 10 个，4480 MiB） |
 | `frontend-nginx` | 128 MiB | 128 MiB（不动） |
 | **limits 累加** | **8064 MiB = 7.875 GiB** | **6912 MiB = 6.750 GiB** |
-| **占物理内存**（7.94 GB ≈ 8130.56 MiB） | 8064 / 8130.56 = **99.2%** | 6912 / 8130.56 = **85.0%** |
-| **余量** | 8130.56 − 8064 = **66.56 MiB（0.8%）** | 8130.56 − 6912 = **1218.56 MiB ≈ 1.190 GiB（15.0%）** |
+| **占物理内存**（生产 `free -m` 实测 **total = 7941 MiB**） | 8064 / 7941 = **101.5%（超卖）** | 6912 / 7941 = **87.0%** |
+| **余量** | 7941 − 8064 = **−123 MiB（负余量）** | 7941 − 6912 = **1029 MiB（12.96%）** |
 
 计算式：`896 + 768 + 256 + 384 + 448×10 + 128 = 6912 MiB`（降幅 1152 MiB = 1.125 GiB）。
+
+> ⚠️ **分母口径（2026-10-09 订正）**：本表此前用 **8130.56 MiB** 当物理内存分母——那是把「7.94 GB」按 GiB 换算（7.94×1024）的结果，属 GB/MiB 混算；生产 `free -m` 实测 **total = 7941 MiB**，一切百分比以 7941 为准（改回 8130 分母会把余量高估约 190 MiB，详见 46 号 P2-4 / 49 号 P2-3）。历史数字（99.2%/85.0%/66.56/1218.56）保留在上一版记录中，**勿再引用作决策**。
+>
+> ⚠️ **声明值 ≠ 运行值（2026-10-08/09 双日实测）**：上表「改后」是 compose **声明值**。生产 `HostConfig.Memory` 实测：mysql/nacos 仍 1024 MiB、rabbitmq 仍 512 MiB（三容器创建于 2026-09-14、未重建）⇒ **运行值合计 7424 MiB = 93.5%、余量仅 517 MiB**。按旧的「1.19 GiB 余量」做容量决策会吃穿物理内存（rabbitmq 已于 2026-10-08 真实被 OOM 杀过一次）。**先重建 infra 三容器使声明值生效，再做任何扩容决策**。
 
 > ⚠️ **口径提醒**：448M 那组是 **10 个**（project/im/email/share/file/team/audit/admin/user + gateway），
 > 不是 11 个 —— `frontend-nginx` 是 128M，**不要**并入 448 那组。本表数字由

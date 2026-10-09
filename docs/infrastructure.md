@@ -11,7 +11,7 @@ Schema 文件：**表结构仅由各服务的 Flyway 迁移管理** —— `ZXYZ
 
 默认 localhost:6379。分布式锁（Redisson）在**业务库**（按 `REDIS_DATABASE` 隔离：gateway 0 / project 1 / im 2 / email 3 / user 4 / share 5 / file 6 / team 7 / audit 8，admin 不消费该键）。
 
-**Sa-Token 会话已独立到 db9**（2026-10-08）：9 个服务（gateway/project/im/email/user/share/file/team/admin）引入 `sa-token-alone-redis`，会话统一落 `sa-token.alone-redis` 配置的独立连接（`database: 9`，配置在 `zxyz-common/src/main/resources/application-common.yml`；`zxyz-audit-service` 纯 MQ 消费者，刻意不引）。该键**刻意只写 application-common.yml、不进 nacos** —— gateway 不 import `zxyz-static.yml`，写错落点会导致「业务服务写 db9、gateway 校验读 db0」= 全站登录失效。部署后验证：`redis-cli -n 9 --scan --pattern 'satoken*'`（插件对配置异常静默吞，**服务起来了 ≠ 会话已迁移**）。
+**Sa-Token 会话存储代码已切到独立库 db9**（2026-10-08，`701af68` 合并）：9 个服务（gateway/project/im/email/user/share/file/team/admin）引入 `sa-token-alone-redis`，会话统一落 `sa-token.alone-redis` 配置的独立连接（`database: 9`，配置在 `zxyz-common/src/main/resources/application-common.yml`；`zxyz-audit-service` 纯 MQ 消费者，刻意不引）。该键**刻意只写 application-common.yml、不进 nacos** —— gateway 不 import `zxyz-static.yml`，写错落点会导致「业务服务写 db9、gateway 校验读 db0」= 全站登录失效。⚠️ **生产生效以部署后实测为准**（截至 2026-10-09 生产仍在跑旧版、未部署本改造；CI 因新 CVE 红灯、deploy 被拦）：部署后必须 `redis-cli -n 9 --scan --pattern 'satoken*'` 见非空 key 才算生效（插件对配置异常静默吞，**服务起来了 ≠ 会话已迁移**）。
 
 ## Nacos
 
