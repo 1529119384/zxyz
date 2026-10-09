@@ -101,6 +101,17 @@
              2.21.7 同时覆盖上述全部（databind 的 2.21.6 亦已含在内）。Jackson 2.x 二进制兼容。
              ⚠️ Boot 4 下属性名为 jackson-2-bom.version（jackson-bom.version 已是 Jackson 3 BOM，勿用）。 -->
         <jackson-2-bom.version>2.21.7</jackson-2-bom.version>
+        <!-- CI 首跑实证（ISSUE/48 §11.4，run 37914492630 security-scan）：Boot 4 引入的
+             Jackson 3 轨（tools.jackson 3.1.5）报 5 个可修复 HIGH（与 Jackson 2 轨当年同型）：
+               · jackson-core    CVE-2026-89407、CVE-2026-89425（修复 3.1.7 / 3.2.x）
+               · jackson-databind CVE-2026-68497、CVE-2026-91776、CVE-2026-91777（修复 3.1.6/3.1.7）
+             钉 jackson-bom.version=3.1.7（Boot 自有属性名，BOM 内 core/databind 统一 3.1.7），
+             3.1.x 线内补丁升级、二进制兼容。 -->
+        <jackson-bom.version>3.1.7</jackson-bom.version>
+        <!-- CI 首跑实证（同上）：tomcat-embed-core 11.0.24 报 3 个 CRITICAL
+             （CVE-2026-65182/65905/68525，修复 11.0.25）；Boot 4.0.8 管理 11.0.24，
+             按仓库既有「钉版高于管理版」模式钉 11.0.25。 -->
+        <tomcat.version>11.0.25</tomcat.version>
         <!-- spring-retry：Boot 4.0.8 BOM 不再管理（BOM 属性块无此键），显式钉版（ISSUE/48 D2） -->
         <spring-retry.version>2.0.13</spring-retry.version>
         <!-- httpcore5 5.3.6 → 5.4.3（Boot 4.0.8 仅管 5.3.6，保留钉版） -->
