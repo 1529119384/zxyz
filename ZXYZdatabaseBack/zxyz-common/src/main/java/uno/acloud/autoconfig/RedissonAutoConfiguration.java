@@ -4,9 +4,9 @@ import org.redisson.Redisson;
 import org.redisson.api.RedissonClient;
 import org.redisson.config.Config;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
-import org.springframework.boot.autoconfigure.data.redis.RedisProperties;
+import org.springframework.boot.data.redis.autoconfigure.DataRedisAutoConfiguration;
+import org.springframework.boot.data.redis.autoconfigure.DataRedisProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.util.StringUtils;
 import uno.acloud.common.lock.DistributedLockTemplate;
@@ -17,7 +17,7 @@ import uno.acloud.common.lock.DistributedLockTemplate;
  *
  * <p><b>C-10（2026-09-21）：本类原位于 {@code uno.acloud.common.config} —— 一个被各服务{@code @ComponentScan} 覆盖的包（basePackages 含 {@code uno.acloud.common}），同时又登记在{@code AutoConfiguration.imports} 中 ⇒ 同一份配置被注册两次、条件在两个不同阶段各求值一次。已迁入 {@code uno.acloud.autoconfig}（不被任何 {@code @ComponentScan} 覆盖），并补上 Spring Boot 3 要求的 {@code @AutoConfiguration}。实测证据见同包 {@code AuditBufferRetryAutoConfiguration} 的类注释。</p>
  */
-@AutoConfiguration(after = RedisAutoConfiguration.class)
+@AutoConfiguration(after = DataRedisAutoConfiguration.class)
 @ConditionalOnClass(RedissonClient.class)
 public class RedissonAutoConfiguration {
 
@@ -35,7 +35,7 @@ public class RedissonAutoConfiguration {
     }
 
     @Bean(destroyMethod = "shutdown")
-    public RedissonClient redissonClient(RedisProperties redisProperties) {
+    public RedissonClient redissonClient(DataRedisProperties redisProperties) {
         Config config = new Config();
         String scheme = redisProperties.getSsl() != null && redisProperties.getSsl().isEnabled()
                 ? "rediss://" : "redis://";

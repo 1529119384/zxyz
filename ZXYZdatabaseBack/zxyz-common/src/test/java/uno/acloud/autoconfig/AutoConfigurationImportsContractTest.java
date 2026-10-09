@@ -57,7 +57,7 @@ class AutoConfigurationImportsContractTest {
      * 注册表条目数下界。存在意义是<b>反空扫</b>：若资源读取方式失效（路径写错、打包变化），
      * 列表会变成空，循环体一次都不跑 ⇒ 门禁变成「恒绿」。宁可响亮失败，也不要空扫。
      */
-    private static final int MIN_EXPECTED_ENTRIES = 9;
+    private static final int MIN_EXPECTED_ENTRIES = 10;
 
     @Test
     void registryIsNotEmptyAndEveryEntryIsRelocatedAndAnnotated() {

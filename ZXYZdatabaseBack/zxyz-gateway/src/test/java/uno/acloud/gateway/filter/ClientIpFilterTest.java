@@ -55,7 +55,7 @@ class ClientIpFilterTest {
 
         // 功能默认关闭 ⇒ 只认真实远程地址；客户端伪造的两个头必须被清掉
         assertThat(headers.getFirst(ClientIpResolver.X_REAL_IP_HEADER)).isEqualTo("198.51.100.9");
-        assertThat(headers.containsKey(ClientIpResolver.X_FORWARDED_FOR_HEADER)).isFalse();
+        assertThat(headers.containsHeader(ClientIpResolver.X_FORWARDED_FOR_HEADER)).isFalse();
     }
 
     @Test
@@ -71,7 +71,7 @@ class ClientIpFilterTest {
 
         // 从右向左跳过可信代理，取第一个非可信 IP
         assertThat(headers.getFirst(ClientIpResolver.X_REAL_IP_HEADER)).isEqualTo("203.0.113.7");
-        assertThat(headers.containsKey(ClientIpResolver.X_FORWARDED_FOR_HEADER)).isFalse();
+        assertThat(headers.containsHeader(ClientIpResolver.X_FORWARDED_FOR_HEADER)).isFalse();
     }
 
     @Test

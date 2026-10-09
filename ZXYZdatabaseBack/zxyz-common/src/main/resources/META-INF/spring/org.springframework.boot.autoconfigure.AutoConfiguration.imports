@@ -1,6 +1,7 @@
 uno.acloud.autoconfig.AuthServicePortAutoConfig
 uno.acloud.autoconfig.CacheConfig
 uno.acloud.autoconfig.ConfigClientAutoConfiguration
+uno.acloud.autoconfig.JasyptPropertiesEncryptorAutoConfiguration
 uno.acloud.autoconfig.RedissonAutoConfiguration
 uno.acloud.autoconfig.PermissionCacheAutoConfiguration
 uno.acloud.autoconfig.TeamPermissionCacheAutoConfiguration

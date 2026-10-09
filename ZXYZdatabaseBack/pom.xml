@@ -7,7 +7,8 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.14</version>
+        <!-- Boot 4 迁移（ISSUE/48，2026-10-09）：3.5.14 → 4.0.8 ⇒ 自带 spring-framework 7.0.9（CVE-2026-47884/47890/47892 唯一修复版） -->
+        <version>4.0.8</version>
         <relativePath/>
     </parent>
 
@@ -34,29 +35,31 @@
     </modules>
 
     <properties>
-        <java.version>17</java.version>
+        <!-- Boot 4 迁移：17 → 21（Boot 4 官方要求 ≥17、验证至 26；选 21 LTS 配 temurin-21 镜像，ISSUE/48 R8） -->
+        <java.version>21</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <sa-token.version>1.46.0</sa-token.version>
         <redisson.version>3.35.0</redisson.version>
         <mybatis-plus.version>3.5.17</mybatis-plus.version>
-        <springdoc.version>2.8.9</springdoc.version>
-        <knife4j.version>4.5.0</knife4j.version>
+        <!-- Boot 4 迁移：2.8.9 → 3.0.3（springdoc 3.0.x 配 Boot 4.0.x；3.1.x 配 4.1.x，ISSUE/48 D5）；knife4j 移除（停更 + 与 Boot 4 互斥，dev 用 springdoc 自带 swagger-ui，用户已拍板） -->
+        <springdoc.version>3.0.3</springdoc.version>
         <aliyun-oss-v2.version>0.6.0</aliyun-oss-v2.version>
         <commons-lang3.version>3.20.0</commons-lang3.version>
         <lombok.version>1.18.42</lombok.version>
-        <!-- 4.0.5 与 Jakarta EE 10（Spring Boot 3.x）兼容；2.3.x 使用 javax 命名空间，不可用于 Spring Boot 3 -->
-        <jaxb-runtime.version>4.0.5</jaxb-runtime.version>
         <simple-java-mail.version>9.3.4</simple-java-mail.version>
 <!-- m54: MapStruct — 对象映射框架，逐步替代手动字段拷贝 -->
         <mapstruct.version>1.6.3</mapstruct.version>
-        <flyway.version>10.22.0</flyway.version>
         <testcontainers.version>1.21.4</testcontainers.version>
-        <!-- 2025.0.0 -> 2025.0.3：gateway-server(-webflux) 4.3.0 -> 4.3.5，修复 CVE-2025-41253（HIGH，需 ≥4.3.2）与 CVE-2025-41243（CRITICAL，需 ≥4.3.1）；同 train patch 升级，SCA 2025.0.0.0 兼容 -->
-        <spring-cloud.version>2025.0.3</spring-cloud.version>
-        <spring-cloud-alibaba.version>2025.0.0.0</spring-cloud-alibaba.version>
-        <resilience4j.version>2.2.0</resilience4j.version>
-        <jasypt.version>3.0.5</jasypt.version>
+        <!-- Boot 4 迁移（ISSUE/48 §二，2026-10-09）：SC 2025.0.3 → 2025.1.3（Oakwood train，官方配 Boot 4.0.x）；
+             SCA 2025.0.0.0 → 2025.1.0.0（BOM parent = spring-cloud-dependencies-parent 5.0.0，与 SC 2025.1 同代） -->
+        <spring-cloud.version>2025.1.3</spring-cloud.version>
+        <spring-cloud-alibaba.version>2025.1.0.0</spring-cloud-alibaba.version>
+        <!-- Boot 4 迁移：2.2.0 → 2.4.0 且坐标换 resilience4j-spring-boot4（Central 实测 latest） -->
+        <resilience4j.version>2.4.0</resilience4j.version>
+        <!-- Boot 4 迁移（ISSUE/48 §九）：3.0.5 starter → 1.9.3 纯内核；starter 壳绑旧 spring-cloud-context，
+             自建 StringEncryptor Bean + ENC() 属性解析钩子替代；算法/密钥/密文零迁移 -->
+        <jasypt.version>1.9.3</jasypt.version>
         <!-- D5 架构约束测试（路线 B：只钉现状 + FreezingArchRule 冻结存量违规）：
              ArchUnit 的 @AnalyzeClasses 只能看到「测试模块自己的 classpath」，而本仓每个服务都是
              独立 Maven 模块、没有任何模块依赖其他服务 ⇒ 不存在能「看到全部服务」的模块。
@@ -77,31 +80,33 @@
              本属性只是兜底默认（0 = 不设下界），真实阈值在 11 个业务模块的 <properties> 里。 -->
         <jacoco.line.min>0.00</jacoco.line.min>
 
-        <!-- ===== 安全漏洞修复覆盖：以下属性覆盖 Spring Boot 3.5.14 自带
+        <!-- ===== 安全漏洞修复覆盖：以下属性覆盖 Spring Boot 4.0.8 自带
              dependency management 中仍低于修复版的依赖（Trivy HIGH/CRITICAL）。
              全部为 Spring Boot dependencies 已有的同名属性，仅调高版本号，
-             不改 pom 结构。版本均经 Maven Central 200 校验。 ===== -->
-        <!-- netty 4.1.132 → 4.1.137.Final：修复大量 CVE（HIGH） -->
-        <netty.version>4.1.137.Final</netty.version>
-        <!-- tomcat 10.1.54 → 10.1.59：修复 CVE-2026-41293 等（CRITICAL） -->
-        <tomcat.version>10.1.59</tomcat.version>
+             不改 pom 结构。版本均经 Maven Central 200 校验。
+
+             Boot 4 迁移（ISSUE/48 §8.7.3/R9，2026-10-09）注记：
+             · 删除的钉版（Boot 4.0.8 管理值已覆盖或更优）：netty（→4.2.17.Final）、tomcat（→11.0.24）、
+               spring-framework（→7.0.9）、spring-data-bom（→2025.1.7）、micrometer（→1.16.7）、
+               flyway（→11.14.1）、jaxb-runtime（glassfish-jaxb 4.0.9 ≥ 原 4.0.5 钉版）；
+             · Jackson 属性改名：Boot 4 的 jackson-bom.version 语义变为 Jackson 3 BOM，
+               Jackson 2 CVE 钉版迁移至 jackson-2-bom.version（本仓 88 个 main 文件的 com.fasterxml 代码依赖此轨）；
+             · spring-retry 脱离 Boot 4 BOM 管理 ⇒ 显式钉版（D2，见 spring-retry.version）；
+             · 保留钉版：httpcore5 / rabbit-amqp-client / redisson / testcontainers / archunit。 ===== -->
         <!-- jackson 2.21.2 → 2.21.7：原 2.21.4 修复了 GHSA-r7wm-3cxj-wff9 / CVE-2026-54512；
              2026-10-07 再升至 2.21.7 —— Trivy 在 2.21.4 上报出 5 个可修复 HIGH（ignore-unfixed 下仍拦部署）：
                · jackson-core    CVE-2026-89407（正则回溯 DoS）、CVE-2026-89425（畸形 token 致 StringBuilder 无界增长）
                · jackson-databind CVE-2026-68497（数值解析无界 DoS，修复版 2.21.6）
                · CVE-2026-91776 / CVE-2026-91777（jackson-core，修复版 2.21.7）
-             2.21.7 同时覆盖上述全部（databind 的 2.21.6 亦已含在内）。Jackson 2.x 二进制兼容。 -->
-        <jackson-bom.version>2.21.7</jackson-bom.version>
-        <!-- micrometer 1.15.11 → 1.15.12 -->
-        <micrometer.version>1.15.12</micrometer.version>
-        <!-- httpcore5 5.3.6 → 5.4.3 -->
+             2.21.7 同时覆盖上述全部（databind 的 2.21.6 亦已含在内）。Jackson 2.x 二进制兼容。
+             ⚠️ Boot 4 下属性名为 jackson-2-bom.version（jackson-bom.version 已是 Jackson 3 BOM，勿用）。 -->
+        <jackson-2-bom.version>2.21.7</jackson-2-bom.version>
+        <!-- spring-retry：Boot 4.0.8 BOM 不再管理（BOM 属性块无此键），显式钉版（ISSUE/48 D2） -->
+        <spring-retry.version>2.0.13</spring-retry.version>
+        <!-- httpcore5 5.3.6 → 5.4.3（Boot 4.0.8 仅管 5.3.6，保留钉版） -->
         <httpcore5.version>5.4.3</httpcore5.version>
-        <!-- rabbit amqp-client 5.25.0 → 5.35.0：CVE-2026-63337/69219 -->
+        <!-- rabbit amqp-client 5.25.0 → 5.35.0：CVE-2026-63337/69219（Boot 4.0.8 仅管 5.30.0，保留钉版） -->
         <rabbit-amqp-client.version>5.35.0</rabbit-amqp-client.version>
-        <!-- spring-framework 6.2.18 → 6.2.19：spring-expression CVE（≥6.2.19） -->
-        <spring-framework.version>6.2.19</spring-framework.version>
-        <!-- spring-data-bom 2025.0.11 → 2025.0.13：spring-data-commons 3.5.11 → 3.5.13（≥3.5.12） -->
-        <spring-data-bom.version>2025.0.13</spring-data-bom.version>
     </properties>
 
     <dependencyManagement>
@@ -139,7 +144,7 @@
             </dependency>
             <dependency>
                 <groupId>com.baomidou</groupId>
-                <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+                <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
                 <version>${mybatis-plus.version}</version>
             </dependency>
             <dependency>
@@ -166,11 +171,6 @@
                 <version>${springdoc.version}</version>
             </dependency>
             <dependency>
-                <groupId>com.github.xiaoymin</groupId>
-                <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
-                <version>${knife4j.version}</version>
-            </dependency>
-            <dependency>
                 <groupId>com.aliyun</groupId>
                 <artifactId>alibabacloud-oss-v2</artifactId>
                 <version>${aliyun-oss-v2.version}</version>
@@ -182,7 +182,7 @@
             </dependency>
             <dependency>
                 <groupId>cn.dev33</groupId>
-                <artifactId>sa-token-spring-boot3-starter</artifactId>
+                <artifactId>sa-token-spring-boot4-starter</artifactId>
                 <version>${sa-token.version}</version>
             </dependency>
             <dependency>
@@ -198,15 +198,17 @@
             <!-- Sa-Token 独立 Redis 数据源（会话统一落 db9，与各服务业务库隔离）。
                  版本复用 ${sa-token.version}：Sa-Token 各组件必须同版本，
                  单独引第二个版本属性会让升级时漏改一处即出现运行时 NoSuchMethodError。
-                 由 AloneRedisWiringContractTest 在 D 项钉住，勿改为字面量。 -->
+                 由 AloneRedisWiringContractTest 在 D 项钉住，勿改为字面量。
+                 Boot 4 迁移：坐标改名 sa-token-alone-redis → sa-token-alone-redis-by-spring-boot4
+                 （Central 实测 latest 1.46.0，与 boot3 系同版本号）。 -->
             <dependency>
                 <groupId>cn.dev33</groupId>
-                <artifactId>sa-token-alone-redis</artifactId>
+                <artifactId>sa-token-alone-redis-by-spring-boot4</artifactId>
                 <version>${sa-token.version}</version>
             </dependency>
             <dependency>
                 <groupId>cn.dev33</groupId>
-                <artifactId>sa-token-reactor-spring-boot3-starter</artifactId>
+                <artifactId>sa-token-reactor-spring-boot4-starter</artifactId>
                 <version>${sa-token.version}</version>
             </dependency>
             <dependency>
@@ -216,7 +218,7 @@
             </dependency>
             <dependency>
                 <groupId>io.github.resilience4j</groupId>
-                <artifactId>resilience4j-spring-boot3</artifactId>
+                <artifactId>resilience4j-spring-boot4</artifactId>
                 <version>${resilience4j.version}</version>
             </dependency>
             <dependency>
@@ -224,26 +226,13 @@
                 <artifactId>commons-lang3</artifactId>
                 <version>${commons-lang3.version}</version>
             </dependency>
-            <dependency>
-                <groupId>org.glassfish.jaxb</groupId>
-                <artifactId>jaxb-runtime</artifactId>
-                <version>${jaxb-runtime.version}</version>
-            </dependency>
+            <!-- jaxb-runtime：本仓钉版已删（Boot 4.0.8 以 glassfish-jaxb.version=4.0.9 直接管理 org.glassfish.jaxb:jaxb-runtime，≥ 原 4.0.5 钉版） -->
             <dependency>
                 <groupId>org.simplejavamail</groupId>
                 <artifactId>simple-java-mail</artifactId>
                 <version>${simple-java-mail.version}</version>
             </dependency>
-            <dependency>
-                <groupId>org.flywaydb</groupId>
-                <artifactId>flyway-core</artifactId>
-                <version>${flyway.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.flywaydb</groupId>
-                <artifactId>flyway-mysql</artifactId>
-                <version>${flyway.version}</version>
-            </dependency>
+            <!-- flyway-core / flyway-mysql：本仓钉版已删，由 Boot 4.0.8 BOM 直接管理（flyway.version=11.14.1） -->
             <!-- m54: MapStruct 对象映射框架，逐步替代手动字段拷贝（如 toTeamVO、toMemberVO 等）。
                  各服务模块需同时添加 mapstruct（编译期）和 mapstruct-processor（注解处理器）依赖。 -->
             <dependency>
@@ -275,10 +264,18 @@
                 <version>${testcontainers.version}</version>
                 <scope>test</scope>
             </dependency>
+            <!-- Jasypt 配置加密（Boot 4 迁移，ISSUE/48 §九）：starter 壳移除，改引 1.9.3 纯内核。
+                 StringEncryptor Bean 与 ENC() 属性解析由 zxyz-common 自建钩子提供。 -->
             <dependency>
-                <groupId>com.github.ulisesbocchio</groupId>
-                <artifactId>jasypt-spring-boot-starter</artifactId>
+                <groupId>org.jasypt</groupId>
+                <artifactId>jasypt</artifactId>
                 <version>${jasypt.version}</version>
+            </dependency>
+            <!-- spring-retry：Boot 4 BOM 不再管理，显式定版（D2） -->
+            <dependency>
+                <groupId>org.springframework.retry</groupId>
+                <artifactId>spring-retry</artifactId>
+                <version>${spring-retry.version}</version>
             </dependency>
             <!-- bouncycastle bcprov-jdk18on 为传递依赖（如经 sa-token 等引入），
                  未在任意 pom 显式声明；此处显式定版以修复 CVE-2025-14813（CRITICAL），

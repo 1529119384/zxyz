@@ -5,7 +5,7 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
+import org.springframework.boot.data.redis.autoconfigure.DataRedisAutoConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.listener.ChannelTopic;
@@ -26,19 +26,19 @@ import uno.acloud.common.permission.TeamPermissionLocalCache;
  * <b>为什么这个类在 {@code uno.acloud.autoconfig} 包、而不是 {@code uno.acloud.common.config}</b>：
  * 各服务启动类普遍写了 {@code @ComponentScan(basePackages = {"uno.acloud.<svc>", "uno.acloud.common"})}，
  * 会把 {@code uno.acloud.common.config} 下的配置类也扫进来。被<b>组件扫描</b>收录的配置类
- * 先于自动配置注册，此时 {@code RedisAutoConfiguration} 还没注册
+ * 先于自动配置注册，此时 {@code DataRedisAutoConfiguration} 还没注册
  * {@code RedisConnectionFactory} Bean ⇒ {@code @ConditionalOnBean} 恒为 false ⇒
  * <b>监听器静默不注册</b>（不报错，只是订阅不到）。
  * 实测后果：11 个服务里只有不写 {@code @ComponentScan} 的 gateway 订阅成功，
  * im/team/file 等全部收不到失效通知。
  * ⇒ 放到无人扫描的 {@code uno.acloud.autoconfig}，只经 {@code AutoConfiguration.imports}
- * 加载，并用 {@code after = RedisAutoConfiguration.class} 固定顺序。
+ * 加载，并用 {@code after = DataRedisAutoConfiguration.class} 固定顺序。
  * <p>
  * 监听器仅在 {@link RedisConnectionFactory} 存在时注册；无 Redis 环境下缓存退化为
  * 纯 TTL 过期（功能仍正确，只是失效不及时）。
  */
 @Slf4j
-@AutoConfiguration(after = RedisAutoConfiguration.class)
+@AutoConfiguration(after = DataRedisAutoConfiguration.class)
 public class TeamPermissionCacheAutoConfiguration {
 
     @Bean

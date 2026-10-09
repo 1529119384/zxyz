@@ -42,9 +42,10 @@
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
+        <!-- Boot 4 迁移（ISSUE/48 D3）：starter-web → starter-webmvc -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
+            <artifactId>spring-boot-starter-webmvc</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -67,7 +68,7 @@
         </dependency>
         <dependency>
             <groupId>com.baomidou</groupId>
-            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+            <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
         </dependency>
         <dependency>
             <groupId>com.aliyun</groupId>
@@ -77,9 +78,10 @@
             <groupId>org.glassfish.jaxb</groupId>
             <artifactId>jaxb-runtime</artifactId>
         </dependency>
+        <!-- Boot 4 迁移（ISSUE/48 D1）：starter-aop 在 Boot 4 停发，换 starter-aspectj -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-aop</artifactId>
+            <artifactId>spring-boot-starter-aspectj</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.amqp</groupId>
@@ -91,21 +93,22 @@
         </dependency>
         <dependency>
             <groupId>cn.dev33</groupId>
-            <artifactId>sa-token-spring-boot3-starter</artifactId>
+            <artifactId>sa-token-spring-boot4-starter</artifactId>
         </dependency>
         <dependency>
             <groupId>cn.dev33</groupId>
             <artifactId>sa-token-redis-template</artifactId>
         </dependency>
         <!-- Sa-Token 独立 Redis 数据源：会话统一落 db9，与各服务业务库隔离。
-             ⚠️ commons-pool2 不是冗余：sa-token-alone-redis 在 pattern=single 路径
+             ⚠️ commons-pool2 不是冗余：alone-redis 在 pattern=single 路径
              无条件 new GenericObjectPoolConfig()，而它把 commons-pool2 标为 optional ⇒ 不传递。
              缺它 = 启动期 NoClassDefFoundError（Error 不被插件的 catch(Exception) 捕获）
              ⇒ 服务直接启动失败。两者版本均由父 pom / spring-boot BOM 管理，模块内不写 version。
-             由 zxyz-common 的 AloneRedisWiringContractTest 在 B/C 项钉住，勿删。 -->
+             由 zxyz-common 的 AloneRedisWiringContractTest 在 B/C 项钉住，勿删。
+             Boot 4 迁移（ISSUE/48 R6）：坐标改名 sa-token-alone-redis → sa-token-alone-redis-by-spring-boot4。 -->
         <dependency>
             <groupId>cn.dev33</groupId>
-            <artifactId>sa-token-alone-redis</artifactId>
+            <artifactId>sa-token-alone-redis-by-spring-boot4</artifactId>
         </dependency>
         <dependency>
             <groupId>org.apache.commons</groupId>
@@ -165,10 +168,11 @@
             <groupId>org.mapstruct</groupId>
             <artifactId>mapstruct</artifactId>
         </dependency>
-        <!-- Knife4j + SpringDoc API 文档 -->
+        <!-- SpringDoc API 文档（Boot 4 迁移 ISSUE/48 §2.2：knife4j 已移除，springdoc 3.0.3 自带 swagger-ui；
+             版本走根 pom depMgmt，dev 环境设 SPRINGDOC_ENABLED=true 启用） -->
         <dependency>
-            <groupId>com.github.xiaoymin</groupId>
-            <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
         </dependency>
     </dependencies>
 

@@ -481,6 +481,14 @@ class FileMapperWiringTest {
      * {@code …/application-test.yml} 的 {@code mybatis.configuration.log-impl}、
      * im-service 的 {@code mybatis.mapper-locations}（它能用纯靠 MyBatis-Plus 默认值兜底）。</p>
      *
+     * <p>2026-10-09 Boot4 波次复核（pom 换 {@code mybatis-plus-spring-boot4-starter:3.5.17}）：
+     * 其 POM 实测直接依赖仍含 {@code com.baomidou:mybatis-plus-spring-boot-autoconfigure:3.5.17}
+     * （compile），且仍未引入 {@code org.mybatis.spring.boot:mybatis-spring-boot-autoconfigure}
+     * ⇒ 「没有组件绑定 {@code mybatis.*} 前缀」的结论<b>不变</b>，本用例与断言零改动。
+     * 注意新增入树的 {@code org.mybatis:mybatis-spring:4.0.0}（3.0 → 4.0）只是 SqlSessionFactory
+     * 集成库，<b>不绑定任何配置前缀</b>，别把它误认成「绑定 {@code mybatis.*} 的 starter」；
+     * {@code MybatisConfiguration} 仍来自 mybatis-plus 3.5.17，被钉的默认值来源不变。</p>
+     *
      * <p>⇒ 这个值完全来自 {@code MybatisConfiguration} 自身的默认。
      * 它一旦变化，所有依赖自动映射（而非显式 {@code @Result}/{@code <resultMap>}）的语句会静默错字段，
      * 故在此钉住。若此用例变红：先确认真实值，再决定是「补显式映射」还是「把配置前缀改对」。</p>

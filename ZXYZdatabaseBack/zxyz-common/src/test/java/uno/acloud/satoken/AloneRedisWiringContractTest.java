@@ -26,9 +26,10 @@ import java.util.regex.Pattern;
  *
  * <h2>它防的是什么（一个已查实的真实缺陷）</h2>
  * 目标是把 Sa-Token 会话从「各服务自己的业务库」迁到统一的 {@code db9}，做法是**每个自持会话的
- * 服务**引入 {@code sa-token-alone-redis} 并在共享配置里写 {@code sa-token.alone-redis.*}
- * （本轮落地时是 9 个；门禁不写死这个数字，见下方「设计原则」）。
- * 但 <b>{@code sa-token-alone-redis} 1.46.0 在 {@code pattern: single} 路径会无条件执行
+ * 服务**引入 {@code sa-token-alone-redis-by-spring-boot4}（Boot 3 时代坐标为
+ * {@code sa-token-alone-redis}，Boot 4 迁移时跟平，见 {@link #ARTIFACT_ALONE_REDIS}）并在共享配置里写
+ * {@code sa-token.alone-redis.*}（本轮落地时是 9 个；门禁不写死这个数字，见下方「设计原则」）。
+ * 但 <b>{@code sa-token-alone-redis-by-spring-boot4} 1.46.0 在 {@code pattern: single} 路径会无条件执行
  * {@code new org.apache.commons.pool2.impl.GenericObjectPoolConfig()}</b>；而 {@code commons-pool2}
  * 在本 reactor 里<b>只有 {@code zxyz-gateway} 一个模块声明过</b>：
  * <ul>
@@ -36,7 +37,7 @@ import java.util.regex.Pattern;
  *       都是 {@code <optional>true</optional>} ⇒ <b>不传递</b>；</li>
  *   <li>{@code io.lettuce:lettuce-core} 对 {@code commons-pool2} 同样是 {@code optional} ⇒ 不传递。</li>
  * </ul>
- * ⇒ 只加 {@code sa-token-alone-redis} 而不补 {@code commons-pool2}，其余 8 个服务会在<b>启动时</b>
+ * ⇒ 只加 {@code sa-token-alone-redis-by-spring-boot4} 而不补 {@code commons-pool2}，其余 8 个服务会在<b>启动时</b>
  * 抛 {@code NoClassDefFoundError}。这类「漏配一条依赖」在编译期与单测里都发现不了 ——
  * 本门禁把它变成常驻断言。
  *
@@ -78,7 +79,7 @@ import java.util.regex.Pattern;
  * <h2>★ 会话接线不变量（权威表述）</h2>
  * <blockquote>
  * <b>每一个可部署服务模块，必须显式二选一</b>：<br>
- * ① <b>声明完整三件套</b> —— {@code sa-token-redis-template} + {@code sa-token-alone-redis}
+ * ① <b>声明完整三件套</b> —— {@code sa-token-redis-template} + {@code sa-token-alone-redis-by-spring-boot4}
  *    + {@code commons-pool2}（⇒ 参与会话共享，会话落 db9）；<br>
  * ② <b>或登记在显式豁免名单里</b>（⇒ 书面声明自己永不参与会话共享）。
  * </blockquote>
@@ -178,7 +179,12 @@ class AloneRedisWiringContractTest {
     private static final String DEPLOYABLE_MARKER = "src/main/resources/application.yml";
 
     private static final String ARTIFACT_REDIS_TEMPLATE = "sa-token-redis-template";
-    private static final String ARTIFACT_ALONE_REDIS = "sa-token-alone-redis";
+    /**
+     * Boot 4 迁移跟平（ISSUE/48 §8.7.3）：boot4 系坐标为 {@code sa-token-alone-redis-by-spring-boot4}
+     * （Central 实测存在，latest 1.46.0 与 spring-boot3 系同版本）。门禁语义不变：
+     * 三件套组成、禁入集合、豁免名单、db9 落位、version 管理口径全部原样。
+     */
+    private static final String ARTIFACT_ALONE_REDIS = "sa-token-alone-redis-by-spring-boot4";
     private static final String ARTIFACT_COMMONS_POOL2 = "commons-pool2";
 
     /** 「三件套」：自持会话 DAO 所需的完整依赖组合。 */
@@ -353,7 +359,7 @@ class AloneRedisWiringContractTest {
             throw new AssertionError("【已知真实缺陷】以下 " + offenders.size() + " 个模块缺少 "
                     + ARTIFACT_COMMONS_POOL2 + " ⇒ 引入 " + ARTIFACT_ALONE_REDIS + " 后会在启动时崩溃：\n  - "
                     + String.join("\n  - ", offenders)
-                    + "\n根因：sa-token-alone-redis 1.46.0 在 pattern=single 路径无条件执行"
+                    + "\n根因：sa-token-alone-redis-by-spring-boot4 1.46.0 在 pattern=single 路径无条件执行"
                     + " new org.apache.commons.pool2.impl.GenericObjectPoolConfig()，"
                     + "而它的 pom 把 commons-pool2 标为 <optional>true</optional> ⇒ 不传递；"
                     + "io.lettuce:lettuce-core 对 commons-pool2 同样是 optional ⇒ 也不传递。"
@@ -383,7 +389,7 @@ class AloneRedisWiringContractTest {
      * <b>本仓的会话接线条不变量（权威表述）</b>：
      * <blockquote>
      * 每一个<b>可部署服务模块</b>，必须<b>显式二选一</b>：<br>
-     * ① 声明完整三件套 —— {@code sa-token-redis-template} + {@code sa-token-alone-redis}
+     * ① 声明完整三件套 —— {@code sa-token-redis-template} + {@code sa-token-alone-redis-by-spring-boot4}
      *    + {@code commons-pool2}（⇒ 参与会话共享，会话落 db9）；<br>
      * ② 或登记在<b>显式豁免名单</b>（{@link #NO_SESSION_SERVICE_MODULES}）里（⇒ 声明自己不参与会话共享）。
      * </blockquote>
@@ -524,7 +530,8 @@ class AloneRedisWiringContractTest {
                     + "并同步修改本门禁 —— 不要静默引入第二个版本属性。");
         }
 
-        // 反向：不允许为此新增一个版本属性（例如 <sa-token-alone-redis.version>）
+        // 反向：不允许为此新增一个版本属性（例如 <sa-token-alone-redis-by-spring-boot4.version>；
+        // 下方匹配是子串式 contains("alone-redis")，坐标改名后同样被拦）
         String properties = extractSection(cleaned, "properties");
         if (properties != null) {
             Matcher propertyMatcher = Pattern.compile("<([A-Za-z0-9_.\\-]+)>\\s*([^<]*)\\s*</\\1>")
@@ -759,13 +766,13 @@ class AloneRedisWiringContractTest {
                 "缺 commons-pool2 的样本必须让门禁变红");
         assertMessageNames(pool2Error, "zxyz-fake-service", ARTIFACT_COMMONS_POOL2);
 
-        // 样本 2：缺 sa-token-alone-redis
+        // 样本 2：缺 sa-token-alone-redis-by-spring-boot4
         ModuleDeps lackingAloneRedis = new ModuleDeps("zxyz-fake-service",
                 Set.of(ARTIFACT_REDIS_TEMPLATE), Map.of());
         AssertionError aloneRedisError = assertThrowsAssertionError(
                 () -> checkAloneRedisDeclared(Set.of("zxyz-fake-service"),
                         Map.of("zxyz-fake-service", lackingAloneRedis)),
-                "缺 sa-token-alone-redis 的样本必须让门禁变红");
+                "缺 sa-token-alone-redis-by-spring-boot4 的样本必须让门禁变红");
         assertMessageNames(aloneRedisError, "zxyz-fake-service", ARTIFACT_ALONE_REDIS);
 
         // 样本 3：模块内私自写 version

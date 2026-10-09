@@ -44,10 +44,11 @@
         </dependency>
         <!-- 引用 zxyz-common 的 InternalServiceAuthInterceptor（implements HandlerInterceptor），
              编译期靠 common 的传递依赖通过，但 fat jar 打包不含 provided/optional 传递项，
-             缺此依赖会导致运行时启动即崩（FileNotFoundException: HandlerInterceptor.class） -->
+             缺此依赖会导致运行时启动即崩（FileNotFoundException: HandlerInterceptor.class）。
+             Boot 4 迁移（ISSUE/48 D3）：starter-web → starter-webmvc -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
+            <artifactId>spring-boot-starter-webmvc</artifactId>
         </dependency>
         <!-- 引用 zxyz-common 的 PermissionCacheAutoConfiguration（RedisMessageListenerContainer/
              ChannelTopic）与 sa-token redis 存储（token-storage-mode=redis），common 的
@@ -62,7 +63,7 @@
         </dependency>
         <dependency>
             <groupId>com.baomidou</groupId>
-            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+            <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
         </dependency>
         <dependency>
             <groupId>com.mysql</groupId>

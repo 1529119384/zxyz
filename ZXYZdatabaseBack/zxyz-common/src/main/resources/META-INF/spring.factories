@@ -1,0 +1,5 @@
+# Environment 后处理器（Boot 4.0.8 jar 实测：Boot 核心自身的同类注册仍走本文件，
+# key 为 org.springframework.boot.EnvironmentPostProcessor；与 AutoConfiguration.imports 体系无关）
+# 作用：配置面 ENC(...) 值的惰性解密（ISSUE/48 §九）。无 ENC 值的环境零动作。
+org.springframework.boot.EnvironmentPostProcessor=\
+uno.acloud.common.crypto.JasyptConfigDecryptingHook

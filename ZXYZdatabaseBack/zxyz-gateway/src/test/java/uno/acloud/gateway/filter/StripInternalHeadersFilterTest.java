@@ -44,8 +44,8 @@ class StripInternalHeadersFilterTest {
 
         HttpHeaders headers = passThrough(exchange).getRequest().getHeaders();
 
-        assertThat(headers.containsKey(InternalServiceHeaders.TOKEN_HEADER)).isFalse();
-        assertThat(headers.containsKey(InternalServiceHeaders.CALLER_SERVICE_HEADER)).isFalse();
+        assertThat(headers.containsHeader(InternalServiceHeaders.TOKEN_HEADER)).isFalse();
+        assertThat(headers.containsHeader(InternalServiceHeaders.CALLER_SERVICE_HEADER)).isFalse();
     }
 
     @Test

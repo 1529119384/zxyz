@@ -5,7 +5,7 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
+import org.springframework.boot.data.redis.autoconfigure.DataRedisAutoConfiguration;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.event.ContextRefreshedEvent;
@@ -28,19 +28,19 @@ import uno.acloud.satoken.PermissionCache;
  *       {@code uno.acloud.common.config}，而各服务启动类普遍写了
  *       {@code @ComponentScan(basePackages = {"uno.acloud.<svc>", "uno.acloud.common"})}，
  *       会把它也扫进来；被组件扫描收录的配置类先于自动配置注册，此时
- *       {@code RedisAutoConfiguration} 还没注册 {@code RedisConnectionFactory} Bean ⇒
+ *       {@code DataRedisAutoConfiguration} 还没注册 {@code RedisConnectionFactory} Bean ⇒
  *       {@code @ConditionalOnBean} 恒 false ⇒ 监听器静默不注册（不报错，只是订阅不到）。
  *       gateway 没写 {@code @ComponentScan}，所以唯独它正常。</li>
  * </ol>
  * ⇒ 因此本类放在无人扫描的 {@code uno.acloud.autoconfig}，只经
- * {@code AutoConfiguration.imports} 加载，并用 {@code after = RedisAutoConfiguration.class}
+ * {@code AutoConfiguration.imports} 加载，并用 {@code after = DataRedisAutoConfiguration.class}
  * 固定顺序；同时保留 {@code @ConditionalOnBean} 守卫（{@code zxyz-starter} 没有 redis）。
  * <p>
  * 消息体格式：{@code userId}（单用户失效）或 {@code *}（全量失效，
  * 用于角色定义/权限分配这类无法按 userId 枚举的影响面）。
  */
 @Slf4j
-@AutoConfiguration(after = RedisAutoConfiguration.class)
+@AutoConfiguration(after = DataRedisAutoConfiguration.class)
 public class PermissionCacheAutoConfiguration {
 
     @Bean

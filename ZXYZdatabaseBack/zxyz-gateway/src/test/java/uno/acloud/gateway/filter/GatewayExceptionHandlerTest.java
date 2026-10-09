@@ -125,7 +125,7 @@ class GatewayExceptionHandlerTest {
                 .isEqualTo("true");
         assertThat(exchange.getResponse().getHeaders().getFirst("Access-Control-Expose-Headers"))
                 .isEqualTo("Authorization");
-        assertThat(exchange.getResponse().getHeaders().get("Vary")).contains("Origin");
+        assertThat(exchange.getResponse().getHeaders().getVary()).contains("Origin");
     }
 
     @Test
@@ -134,7 +134,7 @@ class GatewayExceptionHandlerTest {
 
         handle(handler(), exchange, new IllegalStateException("x"));
 
-        assertThat(exchange.getResponse().getHeaders().containsKey("Access-Control-Allow-Origin"))
+        assertThat(exchange.getResponse().getHeaders().containsHeader("Access-Control-Allow-Origin"))
                 .isFalse();
     }
 
@@ -144,7 +144,7 @@ class GatewayExceptionHandlerTest {
 
         handle(handler(), exchange, new IllegalStateException("x"));
 
-        assertThat(exchange.getResponse().getHeaders().containsKey("Access-Control-Allow-Origin"))
+        assertThat(exchange.getResponse().getHeaders().containsHeader("Access-Control-Allow-Origin"))
                 .isFalse();
     }
 
@@ -155,7 +155,7 @@ class GatewayExceptionHandlerTest {
         // 与 Access-Control-Allow-Credentials: true 不兼容 ⇒ 配成 * 时全拒，防误配把凭据放开
         handle(handler("*"), exchange, new IllegalStateException("x"));
 
-        assertThat(exchange.getResponse().getHeaders().containsKey("Access-Control-Allow-Origin"))
+        assertThat(exchange.getResponse().getHeaders().containsHeader("Access-Control-Allow-Origin"))
                 .isFalse();
     }
 

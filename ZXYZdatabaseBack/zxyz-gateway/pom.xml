@@ -39,10 +39,10 @@
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
-        <!-- Sa-Token 鉴权（网关层校验登录态） -->
+        <!-- Sa-Token 鉴权（网关层校验登录态）。Boot 4 迁移（ISSUE/48 R6）：坐标换 boot4 系 -->
         <dependency>
             <groupId>cn.dev33</groupId>
-            <artifactId>sa-token-reactor-spring-boot3-starter</artifactId>
+            <artifactId>sa-token-reactor-spring-boot4-starter</artifactId>
         </dependency>
         <dependency>
             <groupId>cn.dev33</groupId>
@@ -55,7 +55,7 @@
              版本由父 pom 的 dependencyManagement 管理，模块内不写 version。 -->
         <dependency>
             <groupId>cn.dev33</groupId>
-            <artifactId>sa-token-alone-redis</artifactId>
+            <artifactId>sa-token-alone-redis-by-spring-boot4</artifactId>
         </dependency>
         <!-- Redis 连接（Sa-Token 会话存储） -->
         <dependency>
