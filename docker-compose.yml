@@ -323,15 +323,15 @@ services:
       # 选相对值而非 absolute 的理由：RabbitMQ 3.12+ 在容器内会探测 cgroup memory limit
       #   并把相对水位锚定到它（0.6 × 384M ≈ 230MB），将来调容器 limit 时水位自动跟随。
       # 到达水位即触发 memory alarm：阻塞发布者、先把队列 page 到盘 —— 有意降级而非被杀。
-      # ⚠️ 用官方镜像专用的 RABBITMQ_VM_MEMORY_HIGH_WATERMARK（entrypoint 专门解析，无空格）：
-      #   曾试 RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS="+vm_memory_high_watermark 0.6"——值内空格
-      #   被 erl 命令行吞成独立 boot 参数（start_sasl 0.6.boot file_error）→ 容器启动即崩。
-      RABBITMQ_VM_MEMORY_HIGH_WATERMARK: "0.6"
+      # ⚠️ 内存水位线的正确载体是下方挂载的 conf/rabbitmq.conf（RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS
+      #   的值含空格会被 erl 命令行吞成独立 boot 参数 → 启动即崩；RABBITMQ_VM_MEMORY_HIGH_WATERMARK
+      #   在 3.13 已废弃且硬拒绝启动）：
       TZ: Asia/Shanghai
     ports:
       - "127.0.0.1:${RABBITMQ_MGMT_PORT:-15672}:15672"
     volumes:
       - ${DATA_DIR:-./data}/rabbitmq:/var/lib/rabbitmq
+      - ./conf/rabbitmq.conf:/etc/rabbitmq/conf.d/99-memory-watermark.conf:ro
     networks:
       - zxyz-net
     healthcheck:
