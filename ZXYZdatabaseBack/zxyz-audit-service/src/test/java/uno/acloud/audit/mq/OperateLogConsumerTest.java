@@ -264,4 +264,39 @@ class OperateLogConsumerTest {
         // 非重复键的持久化失败必须抛出以触发重投/DLQ
         assertInstanceOf(org.apache.ibatis.exceptions.PersistenceException.class, ex.getCause());
     }
+
+    // ==================== P0（ISSUE/51）：启动自检与降级旗标 ====================
+
+    @Test
+    void constructor_capabilityOk_flagStaysZero() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        new OperateLogConsumer(operateLogMapper, objectMapper, registry);
+
+        assertEquals(0.0, registry.get(OperateLogConsumer.METRIC_MISSING_JSR310).gauge().value(),
+                "ObjectMapper 能力齐备时降级旗标必须保持 0");
+    }
+
+    @Test
+    void constructor_missingJsr310_flagRaised() {
+        // 复现 Boot4 迁移时的运行时形态：无 JavaTimeModule 的裸 ObjectMapper
+        ObjectMapper crippled = new ObjectMapper();
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+
+        new OperateLogConsumer(operateLogMapper, crippled, registry);
+
+        assertEquals(1.0, registry.get(OperateLogConsumer.METRIC_MISSING_JSR310).gauge().value(),
+                "缺 jsr310 必须置位 audit.mapper.missing.jsr310=1，让同类问题 5 分钟内在监控可见");
+    }
+
+    @Test
+    void handleAuditLog_missingJsr310_rejectsToDlqWithoutInsert() {
+        // 降级态：反序列化必然失败，拒绝不重投 → DLX → audit.dlq（可回放），且不得触碰 DB
+        ObjectMapper crippled = new ObjectMapper();
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        OperateLogConsumer degraded = new OperateLogConsumer(operateLogMapper, crippled, registry);
+
+        assertThrows(AmqpRejectAndDontRequeueException.class,
+                () -> degraded.handleAuditLog("{\"serviceName\":\"file-service\"}"));
+        verifyNoInteractions(operateLogMapper);
+    }
 }

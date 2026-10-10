@@ -271,6 +271,11 @@ else
 ARTIFACTS=( "$BACKUP_DIR/mysql_$DATE.sql.gz" )
 fi
 
+# binlog 增量产物纳入 OSS 异地推送清单（ISSUE/51 时限项）：PITR 的增量此前只在本地，
+# 服务器盘损坏时全量+增量一起丢 —— binlog_*.tar.gz 打包后从未进过 ARTIFACTS，异地永远缺增量。
+# BINLOG_ARTIFACT 为空（--mysql-only / binlog 跳过 / 本次无新增文件）时不追加。
+[ -n "$BINLOG_ARTIFACT" ] && ARTIFACTS+=( "$BINLOG_ARTIFACT" )
+
 # ---------------------------------------------------------------------------
 # 异地化备份（优先 OSS，旧 ssh/scp 作为可选兼容）
 # ---------------------------------------------------------------------------
