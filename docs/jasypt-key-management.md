@@ -16,7 +16,7 @@
 >
 > ## 0.1 现状（先读这段，它决定本机制值不值得投入）
 >
-> - 依赖：`zxyz-common/pom.xml` 已引入 `jasypt-spring-boot-starter` **3.0.5**（内核 jasypt **1.9.3**）。
+> - 依赖：`zxyz-common/pom.xml` 引入 `org.jasypt:jasypt` **1.9.3**（**纯内核**，零 Spring 依赖）。`jasypt-spring-boot-starter` 已于 Boot 4 迁移**移除**（ISSUE/48 §九：停更 + 自动装配壳绑定旧 spring-cloud-context，Boot 4 下不可用），Spring 侧接线全部自建（见 §1）。
 > - 主密钥注入：`docker-compose.yml` 已为**全部 10 个后端服务**注入 `JASYPT_PASSWORD`（project / im / email / share / file / team / audit / admin / user / gateway）。
 > - 变量名是 **`JASYPT_PASSWORD`**，不是 jasypt 默认探测的 `JASYPT_ENCRYPTOR_PASSWORD`。这是有意的：`application-common.yml` 里显式写了 `password: ${JASYPT_PASSWORD}`，比依赖框架的环境变量自动探测更清晰，也不必多维护一个名字。
 > - **当前仓库与 Nacos 配置里 `ENC()` 密文数量为 0** —— 所有敏感值仍是 `${ENV}` 透传。也就是说：**这套加密机制从未真正被启用过**，上面那个算法缺陷也从未被任何一次启动验证暴露。
@@ -39,12 +39,24 @@
 
 ## 1. 概述
 
-Jasypt (Java Simplified Encryption) 是本项目用于加密配置文件中敏感信息的方案。通过 `jasypt-spring-boot-starter`，项目可以透明地加密和解密数据库密码、Redis 密码、API 密钥等敏感配置。
+Jasypt (Java Simplified Encryption) 是本项目用于加密配置文件中敏感信息的方案。敏感值以 `ENC(ciphertext)` 形式写入，Spring 启动时自动解密，业务代码无需改动；可与 Nacos 配置中心配合（敏感值加密后写入 Nacos）。
 
-**核心特性**：
-- 加密后的值格式为 `ENC(ciphertext)`
-- Spring Boot 启动时自动解密，业务代码无需改动
-- 可与 Nacos 配置中心配合（敏感值加密后写入 Nacos）
+**当前架构（2026-10-09 Boot 4 迁移后，ISSUE/48 §九）——自建接线，无 starter**：
+
+`jasypt-spring-boot-starter` 已从全仓移除（停更且其自动装配壳绑定旧 spring-cloud-context，Boot 4 下不可用）。现在的机制由三部分组成，全部位于 `zxyz-common`：
+
+| 组件 | 注册方式 | 职责 |
+|---|---|---|
+| `JasyptPropertiesEncryptorAutoConfiguration` | `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` | 提供 `StringEncryptor` Bean（`@ConditionalOnMissingBean`，算法/IV 读 `jasypt.encryptor.*`，密钥首次使用时从 Environment 解析）。`JasyptEncryptor` 包装类与配置面钩子都从它取加密器，口径全局唯一 |
+| `JasyptConfigDecryptingHook` | `META-INF/spring.factories`（key = `org.springframework.boot.EnvironmentPostProcessor`；Boot 4.0.8 jar 实测该注册通道存续） | `EnvironmentPostProcessor`：启动早期扫描各 PropertySource，把 `ENC(...)` 值包装成**惰性解密**视图——`@Value`/Binder 读到的是明文。排 `ConfigDataEnvironmentPostProcessor` 之后（否则看不到 Nacos/本地 yml 的 ENC 值） |
+| `JasyptPasswordPolicy` | （被前两者调用） | 主密钥 fail-closed：缺失、空白、未解析占位符（`${...}` 字面量）、`CHANGE_ME_` 公开占位值，一律抛 `IllegalStateException` 拒绝启动，不做「无密钥运行」 |
+
+两个关键行为语义（排障时先想到它们）：
+
+- **无 ENC() 值 = 钩子零动作**：环境里不存在任何 `ENC(...)` 时，钩子不读密钥、不包装任何 PropertySource。没有 `JASYPT_PASSWORD` 的上下文（本地调试、绝大多数测试）照常启动；同理，`StringEncryptor` Bean 是惰性的——密钥校验延迟到**首次使用**，不碰加密就不要求密钥。
+- **fail-closed 而非降级**：一旦真的有 ENC() 值而密钥不对/缺失，解密失败会带属性名抛异常**中止启动**——绝不把密文当明文静默用下去。报错指引见 §7.2。
+
+算法与密钥配置（`application-common.yml`）不变：`jasypt.encryptor.algorithm` / `iv-generator-classname` / `password` 三个键沿用原名，已有密文与 §4 的 CLI 流程**完全兼容，零迁移**。
 
 ## 2. 加密算法
 
@@ -223,7 +235,7 @@ docker run --rm \
 
 ### 4.2 用 `JasyptEncryptor` 工具类（应用内）
 
-`uno.acloud.common.util.JasyptEncryptor`（`zxyz-common`，`@Component`）封装了 starter 自动配置的 `StringEncryptor`：
+`uno.acloud.common.util.JasyptEncryptor`（`zxyz-common`，`@Component`）封装了自建 `JasyptPropertiesEncryptorAutoConfiguration` 提供的 `StringEncryptor` Bean（见 §1）：
 
 ```java
 private final JasyptEncryptor jasyptEncryptor;
@@ -283,9 +295,9 @@ spring:
 
 ### 5.2 自动解密原理
 
-`jasypt-spring-boot-starter` 通过 `EnvironmentPostProcessor` 在启动早期包装所有 `PropertySource`，读取配置时识别 `ENC(...)` 并解密。Nacos 配置的加载同样基于 `EnvironmentPostProcessor`，两者的执行顺序由 `@AutoConfiguration` 的 `before`/`after` 决定。
+配置面的 `ENC(...)` 解密由自建 `JasyptConfigDecryptingHook`（`EnvironmentPostProcessor`，注册于 `META-INF/spring.factories`，见 §1）完成：它在启动早期包装所有含 `ENC(...)` 值的 `PropertySource`，读取配置时识别 `ENC(...)` 并惰性解密。Nacos 配置经 `spring.config.import` 由 `ConfigDataEnvironmentPostProcessor` 拉取，本钩子显式排在它之后（`Ordered.LOWEST_PRECEDENCE - 100`），因此本地 yml 与 Nacos 下发的 ENC 值都能被看到。
 
-⚠️ **这是一个理论上的风险点**：若 Nacos 属性源在 Jasypt 包装**之后**才注册，Nacos 里的 `ENC()` 值可能不被解密。**首次把某个 `ENC()` 值写入 Nacos 时，务必确认对应服务真的解开了**（看启动日志有无 `EncryptionOperationNotPossibleException` / 配置注入是否拿到明文），不要假设顺序一定正确。
+⚠️ **这仍是一个需要实测确认的风险点**：钩子顺序已按上述设计显式定序，但「Nacos 动态配置（`refreshEnabled=true` 热更新）刷新进来的新 ENC() 值是否也走解密路径」取决于 Spring Cloud 的 refresh 重建 Environment 的方式，设计上有覆盖、尚未在生产 ENC 化后实测。**首次把某个 `ENC()` 值写入 Nacos 后，务必确认对应服务真的解开了**（看启动日志有无 `EncryptionOperationNotPossibleException` / 配置注入是否拿到明文），不要假设顺序一定正确。
 
 ### 5.3 编辑注意事项
 
@@ -416,7 +428,7 @@ curl -fsS http://localhost:18083/actuator/health
 
 **问题 3：服务启动后某个配置项仍是 `ENC(...)` 字面值**
 
-- 原因：该属性源在 Jasypt 包装之后才注册（见 §5.2），或该值来自 `@Value` 之外的直接读取（如 `System.getenv`）
+- 原因：该属性源在 Jasypt 钩子包装之后才注册（见 §5.2），或该值来自 `@Value` 之外的直接读取（如 `System.getenv`——钩子只覆盖 Spring `Environment` 取值路径，不碰直读环境变量的代码）
 - 解决：核对属性的来源；确认它确实经过了 Spring 的 `Environment` 取值路径
 
 **问题 4：改了 Nacos 里的 `ENC()` 值但服务行为没变**
@@ -424,7 +436,37 @@ curl -fsS http://localhost:18083/actuator/health
 - 原因：同一键在 `.env` / compose 的 `environment:` 里也有值，**环境变量优先级更高**（见 §5.3 第 3 条）
 - 解决：先移除环境变量侧的该键，或改环境变量侧
 
-## 8. 参考资料
+**问题 5：启动失败，报「配置项 xxx 的 ENC(...) 密文解密失败」并中止**
+
+- 这是自建钩子的 **fail-closed 设计行为**（不是故障在钩子）：密文解不开时拒绝「密文当明文用」
+- 排查顺序：① 该服务容器的 `JASYPT_PASSWORD` 实际值是否与加密时一致（§8 警示节——生产曾因 `.env` 行尾事故出现容器/host 双值并存，CLI 用 host 值加密的密文容器解不开）；② 密文是否被手工改动/截断（§5.3 第 1 条）；③ 加密时是否漏了 `ivGeneratorClassName`（§4.1 第 2 点）
+- 用 §4.1 的解密自检命令在**与目标服务相同的密钥来源**下复现：容器能起但自检解不开 ⇒ 密钥来源不一致；自检能解开但容器起不来 ⇒ 容器环境变量与自检用值不同
+
+## 8. ⚠️ 服务器 `.env` 与滚动重启警示（2026-10-10 生产事故教训）
+
+> 来源：ISSUE/50 §七·补记2 —— 生产实测发现同一台机器上 `JASYPT_PASSWORD` 存在**两个互不相等的生效值**（容器 44 字符 vs host 43 字符），CLI 生成的密文与容器运行时不互认。
+
+### 8.1 服务器 `.env` 必须保持 LF 行尾
+
+**事故链**：首次部署时服务器 `.env` 为 CRLF 行尾 → 某次改写把行尾 `=` 之后的内容吞掉（`JASYPT_PASSWORD=...` 的值末字符丢失，44 字符变 43）→ 此后容器一直按旧值（改写前启动，44 字符）运行，host 侧 CLI 按 `.env` 新值（43 字符）读取 ⇒ **双值并存**。
+
+**后果**：用 host 值经 §4.1 CLI 生成的 `ENC(...)`，容器运行时解不开（fail-closed 中止启动）；反过来用容器值加密的密文，host 自检解不开。排查时极易误判为「加密算法变了」而走错方向。
+
+**规则**：
+
+1. 服务器 `.env` **必须保持 LF 行尾**（检查：`file /www/zxyz/.env` 或 `grep -c $'\r' /www/zxyz/.env` 应为 0）。
+2. 改写 `.env` 的脚本/命令**不得吃掉尾部字符**：逐行改写时注意 CRLF 尾的 `=` 后内容；改完必须 `grep -n '^JASYPT_PASSWORD=' /www/zxyz/.env` 确认值完整且与预期字符数一致。
+3. 发现双值时**以容器现值为准改 host**（`docker exec zxyz-user-service printenv JASYPT_PASSWORD | wc -c` 对照 host 侧），统一后按 §8.2 滚动重启。
+
+### 8.2 改 `JASYPT_PASSWORD` 后必须滚动重启全部服务
+
+**规则：改 `.env` 里的主密钥后，必须 `docker compose up -d`（会重建容器并重读 env），不是 `docker compose restart`** —— `restart` 复用已有容器的环境变量，主密钥不会更新（§6.2 步骤 5 的同一铁律，此处强调的是**范围**：不是只重启「受影响」的一两个服务）。
+
+- 旧容器持旧密钥：哪怕一个消费主密钥的服务没重建，它的 `ENC()` 解密（或验证码 pepper 回退）就仍用旧值，与新密文/新口径不一致。
+- 范围 = **全部注入 `JASYPT_PASSWORD` 的 10 个后端服务**（compose 里每个服务都有 `JASYPT_PASSWORD: ${JASYPT_PASSWORD}`）；验证码 pepper 由 user/email 各自计算（回退到主密钥），漏掉任何一个都会出现两端口径分裂。
+- 重启后验证：`docker compose ps` 全 healthy + 抽查 `docker exec zxyz-user-service printenv JASYPT_PASSWORD | wc -c` 与 host 侧一致。
+
+## 9. 参考资料
 
 - [Jasypt 官方文档](http://www.jasypt.org/)
 - [jasypt-spring-boot GitHub](https://github.com/ulisesbocchio/jasypt-spring-boot)
@@ -433,6 +475,7 @@ curl -fsS http://localhost:18083/actuator/health
 
 ## 更新日志
 
+- **2026-10-10**: 按 Boot 4 迁移后的实况重写架构描述（ISSUE/51 P2-3）—— 全文「starter 自动装配」表述改为自建架构：`JasyptPropertiesEncryptorAutoConfiguration`（AutoConfiguration.imports 提供 `StringEncryptor` Bean）+ `JasyptConfigDecryptingHook`（spring.factories 注册的 `EnvironmentPostProcessor`，惰性解密 `ENC()`）+ `JasyptPasswordPolicy`（fail-closed）；§5.2/§7 同步（新增故障排查问题 5）。依赖口径订正为 `org.jasypt:jasypt:1.9.3` 纯内核（starter 已移除，ISSUE/48 §九）。新增 §8 警示节（服务器 `.env` 必须 LF 行尾 + 改主密钥后必须 `up -d` 滚动重启全部服务——ISSUE/50 补记2 生产双值漂移事故）。生成/自检/轮换 CLI 流程（§4/§6）未变，仍然有效。
 - **2026-09-14**: 新增 §5.0「向前 ENC 化」约定（新增机密值一律 `ENC()`，存量不追改）；§3.1 补「托管位置已定」
   （留在服务端 `.env`，不引入 KMS，并写明判据）；§6.1 由「建议每 90 天」改为「**必要时轮换**」并列出 4 条触发条件与不设固定周期的理由。
 - **2026-09-13**: 订正三处会导致故障的错误 —— 算法名（`AES/GCM/NoPadding` → `PBEWITHHMACSHA512ANDAES_256`，原值在 jasypt 1.9.3 上初始化即失败）、CLI 输出格式（裸 Base64，不含 `ENC()` 包装）、以及在 jasypt-spring-boot 3.0.5 中不存在的 `password-list` 配置项；补充实测证据（4 个候选算法 × 4 项指标）、可复制的生成/自检命令、容器内执行方式、`ENC()` 的价值边界（§0.2）与「现在就是改主密钥的最佳窗口」（§0.3）；新增 3 条故障排查。同步修正 11 个 `nacos-config/*.yml` 头部的加密命令注释。

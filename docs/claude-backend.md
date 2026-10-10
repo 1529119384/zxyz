@@ -106,7 +106,13 @@ zxyz-common 中的事件定义（`uno.acloud.common.event`）：
 
 ### 配置加密
 
-**Config encryption**: Sensitive values in Nacos use `ENC(ciphertext)` format. Jasypt 3.0.5 + AES/GCM/NoPadding, key via `JASYPT_PASSWORD` env var. See `docs/jasypt-key-management.md`.
+**Config encryption**: Sensitive config values use the `ENC(ciphertext)` format, decrypted by **self-built Jasypt wiring** (Boot 4 migration, ISSUE/48 §九 — the `jasypt-spring-boot-starter` was removed, the dependency is now the bare `org.jasypt:jasypt:1.9.3` kernel). Three pieces, all in `zxyz-common`:
+
+- `JasyptPropertiesEncryptorAutoConfiguration` (registered in `META-INF/spring/...AutoConfiguration.imports`) provides the `StringEncryptor` bean — consumed by `JasyptEncryptor` (admin DB encrypt/decrypt) and by the hook below.
+- `JasyptConfigDecryptingHook` (`EnvironmentPostProcessor`, registered in `META-INF/spring.factories`) lazily decrypts `ENC(...)` property values at startup; environments with no `ENC()` value are untouched (zero action, no key required).
+- Algorithm: `PBEWITHHMACSHA512ANDAES_256` + `RandomIvGenerator` — this must be a **PBE algorithm name**, NOT a Cipher transformation like `AES/GCM/NoPadding` (that value fails `SecretKeyFactory` init and any `ENC()` value would crash startup). Key comes from the `JASYPT_PASSWORD` env var and is **fail-closed**: missing/placeholder/public-placeholder values abort the operation that needs encryption instead of silently running keyless.
+
+How to generate ciphertext / self-check / rotate the key: `docs/jasypt-key-management.md` (§4 generation + self-check, §5 the "new secrets always `ENC()`" convention, §6 rotation).
 
 ### admin-service 数据源与配置管理
 

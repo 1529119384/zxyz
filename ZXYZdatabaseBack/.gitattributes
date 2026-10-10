@@ -1,0 +1,61 @@
+# ==============================================================================
+# 行尾归一（ISSUE/51 P2-5，2026-10-10；与根仓库 .gitattributes / 前端子仓对齐）
+# ==============================================================================
+# 为什么后端子仓库必须有这个文件（与 ZXYZdatabaseFront/.gitattributes 同因）：
+#   根仓库的 .gitattributes **不会**作用于子仓库的 git 操作 —— 子仓库是独立仓库，
+#   只读自己的 .gitattributes + core.autocrlf。本机 core.autocrlf=true（Windows）时
+#   检出把文本转成 CRLF，WSL/Linux 侧 git（autocrlf 未设）则判定整仓脏 ——
+#   两套工具链对同一工作区给出相反结论：
+#     - scripts/check-subrepo-sync.sh 在 WSL 下判出 1000+ 文件「未提交变更」，
+#       大清单曾把脚本打到 SIGPIPE exit 141 静默中止（ISSUE/51 P2-6 实测）；
+#     - pre-push 的 SUBREPO_SYNC_DRIFT 拦截（前端 2026-10-08 已实测过同型假漂移）。
+#   而索引里存的 blob 本就一致（git diff --numstat = 0、hash-object 逐字节相同，
+#   ISSUE/50 §一③ 已定性为 CRLF 幻影、零内容差异），本文件只是让**检出行为**一致，
+#   从而消除这类纯行尾的假漂移。
+#
+# 后端构成：几乎全是 .java/.yml/.xml/.sql 文本（916 java + 36 yml + 34 sql + 17 xml），
+#   核心是 Dockerfile 与 .sh 必须在 Linux 侧（Docker 构建 / 容器 entrypoint）按 LF 解释；
+#   archunit_store 的无扩展名快照文件与 .log（hs_err_*）按二进制对待，防止任何行尾转换。
+# ==============================================================================
+
+# 默认策略：未列出的文本文件交给 core.autocrlf，不强行声明
+
+# Docker 构建相关
+Dockerfile text eol=lf
+*.dockerfile text eol=lf
+.dockerignore text eol=lf
+
+# Shell 脚本：CRLF 会让 `set -euo pipefail` 在行尾带 \r 而失效
+*.sh text eol=lf
+
+# Maven 配置
+*.xml text eol=lf
+.mvn/jvm.config text eol=lf
+.mvn/** text eol=lf
+
+# YAML / Properties（Spring 配置、CI、nacos 模板）
+*.yml text eol=lf
+*.yaml text eol=lf
+*.properties text eol=lf
+
+# 源码与文档
+*.java text eol=lf
+*.sql text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+
+# Spring Boot 注册文件（AutoConfiguration.imports / spring.factories）
+*.imports text eol=lf
+*.factories text eol=lf
+
+# git 自己的配置文件（历史检出为 CRLF 的幻影源之一）
+.gitignore text eol=lf
+.gitattributes text eol=lf
+
+# systemd 单元（deploy/）
+*.service text eol=lf
+
+# 二进制：禁止任何行尾/编码转换
+*.jar binary
+*.log binary
+**/archunit_store/** binary

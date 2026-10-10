@@ -32,18 +32,35 @@ echo ""
 for sub in "${SUB_REPOS[@]}"; do
   sub_path="$ROOT_DIR/$sub"
 
-  # --- 前置检查 ---
+  # --- 前置检查（fail-closed，ISSUE/51 P2-4）---
+  # 为什么不能 [SKIP]+continue：SUB_REPOS 是硬编码的受管子仓库清单，目录存在而 .git 缺失
+  # = 环境残缺/被破坏（2026-10-09 后端子仓 .git 残缺的真实事故），不是「非独立子仓库」。
+  # 若在此跳过，下面所有校验对本子仓库失明，脚本会走到末尾照常打印
+  # 「✓ 所有子仓库与根仓库同步一致」exit 0 —— 检测器静默失效开放，
+  # 双提交纪律的最后闸门空转（昨日 P1-3 的根因正是它静默放行）。
+  # 「目录存在但 .git 缺失」推导不出「无需检查」，只能硬失败让维护者修环境
+  # （退出码语义见文件头：2=环境错误）。
   if [ ! -d "$sub_path/.git" ]; then
-    echo -e "${YELLOW}[SKIP]${NC} $sub — 未找到 .git 目录，非独立子仓库，跳过"
-    continue
+    echo -e "${RED}✗ $sub — 子仓库目录存在但 .git 缺失（环境错误，fail-closed）${NC}" >&2
+    echo "  期望: $sub_path/.git" >&2
+    echo "  不允许跳过：跳过 = 同步校验静默失效 + 末尾假「✓」放行（ISSUE/49 P1-3 / ISSUE/51 P2-4 的根因）。" >&2
+    echo "  处置二选一：" >&2
+    echo "    a) 该目录仍是受管子仓库 → 从远程重建 .git（git init && git remote add origin <url> && git fetch && git checkout <分支>）" >&2
+    echo "    b) 该目录已废弃 → 同步从本脚本 SUB_REPOS 与根仓库跟踪中移除，再重跑本脚本" >&2
+    exit 2
   fi
 
   # --- 1. 子仓库未提交变更检查 ---
   sub_dirty_all=$(git -C "$sub_path" status --porcelain 2>/dev/null || true)
   if [ -n "$sub_dirty_all" ]; then
     HAS_DRIFT=1
-    dirty_count=$(echo "$sub_dirty_all" | wc -l | tr -d ' ')
-    dirty_preview=$(echo "$sub_dirty_all" | head -10 | sed 's/^/  /')
+    dirty_count=$(printf '%s\n' "$sub_dirty_all" | wc -l | tr -d ' ')
+    # ⚠️ 不用 `head -N`（ISSUE/51 P2-6）：head 取够 N 行就提前退出，上游写端在
+    # 大清单（后端脏清单曾实测 1014 行 / 84978 字节 > 64KiB 管道缓冲）上收到
+    # SIGPIPE → 管道退出码 141 → set -euo pipefail 直接静默中止整个脚本，
+    # 漂移详情一个字都打不出来。改用 awk 'NR<=N'：读完全部输入再结束，
+    # 不提前关管道 = 无 SIGPIPE，输出与 head 完全一致。
+    dirty_preview=$(printf '%s\n' "$sub_dirty_all" | awk 'NR<=10 {print "  " $0}')
     DRIFT_DETAILS="${DRIFT_DETAILS}\n[${sub}] 子仓库有 ${dirty_count} 个未提交变更:"
     DRIFT_DETAILS="${DRIFT_DETAILS}\n${dirty_preview}"
     if [ "$dirty_count" -gt 10 ]; then
@@ -75,16 +92,18 @@ for sub in "${SUB_REPOS[@]}"; do
     echo -e "${GREEN}[OK]${NC}   $sub — 根仓库与子仓库内容一致"
   else
     HAS_DRIFT=1
-    # 解析差异文件
-    only_root=$(echo "$diff_output" | grep -c '^<' || true)
-    only_sub=$(echo "$diff_output" | grep -c '^>' || true)
+    # 以下管道同 P2-6 注释：全部用 awk 读完整输入（grep -c/awk/wc 都不提前退出），
+    # 不用 head —— 大差异清单下 head 会触发 SIGPIPE → 141 → pipefail 静默中止。
+    only_root=$(printf '%s\n' "$diff_output" | awk '$1=="<" {c++} END {print c+0}')
+    only_sub=$(printf '%s\n' "$diff_output" | awk '$1==">" {c++} END {print c+0}')
     DRIFT_DETAILS="${DRIFT_DETAILS}\n[${sub}] 内容不一致 (根仓库独有: ${only_root}, 子仓库独有/不同: ${only_sub}):"
 
     # 提取具体不同步文件（取前 15 个）
-    drift_files=$(echo "$diff_output" | grep '^[<>]' | awk '{print $NF}' | sort -u | head -15 || true)
-    DRIFT_DETAILS="${DRIFT_DETAILS}\n$(echo "$drift_files" | sed 's/^/  /')"
+    drift_files=$(printf '%s\n' "$diff_output" | awk '$1=="<" || $1==">" {print $NF}' | sort -u | awk 'NR<=15')
 
-    total_drift=$(echo "$diff_output" | grep '^[<>]' | awk '{print $NF}' | sort -u | wc -l | tr -d ' ' || true)
+    DRIFT_DETAILS="${DRIFT_DETAILS}\n$(printf '%s\n' "$drift_files" | sed 's/^/  /')"
+
+    total_drift=$(printf '%s\n' "$diff_output" | awk '$1=="<" || $1==">" {print $NF}' | sort -u | wc -l | tr -d ' ')
     if [ "${total_drift:-0}" -gt 15 ]; then
       DRIFT_DETAILS="${DRIFT_DETAILS}\n  ... 还有 $((total_drift - 15)) 个文件"
     fi
