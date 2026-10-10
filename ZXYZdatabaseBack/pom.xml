@@ -40,7 +40,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <sa-token.version>1.46.0</sa-token.version>
-        <redisson.version>3.35.0</redisson.version>
+        <redisson.version>4.7.0</redisson.version>
         <mybatis-plus.version>3.5.17</mybatis-plus.version>
         <!-- Boot 4 迁移：2.8.9 → 3.0.3（springdoc 3.0.x 配 Boot 4.0.x；3.1.x 配 4.1.x，ISSUE/48 D5）；knife4j 移除（停更 + 与 Boot 4 互斥，dev 用 springdoc 自带 swagger-ui，用户已拍板） -->
         <springdoc.version>3.0.3</springdoc.version>
