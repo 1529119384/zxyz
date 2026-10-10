@@ -36,6 +36,15 @@ on:
       # 「零检查变更 = 盲区」形态。它不参与镜像构建，只触发 lint-config
       # （严格 YAML 校验），代价一次轻量 run。
       - '.trivyignore.yaml'
+      # CLAUDE.md 与 docs/**：文档门禁（check-docs-consistency.py，ISSUE/50 §四接线）
+      # 的全部声明源都在这两个路径下 —— CLAUDE.md（测试规模声明 + 路径引用）与
+      # docs/**（testing.md 分项表、redis-session-layout.md 库号、路径引用有效性等）。
+      # 文档门禁已接入 lint-config（commit 88b02b4，2026-10-10），而 lint-config 本身
+      # 无条件运行 ⇒ 本白名单是纯文档提交触发 lint-config 的**唯一**入口；
+      # 不补这两行 = 纯文档提交一条检查都不跑 = 文档漂移门禁对它恰要拦的那类变更失效
+      # （「零检查变更 = 盲区」形态，ISSUE/51 P1-3）。文档不参与镜像构建，代价仅一次轻量 run。
+      - 'CLAUDE.md'
+      - 'docs/**'
   pull_request:
     # 同上（D-3）：只覆盖 dev。Dependabot 的 PR base 本就是 dev。
     branches: [dev]
@@ -65,6 +74,10 @@ on:
       - 'docker-compose.observability.yml'
       # ⚠️ 同上对齐：trivyignore 只进 lint、不进构建。见 push.paths 处的说明。
       - '.trivyignore.yaml'
+      # ⚠️ 与 push.paths 对齐（漏一处 ⇒ 该类 PR 一条 CI 都不跑）：CLAUDE.md / docs/**
+      # 只进 lint-config，不进构建 —— 文档门禁的全部声明源都在这两个路径下（ISSUE/51 P1-3）。
+      - 'CLAUDE.md'
+      - 'docs/**'
   workflow_dispatch:
     inputs:
       tag:

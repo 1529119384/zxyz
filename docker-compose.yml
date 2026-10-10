@@ -57,6 +57,13 @@
 #   即把「0.8% 余量」提到「15.0% 余量」，够覆盖宿主机自身 + Docker daemon + 页缓存抖动。
 #   （改前 8064 MiB / 99.2% / 余量仅 66.56 MiB）
 #
+# 【2026-10-10 ISSUE/51 P1 内存防线追加】redis 256M → 896M（db9 会话防线，见 redis 服务注释；
+#   reservations 128M → 448M 同步上调）；rabbitmq limit 384M 不动，改加内存水位线。
+#   ⇒ 改后累加 = 896 + 768 + 896 + 384 + 448×10 + 128 = **7552 MiB = 7.375 GiB**
+#   占物理内存 7552 / 8130.56 = **92.9%**，余量 578.56 MiB（7.1%）——
+#   低于 2026-10-03 的 15% 余量，属有意取舍：用宿主余量换「Redis OOM = 全站会话丢失」
+#   失败面的消失（noeviction + 896M limit 后 Redis 只会拒写、不会被 OOM 杀）。
+#
 # 🔴 为什么是「同比例」而不是「只压 limits」：
 #   JVM 堆由环境变量 `JAVA_OPTS: -XX:MaxRAMPercentage=75.0` **按容器 limit 推算**
 #   （JDK 10+ 容器感知）。所以压 limit 而不动百分比时，堆天花板会同比例下降 ——
@@ -263,12 +270,24 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256M
+          # ISSUE/51 P1（2026-10-10）：256M → 896M。db9 已承载全部用户会话（Boot4 迁移终验通过），
+          # 「Redis 被 OOM 杀 = 全站下线」的失败面必须收窄：
+          #   maxmemory 512mb（见 command 行注释）写死数据集上限，896M limit = 512mb 数据集
+          #   + AOF 重写 fork COW / 连接缓冲 / 碎片等 Redis 自身开销的余量；
+          #   先由 maxmemory 拒写自保护，cgroup limit 只作最后兜底。
+          memory: 896M
           cpus: '0.5'
         reservations:
-          memory: 128M
+          # 与 limits 同步上调（本文件惯例：reservations ≈ limits 50%，参照 mysql 896M/448M），
+          # 避免宿主回收压力下会话存储容器被优先驱逐。
+          memory: 448M
           cpus: '0.25'
-    command: ["sh", "-c", "redis-server --appendonly yes --requirepass \"$${REDIS_PASSWORD}\""]
+    # ISSUE/51 P1（2026-10-10）内存防线，两个参数缺一不可：
+    #   --maxmemory 512mb —— db9 只存 Sa-Token 会话，单 session 键 <2KB，万级用户 << 512mb；
+    #     无上限时 Redis 内存无界增长，宿主 OOM Killer 会随机选牺牲者（rabbitmq 已被这样杀过一次）。
+    #   --maxmemory-policy noeviction —— 到达上限后拒绝写入并报错（新登录显式失败、易定位），
+    #     绝不按策略逐出既有键（evicted 会话 = 用户被莫名登出 = 静默故障）。
+    command: ["sh", "-c", "redis-server --appendonly yes --requirepass \"$${REDIS_PASSWORD}\" --maxmemory 512mb --maxmemory-policy noeviction"]
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       TZ: Asia/Shanghai
@@ -296,11 +315,21 @@ services:
     deploy:
       resources:
         limits:
+          # ISSUE/51 P1（2026-10-10）：limit 保持 384M 不动（总内存预算不再增加），
+          # 内存防线交给下方 watermark：先触发 memory alarm 降级，cgroup limit 只作最后兜底。
           memory: 384M
           cpus: '0.5'
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+      # ISSUE/51 P1（2026-10-10）内存水位线：0.6 = 相对值（rabbitmq 曾被 OOM Killer 杀过一次）。
+      # 选相对值而非 absolute 的理由：RabbitMQ 3.12+ 在容器内会探测 cgroup memory limit
+      #   并把相对水位锚定到它（0.6 × 384M ≈ 230MB），将来调容器 limit 时水位自动跟随，
+      #   不会出现「absolute 硬编码字节数 > limit ⇒ alarm 永不触发」的静默失效形态。
+      # 到达水位即触发 memory alarm：阻塞发布者、先把队列 page 到盘 —— 有意降级而非被杀。
+      # 用 RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS 而非挂载 rabbitmq.conf：本服务无任何配置
+      #   文件挂载（全 environment 注入），保持同一风格。
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "+vm_memory_high_watermark 0.6"
       TZ: Asia/Shanghai
     ports:
       - "127.0.0.1:${RABBITMQ_MGMT_PORT:-15672}:15672"
