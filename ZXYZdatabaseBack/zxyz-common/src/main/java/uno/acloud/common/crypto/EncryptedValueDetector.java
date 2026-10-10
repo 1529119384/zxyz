@@ -5,7 +5,9 @@ package uno.acloud.common.crypto;
  *
  * <p>与 {@code JasyptEncryptor#isEncrypted} 同一口径：{@code ENC(} 开头、{@code )}
  * 结尾、且括号内非空。配置面（PropertySource 钩子）与工具面（JasyptEncryptor）共用同一判定，
- * 避免「工具认为加密、钩子认为明文」的缝。</p>
+ * 避免「工具认为加密、钩子认为明文」的缝。工具面已改为直接委托本判定（P3-2，ISSUE/51：
+ * 此前 util 侧缺长度守卫，对 {@code ENC()} 与本类判定分歧），
+ * 一致性由 {@code EncryptedValueDetectorConsistencyTest} 钉住。</p>
  */
 public final class EncryptedValueDetector {
 

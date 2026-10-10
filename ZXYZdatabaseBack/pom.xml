@@ -122,6 +122,19 @@
 
     <dependencyManagement>
         <dependencies>
+            <!-- P3-1（ISSUE/51）：spring-cloud-circuitbreaker-dependencies BOM 写死 resilience4j 2.3.0，
+                 此前仅 resilience4j-spring-boot4 单坐标走 ${resilience4j.version}=2.4.0，
+                 其余 13 个构件（core/annotations/retry/circuitbreaker 等）漂移在 2.3.0。
+                 Maven 对多个 import BOM 的同名构件取【先声明者】（实测 spring-cloud 在前时 r4j-bom
+                 置后不生效），故本 BOM 必须置于 spring-cloud 系 BOM 【之前】，全部构件统一 2.4.0
+                 （Central 实测 resilience4j-bom:2.4.0 存在且覆盖全部构件）。 -->
+            <dependency>
+                <groupId>io.github.resilience4j</groupId>
+                <artifactId>resilience4j-bom</artifactId>
+                <version>${resilience4j.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <dependency>
                 <groupId>org.springframework.cloud</groupId>
                 <artifactId>spring-cloud-dependencies</artifactId>

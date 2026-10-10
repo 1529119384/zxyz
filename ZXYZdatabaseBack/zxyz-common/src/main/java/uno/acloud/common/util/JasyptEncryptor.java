@@ -86,14 +86,18 @@ public class JasyptEncryptor {
     }
 
     /**
-     * 判断字符串是否为 ENC() 加密格式
+     * 判断字符串是否为 ENC() 加密格式。
+     *
+     * <p>口径与配置面 {@link uno.acloud.common.crypto.EncryptedValueDetector#isEncrypted(String)}
+     * 必须完全一致：直接委托该判定，杜绝两处分叉（P3-2，ISSUE/51 —— 此前本方法缺
+     * 「括号内非空」长度守卫，{@code ENC()} 在配置面被当明文透传、在此处被当密文
+     * 送进 {@code encryptor.decrypt("")} 抛异常）。空密文 {@code ENC()} 按明文透传
+     * 返回 false —— 保守侧口径。一致性由 {@code EncryptedValueDetectorConsistencyTest} 钉住。</p>
      *
      * @param value 待检查的字符串
-     * @return 如果是 {@code ENC(...)} 格式返回 true，否则返回 false
+     * @return 如果是 {@code ENC(...)}（括号内非空）格式返回 true，否则返回 false
      */
     public boolean isEncrypted(String value) {
-        return value != null
-                && value.startsWith(ENC_PREFIX)
-                && value.endsWith(ENC_SUFFIX);
+        return uno.acloud.common.crypto.EncryptedValueDetector.isEncrypted(value);
     }
 }

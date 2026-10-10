@@ -432,6 +432,14 @@ jobs:
           #   注释一并当模板串扫描，一旦出现「空表达式」就会判定整个 workflow 无效
           #   （症状：run 以文件路径为名、0 个 job、created==updated 立即 failure）。
           mapfile -t FILES < <(git ls-files '*.sh' | grep -E '^(scripts|sql|nacos-config|deploy)/' || true)
+          # P3-5（ISSUE/51）：ZXYZdatabaseBack 子仓库内的部署脚本（如
+          #   ZXYZdatabaseBack/zxyz-project-service/deploy/deploy.sh）路径前缀不在上面的
+          #   目录白名单里，此前一直漏扫（该脚本曾 59 行 CR/59 行 LF 混合，CR 会令
+          #   `set -euo pipefail` 静默失效）—— 显式纳入；存在才加，保持空清单跳过语义。
+          # ⚠️ CI 首跑可能暴露问题：本机无 shellcheck 未能预跑，报错则按输出修该脚本。
+          for f in ZXYZdatabaseBack/*/deploy/*.sh; do
+            [ -e "$f" ] && FILES+=("$f")
+          done
           if [ "${#FILES[@]}" -eq 0 ]; then
             echo "没有 shell 脚本，跳过。"
             exit 0

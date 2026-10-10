@@ -8,8 +8,8 @@
 - Lombok 1.18.42 + MapStruct 1.6.3（注解处理器在 compiler plugin 中配置）
 - MyBatis-Plus 3.5.17（注解 Mapper 为主，`zxyz-file-service`/`zxyz-im-service` 保留少量 XML），MySQL 8.4
 - Sa-Token 1.46.0（token-style: uuid），Redis 存储会话
-- 阿里云 OSS v2, Redisson 3.35.0, Flyway 10.22.0
-- Netty WebSocket（IM 服务）, Resilience4j 2.2.0（重试 3×500ms，熔断 50%）
+- 阿里云 OSS v2, Redisson 3.35.0, Flyway 11.14.1
+- Netty WebSocket（IM 服务）, Resilience4j 2.4.0（重试 3×500ms，熔断 50%）
 - API 文档: springdoc 3.0.3 自带 swagger-ui（2026-10-09 Boot 4 迁移移除 knife4j——停更且与 springdoc 3.x 互斥，用户拍板）；`springdoc.api-docs.enabled`/`springdoc.swagger-ui.enabled` 默认关闭，dev 环境设 `SPRINGDOC_ENABLED=true` 开启；原 `KNIFE4J_ENABLE` 变量随 knife4j 移除而**作废**
 
 ## 模块结构（12 模块）

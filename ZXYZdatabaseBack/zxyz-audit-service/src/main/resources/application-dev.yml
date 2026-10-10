@@ -14,9 +14,6 @@ app:
   # RemoteStpInterfaceAutoConfig 需要此属性进行服务间权限校验
   team-service:
     base-url: ${TEAM_SERVICE_BASE_URL:http://localhost:18086}
-# 本地开发保留 API 文档（生产默认关闭，见 zxyz-common 的 application-common.yml；D1-#3）
-springdoc:
-  api-docs:
-    enabled: true
-  swagger-ui:
-    enabled: true
+# 此处不配置 springdoc.*：audit 运行期无 springdoc 依赖（common 引入为 provided 不传递，
+# dependency:tree -Dincludes=org.springdoc 实测零命中），开关是死键；audit 为纯 MQ 消费方，无 HTTP API 文档面。
+# （P3-3，ISSUE/51：原 18-22 行显式开 springdoc 的配置块已删。）
