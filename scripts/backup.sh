@@ -205,16 +205,23 @@ fi
 
 # RabbitMQ 队列/交换器/绑定拓扑备份
 # --mysql-only 时跳过：预部署只需 MySQL 状态核心，拓扑非必须。
+# ⚠️ 导出必须是「容器内临时文件 + docker cp 取出」：容器内进程写不了宿主路径
+#   （2026-10-11 实测 rabbitmqadmin/rabbitmqctl 直接写 /www/zxyz/backups/* 报
+#   FileNotFoundError，宿主目录未挂进容器——两条分支同病导致拓扑长期静默缺失）。
 if [ "$MYSQL_ONLY" = false ]; then
 echo "备份 RabbitMQ definitions..."
 if docker ps --format '{{.Names}}' | grep -q '^zxyz-rabbitmq$'; then
-  if docker exec zxyz-rabbitmq rabbitmqadmin export \
+  _RMQ_TMP="rabbitmq_defs_$DATE.json"
+  if docker exec zxyz-rabbitmq rabbitmqctl export_definitions "/tmp/$_RMQ_TMP" >/dev/null 2>&1 \
+    && docker cp "zxyz-rabbitmq:/tmp/$_RMQ_TMP" "$BACKUP_DIR/rabbitmq_$DATE.json" >/dev/null 2>&1; then
+    docker exec zxyz-rabbitmq rm -f "/tmp/$_RMQ_TMP" >/dev/null 2>&1 || true
+    echo "RabbitMQ definitions 已导出 (rabbitmqctl + docker cp)"
+  elif docker exec zxyz-rabbitmq rabbitmqadmin export \
     -u "$RABBITMQ_USER" -p "$RABBITMQ_PASSWORD" \
-    "$BACKUP_DIR/rabbitmq_$DATE.json"; then
-    echo "RabbitMQ definitions 已导出"
-  elif docker exec zxyz-rabbitmq rabbitmqctl export_definitions \
-    "$BACKUP_DIR/rabbitmq_$DATE.json" >/dev/null 2>&1; then
-    echo "RabbitMQ definitions 已导出 (rabbitmqctl)"
+    "/tmp/$_RMQ_TMP" >/dev/null 2>&1 \
+    && docker cp "zxyz-rabbitmq:/tmp/$_RMQ_TMP" "$BACKUP_DIR/rabbitmq_$DATE.json" >/dev/null 2>&1; then
+    docker exec zxyz-rabbitmq rm -f "/tmp/$_RMQ_TMP" >/dev/null 2>&1 || true
+    echo "RabbitMQ definitions 已导出 (rabbitmqadmin + docker cp)"
   else
     echo "WARN: RabbitMQ definitions 导出失败，跳过（拓扑丢失风险）" >&2
     FAILED=1
