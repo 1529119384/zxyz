@@ -171,7 +171,6 @@ services:
       NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE}
       # Nacos 控制台管理员密码，必须在 .env 中覆盖默认值
       NACOS_PASSWORD: ${NACOS_PASSWORD}
-      TZ: Asia/Shanghai
     ports:
       - "127.0.0.1:${NACOS_PORT:-8848}:8848"
       - "127.0.0.1:${NACOS_CONSOLE_PORT:-8080}:8080"
@@ -251,7 +250,6 @@ services:
       FLYWAY_URL: jdbc:mysql://mysql:3306/zxyz_config?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       FLYWAY_USER: ${CONFIG_DB_USERNAME:?缺少 CONFIG_DB_USERNAME，请先运行 scripts/init-secrets.sh}
       FLYWAY_PASSWORD: ${CONFIG_DB_PASSWORD:?缺少 CONFIG_DB_PASSWORD，请先运行 scripts/init-secrets.sh}
-      TZ: Asia/Shanghai
     networks:
       - zxyz-net
     depends_on:
@@ -290,7 +288,6 @@ services:
     command: ["sh", "-c", "redis-server --appendonly yes --requirepass \"$${REDIS_PASSWORD}\" --maxmemory 512mb --maxmemory-policy noeviction"]
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
-      TZ: Asia/Shanghai
     volumes:
       - ${DATA_DIR:-./data}/redis:/data
     networks:
@@ -324,12 +321,12 @@ services:
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
       # ISSUE/51 P1（2026-10-10）内存水位线：0.6 = 相对值（rabbitmq 曾被 OOM Killer 杀过一次）。
       # 选相对值而非 absolute 的理由：RabbitMQ 3.12+ 在容器内会探测 cgroup memory limit
-      #   并把相对水位锚定到它（0.6 × 384M ≈ 230MB），将来调容器 limit 时水位自动跟随，
-      #   不会出现「absolute 硬编码字节数 > limit ⇒ alarm 永不触发」的静默失效形态。
+      #   并把相对水位锚定到它（0.6 × 384M ≈ 230MB），将来调容器 limit 时水位自动跟随。
       # 到达水位即触发 memory alarm：阻塞发布者、先把队列 page 到盘 —— 有意降级而非被杀。
-      # 用 RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS 而非挂载 rabbitmq.conf：本服务无任何配置
-      #   文件挂载（全 environment 注入），保持同一风格。
-      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "+vm_memory_high_watermark 0.6"
+      # ⚠️ 用官方镜像专用的 RABBITMQ_VM_MEMORY_HIGH_WATERMARK（entrypoint 专门解析，无空格）：
+      #   曾试 RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS="+vm_memory_high_watermark 0.6"——值内空格
+      #   被 erl 命令行吞成独立 boot 参数（start_sasl 0.6.boot file_error）→ 容器启动即崩。
+      RABBITMQ_VM_MEMORY_HIGH_WATERMARK: "0.6"
       TZ: Asia/Shanghai
     ports:
       - "127.0.0.1:${RABBITMQ_MGMT_PORT:-15672}:15672"
@@ -384,7 +381,6 @@ services:
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${PROJECT_SERVICE_PORT:-18080}
       APP_INTERNAL_SERVICE_KEY: ${SVC_PROJECT_KEY:?启用矩阵必须设置 SVC_PROJECT_KEY}
-      TZ: Asia/Shanghai
       PROJECT_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_project?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       PROJECT_DATASOURCE_USERNAME: ${PROJECT_DB_USERNAME:?缺少 PROJECT_DB_USERNAME，请先运行 scripts/init-secrets.sh}
       PROJECT_DATASOURCE_PASSWORD: ${PROJECT_DB_PASSWORD:?缺少 PROJECT_DB_PASSWORD，请先运行 scripts/init-secrets.sh}
@@ -459,7 +455,6 @@ services:
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${IM_SERVICE_PORT:-18081}
       APP_INTERNAL_SERVICE_KEY: ${SVC_IM_KEY:?启用矩阵必须设置 SVC_IM_KEY}
-      TZ: Asia/Shanghai
       IM_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_im?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       IM_DATASOURCE_USERNAME: ${IM_DB_USERNAME:?缺少 IM_DB_USERNAME，请先运行 scripts/init-secrets.sh}
       IM_DATASOURCE_PASSWORD: ${IM_DB_PASSWORD:?缺少 IM_DB_PASSWORD，请先运行 scripts/init-secrets.sh}
@@ -531,7 +526,6 @@ services:
       APP_INTERNAL_SERVICE_KEY: ${SVC_EMAIL_KEY:?启用矩阵必须设置 SVC_EMAIL_KEY}
       # P2-A2 邮件试点：开放 allowed-sources（来源服务名 -> 该来源 SVC_*_KEY）
       SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":"{''zxyz-user-service'':''${SVC_USER_KEY:?启用矩阵必须设置 SVC_USER_KEY}'',''zxyz-admin-service'':''${SVC_ADMIN_KEY:?启用矩阵必须设置 SVC_ADMIN_KEY}'',''zxyz-project-service'':''${SVC_PROJECT_KEY:?启用矩阵必须设置 SVC_PROJECT_KEY}'',''zxyz-im-service'':''${SVC_IM_KEY:?启用矩阵必须设置 SVC_IM_KEY}'',''zxyz-file-service'':''${SVC_FILE_KEY:?启用矩阵必须设置 SVC_FILE_KEY}'',''zxyz-team-service'':''${SVC_TEAM_KEY:?启用矩阵必须设置 SVC_TEAM_KEY}'',''zxyz-gateway'':''${SVC_GATEWAY_KEY:?启用矩阵必须设置 SVC_GATEWAY_KEY}'',''zxyz-email-service'':''${SVC_EMAIL_KEY:?启用矩阵必须设置 SVC_EMAIL_KEY}'',''zxyz-share-service'':''${SVC_SHARE_KEY:?启用矩阵必须设置 SVC_SHARE_KEY}'',''zxyz-audit-service'':''${SVC_AUDIT_KEY:?启用矩阵必须设置 SVC_AUDIT_KEY}''}"}}}'
-      TZ: Asia/Shanghai
       EMAIL_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_email?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       EMAIL_DATASOURCE_USERNAME: ${EMAIL_DB_USERNAME:?缺少 EMAIL_DB_USERNAME，请先运行 scripts/init-secrets.sh}
       EMAIL_DATASOURCE_PASSWORD: ${EMAIL_DB_PASSWORD:?缺少 EMAIL_DB_PASSWORD，请先运行 scripts/init-secrets.sh}
@@ -608,7 +602,6 @@ services:
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${SHARE_SERVICE_PORT:-18084}
       APP_INTERNAL_SERVICE_KEY: ${SVC_SHARE_KEY:?启用矩阵必须设置 SVC_SHARE_KEY}
-      TZ: Asia/Shanghai
       SHARE_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_share?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       SHARE_DATASOURCE_USERNAME: ${SHARE_DB_USERNAME:?缺少 SHARE_DB_USERNAME，请先运行 scripts/init-secrets.sh}
       SHARE_DATASOURCE_PASSWORD: ${SHARE_DB_PASSWORD:?缺少 SHARE_DB_PASSWORD，请先运行 scripts/init-secrets.sh}
@@ -679,7 +672,6 @@ services:
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${FILE_SERVICE_PORT:-18085}
       APP_INTERNAL_SERVICE_KEY: ${SVC_FILE_KEY:?启用矩阵必须设置 SVC_FILE_KEY}
-      TZ: Asia/Shanghai
       FILE_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_file?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       FILE_DATASOURCE_USERNAME: ${FILE_DB_USERNAME:?缺少 FILE_DB_USERNAME，请先运行 scripts/init-secrets.sh}
       FILE_DATASOURCE_PASSWORD: ${FILE_DB_PASSWORD:?缺少 FILE_DB_PASSWORD，请先运行 scripts/init-secrets.sh}
@@ -761,7 +753,6 @@ services:
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${TEAM_SERVICE_PORT:-18086}
       APP_INTERNAL_SERVICE_KEY: ${SVC_TEAM_KEY:?启用矩阵必须设置 SVC_TEAM_KEY}
-      TZ: Asia/Shanghai
       TEAM_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_team?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       TEAM_DATASOURCE_USERNAME: ${TEAM_DB_USERNAME:?缺少 TEAM_DB_USERNAME，请先运行 scripts/init-secrets.sh}
       TEAM_DATASOURCE_PASSWORD: ${TEAM_DB_PASSWORD:?缺少 TEAM_DB_PASSWORD，请先运行 scripts/init-secrets.sh}
@@ -838,7 +829,6 @@ services:
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${AUDIT_SERVICE_PORT:-18087}
       APP_INTERNAL_SERVICE_KEY: ${SVC_AUDIT_KEY:?启用矩阵必须设置 SVC_AUDIT_KEY}
-      TZ: Asia/Shanghai
       AUDIT_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_audit?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       AUDIT_DATASOURCE_USERNAME: ${AUDIT_DB_USERNAME:?缺少 AUDIT_DB_USERNAME，请先运行 scripts/init-secrets.sh}
       AUDIT_DATASOURCE_PASSWORD: ${AUDIT_DB_PASSWORD:?缺少 AUDIT_DB_PASSWORD，请先运行 scripts/init-secrets.sh}
@@ -905,7 +895,6 @@ services:
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${ADMIN_SERVICE_PORT:-18088}
       APP_INTERNAL_SERVICE_KEY: ${SVC_ADMIN_KEY:?启用矩阵必须设置 SVC_ADMIN_KEY}
-      TZ: Asia/Shanghai
       CONFIG_DB_HOST: mysql
       CONFIG_DB_USERNAME: ${CONFIG_DB_USERNAME:?缺少 CONFIG_DB_USERNAME，请先运行 scripts/init-secrets.sh}
       CONFIG_DB_PASSWORD: ${CONFIG_DB_PASSWORD:?缺少 CONFIG_DB_PASSWORD，请先运行 scripts/init-secrets.sh}
@@ -969,7 +958,6 @@ services:
       JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
       SERVER_PORT: ${USER_SERVICE_PORT:-18083}
       APP_INTERNAL_SERVICE_KEY: ${SVC_USER_KEY:?启用矩阵必须设置 SVC_USER_KEY}
-      TZ: Asia/Shanghai
       USER_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_user?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       USER_DATASOURCE_USERNAME: ${USER_DB_USERNAME:?缺少 USER_DB_USERNAME，请先运行 scripts/init-secrets.sh}
       USER_DATASOURCE_PASSWORD: ${USER_DB_PASSWORD:?缺少 USER_DB_PASSWORD，请先运行 scripts/init-secrets.sh}
@@ -1061,7 +1049,6 @@ services:
       APP_INTERNAL_SERVICE_KEY: ${SVC_GATEWAY_KEY:?启用矩阵必须设置 SVC_GATEWAY_KEY}
       # 启用矩阵必须设置 SVC_GATEWAY_KEY（缺失则网关拒绝启动，fail-closed）
       SVC_GATEWAY_KEY: ${SVC_GATEWAY_KEY:?启用矩阵必须设置 SVC_GATEWAY_KEY}
-      TZ: Asia/Shanghai
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
