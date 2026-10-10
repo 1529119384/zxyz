@@ -397,6 +397,8 @@ curl -fsS http://localhost:18083/actuator/health
 > 已用 `javap` 列出 jasypt-spring-boot 3.0.5 的 `JasyptEncryptorConfigurationProperties` 全部字段核实，可用的只有：
 > `password`、`algorithm`、`keyObtentionIterations`、`poolSize`、`providerName`、`providerClassName`、`saltGeneratorClassname`、`ivGeneratorClassname`、`stringOutputType`、`privateKeyString/Location/Format`、`publicKeyString/Location/Format`、`gcmSecretKeyString/Location/Password/Salt/Algorithm`、`property.*`、`bean`、`proxyPropertySources`、`skipPropertySources`、`refreshedEventClasses`。
 > 写进 YAML 会被 Spring Boot **静默忽略** —— 不会报错，只会让人误以为已经实现零停机轮换，而在真正轮换时因旧密文解不开而全站起不来。
+> （历史订正记录保留；**当前架构下权威的属性清单已改为自建的 `JasyptProperties`**——
+> 只绑定 `algorithm` / `iv-generator-classname` / `password` 三个键，见 §1，starter 属性类随 starter 一并移除。）
 
 **本项目的做法**：低峰期一次性重加密 + 重建重启（§6.2）。
 
