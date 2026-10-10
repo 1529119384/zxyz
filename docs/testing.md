@@ -14,7 +14,7 @@
 | **上下文冒烟测试** | 验证 Spring 上下文能加载 | 1 类（`ZxyzImApplicationTests`） | 中（需 Spring） |
 | **组件测试** | 验证 Vue 组件渲染和交互 | 已建立（`@vue/test-utils`；见「组件测试模式」） | 中 |
 
-> **规模口径（2026-10-09 复测）**：后端按 `ZXYZdatabaseBack/**/src/test/java/**/*.java` 实测（**168 个文件**，含抽象基类 `AbstractIntegrationTest` 与 2 个非 `*Test` 命名的辅助类）；`*Test.java` 命名的**测试类 166 个** —— `*IntegrationTest` 10、`*ConsumerTest` 8、冒烟 1，其余为单元测试。2026-10-09 Boot 4 迁移（f8b5dbf）新增 5 个 Jasypt 加解密测试（zxyz-common）后为当前值。前端为 `*.spec.js` 共 **68** 个文件（权威计数见 `CLAUDE.md`，由 `npm run doc-count:check` 校验）。
+> **规模口径（2026-10-09 复测）**：后端按 `ZXYZdatabaseBack/**/src/test/java/**/*.java` 实测（**169 个文件**，含抽象基类 `AbstractIntegrationTest` 与 2 个非 `*Test` 命名的辅助类）；`*Test.java` 命名的**测试类 167 个** —— `*IntegrationTest` 10、`*ConsumerTest` 8、冒烟 1，其余为单元测试。2026-10-09 Boot 4 迁移（f8b5dbf）新增 5 个 Jasypt 加解密测试（zxyz-common）、ISSUE/51-DAILY-AUDIT-2026-10-10.md §P3-2 修复批次（c823694）新增 ENC() 判定一致性测试后为当前值。前端为 `*.spec.js` 共 **68** 个文件（权威计数见 `CLAUDE.md`，由 `npm run doc-count:check` 校验）。
 
 **回归测试**：修改代码后运行全量测试（`mvn test` + `npm run test`），确保未引入破坏性变更。
 
@@ -1311,13 +1311,13 @@ Vitest 5 已**移除** `coverage.all` 选项（`CoverageOptions` 里已无 `all`
 
 ### 测试文件清单（实测，按模块）
 
-#### 后端（共 168 个文件 / 166 个 `*Test.java` 测试类）
+#### 后端（共 169 个文件 / 167 个 `*Test.java` 测试类）
 
-> **2026-10-09 实测**（口径：`ZXYZdatabaseBack/**/src/test/java/**/*.java`，含抽象基类 `AbstractIntegrationTest` 与 2 个非 `*Test` 命名的辅助类）。历史读数：2026-09-22 为 137/135；2026-10-03 修复批次后为 162/160；`701af68`（alone-redis 门禁）新增 `AloneRedisWiringContractTest.java`（zxyz-common）后为 163/161；2026-10-09 Boot 4 迁移（f8b5dbf）新增 5 个 Jasypt 加解密测试（zxyz-common）后为当前值。文件数按模块：
+> **2026-10-09 实测**（口径：`ZXYZdatabaseBack/**/src/test/java/**/*.java`，含抽象基类 `AbstractIntegrationTest` 与 2 个非 `*Test` 命名的辅助类）。历史读数：2026-09-22 为 137/135；2026-10-03 修复批次后为 162/160；`701af68`（alone-redis 门禁）新增 `AloneRedisWiringContractTest.java`（zxyz-common）后为 163/161；2026-10-09 Boot 4 迁移（f8b5dbf）新增 5 个 Jasypt 加解密测试（zxyz-common）、ISSUE/51-DAILY-AUDIT-2026-10-10.md §P3-2 修复批次（c823694）新增 ENC() 判定一致性测试后为当前值。文件数按模块：
 
 | 模块 | 文件数 | 其中 `*Test.java` |
 |---|---|---|
-| `zxyz-common` | 31（含 1 抽象基类 `AbstractIntegrationTest`；含 alone-redis 接线契约门禁 `AloneRedisWiringContractTest`；含 Boot 4 迁移新增的 5 个 Jasypt 加解密测试） | 31 |
+| `zxyz-common` | 32（含 1 抽象基类 `AbstractIntegrationTest`；含 alone-redis 接线契约门禁 `AloneRedisWiringContractTest`；含 Boot 4 迁移新增的 5 个 Jasypt 加解密测试） | 31 |
 | `zxyz-admin-service` | 7 | 7 |
 | `zxyz-audit-service` | 4 | 4 |
 | `zxyz-email-service` | 12 | 11 |
@@ -1330,8 +1330,8 @@ Vitest 5 已**移除** `coverage.all` 选项（`CoverageOptions` 里已无 `all`
 | `zxyz-team-service` | 15 | 15 |
 | `zxyz-user-service` | 12 | 12 |
 
-总和（文件数）：31 + 7 + 4 + 12 + 30 + 9 + 16 + 12 + 15 + 5 + 15 + 12 = **168**
-总和（`*Test.java`）：166（168 − 2 个非 `*Test` 命名辅助类：im 1 + email 1）
+总和（文件数）：32 + 7 + 4 + 12 + 30 + 9 + 16 + 12 + 15 + 5 + 15 + 12 = **169**
+总和（`*Test.java`）：167（169 − 2 个非 `*Test` 命名辅助类：im 1 + email 1）
 
 #### 前端（共 68 个文件）
 
@@ -1366,3 +1366,4 @@ Vitest 5 已**移除** `coverage.all` 选项（`CoverageOptions` 里已无 `all`
 - `uno.acloud.common.util.JasyptEncryptor`（`@Component`，包 `uno.acloud.common.util`，**不是** `common.config`）
 - `uno.acloud.common.Result<T>`（`code` 是 `Integer`，`SUCCESS=1` 来自 `ErrorCode`）
 - `uno.acloud.common.ErrorCode`（`public final class`，常量 `SUCCESS=1`、`NOT_FOUND=4040`、`BAD_REQUEST=4000` 等，非枚举）
+

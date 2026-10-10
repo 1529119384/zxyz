@@ -16,7 +16,7 @@
 >
 > ## 0.1 现状（先读这段，它决定本机制值不值得投入）
 >
-> - 依赖：`zxyz-common/pom.xml` 引入 `org.jasypt:jasypt` **1.9.3**（**纯内核**，零 Spring 依赖）。`jasypt-spring-boot-starter` 已于 Boot 4 迁移**移除**（ISSUE/48 §九：停更 + 自动装配壳绑定旧 spring-cloud-context，Boot 4 下不可用），Spring 侧接线全部自建（见 §1）。
+> - 依赖：`zxyz-common/pom.xml` 引入 `org.jasypt:jasypt` **1.9.3**（**纯内核**，零 Spring 依赖）。`jasypt-spring-boot-starter` 已于 Boot 4 迁移**移除**（ISSUE/48-BOOT4-MIGRATION-PLAN-2026-10-09.md §九：停更 + 自动装配壳绑定旧 spring-cloud-context，Boot 4 下不可用），Spring 侧接线全部自建（见 §1）。
 > - 主密钥注入：`docker-compose.yml` 已为**全部 10 个后端服务**注入 `JASYPT_PASSWORD`（project / im / email / share / file / team / audit / admin / user / gateway）。
 > - 变量名是 **`JASYPT_PASSWORD`**，不是 jasypt 默认探测的 `JASYPT_ENCRYPTOR_PASSWORD`。这是有意的：`application-common.yml` 里显式写了 `password: ${JASYPT_PASSWORD}`，比依赖框架的环境变量自动探测更清晰，也不必多维护一个名字。
 > - **当前仓库与 Nacos 配置里 `ENC()` 密文数量为 0** —— 所有敏感值仍是 `${ENV}` 透传。也就是说：**这套加密机制从未真正被启用过**，上面那个算法缺陷也从未被任何一次启动验证暴露。
@@ -41,7 +41,7 @@
 
 Jasypt (Java Simplified Encryption) 是本项目用于加密配置文件中敏感信息的方案。敏感值以 `ENC(ciphertext)` 形式写入，Spring 启动时自动解密，业务代码无需改动；可与 Nacos 配置中心配合（敏感值加密后写入 Nacos）。
 
-**当前架构（2026-10-09 Boot 4 迁移后，ISSUE/48 §九）——自建接线，无 starter**：
+**当前架构（2026-10-09 Boot 4 迁移后，ISSUE/48-BOOT4-MIGRATION-PLAN-2026-10-09.md §九）——自建接线，无 starter**：
 
 `jasypt-spring-boot-starter` 已从全仓移除（停更且其自动装配壳绑定旧 spring-cloud-context，Boot 4 下不可用）。现在的机制由三部分组成，全部位于 `zxyz-common`：
 
@@ -446,7 +446,7 @@ curl -fsS http://localhost:18083/actuator/health
 
 ## 8. ⚠️ 服务器 `.env` 与滚动重启警示（2026-10-10 生产事故教训）
 
-> 来源：ISSUE/50 §七·补记2 —— 生产实测发现同一台机器上 `JASYPT_PASSWORD` 存在**两个互不相等的生效值**（容器 44 字符 vs host 43 字符），CLI 生成的密文与容器运行时不互认。
+> 来源：ISSUE/50-BOOT4-MIGRATION-REVIEW-2026-10-09.md §七·补记2 —— 生产实测发现同一台机器上 `JASYPT_PASSWORD` 存在**两个互不相等的生效值**（容器 44 字符 vs host 43 字符），CLI 生成的密文与容器运行时不互认。
 
 ### 8.1 服务器 `.env` 必须保持 LF 行尾
 
@@ -477,8 +477,9 @@ curl -fsS http://localhost:18083/actuator/health
 
 ## 更新日志
 
-- **2026-10-10**: 按 Boot 4 迁移后的实况重写架构描述（ISSUE/51 P2-3）—— 全文「starter 自动装配」表述改为自建架构：`JasyptPropertiesEncryptorAutoConfiguration`（AutoConfiguration.imports 提供 `StringEncryptor` Bean）+ `JasyptConfigDecryptingHook`（spring.factories 注册的 `EnvironmentPostProcessor`，惰性解密 `ENC()`）+ `JasyptPasswordPolicy`（fail-closed）；§5.2/§7 同步（新增故障排查问题 5）。依赖口径订正为 `org.jasypt:jasypt:1.9.3` 纯内核（starter 已移除，ISSUE/48 §九）。新增 §8 警示节（服务器 `.env` 必须 LF 行尾 + 改主密钥后必须 `up -d` 滚动重启全部服务——ISSUE/50 补记2 生产双值漂移事故）。生成/自检/轮换 CLI 流程（§4/§6）未变，仍然有效。
+- **2026-10-10**: 按 Boot 4 迁移后的实况重写架构描述（ISSUE/51-DAILY-AUDIT-2026-10-10.md P2-3）—— 全文「starter 自动装配」表述改为自建架构：`JasyptPropertiesEncryptorAutoConfiguration`（AutoConfiguration.imports 提供 `StringEncryptor` Bean）+ `JasyptConfigDecryptingHook`（spring.factories 注册的 `EnvironmentPostProcessor`，惰性解密 `ENC()`）+ `JasyptPasswordPolicy`（fail-closed）；§5.2/§7 同步（新增故障排查问题 5）。依赖口径订正为 `org.jasypt:jasypt:1.9.3` 纯内核（starter 已移除，ISSUE/48-BOOT4-MIGRATION-PLAN-2026-10-09.md §九）。新增 §8 警示节（服务器 `.env` 必须 LF 行尾 + 改主密钥后必须 `up -d` 滚动重启全部服务——ISSUE/50-BOOT4-MIGRATION-REVIEW-2026-10-09.md 补记2 生产双值漂移事故）。生成/自检/轮换 CLI 流程（§4/§6）未变，仍然有效。
 - **2026-09-14**: 新增 §5.0「向前 ENC 化」约定（新增机密值一律 `ENC()`，存量不追改）；§3.1 补「托管位置已定」
   （留在服务端 `.env`，不引入 KMS，并写明判据）；§6.1 由「建议每 90 天」改为「**必要时轮换**」并列出 4 条触发条件与不设固定周期的理由。
 - **2026-09-13**: 订正三处会导致故障的错误 —— 算法名（`AES/GCM/NoPadding` → `PBEWITHHMACSHA512ANDAES_256`，原值在 jasypt 1.9.3 上初始化即失败）、CLI 输出格式（裸 Base64，不含 `ENC()` 包装）、以及在 jasypt-spring-boot 3.0.5 中不存在的 `password-list` 配置项；补充实测证据（4 个候选算法 × 4 项指标）、可复制的生成/自检命令、容器内执行方式、`ENC()` 的价值边界（§0.2）与「现在就是改主密钥的最佳窗口」（§0.3）；新增 3 条故障排查。同步修正 11 个 `nacos-config/*.yml` 头部的加密命令注释。
 - **2026-06-15**: 初始版本。
+

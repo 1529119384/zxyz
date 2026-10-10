@@ -106,7 +106,7 @@ zxyz-common 中的事件定义（`uno.acloud.common.event`）：
 
 ### 配置加密
 
-**Config encryption**: Sensitive config values use the `ENC(ciphertext)` format, decrypted by **self-built Jasypt wiring** (Boot 4 migration, ISSUE/48 §九 — the `jasypt-spring-boot-starter` was removed, the dependency is now the bare `org.jasypt:jasypt:1.9.3` kernel). Three pieces, all in `zxyz-common`:
+**Config encryption**: Sensitive config values use the `ENC(ciphertext)` format, decrypted by **self-built Jasypt wiring** (Boot 4 migration, ISSUE/48-BOOT4-MIGRATION-PLAN-2026-10-09.md §九 — the `jasypt-spring-boot-starter` was removed, the dependency is now the bare `org.jasypt:jasypt:1.9.3` kernel). Three pieces, all in `zxyz-common`:
 
 - `JasyptPropertiesEncryptorAutoConfiguration` (registered in `META-INF/spring/...AutoConfiguration.imports`) provides the `StringEncryptor` bean — consumed by `JasyptEncryptor` (admin DB encrypt/decrypt) and by the hook below.
 - `JasyptConfigDecryptingHook` (`EnvironmentPostProcessor`, registered in `META-INF/spring.factories`) lazily decrypts `ENC(...)` property values at startup; environments with no `ENC()` value are untouched (zero action, no key required).
