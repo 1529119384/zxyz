@@ -79,7 +79,7 @@ cd ZXYZdatabaseFront && git diff HEAD --stat && cd ..
 
 ```bash
 mvn clean -DskipTests compile                   # baseline compile check
-mvn test                                         # all tests（171 个测试类 / 173 个测试源文件，见 docs/testing.md）
+mvn test                                         # all tests（172 个测试类 / 174 个测试源文件，见 docs/testing.md）
 mvn test -pl zxyz-team-service                   # single module tests
 mvn test -pl zxyz-file-service -Dtest=FileUploadServiceTest  # single test class
 mvn clean package -DskipTests                    # package for Docker build
@@ -193,7 +193,7 @@ WHEN 添加 setting 子路由, DO 确保 `route.name` 在 Setting 组件 watcher
 ## Infrastructure & CI/CD
 
 - **MySQL 8.4**: 10 个独立库（含 zxyz_config），表结构**仅由 Flyway 管理**（勿维护 `sql/schema_*.sql`）；DB init: `sql/00-init-zxyz.sh`
-- **Redis**: localhost:6379；Sa-Token 会话存储**代码已切到独立库 db9**（`sa-token.alone-redis`，配置在 `zxyz-common/application-common.yml`，9 个服务接入；audit-service 刻意不引；`701af68` 合并）——⚠️ **生产生效以部署后实测为准**：`redis-cli -n 9 --scan --pattern 'satoken*'` 见非空 key 才算生效（插件对配置异常静默吞，「服务起来了」≠「会话已迁 db9」；截至 2026-10-09 生产仍在跑旧版、未部署本改造）；业务库编号仍按 `REDIS_DATABASE` 隔离（gateway 0 / project 1 / im 2 / email 3 / user 4 / share 5 / file 6 / team 7 / audit 8，admin 不消费）；**Redisson 锁**在业务库；**Nacos**: localhost:8848 注册中心 + Config（`spring.config.import:nacos:`，10 服务接入，模板在 `nacos-config/`）；**RabbitMQ**: localhost:5672（Topic `zxyz.topic`）
+- **Redis**: localhost:6379；Sa-Token 会话存储**代码已切到独立库 db9**（`sa-token.alone-redis`，配置在 `zxyz-common/application-common.yml`，9 个服务接入；audit-service 刻意不引；`701af68` 合并）——✅ **生产已生效（2026-10-10 实测，51/52 号台账）**：db9 含 13 个 `satoken:login:*` 活跃键、db0–8 无 satoken 键。插件对配置异常静默吞的不变量不变：**凡 db9 相关变更，部署后仍须 `redis-cli -n 9 --scan --pattern 'satoken*'` 见非空 key 才算生效**（「服务起来了」≠「会话已迁 db9」）；业务库编号仍按 `REDIS_DATABASE` 隔离（gateway 0 / project 1 / im 2 / email 3 / user 4 / share 5 / file 6 / team 7 / audit 8，admin 不消费）；**Redisson 锁**在业务库；**Nacos**: localhost:8848 注册中心 + Config（`spring.config.import:nacos:`，10 服务接入，模板在 `nacos-config/`）；**RabbitMQ**: localhost:5672（Topic `zxyz.topic`）
 - **Auth**: Sa-Token 1.46.0（UUID token，Redis session，HttpOnly cookie）；API Docs: springdoc 3.0.3（knife4j 已于 2026-10-09 移除——停更且与 Boot 4/springdoc 3.x 互斥，用户拍板；dev 文档页改用 springdoc 自带 swagger-ui）
 - **Docker**: `docker-compose.yml` 编排 17 个服务（基础设施 6：mysql/nacos/nacos-log-cleanup/flyway/redis/rabbitmq + 10 后端 + frontend-nginx 唯一对外入口），统一 `Dockerfile` with `MODULE` build arg，镜像推 GHCR；可观测栈（loki/prometheus/grafana 等）**已迁出**至 `docker-compose.observability.yml`（默认不启动，需显式 `--profile observability`）
 - **Nginx CSP**: `deploy/nginx/default.conf` 用 `envsubst` 模板化，`OSS_PUBLIC_BASE_URL` 启动时注入，勿硬编码 OSS 域名

@@ -134,6 +134,10 @@ How to generate ciphertext / self-check / rotate the key: `docs/jasypt-key-manag
 
 ### 安全
 
+**登录/切号 body 不回传 token（P3-1）**: 登录（`UserController.login`）与切号（`UserController.switchLinkedAccount`）的响应体 token 由 `app.security.return-token-in-body` 控制，**默认 false**——HttpOnly Cookie 是 token 的唯一下发通道，body 中 token 字段保留（契约兼容）但置 null。仅 dev profile 显式打开（`application-dev.yml`）供本地联调/文档调试。⚠️ 收敛点在 Controller 的 `cookieHelper.setAuthCookies(...)` 之后：service 层（`AuthService.login` / `AccountLinkingService.switchLinkedAccount`）必须返回真实 token 供 Cookie 下发，不得在 service 层提前置 null。
+
+**登录失败锁定（P3-2）**: 账号维度爆破防护由 `LoginFailureLockoutService` 实现，挂在 `AuthService.login` 三条路径——密码校验前查锁（锁定中直接 `UserErrorCode.LOGIN_LOCKED`(4102, HTTP 429) 拒绝）、认证失败累计（含用户名不存在的尝试，防枚举）、密码校验通过清零。Redis：失败计数 `zxyz:auth:fail:<username>`（Lua 原子 INCR+EXPIRE，默认 15 分钟窗口）+ 锁定标记 `zxyz:auth:lock:<username>`（默认锁 30 分钟，SET NX EX，按 TTL 自然过期）。参数 `app.security.login-lockout.{enabled,max-attempts,fail-window-minutes,lockout-minutes}`（默认 enabled=false，prod 显式开启）。与网关 Redis 令牌桶限流、`LoginRateLimiter` 频控互补：频控拦「快」，锁定拦「慢速持续撞库」。
+
 **Entity security**: `User` and `Share` entities use `@JsonProperty(access = WRITE_ONLY)` on `password` field + `@ToString(exclude = {"password"})` to prevent accidental serialization of BCrypt hashes. Any sensitive field (passwords, tokens, cipher text) on entities/DTOs must have `@JsonProperty(access = WRITE_ONLY)` or `@JsonIgnore`. Config classes that should never serialize use `@JsonIgnore`.
 
 **Internal service token**: `INTERNAL_SERVICE_TOKEN` must NEVER have a default value in YAML (e.g., do NOT use `${INTERNAL_SERVICE_TOKEN:dev-internal-token}`). A predictable default means all gateway-forwarded internal calls use an attacker-known token if the env var is unset. Apply this to all YAML files including `application-dev.yml`.

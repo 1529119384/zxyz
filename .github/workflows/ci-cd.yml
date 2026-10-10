@@ -694,6 +694,9 @@ jobs:
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         env:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/www/zxyz' }}
+          # 2026-10-11 加固：与 deploy 作业同口径 —— 导入用「本次提交」的 nacos-config，
+          # 并把克隆对准同一提交，避免两个并发作业把克隆拉向不同 ref。
+          GITHUB_SHA: ${{ github.sha }}
         with:
           host: ${{ steps.target.outputs.host }}
           username: ${{ secrets.DEPLOY_USERNAME }}
@@ -701,7 +704,7 @@ jobs:
           port: ${{ secrets.DEPLOY_PORT || 22 }}
           timeout: 300s
           command_timeout: 10m
-          envs: DEPLOY_PATH
+          envs: DEPLOY_PATH,GITHUB_SHA
           script: |
             #!/bin/bash
             set -euo pipefail
@@ -714,12 +717,25 @@ jobs:
             # 刷新克隆以拿到本次提交的 nacos-config/。与 deploy 作业可能并发
             # （同一次 push 同时改了代码与配置时），故对 git 锁竞争做退避重试，
             # 避免把「抢锁失败」误报成拉取失败。
+            # 2026-10-11 加固：GITHUB_SHA 注入时改用 fetch+checkout 精确对准本次提交
+            # （deploy 侧引导层会把克隆 checkout 到该 sha 的 detached HEAD，此时
+            # `git pull --ff-only` 因无上游必然失败）；两个作业因此收敛到同一提交。
             ok=0
-            for i in 1 2 3 4 5; do
-              if git -C "$REPO_DIR" pull --ff-only -q; then ok=1; break; fi
-              echo "pull 第 $i 次失败（疑与其他作业的 git 操作竞争），5s 后重试"
-              sleep 5
-            done
+            if [ -n "${GITHUB_SHA:-}" ]; then
+              for i in 1 2 3 4 5; do
+                if [ "$(git -C "$REPO_DIR" rev-parse HEAD)" = "$GITHUB_SHA" ]; then ok=1; break; fi
+                if git -C "$REPO_DIR" fetch origin "$GITHUB_SHA" \
+                   && git -C "$REPO_DIR" checkout -q --force "$GITHUB_SHA"; then ok=1; break; fi
+                echo "对准 $GITHUB_SHA 第 $i 次失败（疑与其他作业的 git 操作竞争），5s 后重试"
+                sleep 5
+              done
+            else
+              for i in 1 2 3 4 5; do
+                if git -C "$REPO_DIR" pull --ff-only -q; then ok=1; break; fi
+                echo "pull 第 $i 次失败（疑与其他作业的 git 操作竞争），5s 后重试"
+                sleep 5
+              done
+            fi
             if [ "$ok" != "1" ]; then
               echo "::error::REPO_PULL_FAILED: 无法更新 $REPO_DIR"
               exit 1
@@ -1322,6 +1338,12 @@ jobs:
           DOCKER_CFG: ${{ needs.detect-changes.outputs.docker-config }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/www/zxyz' }}
           IMAGE_TAG: ${{ github.sha }}
+          # 2026-10-11 加固（backup.sh 落后事件）：把本次部署的 commit sha 显式透传给
+          # 服务器侧 deploy-on-server.sh —— 服务器用它做「克隆 HEAD == 本次部署提交」的
+          # fail-closed 校验（防止在旧 checkout / 错误分支上部署）。与 IMAGE_TAG 同值
+          # （都是 github.sha），但语义不同：IMAGE_TAG 是镜像 tag，GITHUB_SHA 是「部署
+          # 哪个提交」的校验锚点；分开传让脚本可以区分「镜像意图」与「内容意图」。
+          GITHUB_SHA: ${{ github.sha }}
           IMAGE_PREFIX: ${{ env.IMAGE_PREFIX }}
           DEPLOY_ENV: ${{ steps.target.outputs.env }}
         with:
@@ -1333,7 +1355,7 @@ jobs:
           # command_timeout 是远端命令执行超时（默认 10m）：全量重建时 11 镜像拉取 +
           # 10 个 JVM 同启远超 10 分钟，曾致 Run Command Timeout 假失败；连接超时是上面的 timeout
           command_timeout: 40m
-          envs: BACKEND_COMMON,PROJECT_SVC,IM_SVC,EMAIL_SVC,USER_SVC,SHARE_SVC,FILE_SVC,TEAM_SVC,AUDIT_SVC,ADMIN_SVC,GATEWAY_SVC,FRONTEND,DOCKER_CFG,FAST_DEPLOY,DEPLOY_PATH,IMAGE_TAG,IMAGE_PREFIX,DEPLOY_ENV
+          envs: BACKEND_COMMON,PROJECT_SVC,IM_SVC,EMAIL_SVC,USER_SVC,SHARE_SVC,FILE_SVC,TEAM_SVC,AUDIT_SVC,ADMIN_SVC,GATEWAY_SVC,FRONTEND,DOCKER_CFG,FAST_DEPLOY,DEPLOY_PATH,IMAGE_TAG,IMAGE_PREFIX,DEPLOY_ENV,GITHUB_SHA
           script: |
             #!/bin/bash
             # =============================================================================
@@ -1346,6 +1368,8 @@ jobs:
             #   报错 "(Line: N, Col: C): Exceeded max expression length 21000"（提交 aee98bb 即因此挂掉）。
             #   脚本实体现已移至 scripts/deploy-on-server.sh，该上限彻底解除。
             #   ⚠️ 不要再往本块里加逻辑 —— 要加就加到那个脚本文件里。
+            #   （唯一例外：2026-10-11 的「克隆对准 GITHUB_SHA」守卫 —— 它必须在 exec 执行
+            #    脚本实体**之前**生效，放进去就晚了，故刻意留在本块；改动须保守、字节敏感。）
             # =============================================================================
             set -euo pipefail
 
@@ -1359,6 +1383,34 @@ jobs:
                 echo "::error::REPO_PULL_FAILED: 无法更新 $REPO_DIR，取不到最新部署脚本，已中止"
                 git -C "$REPO_DIR" status --porcelain 2>/dev/null || true
                 exit 1
+              fi
+              # ── 2026-10-11 加固（backup.sh 落后事件）：pull 成功 ≠ 内容对准本次提交 ──
+              # 服务器克隆可能停在旧分支（2026-10-11 只读核验发现其 HEAD 在 feat/* 而非 dev）。
+              # 若不校验，引导层会拿「别的分支/旧提交」里的脚本去执行部署实体（exec bash），
+              # 下游 deploy-on-server.sh 的 SHA 校验此时已经太晚 —— 脚本本身可能就是旧的。
+              # 故在执行任何脚本**之前**，用 CI 注入的 GITHUB_SHA 把克隆对准本次提交；
+              # 对不齐（提交不属于远端可达历史等）即中止。幂等：HEAD 已对准时是 no-op。
+              # 漂移守卫：脏工作区先中止（checkout --force 会静默丢弃本地改动，
+              # 不能让它吃掉「漂移需人工确认」的原有语义）。
+              if [ -n "${GITHUB_SHA:-}" ]; then
+                BOOT_DRIFT="$(git -C "$REPO_DIR" status --porcelain)"
+                if [ -n "$BOOT_DRIFT" ]; then
+                  echo "::error::GIT_DRIFT_DETECTED: $REPO_DIR 工作区存在未提交/漂移变更，拒绝自动对准（需人工确认）"
+                  printf '%s\n' "$BOOT_DRIFT"
+                  exit 1
+                fi
+                if [ "$(git -C "$REPO_DIR" rev-parse HEAD)" != "$GITHUB_SHA" ]; then
+                  echo "::notice::引导层校验：克隆 HEAD ≠ GITHUB_SHA，执行 git fetch + checkout 对准本次提交"
+                  if ! git -C "$REPO_DIR" fetch origin "$GITHUB_SHA" \
+                    || ! git -C "$REPO_DIR" checkout -q --force "$GITHUB_SHA"; then
+                    echo "::error::REPO_SHA_NOT_REACHABLE: $REPO_DIR 无法对准本次部署提交 $GITHUB_SHA（可能尚未推送该提交，或克隆与远端不一致），已中止"
+                    git -C "$REPO_DIR" status -sb 2>/dev/null || true
+                    exit 1
+                  fi
+                fi
+                echo "::notice::引导层校验通过：$REPO_DIR HEAD == GITHUB_SHA（本次部署提交）"
+              else
+                echo "::warning::GITHUB_SHA 未注入，引导层跳过克隆对准校验（CI 部署路径必须注入）"
               fi
             else
               echo "::warning::REPO_MISSING: 未找到 $REPO_DIR 克隆，回退使用 $DEPLOY_DIR/scripts 下的副本"

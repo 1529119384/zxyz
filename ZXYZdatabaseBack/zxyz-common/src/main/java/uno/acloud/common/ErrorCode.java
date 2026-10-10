@@ -29,6 +29,8 @@ public final class ErrorCode {
     /** @deprecated 使用 {@link UserErrorCode#USERNAME_EXISTS} */
     @Deprecated
     public static final int USERNAME_EXISTS = 4101;
+    /** 登录失败次数达到阈值，账号被临时锁定（登录爆破防护，见 zxyz-user-service 的 LoginFailureLockoutService）。 */
+    public static final int LOGIN_LOCKED = 4102;
 
     // ===== 分享领域（建议新代码使用 {@link ShareErrorCode} 枚举） =====
     public static final int SHARE_NOT_FOUND = 4300;
@@ -56,6 +58,7 @@ public final class ErrorCode {
         return switch (errorCode) {
             case BAD_REQUEST -> HttpStatus.BAD_REQUEST;
             case NO_LOGIN, LOGIN_FAILED -> HttpStatus.UNAUTHORIZED;
+            case LOGIN_LOCKED -> HttpStatus.TOO_MANY_REQUESTS;
             case NO_PERMISSION,
                     TEAM_PERMISSION_DENIED,
                     SHARE_EXPIRED,

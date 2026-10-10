@@ -35,6 +35,21 @@ server:
   port: ${SERVER_PORT:18083}
 
 app:
+  security:
+    # 【P3-1 安全默认】登录/切号响应体是否回传 token。默认 false：HttpOnly Cookie 是 token
+    # 的唯一通道，JSON body 不再暴露（避免 XSS 从响应体读 token 绕过 Cookie 隔离）。
+    # ⚠️ 只有 dev profile 才打开（见 application-dev.yml），用于本地联调/文档调试取 token；
+    #    生产（prod）保持默认 false 或显式 false，绝不打开。
+    #    token 字段仍保留在 LoginVO/AccountSwitchVO（契约兼容），关闭时值为 null。
+    return-token-in-body: false
+    login-lockout:
+      # 【P3-2 安全默认】账号维度登录失败锁定，默认关闭（生产建议显式开启，见 application-prod.yml）。
+      # 失败计数 zxyz:auth:fail:<username>（15 分钟滑窗累计），达阈值锁 30 分钟；
+      # 锁定期间登录直接拒绝（LOGIN_LOCKED/4102），登录成功清零。参数均可配。
+      enabled: false
+      max-attempts: 5
+      fail-window-minutes: 15
+      lockout-minutes: 30
   team-service:
     base-url: ${TEAM_SERVICE_BASE_URL:http://zxyz-team-service}
   email-service:

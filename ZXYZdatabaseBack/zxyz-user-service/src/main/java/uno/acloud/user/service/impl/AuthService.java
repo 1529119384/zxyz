@@ -24,26 +24,36 @@ public class AuthService {
     private final TeamServicePermissionClient teamServicePermissionClient;
     private final AuthSessionPort authSessionService;
     private final UserQueryHelper userQueryHelper;
+    private final LoginFailureLockoutService loginFailureLockoutService;
 
     public AuthService(UserMapper userMapper, PasswordEncoder passwordEncoder,
                        TeamServicePermissionClient teamServicePermissionClient,
                        AuthSessionPort authSessionService,
-                       UserQueryHelper userQueryHelper) {
+                       UserQueryHelper userQueryHelper,
+                       LoginFailureLockoutService loginFailureLockoutService) {
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.teamServicePermissionClient = teamServicePermissionClient;
         this.authSessionService = authSessionService;
         this.userQueryHelper = userQueryHelper;
+        this.loginFailureLockoutService = loginFailureLockoutService;
     }
 
     public String login(LoginRequest request) {
+        // P3-2 账号维度爆破防护：锁定期间在密码校验前直接拒绝（不泄露密码是否正确）。
+        // 与 LoginRateLimiter 的频控互补——频控拦「快」，锁定拦「慢速持续撞库」。
+        loginFailureLockoutService.checkLocked(request.getUsername());
         User dbUser = userMapper.getByLoginIdentifier(request.getUsername());
         if (dbUser == null || !userQueryHelper.passwordMatched(request.getPassword(), dbUser)) {
+            // 失败累计（含用户名不存在的尝试，防用户名枚举）；达到阈值即锁定该账号。
+            loginFailureLockoutService.recordFailure(request.getUsername());
             throw new BusinessException(UserErrorCode.LOGIN_FAILED, "用户名或密码错误");
         }
 
         Long userId = dbUser.getId();
         String username = dbUser.getUsername();
+        // 密码校验通过即清零失败计数，从零重新累计。
+        loginFailureLockoutService.recordSuccess(username);
         teamServicePermissionClient.ensureDefaultRole(userId, username);
         log.info("用户 {} 登录成功", uno.acloud.common.util.LogMaskingUtil.maskUsername(username));
         return authSessionService.createLoginSession(

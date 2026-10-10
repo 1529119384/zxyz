@@ -21,6 +21,7 @@ import uno.acloud.user.service.impl.ContactVerificationService;
 import uno.acloud.user.service.impl.LoginRateLimiter;
 import uno.acloud.user.service.impl.RegisterRateLimiter;
 import uno.acloud.user.service.impl.UserProfileService;
+import uno.acloud.user.vo.AccountSwitchVO;
 import uno.acloud.user.vo.ContactVerificationCodeVO;
 import uno.acloud.user.vo.CurrentUserVO;
 import uno.acloud.user.vo.LoginVO;
@@ -89,7 +90,9 @@ class UserControllerTest {
         assertNotNull(result);
         assertEquals(ErrorCode.SUCCESS, result.getCode());
         assertNotNull(result.getData());
-        assertEquals("test-token-abc", result.getData().getToken());
+        // ServiceProperties 默认 return-token-in-body=false：HttpOnly Cookie 是唯一通道，
+        // body token 收敛为 null（P3-1）
+        assertNull(result.getData().getToken());
         assertEquals("Bearer", result.getData().getTokenType());
         assertTrue(result.getData().getIsLogin());
 
@@ -97,9 +100,27 @@ class UserControllerTest {
         verify(loginRateLimiter).checkAndIncrement("127.0.0.1", "admin");
         // Verify auth service was called
         verify(authService).login(request);
-        // Verify cookies were set
+        // Cookie 下发不受开关影响（token 仍经 HttpOnly Cookie 通道）
         verify(cookieHelper).setAuthCookies(eq(response), eq("test-token-abc"),
                 eq(serviceProperties.getAuth().getTokenTimeoutSeconds()));
+    }
+
+    @Test
+    void login_devSwitchOn_returnsTokenInBody() {
+        // P3-1：dev profile 显式打开 app.security.return-token-in-body 时 body 仍回传（本地联调用）
+        serviceProperties.getSecurity().setReturnTokenInBody(true);
+
+        LoginRequest request = loginRequest("admin");
+        MockHttpServletRequest httpRequest = new MockHttpServletRequest();
+        httpRequest.setRemoteAddr("127.0.0.1");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        when(authService.login(request)).thenReturn("dev-body-token");
+
+        Result<LoginVO> result = userController.login(request, httpRequest, response);
+
+        assertEquals("dev-body-token", result.getData().getToken());
+        verify(cookieHelper).setAuthCookies(eq(response), eq("dev-body-token"), anyInt());
     }
 
     @Test
@@ -344,5 +365,42 @@ class UserControllerTest {
         userController.createEmailVerificationCode(1L, requestBehindGateway("203.0.113.7"));
 
         verify(contactVerificationService).createEmailVerificationCode(1L, "203.0.113.7");
+    }
+
+    // ==================== switch — body token 收敛（P3-1） ====================
+
+    private CurrentUserVO mockCurrentUser() {
+        return new CurrentUserVO(
+                2L, "targetUser", "Target", null, null, null,
+                false, false, null, List.of(), List.of());
+    }
+
+    @Test
+    void switchLinkedAccount_returnsNullBodyTokenByDefault() {
+        // ServiceProperties 默认 return-token-in-body=false：Cookie 下发完成后 body token 收敛为 null（P3-1）
+        when(accountLinkingService.switchLinkedAccount(1L, 2L))
+                .thenReturn(new AccountSwitchVO("switch-token", "Bearer", true, mockCurrentUser()));
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        Result<AccountSwitchVO> result = userController.switchLinkedAccount(1L, 2L, response);
+
+        assertNotNull(result.getData());
+        assertNull(result.getData().getToken());
+        // Cookie 下发先于收敛，不受开关影响
+        verify(cookieHelper).setAuthCookies(eq(response), eq("switch-token"),
+                eq(serviceProperties.getAuth().getTokenTimeoutSeconds()));
+    }
+
+    @Test
+    void switchLinkedAccount_devSwitchOn_returnsTokenInBody() {
+        serviceProperties.getSecurity().setReturnTokenInBody(true);
+        when(accountLinkingService.switchLinkedAccount(1L, 2L))
+                .thenReturn(new AccountSwitchVO("switch-token-dev", "Bearer", true, mockCurrentUser()));
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        Result<AccountSwitchVO> result = userController.switchLinkedAccount(1L, 2L, response);
+
+        assertEquals("switch-token-dev", result.getData().getToken());
+        verify(cookieHelper).setAuthCookies(eq(response), eq("switch-token-dev"), anyInt());
     }
 }

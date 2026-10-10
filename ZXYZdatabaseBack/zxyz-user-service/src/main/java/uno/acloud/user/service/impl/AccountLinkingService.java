@@ -81,6 +81,8 @@ public class AccountLinkingService {
         );
         CurrentUserVO targetCurrentUser = userProfileService.getCurrentUser(target.getId())
                 .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND, "目标用户不存在"));
+        // 注意：token 原样返回，body 收敛在 UserController.switchLinkedAccount 里做——
+        // Controller 要先凭 vo.getToken() 下发 HttpOnly Cookie，收敛必须发生在其后（P3-1）。
         return new AccountSwitchVO(token, "Bearer", true, targetCurrentUser);
     }
 

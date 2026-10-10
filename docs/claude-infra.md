@@ -18,7 +18,7 @@
 
 > ⚠️ **Redis database 隔离的实际范围是 9 个服务，不含 admin-service**（2026-10-07 复核）：compose 里 `REDIS_DATABASE` 出现 **9 处** —— gateway 0 / project 1 / im 2 / email 3 / user 4 / share 5 / file 6 / team 7 / audit 8。**admin-service 不消费该键**（只用 Redis Pub/Sub 做配置广播），故「各服务独立编号」对它不成立。相关：`ISSUE` 的 I-4 修复正是把 `.env.example` 里写死的 `REDIS_DATABASE=0` 删除，让这 9 处兜底生效。
 >
-> ⚠️ **Sa-Token 会话存储代码已切到独立库 db9（2026-10-08，`701af68` 合并；生产生效以部署后实测为准）**：9 个服务（上列 9 个，即除 audit 外全部）通过 `sa-token-alone-redis` 把会话统一落到独立连接 `sa-token.alone-redis`（`database: 9`，配置在 `zxyz-common/application-common.yml`）。⇒ 代码层语义为**业务库编号隔离（0-8）不含会话**：`satoken*` 键应全在 db9，其余键按 0-8 分库。⚠️ **生产当前未部署该改造**（截至 2026-10-09：CI 因新 CVE 红灯、deploy 被拦，容器仍跑 e5c97d7、db9 为 0 key），故「satoken* 全在 db9」目前是**目标态**而非实况。audit-service 纯 MQ 消费者、刻意不引该依赖。副作用提醒：随依赖补入的 `commons-pool2` 使 Boot 的 `isPoolEnabled()` 翻 true ⇒ 各服务**主** Redis 客户端从「无池」变「有池」，`spring.data.redis.lettuce.pool.*`（max-active 8 / max-idle 8 / min-idle 2）**真生效**（生产 compose/env 无 `REDIS_POOL_*` 覆盖 ⇒ 吃默认值）。部署后验证会话真的迁移：`redis-cli -n 9 --scan --pattern 'satoken*'` 见非空 key 才算生效（插件对配置异常静默吞，「起来了」≠「迁移了」）。
+> ⚠️ **Sa-Token 会话存储代码已切到独立库 db9（2026-10-08，`701af68` 合并；生产生效以部署后实测为准）**：9 个服务（上列 9 个，即除 audit 外全部）通过 `sa-token-alone-redis` 把会话统一落到独立连接 `sa-token.alone-redis`（`database: 9`，配置在 `zxyz-common/application-common.yml`）。⇒ 代码层语义为**业务库编号隔离（0-8）不含会话**：`satoken*` 键应全在 db9，其余键按 0-8 分库。✅ **生产已生效（2026-10-10 双批实测，51/52 号台账）**：db9 有 13 个 `satoken:login:*` 活跃键、db0–8 无 satoken 键——「satoken* 全在 db9」已是**实况**（10-09 时 CI 因新 CVE 红灯拦 deploy 的阻塞已随 Boot 4 迁移销账）。audit-service 纯 MQ 消费者、刻意不引该依赖。副作用提醒：随依赖补入的 `commons-pool2` 使 Boot 的 `isPoolEnabled()` 翻 true ⇒ 各服务**主** Redis 客户端从「无池」变「有池」，`spring.data.redis.lettuce.pool.*`（max-active 8 / max-idle 8 / min-idle 2）**真生效**（生产 compose/env 无 `REDIS_POOL_*` 覆盖 ⇒ 吃默认值）。部署后验证会话真的迁移：`redis-cli -n 9 --scan --pattern 'satoken*'` 见非空 key 才算生效（插件对配置异常静默吞，「起来了」≠「迁移了」）。
 >
 > 📍 **长期边界与演进路线**（库号 0–15 硬上限、`maxmemory 0`+`noeviction` 与会话、门禁不变量口径、部署验证不可省略项）集中记档在 **`docs/redis-session-layout.md`**，本节不重复。
 
@@ -97,6 +97,25 @@
 .\scripts\dev-up.ps1 logs         # 查看所有服务日志
 .\scripts\dev-up.ps1 logs mysql   # 查看指定服务日志
 ```
+
+### repo → 运行目录同步与三层防线（2026-10-11 加固）
+
+> 背景：2026-10-11 凌晨发现 `/www/zxyz/scripts/backup.sh` 落后仓库修复
+> （BINLOG_ARTIFACT / `SHOW BINARY LOG STATUS` 修复未随部署落到运行目录，靠人工 cp 补齐）。
+> 此前同步虽存在但失败被吞、无留痕，故制度化如下三层（实现在 `scripts/deploy-on-server.sh`，
+> CI 侧配合传 `GITHUB_SHA`，见 `ci-cd.yml` deploy job）。
+
+**同步规则**：CI 部署时引导层先把 `/www/zxyz-repo` 克隆**对准本次部署提交**（`git fetch origin <sha> && git checkout <sha>`，与并发 nacos-import 收敛到同一提交），随后 `deploy-on-server.sh` 做**白名单同步**——仅 `scripts/*.sh` 逐文件 `cp` + `chmod +x` + 逐文件 echo 留痕，任一拷贝失败即中止。`.env`/`logs/`/`data/`/`backups/`/`DEPLOYED_REVISION` 等运行时资产**绝不触碰**；`deploy/` 下模板不同步（`render-alertmanager.sh` 从克隆侧读取，见 DEPLOYMENT.md §11.9）。
+
+**三层防线**（全部 fail-closed）：
+
+| 层 | 内容 | 命中即 |
+|---|---|---|
+| ① 同步层 | 白名单逐文件同步 `scripts/*.sh`，逐文件留痕 | cp 失败 / 零文件同步 ⇒ 部署中止 |
+| ② 检测层 | 克隆 HEAD == `GITHUB_SHA` 校验（防旧 checkout/错误分支）；`backup.sh`/`deploy-on-server.sh`/`rollback.sh` 同步后 `diff -q` 内容校验 | MISMATCH / DIFF ⇒ ERROR 退出 |
+| ③ 自证层 | 部署终态写指纹到 `/www/zxyz/deploy-last.log`（append，保留最近 200 行）：`outcome`（success/no-op/rollback）+ `deployed_sha` + `repo_head`/`repo_branch` + `synced_scripts=[...]` + UTC 时间戳 | — |
+
+**排障入口**：`tail -50 /www/zxyz/deploy-last.log`（最近部署指纹）、`cat /www/zxyz/DEPLOYED_REVISION`（线上镜像版本）。手工执行 `deploy-on-server.sh`（无 `GITHUB_SHA`）时检测层降级为告警，不阻断人工路径。
 
 ## 部署注意事项与运维提示
 

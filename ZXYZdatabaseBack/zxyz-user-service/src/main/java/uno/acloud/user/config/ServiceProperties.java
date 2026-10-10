@@ -12,6 +12,7 @@ public class ServiceProperties {
     private String internalServiceToken;
     private final AuthCookie auth = new AuthCookie();
     private final Verification verification = new Verification();
+    private final Security security = new Security();
     private final Admin admin = new Admin();
 
     public ServiceUrl getTeamService() {
@@ -44,6 +45,10 @@ public class ServiceProperties {
 
     public Verification getVerification() {
         return verification;
+    }
+
+    public Security getSecurity() {
+        return security;
     }
 
     public static class ServiceUrl {
@@ -166,6 +171,83 @@ public class ServiceProperties {
 
         public void setAllowInsecurePepper(boolean allowInsecurePepper) {
             this.allowInsecurePepper = allowInsecurePepper;
+        }
+    }
+
+    /**
+     * 登录失败锁定配置（登录爆破防护，app.security.login-lockout.*）。
+     * 语义与参数说明见 {@link uno.acloud.user.service.impl.LoginFailureLockoutService}。
+     */
+    public static class LoginLockout {
+        /** 是否启用账号维度失败锁定（默认关闭，生产建议显式开启）。 */
+        private boolean enabled = false;
+        /** 触发锁定的失败次数阈值（滑动窗口内累计）。 */
+        private int maxAttempts = 5;
+        /** 失败计数窗口（分钟）：窗口内累计到阈值即锁定。 */
+        private int failWindowMinutes = 15;
+        /** 锁定时长（分钟）：锁定期间该账号登录直接拒绝。 */
+        private int lockoutMinutes = 30;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public int getMaxAttempts() {
+            return maxAttempts;
+        }
+
+        public void setMaxAttempts(int maxAttempts) {
+            this.maxAttempts = maxAttempts;
+        }
+
+        public int getFailWindowMinutes() {
+            return failWindowMinutes;
+        }
+
+        public void setFailWindowMinutes(int failWindowMinutes) {
+            this.failWindowMinutes = failWindowMinutes;
+        }
+
+        public int getLockoutMinutes() {
+            return lockoutMinutes;
+        }
+
+        public void setLockoutMinutes(int lockoutMinutes) {
+            this.lockoutMinutes = lockoutMinutes;
+        }
+    }
+
+    /**
+     * 安全相关开关（app.security.*）。
+     */
+    public static class Security {
+        private final LoginLockout loginLockout = new LoginLockout();
+
+        /**
+         * 登录/切号响应体是否回传 token（app.security.return-token-in-body）。
+         *
+         * <p><b>默认 false</b>：HttpOnly Cookie 是 token 的唯一下发通道，JSON body 不再暴露 token，
+         * 避免 XSS 者从响应体读取 token 绕过 Cookie 防护（P3-1）。</p>
+         *
+         * <p>仅本地 dev profile 显式置 true（application-dev.yml），供文档调试/未来移动端
+         * header 通道联调时取 token；生产保持默认 false 或显式 false，绝不在 prod 打开。</p>
+         */
+        private boolean returnTokenInBody = false;
+
+        public LoginLockout getLoginLockout() {
+            return loginLockout;
+        }
+
+        public boolean isReturnTokenInBody() {
+            return returnTokenInBody;
+        }
+
+        public void setReturnTokenInBody(boolean returnTokenInBody) {
+            this.returnTokenInBody = returnTokenInBody;
         }
     }
 

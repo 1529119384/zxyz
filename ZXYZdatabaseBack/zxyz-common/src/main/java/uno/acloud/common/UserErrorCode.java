@@ -10,7 +10,9 @@ public enum UserErrorCode implements ErrorCodeMarker {
 
     USER_NOT_FOUND(4001, HttpStatus.NOT_FOUND),
     LOGIN_FAILED(4100, HttpStatus.UNAUTHORIZED),
-    USERNAME_EXISTS(4101, HttpStatus.CONFLICT);
+    USERNAME_EXISTS(4101, HttpStatus.CONFLICT),
+    /** 登录失败次数达到阈值，账号被临时锁定（登录爆破防护，见 LoginFailureLockoutService）。 */
+    LOGIN_LOCKED(4102, HttpStatus.TOO_MANY_REQUESTS);
 
     private final int code;
     private final HttpStatus httpStatus;

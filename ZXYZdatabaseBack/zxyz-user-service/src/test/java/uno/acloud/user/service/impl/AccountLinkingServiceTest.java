@@ -165,9 +165,38 @@ class AccountLinkingServiceTest {
         AccountSwitchVO result = accountLinkingService.switchLinkedAccount(userId, targetUserId);
 
         assertNotNull(result);
+        // body 收敛在 UserController（Cookie 下发后）做（P3-1），service 层始终携带真实 token
         assertEquals("new-session-token", result.getToken());
         assertTrue(result.getIsLogin());
         verify(teamServicePermissionClient).ensureDefaultRole(targetUserId, "targetUser");
+    }
+
+    @Test
+    void switchLinkedAccount_alwaysCarriesTokenForCookieDispatch() {
+        // 防回归：service 层不得自行收敛 token——Controller 需凭它下发 HttpOnly Cookie；
+        // 即使开关关闭（默认），service 层返回的 token 也必须是真实值。
+        Long userId = 1L;
+        Long targetUserId = 2L;
+
+        when(userMapper.countVerifiedLinkedAccount(userId, targetUserId)).thenReturn(1);
+        when(userMapper.countAccountSwitchTrust(userId, targetUserId)).thenReturn(1);
+
+        User target = userWith(targetUserId, "targetUser", "encoded-password");
+        when(userQueryHelper.requireExistingUser(targetUserId)).thenReturn(target);
+
+        when(teamServicePermissionClient.getSystemRolesByUserId(targetUserId)).thenReturn(List.of("user"));
+        when(teamServicePermissionClient.getSystemPermissionsByUserId(targetUserId)).thenReturn(List.of());
+        when(authSessionService.createLoginSession(eq(targetUserId), eq("targetUser"), anyList(), anyList()))
+                .thenReturn("cookie-dispatch-token");
+
+        CurrentUserVO targetProfile = new CurrentUserVO(
+                targetUserId, "targetUser", "Target User", null,
+                null, null, false, false, null, List.of(), List.of());
+        when(userProfileService.getCurrentUser(targetUserId)).thenReturn(Optional.of(targetProfile));
+
+        AccountSwitchVO result = accountLinkingService.switchLinkedAccount(userId, targetUserId);
+
+        assertEquals("cookie-dispatch-token", result.getToken());
     }
 
     // ==================== Switch without prior trust — should throw ====================

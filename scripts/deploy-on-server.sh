@@ -19,6 +19,10 @@
 #                  故**语义上要求以 / 结尾**（CI 注入的 ghcr.io/<owner> 无尾斜杠，
 #                  本脚本会就地归一化，见下方「归一化 IMAGE_PREFIX」）。
 #   DEPLOY_ENV     环境名（production / development），仅用于日志
+#   GITHUB_SHA     本次部署的 commit sha（= github.sha，与 IMAGE_TAG 同值）。
+#                  检测层用它校验 $REPO_DIR 克隆 HEAD 是否就是本次要部署的提交
+#                  （2026-10-11 backup.sh 漂移事件后新增，见下方「检测层」）；
+#                  仅手工排障执行时可不传（缺失则跳过 HEAD 校验并告警，不阻断人工操作）。
 #   另有一组变更开关：BACKEND_COMMON / {PROJECT,IM,EMAIL,USER,SHARE,FILE,TEAM,AUDIT,ADMIN,GATEWAY}_SVC
 #   / FRONTEND / DOCKER_CFG / FAST_DEPLOY —— 同样由 CI 注入，脚本内以 "$VAR" 直接读取。
 #
@@ -60,6 +64,33 @@ write_deployed_revision() {
   echo "已记录部署版本：${tag} → ${DEPLOY_DIR}/DEPLOYED_REVISION"
 }
 
+# --- 部署指纹（自证层，2026-10-11 加固）---
+# 为什么：DEPLOYED_REVISION 只回答「线上跑的是哪个镜像」，不回答「运行目录的脚本/
+#   compose 是哪个 repo 状态同步来的」。2026-10-11 backup.sh 落后事件里，二者的时间差
+#   正是排障最大成本。deploy-last.log 把「deployed SHA + 同步清单 + 时间戳」落在
+#   运行目录本地，人工核验（diff/巡检）时有据可查 —— 与 DEPLOYED_REVISION 互补。
+# append + 保留最近 200 行：保留部署历史轨迹（回溯用），同时防无限增长。
+write_deploy_manifest() {
+  local outcome="$1"
+  local synced="${SYNCED_SCRIPTS[*]:-（未执行同步：克隆缺失或脚本目录不存在）}"
+  local sha="${GITHUB_SHA:-$IMAGE_TAG}"
+  {
+    echo "----- deploy $(date -u '+%Y-%m-%dT%H:%M:%SZ') -----"
+    echo "outcome=$outcome"
+    echo "deployed_sha=$sha"
+    echo "deploy_env=${DEPLOY_ENV:-unknown}"
+    echo "deployed_by=${GITHUB_ACTOR:-local}"
+    echo "repo_head=$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || echo 'REPO_DIR 缺失，未校验')"
+    echo "repo_branch=$(git -C "$REPO_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+    echo "synced_scripts=[$synced]"
+  } >> "${DEPLOY_DIR}/deploy-last.log"
+  chmod 644 "${DEPLOY_DIR}/deploy-last.log" 2>/dev/null || true
+  # 只保留最近 200 行（约最近 22 次部署 × 9 行），防止 append 无限增长
+  tail -n 200 "${DEPLOY_DIR}/deploy-last.log" > "${DEPLOY_DIR}/.deploy-last.tmp" \
+    && mv "${DEPLOY_DIR}/.deploy-last.tmp" "${DEPLOY_DIR}/deploy-last.log" 2>/dev/null || true
+  echo "已写部署指纹 → ${DEPLOY_DIR}/deploy-last.log（outcome=$outcome）"
+}
+
 # --- 归一化 IMAGE_PREFIX 并 export（必须在任何 compose 调用之前）---
 # 为什么必须在这里做、而不是只写进 .env：
 #   docker-compose.yml 里是「裸拼接」—— ${IMAGE_PREFIX:-}zxyz-frontend-nginx:${APP_IMAGE_TAG:-latest}
@@ -95,40 +126,134 @@ pick_script() {
   return 1
 }
 
-# --- 提前刷新克隆 + 同步 scripts/（必须在 init-secrets 之前！）---
-# 为什么：pick_script 会优先用 $REPO_DIR/scripts 的副本，而 pull 原本排在
+# --- 提前刷新克隆 + 检测/同步 scripts/（必须在 init-secrets 之前！）---
+# 为什么：pick_script 会优先用 $REPO_DIR/scripts 的副本，而刷新原本排在
 # init-secrets/validate-env 之后 —— 于是这两步拿到的是「上次部署的旧克隆」。
 # 后果实证（run #104）：旧 init-secrets 不认识本次新增的 *_DB_USERNAME/*_DB_PASSWORD
 # 键，不会补空值 → 后续 grant 读到空用户名 → 报「未设置」→ 部署中止。
-# 提前 pull 后，后续 pull 已是最新（无副作用），init-secrets/validate-env/grant 才是本次代码。
+# 提前刷新后，后续步骤拿到的才是本次代码。
+# 刷新语义（2026-10-11 升级）：CI 路径（有 GITHUB_SHA）=「对准本次部署提交」
+# （fetch + checkout，幂等，且与引导层、nacos-import 三方收敛到同一提交）；
+# 手工路径（无 GITHUB_SHA）保持旧「git pull --ff-only」行为。
 if [ -d "$REPO_DIR" ]; then
   # 审计 I-20（2026-10-03）：同一次 push 若同时改了代码与 nacos-config，会**同时**触发
-  #   deploy 与 nacos-import 两个 job，两个 SSH 会话并发对同一个 $REPO_DIR 执行 git pull。
+  #   deploy 与 nacos-import 两个 job，两个 SSH 会话并发对同一个 $REPO_DIR 执行 git 操作。
   #   nacos-import 侧（ci-cd.yml 的 Import 步骤）早已做了 5 次退避重试，deploy 侧没有 ——
   #   撞上 git 锁（index.lock / shallow lock）会让整次部署以 REPO_PULL_FAILED 中止
-  #   （失败面是全量部署，而概率本可忽略）。此处套同款 3×5s 重试把两处口径拉齐。
-  PULL_OK=0
-  for _i in 1 2 3; do
-    if git -C "$REPO_DIR" pull --ff-only -q; then PULL_OK=1; break; fi
-    echo "pull 第 ${_i} 次失败（疑与 nacos-import 作业的 git 操作竞争），5s 后重试"
-    sleep 5
-  done
-  if [ "$PULL_OK" != "1" ]; then
-    echo "::error::REPO_PULL_FAILED: 无法更新 $REPO_DIR（常见原因：工作区有漂移改动，或持续抢不到 git 锁）。已中止，后续脚本需最新版本"
-    git -C "$REPO_DIR" status --porcelain 2>/dev/null || true
-    exit 1
+  #   （失败面是全量部署，而概率本可忽略）。此处保留同款 3×5s 重试把两处口径拉齐。
+  # 2026-10-11 语义升级（backup.sh 落后事件）：GITHUB_SHA 注入时，「刷新克隆」的目标从
+  #   「分支最新」改为「精确对准本次部署提交」——引导层已 checkout 到该 sha（detached），
+  #   而 detached HEAD 下 `git pull` 因无上游必然失败，故 CI 路径改用 fetch+checkout 幂等
+  #   对准；仅手工执行（无 GITHUB_SHA）时保持旧 pull 行为不变。
+  if [ -n "${GITHUB_SHA:-}" ]; then
+    ALIGN_OK=0
+    for _i in 1 2 3; do
+      _head="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || true)"
+      if [ "$_head" = "$GITHUB_SHA" ]; then ALIGN_OK=1; break; fi
+      if git -C "$REPO_DIR" fetch origin "$GITHUB_SHA" \
+         && git -C "$REPO_DIR" checkout -q --force "$GITHUB_SHA"; then ALIGN_OK=1; break; fi
+      echo "对准本次提交 ${_i}/3 次失败（疑与 nacos-import 作业的 git 操作竞争），5s 后重试"
+      sleep 5
+    done
+    if [ "$ALIGN_OK" != "1" ]; then
+      echo "::error::REPO_SHA_ALIGN_FAILED: 无法把 $REPO_DIR 对准本次部署提交 $GITHUB_SHA（克隆与远端可能不一致），已中止"
+      git -C "$REPO_DIR" status --porcelain 2>/dev/null || true
+      exit 1
+    fi
+  else
+    PULL_OK=0
+    for _i in 1 2 3; do
+      if git -C "$REPO_DIR" pull --ff-only -q; then PULL_OK=1; break; fi
+      echo "pull 第 ${_i} 次失败（疑与 nacos-import 作业的 git 操作竞争），5s 后重试"
+      sleep 5
+    done
+    if [ "$PULL_OK" != "1" ]; then
+      echo "::error::REPO_PULL_FAILED: 无法更新 $REPO_DIR（常见原因：工作区有漂移改动，或持续抢不到 git 锁）。已中止，后续脚本需最新版本"
+      git -C "$REPO_DIR" status --porcelain 2>/dev/null || true
+      exit 1
+    fi
   fi
   if [ -d "$REPO_DIR/scripts" ]; then
+    # =============================================================================
+    # 【检测层·SHA 比对】（fail-closed，2026-10-11 加固）—— 刻意放在同步层**之前**
+    # -----------------------------------------------------------------------------
+    # 为什么：CI 已通过 GITHUB_SHA 告知「本次要部署哪个提交」；若 $REPO_DIR 的 HEAD
+    #   与之不一致（pull 失败回退旧脚本、克隆被切到别的分支、并发 nacos-import 拉走了
+    #   更新的提交等），后续所有 cp 的都是「不是本次提交的内容」—— 正是 backup.sh
+    #   落后事件的根因形态。先校验再拷贝：克隆不对就连一个字节都不要写进运行目录，
+    #   否则中止后 /www/zxyz/scripts 会留下与 DEPLOYED_REVISION 不匹配的漂移内容。
+    #   IMAGE_TAG 在 push/dispatch 下恒等于 github.sha，可与 GITHUB_SHA 互为交叉印证；
+    #   二者都缺（纯手工执行）才降级为告警 —— 不阻断人工排障路径。
+    # =============================================================================
+    if [ -n "${GITHUB_SHA:-}" ]; then
+      _repo_head="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || true)"
+      if [ "$_repo_head" != "$GITHUB_SHA" ]; then
+        echo "::error::REPO_HEAD_MISMATCH: $REPO_DIR HEAD=$_repo_head ≠ 本次部署 SHA=$GITHUB_SHA"
+        echo "::error::  拒绝在旧 checkout 上部署（2026-10-11 backup.sh 落后事件的制度化防线）。"
+        echo "::error::  处置：人工登录服务器执行 \`git -C $REPO_DIR fetch origin && git -C $REPO_DIR checkout $GITHUB_SHA\` 后重跑部署；或检查并发 nacos-import 作业是否改动过克隆。"
+        exit 1
+      fi
+      echo "::notice::REPO_HEAD_VERIFIED: $REPO_DIR HEAD == GITHUB_SHA（$_repo_head）"
+    else
+      echo "::warning::GITHUB_SHA 未注入（手工执行？），跳过克隆 HEAD 校验 —— CI 部署路径必须传入"
+    fi
+    # =============================================================================
+    # 【同步层】repo → 运行目录白名单同步（2026-10-11 加固）
+    # -----------------------------------------------------------------------------
+    # 背景（2026-10-11 事件）：凌晨发现 /www/zxyz/scripts/backup.sh 落后仓库修复
+    #   （BINLOG_ARTIFACT / SHOW BINARY LOG STATUS 修复未随部署落到运行目录），
+    #   靠人工 cp 才补齐。此前同步虽存在（cp -f ...*.sh），但失败会被 `|| true` 吞掉、
+    #   也无逐文件留痕，脚本落后与否无人可知 —— 故把「同步」升级为显式、留痕、可校验。
+    # 白名单边界（刻意极小，绝不触碰运行时资产）：
+    #   只同步 scripts/*.sh 这一个集合。.env / logs/ / data/ / backups/ / conf/ /
+    #   DEPLOYED_REVISION / deploy-last.log 等运行时文件与目录一律不碰；
+    #   deploy/（nginx certs 等挂载资产）不同步 —— 仓库侧模板由 render-alertmanager.sh
+    #   从 $REPO_DIR 读取，见 DEPLOYMENT.md §11.9 的白名单表。
+    # 逐文件 cp 而非整目录 cp 的原因：把「哪些文件被同步」显式打印出来留痕，
+    #   后续检测层的 diff -q 校验与本层清单一一对应，失败可定位到单个文件。
+    # =============================================================================
+    SYNCED_SCRIPTS=()
     mkdir -p "$DEPLOY_DIR/scripts"
-    cp -f "$REPO_DIR/scripts/"*.sh "$DEPLOY_DIR/scripts/" 2>/dev/null || true
+    for _sh in "$REPO_DIR/scripts/"*.sh; do
+      [ -f "$_sh" ] || continue
+      _name="$(basename "$_sh")"
+      cp -f "$_sh" "$DEPLOY_DIR/scripts/$_name"
+      chmod +x "$DEPLOY_DIR/scripts/$_name" 2>/dev/null || true
+      SYNCED_SCRIPTS+=("$_name")
+      echo "[sync] scripts/$_name ← repo（白名单同步）"
+    done
+    # 同步后必须至少有一个脚本落位；cp 对不存在的源会直接非零退出（上方已无 || true），
+    # 这里再断言一次防止 glob 展开为空的假成功。
+    if [ ${#SYNCED_SCRIPTS[@]} -eq 0 ]; then
+      echo "::error::SCRIPT_SYNC_EMPTY: $REPO_DIR/scripts 下没有任何 *.sh 被同步，疑似克隆损坏，已中止"
+      exit 1
+    fi
     # ⚠️ U-1（2026-10-07 生产实测修复）：`cp -f` **不保留可执行位**，而仓库里
     #   除 dev-up.sh 外的 22 个 *.sh 在 git 中都是 100644（非可执行）。服务器 crontab
     #   用相对路径直接调用（`cd /www/zxyz && ./scripts/backup.sh ...`）⇒ 644 无 x 位
     #   ⇒ 每晚必然 `Permission denied`。
     #   实证：backup-cron.log 全 28 行均为 `/bin/sh: 1: ./scripts/backup.sh: Permission denied`，
     #   最后一次成功备份停在 2026-09-22（断档 15 天），binlog 增量从未产出。
-    #   修复：同步后显式补 x 位。这是幂等操作，且与「脚本用法写的是 ./scripts/xxx.sh」一致。
-    chmod +x "$DEPLOY_DIR/scripts/"*.sh 2>/dev/null || true
+    #   修复：同步后显式补 x 位（上方逐文件 chmod +x）。这是幂等操作，且与「脚本用法写的是
+    #   ./scripts/xxx.sh」一致。
+    # =============================================================================
+    # 【检测层·关键脚本 diff】（fail-closed）
+    # -----------------------------------------------------------------------------
+    # SHA 比对之上再加一道内容级校验：就算 HEAD 一致，也用 diff -q 逐字节确认
+    #   关键脚本（backup.sh / deploy-on-server.sh / rollback.sh —— 备份与回滚是故障时
+    #   唯一依赖的两条生命线，deploy-on-server.sh 是本次部署自身）真的同步落位。
+    #   命中 DIFF 即中止：带着旧 backup.sh 继续部署，等于让「预部署备份」和 crontab
+    #   夜备在不知道的情况下用旧逻辑跑（BINLOG_ARTIFACT 缺失即此形态）。
+    # =============================================================================
+    for _key in backup.sh deploy-on-server.sh rollback.sh; do
+      if [ -f "$REPO_DIR/scripts/$_key" ] && [ -f "$DEPLOY_DIR/scripts/$_key" ]; then
+        if ! diff -q "$REPO_DIR/scripts/$_key" "$DEPLOY_DIR/scripts/$_key" >/dev/null; then
+          echo "::error::KEY_SCRIPT_DRIFT: scripts/$_key 在 $DEPLOY_DIR 与 $REPO_DIR 内容不一致（同步层刚执行过仍 DIFF ⇒ 文件系统/权限异常），已中止"
+          exit 1
+        fi
+      fi
+    done
+    echo "::notice::KEY_SCRIPTS_VERIFIED: backup.sh / deploy-on-server.sh / rollback.sh 与仓库一致"
   fi
 fi
 
@@ -218,7 +343,11 @@ if [ -d "$REPO_DIR" ]; then
     printf '%s' "$h"
   }
   OLD_HASH="$(_compose_hash)"
-  cd "$REPO_DIR" && git pull --ff-only -q
+  # GITHUB_SHA 路径：克隆已在本脚本最前面对准本次提交，无需再 pull
+  # （detached HEAD 下 `git pull` 因无上游必然失败，故 CI 路径刻意跳过；手工路径保持旧行为）
+  if [ -z "${GITHUB_SHA:-}" ]; then
+    cd "$REPO_DIR" && git pull --ff-only -q
+  fi
 
   # --- 漂移检测：拉取后若工作区非空即中止并要求人工确认 ---
   echo "===== 检测部署配置仓库工作区漂移 ====="
@@ -320,6 +449,8 @@ fi
 
 if [ ${#UPDATE_SVC[@]} -eq 0 ]; then
   echo "No service changed, skip deploy"
+  # 自证层：no-op 也是一次部署事实（同步/校验已发生），同样落指纹再退出
+  write_deploy_manifest "no-op"
   exit 0
 fi
 echo "Will update: ${UPDATE_SVC[*]}"
@@ -714,6 +845,8 @@ else
         if [ "$ROLLBACK_OK" = true ]; then
           echo "===== Rollback successful: services restored to $PREV_TAG ====="
           write_deployed_revision "$PREV_TAG" "true"
+          # 自证层：回滚成功也留痕 —— 线上「当前 tag」已翻转为旧版，指纹必须如实记录
+          write_deploy_manifest "rollback"
           docker compose ps
           echo "::notice::AUTO_ROLLBACK_SUCCESS: reverted to $PREV_TAG"
           exit 0
@@ -737,4 +870,9 @@ write_deployed_revision "$IMAGE_TAG" "false"
 
 echo "===== Container status ====="
 docker compose ps
+# 自证层（最后一步）：无论上面走到哪个分支，只要到了正常终态，都落一次部署指纹。
+# 部署中途失败（set -e 中止）时不会执行到这里 —— 此时 DEPLOYED_REVISION 未更新，
+# deploy-last.log 里也就没有本次记录，与「部署未完成」的事实保持一致。
+write_deploy_manifest "success"
+
 echo "===== Deploy complete ====="

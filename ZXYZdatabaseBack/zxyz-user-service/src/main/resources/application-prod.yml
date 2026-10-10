@@ -8,6 +8,13 @@ spring:
 app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
+  security:
+    # P3-1：生产显式关闭 body token 回传（默认即 false，写出来是让口径一眼可见）。
+    return-token-in-body: false
+    # P3-2：账号维度登录失败锁定（撞库防护）。默认关闭；生产建议开启——
+    # 15 分钟窗口内失败 ≥5 次锁 30 分钟（Redis zxyz:auth:fail:<username>），成功登录清零。
+    login-lockout:
+      enabled: true
   team-service:
     base-url: ${TEAM_SERVICE_BASE_URL:http://zxyz-team-service}
   email-service:

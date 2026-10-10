@@ -51,6 +51,9 @@ class AuthServiceTest {
     @Mock
     private UserQueryHelper userQueryHelper;
 
+    @Mock
+    private LoginFailureLockoutService loginFailureLockoutService;
+
     @InjectMocks
     private AuthService authService;
 
@@ -66,6 +69,8 @@ class AuthServiceTest {
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> authService.login(request));
         assertEquals(UserErrorCode.LOGIN_FAILED.getCode(), ex.getErrorCode());
+        // P3-2：用户名不存在的尝试同样计入失败（防用户名枚举）
+        verify(loginFailureLockoutService).recordFailure("nobody");
     }
 
     @Test
@@ -85,6 +90,7 @@ class AuthServiceTest {
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> authService.login(request));
         assertEquals(UserErrorCode.LOGIN_FAILED.getCode(), ex.getErrorCode());
+        verify(loginFailureLockoutService).recordFailure("alice");
     }
 
     @Test
@@ -108,6 +114,27 @@ class AuthServiceTest {
         String token = authService.login(request);
 
         assertEquals("token-abc", token);
+        // P3-2：密码校验通过即清零失败计数
+        verify(loginFailureLockoutService).recordSuccess("alice");
+    }
+
+    @Test
+    void login_rejectedBeforePasswordCheckWhenAccountLocked() {
+        // P3-2：账号处于锁定窗口时，密码校验前即拒绝（不泄露「密码是否正确」），
+        // 且失败计数不因被拒请求继续累计。
+        LoginRequest request = new LoginRequest();
+        request.setUsername("alice");
+        request.setPassword("whatever");
+        doThrow(new BusinessException(UserErrorCode.LOGIN_LOCKED, "失败次数过多，账号已临时锁定，请稍后再试"))
+                .when(loginFailureLockoutService).checkLocked("alice");
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> authService.login(request));
+
+        assertEquals(UserErrorCode.LOGIN_LOCKED.getCode(), ex.getErrorCode());
+        verify(userMapper, never()).getByLoginIdentifier(anyString());
+        verify(loginFailureLockoutService, never()).recordFailure(anyString());
+        verify(loginFailureLockoutService, never()).recordSuccess(anyString());
     }
 
     @Test

@@ -110,7 +110,13 @@ public class UserController {
                 ? serviceProperties.getAuth().getLongLivedTimeoutSeconds()
                 : serviceProperties.getAuth().getTokenTimeoutSeconds();
         cookieHelper.setAuthCookies(response, token, cookieMaxAge);
-        return Result.of(new LoginVO(token, "Bearer", true));
+        // P3-1：token 经 HttpOnly Cookie 下发（setAuthCookies）后，body 不再回传 token ——
+        // 避免 XSS 者从 JSON 响应体读取 token 绕过 Cookie 的 HttpOnly 隔离。
+        // 开关默认 false；仅 dev profile 打开（application-dev.yml），供本地联调/文档调试取 token。
+        // token 字段保留在 VO 中（契约兼容，前端类型不断裂），关闭时置 null。
+        LoginVO loginVO = new LoginVO(serviceProperties.getSecurity().isReturnTokenInBody() ? token : null,
+                "Bearer", true);
+        return Result.of(loginVO);
     }
 
     @Operation(summary = "退出登录")
@@ -229,6 +235,11 @@ public class UserController {
         AccountSwitchVO switchResult = accountLinkingService.switchLinkedAccount(userId, targetUserId);
         cookieHelper.setAuthCookies(response, switchResult.getToken(),
                 serviceProperties.getAuth().getTokenTimeoutSeconds());
+        // P3-1：与登录路径同口径——Cookie 下发完成后 body token 收敛，HttpOnly Cookie 是唯一通道。
+        // 开关默认 false；仅 dev profile 打开（application-dev.yml）。字段保留在 VO（契约兼容）。
+        if (!serviceProperties.getSecurity().isReturnTokenInBody()) {
+            switchResult.setToken(null);
+        }
         return Result.of(switchResult);
     }
 

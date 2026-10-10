@@ -1172,7 +1172,7 @@ Trivy 矩阵**四层，属一次**部署系统升级**；收益是「infra 升�
 | `docker-compose.yml` | ✅ | 主 compose（部署核心） |
 | `docker-compose.tls.yml` | ✅ | TLS 覆盖层（`TLS_ENABLED=true` 时叠加） |
 | `docker-compose.observability.yml` | ✅ | 可观测性栈（2026-09-19 补齐；**默认不启动**，见 §11.8 二） |
-| `scripts/*.sh` | ✅ | 部署/维护脚本（流程最早处整目录同步） |
+| `scripts/*.sh` | ✅ | 部署/维护脚本（流程最早处白名单同步：逐文件 cp + chmod +x + 留痕；同步后对 `backup.sh`/`deploy-on-server.sh`/`rollback.sh` 做 `diff -q` 校验，DIFF 即中止 —— 2026-10-11 backup.sh 落后事件后加固，见下） |
 | `docker-compose.dev.yml` | ❌ | 仅本地开发用 |
 | `deploy/**`（nginx/grafana/prometheus/loki 配置、`*.tmpl`） | ❌ | **渲染脚本从 `$REPO_DIR` 读取模板**，产物写到 `$DEPLOY_DIR`，故无需同步 |
 | `ZXYZdatabaseBack/**` / `ZXYZdatabaseFront/**` | ❌ | 服务器不做构建（部署固定 `--no-build`） |
@@ -1182,6 +1182,24 @@ Trivy 矩阵**四层，属一次**部署系统升级**；收益是「infra 升�
 `build:` 段的命令都必然报 `lstat .../ZXYZdatabaseBack: no such file or directory`。
 ⇒ 凡在对服务器执行 `docker compose up`，一律点名服务并加
 **`--no-deps --no-build`**（主路径、回滚路径、`deploy-fast.sh` 均已统一，见各脚本注释）。
+
+#### 11.9.1 repo → 运行目录同步与三层防线（2026-10-11 加固）
+
+> 背景：2026-10-11 凌晨发现 `/www/zxyz/scripts/backup.sh` 落后仓库修复
+> （BINLOG_ARTIFACT / `SHOW BINARY LOG STATUS` 修复未随部署落到运行目录，靠人工 cp 补齐）。
+> 本节与 `docs/claude-infra.md`「repo → 运行目录同步与三层防线」同源，此处偏运维视角。
+
+CI 部署时对 `/www/zxyz-repo` 克隆的刷新语义已从「拉分支最新」升级为「**对准本次部署提交**」：
+引导层与 `deploy-on-server.sh` 都会执行 `git fetch origin <GITHUB_SHA> && git checkout <GITHUB_SHA>`
+（与并发 nacos-import 收敛到同一提交；GITHUB_SHA 由 ci-cd.yml deploy job 注入）。
+三层防线全部 fail-closed（实现见 `scripts/deploy-on-server.sh`）：
+
+1. **同步层**：`scripts/*.sh` 白名单逐文件 cp + `chmod +x` + 逐文件 echo 留痕；cp 失败或零文件同步 ⇒ 部署中止。运行时资产（`.env`/`logs/`/`data/`/`backups/`/`DEPLOYED_REVISION` 等）绝不触碰。
+2. **检测层**：克隆 HEAD ≠ `GITHUB_SHA` ⇒ ERROR 退出（防旧 checkout/错误分支上部署）；`backup.sh`/`deploy-on-server.sh`/`rollback.sh` 同步后 `diff -q` 校验，DIFF ⇒ ERROR 退出。
+3. **自证层**：部署终态 append 指纹到 `/www/zxyz/deploy-last.log`（保留最近 200 行）——`outcome`（success/no-op/rollback）、`deployed_sha`、克隆 `repo_head`/`repo_branch`、`synced_scripts=[...]`、UTC 时间戳。
+
+运维核验入口：`tail -50 /www/zxyz/deploy-last.log` + `cat /www/zxyz/DEPLOYED_REVISION`。
+手工执行 `deploy-on-server.sh`（不注入 `GITHUB_SHA`）时检测层降级为告警，不阻断人工路径。
 
 ---
 

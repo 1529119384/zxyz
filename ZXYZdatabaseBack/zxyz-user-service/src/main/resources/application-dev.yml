@@ -13,6 +13,10 @@ spring:
 app:
   auth:
     secure: false
+  security:
+    # dev 保留 body token 回传（P3-1 收敛开关的例外），供本地联调/文档调试取 token；
+    # 生产走默认 false（HttpOnly Cookie 是唯一通道），见 application.yml 注释。
+    return-token-in-body: true
   team-service:
     base-url: ${TEAM_SERVICE_BASE_URL:http://localhost:18086}
   email-service:
