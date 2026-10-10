@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 import uno.acloud.im.application.ImCommandDispatcher;
 import uno.acloud.im.application.ImCommandRequest;
 import uno.acloud.im.application.ImCommandResult;
+import uno.acloud.im.application.ImSessionKeepAliveService;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.infrastructure.netty.protocol.ImEnvelope;
 import uno.acloud.im.infrastructure.netty.protocol.ImEnvelopeFactory;
@@ -27,15 +28,18 @@ public class ImWebSocketFrameHandler extends SimpleChannelInboundHandler<TextWeb
     private final ImEnvelopeFactory envelopeFactory;
     private final ImConnectionRegistry connectionRegistry;
     private final ImCommandDispatcher commandDispatcher;
+    private final ImSessionKeepAliveService sessionKeepAliveService;
 
     public ImWebSocketFrameHandler(ObjectMapper objectMapper,
                                    ImEnvelopeFactory envelopeFactory,
                                    ImConnectionRegistry connectionRegistry,
-                                   ImCommandDispatcher commandDispatcher) {
+                                   ImCommandDispatcher commandDispatcher,
+                                   ImSessionKeepAliveService sessionKeepAliveService) {
         this.objectMapper = objectMapper;
         this.envelopeFactory = envelopeFactory;
         this.connectionRegistry = connectionRegistry;
         this.commandDispatcher = commandDispatcher;
+        this.sessionKeepAliveService = sessionKeepAliveService;
     }
 
     @Override
@@ -60,6 +64,11 @@ public class ImWebSocketFrameHandler extends SimpleChannelInboundHandler<TextWeb
         ImEnvelope request = null;
         try {
             request = objectMapper.readValue(frame.text(), ImEnvelope.class);
+            // Sa-Token 会话续签（消息驱动 + 节流，见 ImSessionKeepAliveService）：
+            // active-timeout 的被动续签只认 getLoginId()/getTokenSession()，WS 握手用的
+            // getLoginIdByToken 不续签 —— 若这里不主动续签，纯聊天 30 分钟后 token 冻结、全站 401。
+            // 每条帧（含 PING 心跳）入口 O(1) 判一次；节流 + 失败静默，绝不影响消息主链路。
+            renewSessionQuietly(ctx);
             if ("PING".equals(request.getType())) {
                 writeEnvelope(ctx, envelopeFactory.pong(request));
                 return;
@@ -123,6 +132,24 @@ public class ImWebSocketFrameHandler extends SimpleChannelInboundHandler<TextWeb
                 request.getConversationId(),
                 request.getPayload()
         );
+    }
+
+    /**
+     * WS 连接存活期间的 Sa-Token 会话续签（节流在 {@link ImSessionKeepAliveService} 内）。
+     *
+     * <p>token 缺失（attr 未挂，如未认证连接）或续签抛错均静默跳过 —— 本方法绝不抛异常。</p>
+     */
+    private void renewSessionQuietly(ChannelHandlerContext ctx) {
+        try {
+            sessionKeepAliveService.renew(
+                    ctx.channel().attr(ImChannelAttributes.LAST_SA_TOKEN_RENEW_AT).get(),
+                    ctx.channel().attr(ImChannelAttributes.TOKEN).get()
+            );
+        } catch (Exception e) {
+            // 双保险：service 自身已 try-catch，这里兜底防御任何意外抛出影响消息主链路
+            log.debug("IM session renew failed unexpectedly: channel={}, error={}",
+                    ctx.channel().id().asShortText(), e.getMessage());
+        }
     }
 
     private void writeEnvelope(ChannelHandlerContext ctx, Object envelope) {

@@ -40,8 +40,10 @@ spring:
 # Sa-Token（所有服务共享，与 application-common.yml 保持一致）
 sa-token:
   token-name: satoken
-  is-write-cookie: false
-  token-storage-mode: redis
+  # is-write-cookie 已删（2026-10-10 ISSUE/52）：1.46.0 SaTokenConfig 无此字段，Boot 宽松绑定静默忽略；
+  # 框架在 is-read-cookie=true 下登录时会自动写一枚会话级 satoken cookie，与 CookieHelper 的 HttpOnly 权威 cookie 是双写事实，
+  # 权威以 CookieHelper 为准（详见 zxyz-user-service CookieHelper.setAuthCookies 与 application-common.yml 同名注释）。
+  # token-storage-mode / redis.prefix 已删（2026-10-10 ISSUE/52 P5）：1.46.0 无消费者（非默认行为、不生效），留着只会误导排障
   timeout: 43200
   active-timeout: 1800
   is-concurrent: true
@@ -50,8 +52,6 @@ sa-token:
   is-log: true
   is-read-cookie: true
   dynamic-active-timeout: true
-  redis:
-    prefix: ${SA_TOKEN_REDIS_PREFIX:satoken:}
 
 # 服务间调用地址 —— 2026-10-03 删除顶层 `services:` 块（审计 I-8）
 # -----------------------------------------------------------------------------

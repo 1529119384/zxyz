@@ -48,6 +48,24 @@ MapStruct 用于 DTO↔Entity 转换（`*Converter`/`*Assembler` 类）。
 - Sa-Token 会话存储在 Redis，所有服务共享配置
 - 权限系统支持系统级和团队级 RBAC，由 team-service 统一管理
 
+### IM WS 长连接的 Sa-Token 会话续签机制（zxyz-im-service）
+
+Sa-Token `active-timeout: 1800`（`zxyz-common/application-common.yml`，勿改）的被动续签只认「直接或间接调用
+`getLoginId()`/`getTokenSession()`」，IM WS 握手鉴权用的 `getLoginIdByToken(token)` **不在**续签清单，且握手后
+Netty 管道内没有任何 Sa-Token 调用——用户在 IM 页纯聊天 30 分钟（无 HTTP 请求）后 token 被冻结（场景 -3），
+此后全站 HTTP 请求 401、重连握手也失败。因此 im-service 在 WS 连接存活期间主动续签（消息驱动 + 节流）：
+
+- **触发点**：`ImWebSocketFrameHandler.channelRead0` 每条入站帧（业务消息帧 + PING 心跳帧）处理入口各判一次
+  （O(1)），调 `ImSessionKeepAliveService.renew(...)`。
+- **节流**：同一连接两次续签间隔 < 5 分钟（`MIN_RENEW_INTERVAL_MS`）直接跳过；30 分钟 active-timeout 下足够。
+  节流时间戳是挂在 Channel attribute（`im.lastSaTokenRenewAt`，`AtomicLong`）上的 per-channel 状态，
+  **不用全局 Map**——连接关闭随 Channel 一起释放，无泄漏。
+- **token 来源**：握手鉴权成功时把原始 token 值挂到 Channel attribute（`im.saToken`），续签直接取用。
+- **静默失败**：`renew` 全程 try-catch（帧处理器内另有兜底 catch），任何异常只打 debug 日志，绝不影响消息主链路。
+- **落点**：Sa-Token 调用经 `SaTokenRenewDelegate`（application 层端口）→ `SaTokenRenewDelegateImpl`
+  （netty 适配器）→ `StpUtil.stpLogic.updateLastActiveToNow(tokenValue)`（1.46.0 中 `StpUtil` 仅无参静态转发，
+  带参版本在 `StpLogic` 上）。
+
 ## 前端技术栈
 
 - Vue 3（Composition API + `<script setup>`）, Vite 8, Vue Router 5, Pinia 3

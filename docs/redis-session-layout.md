@@ -22,7 +22,7 @@ Redis 的逻辑库编号固定为 **0–15（共 16 个）**，这是服务端�
 - 撞墙的顺序（谁先没库用）：先耗尽 db10–db15 的业务库空位；会话库 db9 因「全站统一、不许跟随 `REDIS_DATABASE`」而不可挪。
 
 **撞墙后的演进方向（知道有尽头，但现在不用动）**：
-1. **键前缀命名空间**取代 `SELECT` 多库：所有键统一放 db0，用 `zxyz:team:*`、`zxyz:session:*` 这类前缀区分归属。这是 Redis 官方推荐的做法，且与现有键名兼容（Sa-Token 的键前缀本就是 `satoken:`，可经 `SA_TOKEN_REDIS_PREFIX` 调整；业务缓存前缀同理）。
+1. **键前缀命名空间**取代 `SELECT` 多库：所有键统一放 db0，用 `zxyz:team:*`、`zxyz:session:*` 这类前缀区分归属。这是 Redis 官方推荐的做法，且与现有键名兼容（Sa-Token 的键前缀本就是 `satoken:`；业务缓存前缀同理）。⚠️ 注意：`sa-token.redis.prefix` / `SA_TOKEN_REDIS_PREFIX` 曾被本项目当作可用的前缀配置，**实际是死键**，已于 2026-10-10 删除（`ISSUE/52-DAILY-AUDIT-2026-10-10.md` P5）——1.46.0 的 `SaTokenConfig` 无 `redisPrefix` 字段、`SaTokenDaoForRedisTemplate.wrapKey` 默认恒等返回（javap 实证）；届时前缀化需自定义 `SaTokenDao`（覆写 `wrapKey`）或定制 `StringRedisTemplate` 的 key serializer，而非配置项。
 2. **必须先改前缀、才能上集群**：Redis Cluster **不支持多库**（`SELECT` 不可用，只有 db0）——所以「上集群」和「继续分库」互斥，前缀化是上集群的**前置条件**，不是可选项。
 3. 迁移路径是「先加前缀（双写或灰度）→ 再切集群」，与本会话布局无耦合；但**凡是新写的 Redis 访问代码，键名应当已经带业务前缀**，不要新增裸键名（如 `user:42` 这种），减少将来前缀化的面积。
 

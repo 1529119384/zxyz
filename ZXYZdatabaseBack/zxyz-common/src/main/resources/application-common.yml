@@ -94,8 +94,10 @@ spring:
 # Sa-Token 配置（所有服务共享）
 sa-token:
   token-name: satoken
-  is-write-cookie: false
-  token-storage-mode: redis
+  # is-write-cookie 已删（2026-10-10 ISSUE/52）：1.46.0 SaTokenConfig 无此字段，Boot 宽松绑定静默忽略；
+  # 框架在 is-read-cookie=true 下登录时会自动写一枚会话级 satoken cookie，与 CookieHelper 的 HttpOnly 权威 cookie 是双写事实，
+  # 权威以 CookieHelper 为准（其写入晚于框架默认行为、属性完整，见 zxyz-user-service CookieHelper.setAuthCookies）。
+  # token-storage-mode / redis.prefix 已删（2026-10-10 ISSUE/52 P5）：1.46.0 无消费者（非默认行为、不生效），留着只会误导排障
   timeout: 43200
   active-timeout: 1800
   is-concurrent: true
@@ -104,8 +106,7 @@ sa-token:
   is-log: true
   is-read-cookie: true
   dynamic-active-timeout: true
-  redis:
-    prefix: ${SA_TOKEN_REDIS_PREFIX:satoken:}
+  # token-storage-mode / redis.prefix 已删（2026-10-10 ISSUE/52 P5）：1.46.0 无消费者（非默认行为、不生效），留着只会误导排障
   # ---------------------------------------------------------------------------
   # Sa-Token 独立 Redis 数据源（alone-redis）：会话统一落 db9，与各服务业务库隔离。
   #

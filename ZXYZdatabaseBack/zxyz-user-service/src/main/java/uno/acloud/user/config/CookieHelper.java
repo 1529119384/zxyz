@@ -20,6 +20,16 @@ public class CookieHelper {
 
     /**
      * 设置认证 cookies。
+     *
+     * <p><b>双写事实与权威归属（2026-10-10 ISSUE/52）：</b>
+     * Sa-Token 框架在 {@code sa-token.is-read-cookie=true}（默认开启）下，
+     * {@code StpUtil.login} 时会自动写一枚<b>非 HttpOnly 的会话级</b> satoken cookie；
+     * 本方法是<b>权威写入</b>（HttpOnly + SameSite/Secure/Domain/MaxAge 属性完整），
+     * 依赖其在本方法返回后覆盖框架默认值（调用点 UserController.login 在
+     * {@code authService.login()} —— 即 StpUtil.login —— 之后才调用本方法）。
+     * <b>若调整调用顺序，须重新核对覆盖关系</b>，否则客户端将拿到框架的短属性 cookie，
+     * HttpOnly 防护静默失效。</p>
+     *
      * @param response HTTP 响应
      * @param token    登录 token
      * @param maxAge   Cookie 最大存活时间（秒）

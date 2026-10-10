@@ -19,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Slf4j
 @Component
@@ -49,6 +50,9 @@ public class ImWebSocketAuthHandler extends SimpleChannelInboundHandler<FullHttp
                 WsTicketService.TicketInfo info = ticketInfo.get();
                 ctx.channel().attr(ImChannelAttributes.USER_ID).set(info.userId());
                 ctx.channel().attr(ImChannelAttributes.AUTHORIZATION).set(BEARER_PROTOCOL + " " + info.saToken());
+                ctx.channel().attr(ImChannelAttributes.TOKEN).set(info.saToken());
+                // 会话续签节流时间戳：握手时初始化（与 Channel 同生命周期，关闭即随 Channel 释放）
+                ctx.channel().attr(ImChannelAttributes.LAST_SA_TOKEN_RENEW_AT).set(new AtomicLong(0L));
                 ctx.fireChannelRead(request.retain());
                 return;
             }
@@ -62,6 +66,8 @@ public class ImWebSocketAuthHandler extends SimpleChannelInboundHandler<FullHttp
             Long userId = tokenAuthService.resolveUserIdByToken(token);
             ctx.channel().attr(ImChannelAttributes.USER_ID).set(userId);
             ctx.channel().attr(ImChannelAttributes.AUTHORIZATION).set(BEARER_PROTOCOL + " " + token);
+            ctx.channel().attr(ImChannelAttributes.TOKEN).set(token);
+            ctx.channel().attr(ImChannelAttributes.LAST_SA_TOKEN_RENEW_AT).set(new AtomicLong(0L));
             ctx.fireChannelRead(request.retain());
         } catch (Exception e) {
             log.warn("IM WebSocket handshake authentication failed: {}", e.getMessage());

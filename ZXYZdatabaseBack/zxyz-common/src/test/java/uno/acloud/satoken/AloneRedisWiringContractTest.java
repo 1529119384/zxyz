@@ -55,8 +55,8 @@ import java.util.regex.Pattern;
  *
  * <h2>YAML 怎么解析的（为什么可靠）</h2>
  * 不引第三方 YAML 库，改为<b>自带的缩进感知扫描</b>：按缩进维护一个 section 栈，把每个标量解析成
- * <b>点分路径</b>（如 {@code sa-token.alone-redis.database}）。因此 {@code sa-token.redis.prefix} 与
- * {@code sa-token.alone-redis.database} <b>不会互相串味</b> —— 这是「点分路径」而非「全文 contains」
+ * <b>点分路径</b>（如 {@code sa-token.alone-redis.database}）。因此 {@code spring.data.redis.host} 与
+ * {@code sa-token.alone-redis.host} <b>不会互相串味</b> —— 这是「点分路径」而非「全文 contains」
  * 的关键区别（{@code G3} 用例专门证明这一点，含「被注释掉的键不得进入结果」）。
  *
  * <p><b>为什么不用 snakeyaml（已实测，非猜测）</b>：{@code org.yaml:snakeyaml:2.4} 确实<b>在</b>
@@ -563,8 +563,10 @@ class AloneRedisWiringContractTest {
         Map<String, String> flat = flattenYaml(readLines(configFile));
 
         // 反空扫：解析器必须至少能读出已知存在的键，否则说明 YAML 扫描失效
-        if (!flat.containsKey("sa-token.token-storage-mode") && !flat.containsKey("sa-token.redis.prefix")) {
-            throw new AssertionError("YAML 解析结果里连 sa-token.token-storage-mode / sa-token.redis.prefix "
+        // （哨兵键曾用 sa-token.token-storage-mode / sa-token.redis.prefix，2026-10-10 ISSUE/52
+        //   已确认两者为死键并删除 —— 1.46.0 SaTokenConfig 无对应字段，换成下列真实存在的键。）
+        if (!flat.containsKey("sa-token.token-name") && !flat.containsKey("spring.data.redis.host")) {
+            throw new AssertionError("YAML 解析结果里连 sa-token.token-name / spring.data.redis.host "
                     + "都读不到 ⇒ 缩进扫描逻辑失效。已解析到 " + flat.size() + " 个键，样例: "
                     + flat.keySet().stream().limit(10).toList()
                     + "。宁可响亮失败，也不要让门禁空扫。");
@@ -1052,11 +1054,13 @@ class AloneRedisWiringContractTest {
 
     @Test
     void G3_门禁自检_YAML解析必须是点分路径而非全文包含() {
+        // 样本曾用 sa-token.token-storage-mode / sa-token.redis.prefix，2026-10-10 ISSUE/52
+        // 删除死键后换成仍然真实存在的键位（占位符含冒号这一考点不变）。
         List<String> sample = List.of(
                 "sa-token:",
-                "  token-storage-mode: redis",
-                "  redis:",
-                "    prefix: ${SA_TOKEN_REDIS_PREFIX:satoken:}",
+                "  token-name: satoken",
+                "  alone-redis:",
+                "    host: ${REDIS_HOST:localhost}",
                 "spring:",
                 "  data:",
                 "    redis:",
@@ -1069,10 +1073,10 @@ class AloneRedisWiringContractTest {
 
         Map<String, String> flat = flattenYaml(sample);
 
-        assertEqualsValue("redis", flat.get("sa-token.token-storage-mode"),
-                "sa-token.token-storage-mode 应解析为 redis");
-        assertEqualsValue("${SA_TOKEN_REDIS_PREFIX:satoken:}", flat.get("sa-token.redis.prefix"),
-                "sa-token.redis.prefix 应解析出完整占位符（值内含冒号，不能按第一个冒号截断）");
+        assertEqualsValue("satoken", flat.get("sa-token.token-name"),
+                "sa-token.token-name 应解析为 satoken");
+        assertEqualsValue("${REDIS_HOST:localhost}", flat.get("sa-token.alone-redis.host"),
+                "sa-token.alone-redis.host 应解析出完整占位符（值内含冒号，不能按第一个冒号截断）");
         assertEqualsValue("${REDIS_HOST:localhost}", flat.get("spring.data.redis.host"),
                 "spring.data.redis.host 应解析为占位符");
         assertEqualsValue("${REDIS_PORT:6379}", flat.get("spring.data.redis.port"),
@@ -1250,7 +1254,7 @@ class AloneRedisWiringContractTest {
      *
      * <p>只覆盖本仓配置文件用到的形态：映射 + 2 空格缩进 + 标量值（含 {@code ${...}} 占位符与值内冒号）。
      * 列表项（{@code - xxx}）与注释行被跳过。section 栈保证路径正确 ——
-     * 于是 {@code sa-token.redis.prefix} 不会与 {@code sa-token.alone-redis.*} 串味。</p>
+     * 于是 {@code spring.data.redis.host} 不会与 {@code sa-token.alone-redis.host} 串味。</p>
      */
     static Map<String, String> flattenYaml(List<String> lines) {
         Map<String, String> flat = new LinkedHashMap<>();

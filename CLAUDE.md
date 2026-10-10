@@ -79,7 +79,7 @@ cd ZXYZdatabaseFront && git diff HEAD --stat && cd ..
 
 ```bash
 mvn clean -DskipTests compile                   # baseline compile check
-mvn test                                         # all tests（167 个测试类 / 169 个测试源文件，见 docs/testing.md）
+mvn test                                         # all tests（171 个测试类 / 173 个测试源文件，见 docs/testing.md）
 mvn test -pl zxyz-team-service                   # single module tests
 mvn test -pl zxyz-file-service -Dtest=FileUploadServiceTest  # single test class
 mvn clean package -DskipTests                    # package for Docker build

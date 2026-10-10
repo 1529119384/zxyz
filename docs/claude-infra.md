@@ -144,6 +144,13 @@
 >
 > ⚠️ **声明值 ≠ 运行值（2026-10-08/09 双日实测）**：上表「改后」是 compose **声明值**。生产 `HostConfig.Memory` 实测：mysql/nacos 仍 1024 MiB、rabbitmq 仍 512 MiB（三容器创建于 2026-09-14、未重建）⇒ **运行值合计 7424 MiB = 93.5%、余量仅 517 MiB**。按旧的「1.19 GiB 余量」做容量决策会吃穿物理内存（rabbitmq 已于 2026-10-08 真实被 OOM 杀过一次）。**先重建 infra 三容器使声明值生效，再做任何扩容决策**。
 
+> 【2026-10-10 `ISSUE/51-DAILY-AUDIT-2026-10-10.md` P1 内存防线追加（声明值口径更新）】
+> - `redis` 256 MiB → **896 MiB**（reservations 128M → 448M 同步上调；db9 会话防线三件套：896M limit + `maxmemory 512mb` + `noeviction`，详见 docker-compose.yml redis 服务注释）；
+> - `rabbitmq` limit 384 MiB **不动**，改加内存水位线（挂载 `conf/rabbitmq.conf`：`vm_memory_high_watermark.relative = 0.6`——env 变量方式在 3.13 已废弃且带空格会打崩 erl 启动）；
+> - ⇒ **声明值累加 6912 → 7552 MiB = 7.375 GiB**：7552 / 7941 = **95.1%**，余量 **389 MiB（4.9%）**——低于 10-03 的 13.0%，属**有意取舍**：用宿主余量换「Redis OOM = 全站会话丢失」失败面的消失（noeviction + 896M limit 后 Redis 只会拒写、不会被 OOM 杀）。
+> - ⚠️ **maxmemory / watermark 都必须容器重建才生效**（前者在 redis 启动命令参数里、后者是挂载文件），而 CI deploy 固定 `--no-deps`、从不重建 infra 容器——生产是否落地以 `redis-cli config get maxmemory` + `docker inspect HostConfig.Memory` + rabbitmq 水位实测为准（防线是否落地 + 实测命令见 `ISSUE/51-DAILY-AUDIT-2026-10-10.md` P1；2026-10-10 实测结论见 `ISSUE/52-DAILY-AUDIT-2026-10-10.md`）。
+
+
 > ⚠️ **口径提醒**：448M 那组是 **10 个**（project/im/email/share/file/team/audit/admin/user + gateway），
 > 不是 11 个 —— `frontend-nginx` 是 128M，**不要**并入 448 那组。本表数字由
 > `scripts/` 抽取脚本从 `docker-compose.yml` 实测核算，勿手算。
