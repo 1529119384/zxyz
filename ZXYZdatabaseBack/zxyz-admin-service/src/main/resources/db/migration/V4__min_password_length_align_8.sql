@@ -8,7 +8,9 @@
 -- （zxyz-common PasswordPolicy.java:29，user-service 注册/改密的 @Size(min=8) 同源）对齐。
 --
 -- 为什么值取 8 而不是 6：动态侧（Nacos）一直是运行时的实际生效值 —— EnterpriseTeamService
--- 的 @Value("${app.team.min-password-length:8}") 读的是 Nacos 配置；种子 6 从未在生产生效。
+-- 的 @Value 注解读的是 Nacos 配置（键 app.team.min-password-length，冒号默认 8）；种子 6 从未在生产生效。
+-- ⚠️ 上面刻意不写出 @Value 注解的原始形态（含美元花括号占位符）：Flyway 占位符替换会扫描注释文本，
+--    未提供的占位符直接让迁移硬失败（2026-10-11 CI 首跑实证：No value provided for placeholder）。
 -- 把种子提到 8 是「让声明的事实与运行的事实一致」，不是行为变更。
 --
 -- ⚠️ 历史包袱（V2 文件头有 CHECKSUM MISMATCH NOTICE）：本环境若曾应用旧版 V2，
