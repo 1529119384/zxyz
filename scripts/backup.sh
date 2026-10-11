@@ -261,7 +261,13 @@ else
 fi
 if [ "$MYSQL_ONLY" = false ]; then
 echo "Redis 备份: $BACKUP_DIR/redis_$DATE.rdb ($REDIS_SIZE bytes)"
-echo "RabbitMQ 拓扑: $BACKUP_DIR/rabbitmq_$DATE.json"
+# 拓扑 echo 移进存在性分支（2026-10-11 53 号 P2-1 残留收口）：导出失败时不得打印假行——
+# 日志撒谎会让「json 缺失」被汇总行掩盖（下方的 ARTIFACTS 追加本就带 -f 守卫，两处口径对齐）
+if [ -f "$BACKUP_DIR/rabbitmq_$DATE.json" ]; then
+  echo "RabbitMQ 拓扑: $BACKUP_DIR/rabbitmq_$DATE.json ($(wc -c < "$BACKUP_DIR/rabbitmq_$DATE.json") bytes)"
+else
+  echo "RabbitMQ 拓扑: 未生成（见上方 WARN）"
+fi
 fi
 
 # 组装本次产物列表（--mysql-only 时仅 MySQL，避免异地推送扫到不存在的文件）

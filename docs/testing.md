@@ -1317,7 +1317,7 @@ Vitest 5 已**移除** `coverage.all` 选项（`CoverageOptions` 里已无 `all`
 
 | 模块 | 文件数 | 其中 `*Test.java` |
 |---|---|---|
-| `zxyz-common` | 33（含 1 抽象基类 `AbstractIntegrationTest`；含 alone-redis 接线契约门禁 `AloneRedisWiringContractTest`；含 Boot 4 迁移新增的 5 个 Jasypt 加解密测试；含 `SaTokenConfigBindingTest`） | 32 |
+| `zxyz-common` | 33（含 1 抽象基类 `AbstractIntegrationTest`；含 alone-redis 接线契约门禁 `AloneRedisWiringContractTest`；含 Boot 4 迁移新增的 5 个 Jasypt 加解密测试；含 `SaTokenConfigBindingTest`） | 33 |
 | `zxyz-admin-service` | 7 | 7 |
 | `zxyz-audit-service` | 4 | 4 |
 | `zxyz-email-service` | 12 | 11 |

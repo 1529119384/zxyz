@@ -40,6 +40,24 @@ on:
       # 「零检查变更 = 盲区」形态。它不参与镜像构建，只触发 lint-config
       # （严格 YAML 校验），代价一次轻量 run。
       - '.trivyignore.yaml'
+      # ⚠️ 2026-10-11 P2-4 白名单补三项（消除「只改这些文件 = 一条检查都不跑」的
+      #    零检查变更盲区）。三项通道归属：
+      #    · .gitattributes          → 顶层 paths + docker-config filter（全量重建+部署）
+      #    · docker-compose.tls.yml  → 顶层 paths + docker-config filter（全量重建+部署）
+      #    · docker-compose.dev.yml  → 仅顶层 paths，刻意**不**进任何 dorny 部署 filter
+      #      （见下方 detect-changes → docker-config 注释里的刻意区分说明）。
+      # .gitattributes：行尾归一（E-1）是**声明式全局规则**，影响所有源码的检出内容与
+      #    Docker 构建产物（镜像内 .sh 以 LF 执行）⇒ 改它按最接近的既有语义
+      #    「全量重建 + 重新部署」处理 ⇒ 进下方 docker-config（理由详见该 filter 处注释）。
+      # docker-compose.tls.yml：TLS_ENABLED=true 时的部署覆盖层 —— deploy-on-server.sh
+      #    只 cp 同步 docker-compose.yml 与它（并把它纳入 --force-recreate 的 md5 判据），
+      #    改动若不重新部署 = TLS 配置永远落不了地 ⇒ 进 docker-config。
+      # docker-compose.dev.yml：仅本地 dev-up.sh / dev-up.ps1 使用，不在服务器部署链路上
+      #    ⇒ 只进白名单让 lint-config（严格 YAML）与 secret-scan 跑起来，消除盲区；
+      #    若误入 docker-config 会让「纯本地工具配置变更」白付全量 11 服务重建的代价。
+      - '.gitattributes'
+      - 'docker-compose.tls.yml'
+      - 'docker-compose.dev.yml'
       # CLAUDE.md 与 docs/**：文档门禁（check-docs-consistency.py，ISSUE/50 §四接线）
       # 的全部声明源都在这两个路径下 —— CLAUDE.md（测试规模声明 + 路径引用）与
       # docs/**（testing.md 分项表、redis-session-layout.md 库号、路径引用有效性等）。
@@ -78,6 +96,13 @@ on:
       - 'docker-compose.observability.yml'
       # ⚠️ 同上对齐：trivyignore 只进 lint、不进构建。见 push.paths 处的说明。
       - '.trivyignore.yaml'
+      # ⚠️ 2026-10-11 P2-4 与 push.paths 对齐（漏一处 ⇒ 该类 PR 一条 CI 都不跑）：
+      #    三项通道归属见 push.paths 处注释 —— .gitattributes 与 docker-compose.tls.yml
+      #    进 docker-config（全量重建+部署语义），docker-compose.dev.yml 仅进白名单
+      #    （本地工具配置，不进任何部署 filter）。
+      - '.gitattributes'
+      - 'docker-compose.tls.yml'
+      - 'docker-compose.dev.yml'
       # ⚠️ 与 push.paths 对齐（漏一处 ⇒ 该类 PR 一条 CI 都不跑）：CLAUDE.md / docs/**
       # 只进 lint-config，不进构建 —— 文档门禁的全部声明源都在这两个路径下（ISSUE/51 P1-3）。
       - 'CLAUDE.md'
@@ -293,6 +318,24 @@ jobs:
             docker-config:
               - 'docker-compose.yml'
               - '.env.example'
+              # 2026-10-11 P2-4 补两项：
+              # · docker-compose.tls.yml：TLS_ENABLED=true 时的**部署载体**（deploy-on-server.sh
+              #   只 cp 同步 docker-compose.yml 与它，且把它纳入 --force-recreate 的 md5 判据）
+              #   ⇒ 改动即应重新部署使 TLS 配置落地，与 docker-compose.yml 同通道。
+              # · .gitattributes：行尾归一是声明式**全局**规则，影响所有源码检出内容与
+              #   Docker 构建产物（镜像内 .sh 以 LF 执行）⇒ 语义上最接近「全量重建+重新部署」。
+              #   选择并入 docker-config（而非新建 repo-config filter 并入 any-change）的理由：
+              #   any-change 的消费者（build-and-push 门禁 + any-change 臂的 deploy）期望的
+              #   是「有服务镜像变更」，而 .gitattributes 变更没有任何**服务目录**变更，
+              #   走 any-change 需要改 backend-any/any 聚合步与其注释语义；docker-config 的
+              #   消费链（should-build 第②条、should-scan、deploy UPDATE_SVC 全量、
+              #   any-change 聚合已含 docker-config）现成且语义正是「全量重建+部署」，改动面最小。
+              # · docker-compose.dev.yml **刻意不进本 filter**：仅本地 dev-up.sh/dev-up.ps1
+              #   使用，不在服务器部署链路上；它只进顶层 paths（lint-config + secret-scan 会跑），
+              #   若误入本 filter 会让纯本地工具配置变更白付全量 11 服务重建+部署的代价。
+              #   「进白名单消除零检查盲区」与「进部署 filter 触发重建」是两个独立决策。
+              - 'docker-compose.tls.yml'
+              - '.gitattributes'
             frontend:
               - 'ZXYZdatabaseFront/**'
               # ⚠ deploy/nginx/** 必须并进来：ZXYZdatabaseFront/Dockerfile **直接 COPY**

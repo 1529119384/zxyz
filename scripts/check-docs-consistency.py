@@ -204,11 +204,21 @@ def extract_breakdown_table(lines: list[str], rel: str) -> dict | None:
         m = re.search(r"总和（文件数）.*?=\s*\*{0,2}(\d+)", line)
         if m:
             total_files = (int(m.group(1)), idx)
-        m = re.search(r"总和（`?\*?Test\.java`?\s*）(?:.*)?:\s*(\d+)", line)
+        # [：:] 兼容全角/半角冒号：testing.md:1334 实际用全角「：」，此前写死半角
+        # `:` 导致该行解析不到 ⇒ total_classes=None ⇒ 「分项加总 vs 声明总和」「加总表
+        # vs 实测」两条测试类断言被静默跳过（P3-6，2026-10-11）。
+        m = re.search(r"总和（`?\*?Test\.java`?\s*）(?:.*)?[：:]\s*(\d+)", line)
         if m:
             total_classes = (int(m.group(1)), idx)
     if not rows and total_files is None:
         return None
+    # 反静默（P3-6，2026-10-11）：分项表存在却一条总和都没解析到 ⇒ 断言全被跳过 =
+    # 门禁假绿（同 AloneRedis「服务起来了 ≠ 会话已迁 db9」的反静默思想）。
+    # 宁可响亮失败，也不许「表格在、总和丢」悄悄溜过去。
+    if rows and total_files is None and total_classes is None:
+        raise ValueError(
+            f"{rel}: 检测到分项表（{len(rows)} 行）但两条总和行都没解析到 —— "
+            "总和行格式变了（如冒号/写法），分项断言已整体失效，请修脚本或文档格式")
     return {"file": rel, "rows": rows, "total_files": total_files, "total_classes": total_classes}
 
 

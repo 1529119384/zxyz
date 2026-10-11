@@ -28,6 +28,9 @@ ZXYZdatabaseFront/**
 deploy/**
 docker-compose.yml
 docker-compose.observability.yml
+docker-compose.tls.yml
+docker-compose.dev.yml
+.gitattributes
 .trivyignore.yaml
 .env.example
 .gitleaks.toml
@@ -38,6 +41,8 @@ sql/**
 ```
 
 不在此白名单内的文件变更（如 `CLAUDE.md`、`docs/**`）**不触发** workflow。`dorny/paths-filter` 进一步按服务目录判断哪些镜像需要重建。
+
+> 2026-10-11 P2-4 白名单补三项的通道归属：`.gitattributes`（行尾归一影响全部构建产物）与 `docker-compose.tls.yml`（TLS 部署载体，deploy-on-server.sh 会同步它）→ 顶层 paths + `docker-config`（全量 11 服务重建+部署）；`docker-compose.dev.yml` 仅本地 dev-up 用 → **只进顶层 paths**（lint-config/secret-scan 会跑），刻意不进任何 dorny 部署 filter。
 
 > ⚠️ `scripts/**`（含 `sql/**`）变更走 **deploy-only** 通道（2026-10-11 P1-1 事故收口：「scripts-only 永不部署」，证据 run 38079047730）：它们不进 `any-change`、**不重建任何镜像**，但会触发 `lint-config` 与 **deploy 作业本身**（deploy 的 if 含 scripts-config 分支）。服务器侧只做克隆对准 + `scripts/*.sh` 白名单同步，UPDATE_SVC 为空 ⇒ 不拉镜像、不重启容器，compose 引用的 `tag=dev` 仍指向上一次构建的镜像。改脚本必须走根仓库提交（同「双提交」纪律），否则 CI 根本看不到。
 
@@ -195,7 +200,7 @@ WHEN 添加 setting 子路由, DO 确保 `route.name` 在 Setting 组件 watcher
 ## Infrastructure & CI/CD
 
 - **MySQL 8.4**: 10 个独立库（含 zxyz_config），表结构**仅由 Flyway 管理**（勿维护 `sql/schema_*.sql`）；DB init: `sql/00-init-zxyz.sh`
-- **Redis**: localhost:6379；Sa-Token 会话存储**代码已切到独立库 db9**（`sa-token.alone-redis`，配置在 `zxyz-common/application-common.yml`，9 个服务接入；audit-service 刻意不引；`701af68` 合并）——✅ **生产已生效（2026-10-10 实测，51/52 号台账）**：db9 含 13 个 `satoken:login:*` 活跃键、db0–8 无 satoken 键。插件对配置异常静默吞的不变量不变：**凡 db9 相关变更，部署后仍须 `redis-cli -n 9 --scan --pattern 'satoken*'` 见非空 key 才算生效**（「服务起来了」≠「会话已迁 db9」）；业务库编号仍按 `REDIS_DATABASE` 隔离（gateway 0 / project 1 / im 2 / email 3 / user 4 / share 5 / file 6 / team 7 / audit 8，admin 不消费）；**Redisson 锁**在业务库；**Nacos**: localhost:8848 注册中心 + Config（`spring.config.import:nacos:`，10 服务接入，模板在 `nacos-config/`）；**RabbitMQ**: localhost:5672（Topic `zxyz.topic`）
+- **Redis**: localhost:6379；Sa-Token 会话存储**代码已切到独立库 db9**（`sa-token.alone-redis`，配置在 `zxyz-common/application-common.yml`，9 个服务接入；audit-service 刻意不引；`701af68` 合并）——✅ **生产已生效（2026-10-10 实测，51/52 号台账）**：db9 的 `satoken:login:*` 键非空（键数随会话自然波动，如 3–13 个，**勿在文档钉死具体数字**——判据是「非空」不是「等于 N」）、db0–8 无 satoken 键。插件对配置异常静默吞的不变量不变：**凡 db9 相关变更，部署后仍须 `redis-cli -n 9 --scan --pattern 'satoken*'` 见非空 key 才算生效**（「服务起来了」≠「会话已迁 db9」）；业务库编号仍按 `REDIS_DATABASE` 隔离（gateway 0 / project 1 / im 2 / email 3 / user 4 / share 5 / file 6 / team 7 / audit 8，admin 不消费）；**Redisson 锁**在业务库；**Nacos**: localhost:8848 注册中心 + Config（`spring.config.import:nacos:`，10 服务接入，模板在 `nacos-config/`）；**RabbitMQ**: localhost:5672（Topic `zxyz.topic`）
 - **Auth**: Sa-Token 1.46.0（UUID token，Redis session，HttpOnly cookie）；API Docs: springdoc 3.0.3（knife4j 已于 2026-10-09 移除——停更且与 Boot 4/springdoc 3.x 互斥，用户拍板；dev 文档页改用 springdoc 自带 swagger-ui）
 - **Docker**: `docker-compose.yml` 编排 17 个服务（基础设施 6：mysql/nacos/nacos-log-cleanup/flyway/redis/rabbitmq + 10 后端 + frontend-nginx 唯一对外入口），统一 `Dockerfile` with `MODULE` build arg，镜像推 GHCR；可观测栈（loki/prometheus/grafana 等）**已迁出**至 `docker-compose.observability.yml`（默认不启动，需显式 `--profile observability`）
 - **Nginx CSP**: `deploy/nginx/default.conf` 用 `envsubst` 模板化，`OSS_PUBLIC_BASE_URL` 启动时注入，勿硬编码 OSS 域名

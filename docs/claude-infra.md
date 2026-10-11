@@ -67,6 +67,7 @@
 - **deploy-only 臂**：`scripts-config`（`scripts/**` 或 `sql/**` 变更）且 `any-change` 非 true ⇒ build/scan 整体 skipped 属**预期**，deploy 照跑：只做克隆对准 + `scripts/*.sh` 白名单同步 + 校验/备份，`UPDATE_SVC` 为空 ⇒ 不拉镜像、不重启容器；compose 引用的 `tag=dev` 仍指向上一次构建的镜像（无新镜像，部署 = 同步脚本 + 无容器变更）。`secret-scan` 无条件运行且必须 success，是两臂共同的门禁。
 - 事故引用：scripts-only 提交 9e7a62a3（rabbitmq 拓扑修复）的 run 38079047730 build/scan/deploy 全 skipped 但 run 结论 success，脚本修复从未落服务器；此前 2026-10-07 ad21124c（修备份断档）同类，靠人工 chmod 才生效。
 - 排障防呆：deploy job 第一步 `Deploy path forensics` 打印本次触发的变更集结论（BUILD_DEPLOY / DEPLOY_ONLY / UNKNOWN），排障先看它。
+- **2026-10-11 P2-4 白名单补三项**：`.gitattributes`（行尾归一影响全部源码检出与 Docker 构建产物）与 `docker-compose.tls.yml`（TLS_ENABLED=true 时的部署覆盖层，deploy-on-server.sh 会 cp 同步它并纳入 --force-recreate 的 md5 判据）并入 `docker-config` ⇒ 改动即触发全量 11 服务重建+部署；`docker-compose.dev.yml` 仅本地 dev-up 使用 ⇒ 只进顶层 paths（lint-config/secret-scan 会跑），刻意不进任何部署 filter——「进白名单消除零检查盲区」与「进部署 filter 触发重建」是两个独立决策。
 
 ## 部署脚本与参数
 
