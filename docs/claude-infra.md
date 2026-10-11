@@ -8,7 +8,7 @@
 
 **基础设施层（6）**：
 - `zxyz-mysql` — MySQL 8.4.0, utf8mb4, **896M 内存限制**, 数据持久化到 `${DATA_DIR}/mysql`
-- `zxyz-nacos` — Nacos v3.2.1 standalone 模式, 使用 MySQL 后端, **768M 限制**
+- `zxyz-nacos` — Nacos v3.2.1 standalone 模式, 使用 MySQL 后端, **1024M 限制**（2026-10-11 由 768M 上调，OOM 实证见下文「内存算术」节）
 - `nacos-log-cleanup` — sidecar, 定期清理 Nacos 日志（保留 7 天，单文件限 100MB）
 - `zxyz-redis` — Redis 8.10 Alpine, AOF 持久化, 256M 限制
 - `zxyz-rabbitmq` — RabbitMQ 3.13 + management 插件, **384M 限制**
@@ -62,6 +62,12 @@
 - PR 仅执行 quality-check，不部署
 - 服务器 `.env` 在 `/www/zxyz/.env`，独立于仓库维护，CI/CD 不同步
 
+**部署触发面（2026-10-11 P1-1 事故收口：「scripts-only 永不部署」）**：deploy 的 if 是「双臂」语义——
+- **正常臂**：`any-change`（后端/前端/compose+.env 任一变更）⇒ build-and-push 与 security-scan 必须 success 才部署（fail-closed 不变：质量检查失败 ⇒ build skipped ⇒ 阻断）；
+- **deploy-only 臂**：`scripts-config`（`scripts/**` 或 `sql/**` 变更）且 `any-change` 非 true ⇒ build/scan 整体 skipped 属**预期**，deploy 照跑：只做克隆对准 + `scripts/*.sh` 白名单同步 + 校验/备份，`UPDATE_SVC` 为空 ⇒ 不拉镜像、不重启容器；compose 引用的 `tag=dev` 仍指向上一次构建的镜像（无新镜像，部署 = 同步脚本 + 无容器变更）。`secret-scan` 无条件运行且必须 success，是两臂共同的门禁。
+- 事故引用：scripts-only 提交 9e7a62a3（rabbitmq 拓扑修复）的 run 38079047730 build/scan/deploy 全 skipped 但 run 结论 success，脚本修复从未落服务器；此前 2026-10-07 ad21124c（修备份断档）同类，靠人工 chmod 才生效。
+- 排障防呆：deploy job 第一步 `Deploy path forensics` 打印本次触发的变更集结论（BUILD_DEPLOY / DEPLOY_ONLY / UNKNOWN），排障先看它。
+
 ## 部署脚本与参数
 
 **快速部署（开发用）**: CI/CD 构建完成后，SSH 到服务器运行 `scripts/deploy-fast.sh <服务名>` 拉取+重启，跳过完整健康检查等待。参数：
@@ -106,6 +112,8 @@
 > CI 侧配合传 `GITHUB_SHA`，见 `ci-cd.yml` deploy job）。
 
 **同步规则**：CI 部署时引导层先把 `/www/zxyz-repo` 克隆**对准本次部署提交**（`git fetch origin <sha> && git checkout <sha>`，与并发 nacos-import 收敛到同一提交），随后 `deploy-on-server.sh` 做**白名单同步**——仅 `scripts/*.sh` 逐文件 `cp` + `chmod +x` + 逐文件 echo 留痕，任一拷贝失败即中止。`.env`/`logs/`/`data/`/`backups/`/`DEPLOYED_REVISION` 等运行时资产**绝不触碰**；`deploy/` 下模板不同步（`render-alertmanager.sh` 从克隆侧读取，见 DEPLOYMENT.md §11.9）。
+
+> 2026-10-11 P1-3 修复（引导层幂等对准）：上述对准守卫之前曾残留一次无条件 `git pull --ff-only`，而上一轮部署的 SHA 守卫会把克隆 checkout 成 detached HEAD ⇒ 下一轮部署必炸 "You are not currently on a branch"（9e7a62a3 因 P1-1 未跑到 deploy 而被掩盖）。修复后引导层与 deploy-on-server.sh 均已**消灭无条件 pull**：CI 路径 `fetch <sha> + checkout --force`，手工路径 `fetch origin dev + checkout -B dev origin/dev`（强制重附着）；漂移守卫前移到任何 git 引用操作之前。已用临时仓库双轮仿真回归（detached / 停在旧分支 / 脏工作区 / 不可达 SHA 四态 + 幂等 no-op，7/7 PASS）。
 
 **三层防线**（全部 fail-closed）：
 
@@ -169,6 +177,12 @@
 > - ⇒ **声明值累加 6912 → 7552 MiB = 7.375 GiB**：7552 / 7941 = **95.1%**，余量 **389 MiB（4.9%）**——低于 10-03 的 13.0%，属**有意取舍**：用宿主余量换「Redis OOM = 全站会话丢失」失败面的消失（noeviction + 896M limit 后 Redis 只会拒写、不会被 OOM 杀）。
 > - ⚠️ **maxmemory / watermark 都必须容器重建才生效**（前者在 redis 启动命令参数里、后者是挂载文件），而 CI deploy 固定 `--no-deps`、从不重建 infra 容器——生产是否落地以 `redis-cli config get maxmemory` + `docker inspect HostConfig.Memory` + rabbitmq 水位实测为准（防线是否落地 + 实测命令见 `ISSUE/51-DAILY-AUDIT-2026-10-10.md` P1；2026-10-10 实测结论见 `ISSUE/52-DAILY-AUDIT-2026-10-10.md`）。
 
+> 【2026-10-11 `ISSUE/51-DAILY-AUDIT-2026-10-10.md` P1 追加二（声明值口径更新；历史读数：10-03 为 6912/87.0%/1029，10-10 为 7552/95.1%/389，以下为当前值）】
+> - `nacos` 768 MiB → **1024 MiB**（reservations 192M → 256M 同步上调）。OOM 实证：05:14→05:44 被连杀 8 次（约每 4 分钟一次），容器 rss 778 MiB 撞 768M limit；此前靠服务器本地 `docker-compose.override.yml`（1280M）缓解——该文件不在仓库、不被 CI 同步，换机即丢；本仓落 **1024M 兜底**，服务器 override 仍保留作额外冗余（1280 > 1024 不冲突）。
+> - `rabbitmq` 水位线订正为**绝对值** `vm_memory_high_watermark.absolute = 230MiB`（= limit 384M × 0.6 取整）：生产实测 relative 的分母是**宿主内存 7941 MiB** 而非容器 limit（0.6 → 触发线 ≈ 4765 MiB，容器在 384M 处先被 cgroup OOM 杀，10-10 注释里「3.12+ 会探测 cgroup limit」被否证；官方文档 3.13 同向：容器环境「highly recommended」用 absolute。语法依据与计算式见 `conf/rabbitmq.conf` 头注释）。
+> - 同批：TZ 覆盖纪律入 compose（17 服务全带 `TZ: Asia/Shanghai`；2026-10-11 事故：13 处被误删至仅剩 2 处，重建容器日志转 UTC、清理窗口偏移 8h）。
+> - ⇒ **声明值累加 7552 → 7808 MiB = 7.625 GiB**（nacos +256）：7808 / 7941 = **98.3%**，余量 **133 MiB**——显著低于 B-1 时的 13.0%，属「nacos 稳定性 > 宿主余量」的有意取舍；根治靠服务器内存升级（见 docs/known-limitations.md §3）。
+
 
 > ⚠️ **口径提醒**：448M 那组是 **10 个**（project/im/email/share/file/team/audit/admin/user + gateway），
 > 不是 11 个 —— `frontend-nginx` 是 128M，**不要**并入 448 那组。本表数字由
@@ -215,12 +229,12 @@ docker compose ps
 # ① 容器健康：应输出 14 个容器名、末尾 Healthy: 14 / 14、退出码 0
 bash scripts/health-check.sh; echo "EXIT=$?"
 
-# ② 复核新 limits 已落到容器（应见 896/768/448/384 MiB，非旧值）
+# ② 复核新 limits 已落到容器（应见 896/1024/448/384 MiB，非旧值）
 for c in zxyz-mysql zxyz-nacos zxyz-rabbitmq zxyz-gateway zxyz-frontend-nginx; do
   printf '%-24s %s\n' "$c" \
     "$(docker inspect --format='{{.HostConfig.Memory}}' "$c")"
 done
-# 期望：zxyz-mysql=939524096(896M) zxyz-nacos=805306368(768M)
+# 期望：zxyz-mysql=939524096(896M) zxyz-nacos=1073741824(1024M，2026-10-11 起；旧读数 805306368=768M)
 #       zxyz-rabbitmq=402653184(384M) zxyz-gateway=469762048(448M)
 #       zxyz-frontend-nginx=134217728(128M)
 

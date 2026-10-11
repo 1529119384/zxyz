@@ -39,6 +39,8 @@ sql/**
 
 不在此白名单内的文件变更（如 `CLAUDE.md`、`docs/**`）**不触发** workflow。`dorny/paths-filter` 进一步按服务目录判断哪些镜像需要重建。
 
+> ⚠️ `scripts/**`（含 `sql/**`）变更走 **deploy-only** 通道（2026-10-11 P1-1 事故收口：「scripts-only 永不部署」，证据 run 38079047730）：它们不进 `any-change`、**不重建任何镜像**，但会触发 `lint-config` 与 **deploy 作业本身**（deploy 的 if 含 scripts-config 分支）。服务器侧只做克隆对准 + `scripts/*.sh` 白名单同步，UPDATE_SVC 为空 ⇒ 不拉镜像、不重启容器，compose 引用的 `tag=dev` 仍指向上一次构建的镜像。改脚本必须走根仓库提交（同「双提交」纪律），否则 CI 根本看不到。
+
 > `.trivyignore.yaml` **必须**在白名单内（`ci-cd.yml:33-38`）：否则「只改豁免清单」的提交会**一条检查都不跑**，而它恰恰是能改变部署门禁松紧的文件（加一条豁免 = 让一个 CRITICAL 放行）——「零检查变更 = 盲区」形态。它不参与镜像构建，只触发轻量的 lint-config。
 > `nacos-config/**` 自 2026-09-13 起**已纳入白名单**：它不参与镜像构建，但改它必须导入 Nacos 才对线上生效，故由 `nacos-config-check`（等价性门禁）与 `nacos-import`（自动导入 + 逐份回读校验）两个作业接管。详见 `nacos-config/README.md`。
 
@@ -206,7 +208,7 @@ WHEN 添加 setting 子路由, DO 确保 `route.name` 在 Setting 组件 watcher
 
 **前端测试**: 68 个测试文件，1241 个用例（`npm run test`）。⚠️ 文件数由 `npm run doc-count:check`（`ZXYZdatabaseFront/scripts/check-doc-test-count.mjs`）对着 `src/**/*.spec.js` 实测校验 —— 此前这里写的是 26 个，实测已 65 个（2026-10-03 起为 68），是无人发现的 2.5 倍偏差。用例数无法静态推导，改测试后请跑一次 `npm run test` 并同步这里的数字（`vite.config.mjs` 覆盖率注释里的同类数字是**历史快照**，不要改）。命名 `*.spec.js` 放对应目录 `__tests__/` 下，`vi.mock()` 外部依赖，测试名中文。import 顺序：vitest/vue 最前 → `vi.mock()` 紧跟 → 再 `@/` 与第三方（`element-plus` import 须在 `vi.mock()` 后，否则 `import-x/order` 报错）。详见 [docs/testing.md](docs/testing.md)。
 
-**CI/CD**: `.github/workflows/ci-cd.yml` 按路径变更选择性构建部署。push 到 **dev**、PR、手动 dispatch（⚠️ 只触发 dev：`ci-cd.yml:5-8`——远程**不存在 `main` 分支、0 个 tag**，保留 `main`/`v*` tag 等于留一条「一触发就以空主机 ssh 必失败」的死路，故 2026-09-18 刻意删掉）；`dorny/paths-filter` 按服务目录判断重建；backend-common 变更触发全部后端重建；**`docker-compose.yml`/`.env.example` 变更会触发全量 11 服务重建与部署（docker-config），改它（哪怕只改注释）前须知晓此代价**；workflow_dispatch 输入 `tag`（必填）/`skip_quality`/`fast_deploy`/`force_deploy`/`run_e2e`。辅助 workflow：`lint-workflows.yml`（actionlint）、`ghcr-cleanup.yml`、`restore-drill.yml`（手动恢复演练，带凭据 fail-closed 断言）。
+**CI/CD**: `.github/workflows/ci-cd.yml` 按路径变更选择性构建部署。push 到 **dev**、PR、手动 dispatch（⚠️ 只触发 dev：`ci-cd.yml:5-8`——远程**不存在 `main` 分支、0 个 tag**，保留 `main`/`v*` tag 等于留一条「一触发就以空主机 ssh 必失败」的死路，故 2026-09-18 刻意删掉）；`dorny/paths-filter` 按服务目录判断重建；backend-common 变更触发全部后端重建；**`scripts/**`、`sql/**` 变更走 deploy-only 通道**（2026-10-11 P1-1 事故收口）：只同步脚本到服务器、不重建镜像、不重启服务（UPDATE_SVC 为空），deploy 的 if 已容忍 build/scan 整体 skipped；**`docker-compose.yml`/`.env.example` 变更会触发全量 11 服务重建与部署（docker-config），改它（哪怕只改注释）前须知晓此代价**；workflow_dispatch 输入 `tag`（必填）/`skip_quality`/`fast_deploy`/`force_deploy`/`run_e2e`。辅助 workflow：`lint-workflows.yml`（actionlint）、`ghcr-cleanup.yml`、`restore-drill.yml`（手动恢复演练，带凭据 fail-closed 断言）。
 
 > Gateway 路由表与服务间调用图：`docs/infrastructure.md`；技术栈：`docs/architecture.md`；部署指南：`DEPLOYMENT.md`。
 > 项目审查/台账报告在 `ISSUE/`（目录已 gitignore，仅本机保留）：**现行台账/日报 = `44`–`49` 号 + `DAILY-AUDIT-CHECKLIST.md`（每日审核 SOP）**；`ISSUE/review-2026-10-02/` 现存 6 份均为 **2026-10-08 的 ALONE-REDIS 专项报告**（目录名是 10-02 起稿时的历史遗留，10-02 那批 `review-part-*.md` 已随总报告归档，勿按目录名猜内容）；**`07`、`18~39` 号均属已归档历史台账**（含 `38-CODE-REVIEW` / `39-UNFINISHED` 两份 10-02 总报告），等价原件在仓库外 `D:\code\databaseZXYZ\oldmd\`（含早期 `PROJECT-REVIEW-2026-07-27.md` / `PROJECT-DEEP-REVIEW-2026-07-28.md` 全份）。

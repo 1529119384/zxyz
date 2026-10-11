@@ -66,6 +66,26 @@
 #   低于 2026-10-03 的 15% 余量，属有意取舍：用宿主余量换「Redis OOM = 全站会话丢失」
 #   失败面的消失（noeviction + 896M limit 后 Redis 只会拒写、不会被 OOM 杀）。
 #
+# 【2026-10-11 ISSUE/51 P1 nacos OOM 兜底入库】nacos 768M → 1024M（reservations 192M → 256M 同步上调）。
+#   实证：2026-10-11 凌晨 05:14→05:44 nacos 被连杀 8 次（约每 4 分钟一次，rss 778 MiB 撞 768M limit）。
+#   此前靠服务器本地 docker-compose.override.yml（1280M）缓解——该文件不在仓库、不被 CI 同步，
+#   换机即丢；本仓落 1024M 兜底，服务器 override 仍保留作额外冗余（1024 < 1280 不冲突）。
+#   同批：rabbitmq 内存水位线修为 absolute = 230MiB（relative 的分母实测是宿主内存，见
+#   rabbitmq 服务注释与 conf/rabbitmq.conf）。
+#   ⇒ 改后累加 = 896 + 1024 + 896 + 384 + 448×10 + 128 = **7808 MiB = 7.625 GiB**
+#   占物理内存 7808 / 7941 = **98.3%**，余量 133 MiB——显著低于 B-1 时的 13.0%，
+#   属「nacos 稳定性 > 宿主余量」的有意取舍（再往上只能上 1280M，但那与服务器 override
+#   相同、无兜底增量且余量归零）；根治靠服务器内存升级（docs/known-limitations.md §3）。
+#
+# ---------------------------------------------------------------------------
+# ⚠️ TZ 覆盖纪律（2026-10-11 事故）：本文件全部服务必须带 `TZ: Asia/Shanghai`。
+#   事故：TZ 曾被误删至仅剩 2 处（mysql / rabbitmq），生产实测重建过的容器（flyway 等）
+#   日志转 UTC、清理窗口偏移 8h；nacos/redis/mysql/rabbitmq 仅靠旧容器残留尚有 TZ。
+#   本次修复：17 个服务（含 profile 类 flyway）逐一核对，除 mysql/rabbitmq 外 15 个缺失
+#   全部补齐（nacos-log-cleanup 原本连 environment 块都没有，一并新建）。
+#   规矩：新增服务 env 块必抄 `TZ: Asia/Shanghai`；新建无 env 块的服务同样要加。
+# ---------------------------------------------------------------------------
+#
 # 🔴 为什么是「同比例」而不是「只压 limits」：
 #   JVM 堆由环境变量 `JAVA_OPTS: -XX:MaxRAMPercentage=75.0` **按容器 limit 推算**
 #   （JDK 10+ 容器感知）。所以压 limit 而不动百分比时，堆天花板会同比例下降 ——
@@ -150,10 +170,15 @@ services:
     deploy:
       resources:
         limits:
-          memory: 768M
+          # ISSUE/51 P1（2026-10-11）：768M → 1024M。OOM 实证：05:14→05:44 被连杀 8 次
+          # （约每 4 分钟一次），容器 rss 778 MiB 撞 768M limit ⇒ cgroup OOM。
+          # 此前靠服务器本地 docker-compose.override.yml（1280M）缓解——该文件不在仓库、
+          # 不被 CI 同步，换机即丢；本仓落 1024M 兜底（换机不再丢），服务器 override
+          # 仍保留作额外冗余（1280 > 1024，override 生效时不冲突、被删时回退到本值）。
+          memory: 1024M
           cpus: '0.5'
         reservations:
-          memory: 192M
+          memory: 256M
           cpus: '0.25'
     environment:
       MODE: standalone
@@ -173,6 +198,7 @@ services:
       NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE}
       # Nacos 控制台管理员密码，必须在 .env 中覆盖默认值
       NACOS_PASSWORD: ${NACOS_PASSWORD}
+      TZ: Asia/Shanghai
     ports:
       - "127.0.0.1:${NACOS_PORT:-8848}:8848"
       - "127.0.0.1:${NACOS_CONSOLE_PORT:-8080}:8080"
@@ -207,6 +233,10 @@ services:
     restart: unless-stopped
     entrypoint: /bin/sh
     command: -c "while true; do find /logs -name '*.log.*' -mtime +7 -delete 2>/dev/null; find /logs -name 'nacos.log' -size +100M -exec truncate -s 20M {} \\; 2>/dev/null; sleep 3600; done"
+    # TZ（2026-10-11 补）：原服务块连 environment 都没有——`find -mtime +7` 的「天」
+    # 按 UTC 切，与 Nacos 日志（带 TZ 时为 +08:00 命名/滚动）对不齐会漏清/误清。
+    environment:
+      TZ: Asia/Shanghai
     volumes:
       - ${DATA_DIR:-./data}/nacos-logs:/logs
     logging:
@@ -252,6 +282,9 @@ services:
       FLYWAY_URL: jdbc:mysql://mysql:3306/zxyz_config?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       FLYWAY_USER: ${CONFIG_DB_USERNAME:?缺少 CONFIG_DB_USERNAME，请先运行 scripts/init-secrets.sh}
       FLYWAY_PASSWORD: ${CONFIG_DB_PASSWORD:?缺少 CONFIG_DB_PASSWORD，请先运行 scripts/init-secrets.sh}
+      # TZ（2026-10-11 补）：flyway 曾是 TZ 误删事故中「日志转 UTC」的实证容器；其日志
+      # 时间戳、迁移脚本内 NOW() 等依赖容器时区的行为与 MySQL serverTimezone=+08:00 对齐。
+      TZ: Asia/Shanghai
     networks:
       - zxyz-net
     depends_on:
@@ -290,6 +323,8 @@ services:
     command: ["sh", "-c", "redis-server --appendonly yes --requirepass \"$${REDIS_PASSWORD}\" --maxmemory 512mb --maxmemory-policy noeviction"]
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
+      # TZ（2026-10-11 补）：AOF 重写文件名、日志时间戳按 +08:00，与备份窗口对齐。
+      TZ: Asia/Shanghai
     volumes:
       - ${DATA_DIR:-./data}/redis:/data
     networks:
@@ -321,13 +356,20 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
-      # ISSUE/51 P1（2026-10-10）内存水位线：0.6 = 相对值（rabbitmq 曾被 OOM Killer 杀过一次）。
-      # 选相对值而非 absolute 的理由：RabbitMQ 3.12+ 在容器内会探测 cgroup memory limit
-      #   并把相对水位锚定到它（0.6 × 384M ≈ 230MB），将来调容器 limit 时水位自动跟随。
+      # ISSUE/51 P1（2026-10-10）内存水位线；⚠️ 2026-10-11 P1-2 订正：改用绝对值。
+      # 旧版在此写 0.6 相对值，注释声称「RabbitMQ 3.12+ 在容器内会探测 cgroup memory limit
+      #   并把相对水位锚定到它」——已被生产实测否证：rabbitmqctl environment 显示 0.6 确实
+      #   加载了，但分母是【宿主机内存 7941 MiB】而非容器 limit 384 MiB（触发线 ≈ 4765 MiB，
+      #   容器在 384 MiB 处会先被 cgroup OOM 杀，2026-10-08 真实发生过）。官方文档同向
+      #   （docs/3.13/memory）：容器环境「highly recommended」用绝对值——节点不总能探测到
+      #   cgroup limit。
       # 到达水位即触发 memory alarm：阻塞发布者、先把队列 page 到盘 —— 有意降级而非被杀。
       # ⚠️ 内存水位线的正确载体是下方挂载的 conf/rabbitmq.conf（RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS
       #   的值含空格会被 erl 命令行吞成独立 boot 参数 → 启动即崩；RABBITMQ_VM_MEMORY_HIGH_WATERMARK
-      #   在 3.13 已废弃且硬拒绝启动）：
+      #   在 3.13 已废弃且硬拒绝启动）。现写 vm_memory_high_watermark.absolute = 230MiB
+      #   （= limit 384M × 0.6 取整，留 40% 余量给 GC 峰值/paging/management 插件；
+      #    relative 与 absolute 互斥，同配时 absolute 优先但打 warning，故只留一个键；
+      #    计算式、单位与文档依据见 conf/rabbitmq.conf 头注释）：
       TZ: Asia/Shanghai
     ports:
       - "127.0.0.1:${RABBITMQ_MGMT_PORT:-15672}:15672"
@@ -404,6 +446,7 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      TZ: Asia/Shanghai
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?缺少 CORS_ALLOWED_ORIGINS，请先运行 scripts/init-secrets.sh 或手工填写真实域名}
       NACOS_SERVER_ADDR: nacos:8848
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
@@ -474,6 +517,7 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      TZ: Asia/Shanghai
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?缺少 CORS_ALLOWED_ORIGINS，请先运行 scripts/init-secrets.sh 或手工填写真实域名}
       NACOS_SERVER_ADDR: nacos:8848
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
@@ -548,6 +592,7 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      TZ: Asia/Shanghai
       NACOS_SERVER_ADDR: nacos:8848
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
       JASYPT_PASSWORD: ${JASYPT_PASSWORD}
@@ -622,6 +667,7 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      TZ: Asia/Shanghai
       NACOS_SERVER_ADDR: nacos:8848
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
       JASYPT_PASSWORD: ${JASYPT_PASSWORD}
@@ -696,6 +742,7 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      TZ: Asia/Shanghai
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?缺少 CORS_ALLOWED_ORIGINS，请先运行 scripts/init-secrets.sh 或手工填写真实域名}
       NACOS_SERVER_ADDR: nacos:8848
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
@@ -778,6 +825,7 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      TZ: Asia/Shanghai
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?缺少 CORS_ALLOWED_ORIGINS，请先运行 scripts/init-secrets.sh 或手工填写真实域名}
       NACOS_SERVER_ADDR: nacos:8848
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
@@ -842,6 +890,7 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      TZ: Asia/Shanghai
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?缺少 CORS_ALLOWED_ORIGINS，请先运行 scripts/init-secrets.sh 或手工填写真实域名}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
       SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":"{''zxyz-user-service'':''${SVC_USER_KEY:?启用矩阵必须设置 SVC_USER_KEY}'',''zxyz-admin-service'':''${SVC_ADMIN_KEY:?启用矩阵必须设置 SVC_ADMIN_KEY}'',''zxyz-project-service'':''${SVC_PROJECT_KEY:?启用矩阵必须设置 SVC_PROJECT_KEY}'',''zxyz-im-service'':''${SVC_IM_KEY:?启用矩阵必须设置 SVC_IM_KEY}'',''zxyz-file-service'':''${SVC_FILE_KEY:?启用矩阵必须设置 SVC_FILE_KEY}'',''zxyz-team-service'':''${SVC_TEAM_KEY:?启用矩阵必须设置 SVC_TEAM_KEY}'',''zxyz-gateway'':''${SVC_GATEWAY_KEY:?启用矩阵必须设置 SVC_GATEWAY_KEY}'',''zxyz-email-service'':''${SVC_EMAIL_KEY:?启用矩阵必须设置 SVC_EMAIL_KEY}'',''zxyz-share-service'':''${SVC_SHARE_KEY:?启用矩阵必须设置 SVC_SHARE_KEY}'',''zxyz-audit-service'':''${SVC_AUDIT_KEY:?启用矩阵必须设置 SVC_AUDIT_KEY}''}"}}}'
@@ -912,6 +961,7 @@ services:
       RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
       RABBITMQ_USERNAME: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      TZ: Asia/Shanghai
     networks:
       - zxyz-net
     healthcheck:
@@ -982,6 +1032,7 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      TZ: Asia/Shanghai
       # 验证码回显（审计 12 §2.1.5）。【安全默认 false】
       # 这一行才是真正的开关：容器始终注入该环境变量，它会覆盖
       # application-prod.yml / application.yml / Nacos 三处占位符的默认值，
@@ -1067,6 +1118,7 @@ services:
       RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
       RABBITMQ_USERNAME: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      TZ: Asia/Shanghai
     networks:
       - zxyz-net
     healthcheck:
@@ -1108,6 +1160,8 @@ services:
       #   升级成「整台服务器连停止/查看都做不到」。定位是「改配置的人立刻知道」，
       #   不是「运维在故障时被 compose 锁死」，故把硬失败放在真正消费该值的 entrypoint。
       OSS_PUBLIC_BASE_URL: ${OSS_PUBLIC_BASE_URL:-}
+      # TZ（2026-10-11 补）：nginx 访问日志时间戳、日志轮转窗口统一按 +08:00。
+      TZ: Asia/Shanghai
     deploy:
       resources:
         limits:

@@ -18,9 +18,13 @@ on:
       # 所以纳入白名单以触发 nacos-config-check 作业（审计 D2）。
       - 'nacos-config/**'
       - 'scripts/check-nacos-config-sync.py'
-      # scripts/** 与 sql/**：本身不参与镜像构建，但纳入白名单以触发 lint-config 作业
-      # （shellcheck + 严格 YAML 校验）—— 审计 11 §7.12 / P2-13。
-      # 刻意**不**并入 any-change：纯脚本/校验类变更不需要重建任何镜像。
+      # scripts/** 与 sql/**：本身不参与镜像构建，纳入白名单触发 lint-config 作业
+      # （shellcheck + 严格 YAML 校验）—— 审计 11 §7.12 / P2-13；并命中下方 paths-filter
+      # 的 scripts-config ⇒ 驱动 deploy 的「deploy-only」分支（同步脚本、不重建镜像）。
+      # 2026-10-11 P1-1 事故收口（「scripts-only 永不部署」）：scripts/** 曾刻意不进任何
+      # 构建/部署判据 ⇒ scripts-only 提交 9e7a62a3（rabbitmq 拓扑修复，run 38079047730）
+      # build/scan/deploy 全 skipped 而 run 结论 success，脚本修复从未落到服务器；
+      # 历史同类 ad21124c（2026-10-07 修备份断档）当年靠人工 chmod 才生效。
       - 'scripts/**'
       - 'sql/**'
       # ⚠️ docker-compose.observability.yml（N-4 方案 A）**刻意只进 lint、不进构建**：
@@ -170,6 +174,9 @@ jobs:
       admin-service: ${{ steps.force.outputs.on == 'true' && 'true' || steps.filter.outputs.admin-service }}
       gateway: ${{ steps.force.outputs.on == 'true' && 'true' || steps.filter.outputs.gateway }}
       docker-config: ${{ steps.force.outputs.on == 'true' && 'true' || steps.filter.outputs.docker-config }}
+      # scripts-config：scripts/** + sql/** 变更开关。2026-10-11 P1-1 起驱动 deploy 作业
+      # if 的「deploy-only」分支（scripts-only/sql-only ⇒ 无新镜像的脚本同步部署）。
+      scripts-config: ${{ steps.force.outputs.on == 'true' && 'true' || steps.filter.outputs.scripts-config }}
       # nacos-config：驱动 nacos-import 作业。刻意不并入 any-change（不需要重建镜像）。
       nacos-config: ${{ steps.force.outputs.on == 'true' && 'true' || steps.filter.outputs.nacos-config }}
       frontend: ${{ steps.force.outputs.on == 'true' && 'true' || steps.filter.outputs.frontend }}
@@ -301,13 +308,19 @@ jobs:
             # 刻意**不**并入 any-change：纯配置变更不需要重建任何镜像。
             nacos-config:
               - 'nacos-config/**'
-            # scripts-config：**刻意声明但当前无任何消费者**（审计 I-11 实测：全文件仅此一处
-            # 出现）。lint-config / flyway-check 都是**无条件运行**（不设 needs / if），
-            # 所以不存在「漏挂门禁」的实际漏洞；保留它只是为了让后来的读者一眼看到
-            # 「曾经有个按脚本变更开关 lint 的想法」，而不是误以为有门禁挂在这个开关上。
-            # ⚠️ 不要把它接进 any-change：脚本类变更不需要重建任何镜像，接进去反而会
-            #    造出「起了构建 job 却无镜像可建」的 IMAGE_MISSING。若真要消费它，请在
-            #    lint-config 的 if 里显式引用 detect-changes.outputs.scripts-config。
+            # scripts-config：scripts/** + sql/** 变更开关。2026-10-11 P1-1 起有真实消费者：
+            #   detect-changes.outputs.scripts-config → deploy 作业 if 的「deploy-only」分支。
+            #   脚本/SQL 变更不重建任何镜像（build-and-push 整体 skipped 属**预期**），
+            #   但 deploy 必须照跑：服务器侧只做克隆对准 + scripts/*.sh 白名单同步 +
+            #   校验/备份（UPDATE_SVC 为空 ⇒ 不重启容器、不拉镜像）。
+            # 事故证据（2026-10-11 P1-1「scripts-only 永不部署」）：本 filter 曾被刻意声明为
+            #   「无消费者」且 any-change 不含 scripts ⇒ scripts-only 提交 run 38079047730
+            #   （9e7a62a3）build/scan/deploy 全 skipped 而结论 success，backup.sh 修复从未
+            #   上线（10-07 ad21124c 同类，靠人工 chmod 收场）。
+            # 刻意仍**不**并入 any-change：接进去会让 scripts-only 触发 build-and-push 空跑
+            #   一轮 11 行全 skip 的矩阵（假「构建成功」日志噪音）；deploy-only 由 deploy 的
+            #   if 显式表达，语义更诚实。若新增消费者，请显式引用
+            #   detect-changes.outputs.scripts-config。
             scripts-config:
               - 'scripts/**'
               - 'sql/**'
@@ -1284,13 +1297,46 @@ jobs:
   # Job 4: 部署到服务器（仅 push 触发且有镜像构建时）
   # ============================================================
   deploy:
-    # 审计 2.3.6：security-scan（Trivy HIGH/CRITICAL，exit-code=1）必须成为部署硬前置，
-    # 否则扫出高危漏洞的镜像照样上线。安全前提：security-scan 的 if 只比 build-and-push
-    # 多一个 any-change=='true'，而 build-and-push 自身的 if 已强制要求 any-change=='true'，
-    # 因此「build-and-push 成功」⇒ security-scan 不可能被 skipped ⇒ 不会把 deploy 永久锁死。
+    # 审计 2.3.6：security-scan（Trivy HIGH/CRITICAL，exit-code=1）必须成为部署硬前置。
     needs: [detect-changes, build-and-push, secret-scan, security-scan]
+    # ── 2026-10-11 P1-1 修复：「scripts-only 永不部署」双雷中的门禁雷 ──
+    # 旧 if 把 `needs.build-and-push.result == 'success'` 当硬前置，而 build-and-push 的
+    # any-change 白名单刻意不含 scripts/** ⇒ scripts-only 提交（9e7a62a3）build/scan 全
+    # skipped ⇒ skipped ≠ success ⇒ deploy 永不执行，run 却显示 success（run 38079047730
+    # 证据链：build/scan/deploy 三 skipped、结论 success，服务器 backup.sh 未更新）。
+    #
+    # 新 if 是「双臂」语义，容忍 build/scan **整体 skipped**（前提：它们被跳过必须是因为
+    # 没有任何可构建变更），但任何真实的 failure 仍阻断：
+    #   臂①（有镜像变更）：any-change=='true' ⇒ build-and-push 与 security-scan 必须
+    #       双双 success。注意 build-and-push 成功 ⇒ security-scan 必然不会 skipped
+    #       （其 if 比前者只多 any-change 条件），故这里仍保留 == 'success' 的 fail-closed
+    #       语义：质量检查失败 ⇒ build skipped ⇒ 臂①不成立 ⇒ 阻断。
+    #   臂②（deploy-only）：scripts-config=='true' 且 any-change!='true' ⇒ 无任何镜像
+    #       变更集，build-and-push 矩阵 11 行全 skip 属**预期**，deploy 照跑：服务器侧
+    #       只同步 scripts/*.sh + 校验（UPDATE_SVC 为空 ⇒ 不拉镜像、不重启容器）。
+    #       security-scan 整体 skipped 同样属预期（无新镜像可扫）。
+    #   secret-scan **无条件运行**（不设 if ⇒ 永不 skipped），必须恒 success —— 它是
+    #       两臂共同的门禁，任何失败都让整个表达式为 false（fail-closed 不变）。
+    #   detect-changes 无 if，恒运行；它失败时 run 已失败，无需在此重复判断。
+    #   `!cancelled()` 兜底「上游被取消」的残局（正常串行不会走到）。
+    if: |
+      !cancelled() &&
+      needs.secret-scan.result == 'success' &&
+      (
+        (
+          needs.detect-changes.outputs.any-change == 'true' &&
+          needs.build-and-push.result == 'success' &&
+          needs.security-scan.result == 'success'
+        ) ||
+        (
+          needs.detect-changes.outputs.scripts-config == 'true' &&
+          needs.detect-changes.outputs.any-change != 'true' &&
+          needs.build-and-push.result == 'skipped' &&
+          needs.security-scan.result == 'skipped'
+        )
+      ) &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
-    if: always() && needs.build-and-push.result == 'success' && needs.secret-scan.result == 'success' && needs.security-scan.result == 'success' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     # 审计 2.3.2：部署再套一层独立且不取消的并发组，保证同一 ref 的两次部署串行执行。
     # 真正消除「中途取消」靠的是 workflow 级 concurrency 已改为 cancel-in-progress:false。
     concurrency:
@@ -1300,6 +1346,31 @@ jobs:
     # 而该 environment 与 PROD_* secret 均不存在 ⇒ 触发即必失败。
     environment: development
     steps:
+      # ── 防呆留痕（2026-10-11 P1-1）：deploy 之所以在跑，到底是「有镜像变更的正常部署」
+      # 还是「scripts/sql-only 的 deploy-only 同步」，从 if 表达式里看不出来 —— 这里把
+      # 判据原样打印进部署日志，下次排障不必再反推 if（本次事故的排查成本正在于此）。
+      - name: Deploy path forensics
+        run: |
+          echo "===== Deploy path forensics（P1-1 防呆）====="
+          echo "event            = ${{ github.event_name }}"
+          echo "any-change       = ${{ needs.detect-changes.outputs.any-change }}（后端/前端/compose+env 有变更 ⇒ 本轮有新镜像）"
+          echo "scripts-config   = ${{ needs.detect-changes.outputs.scripts-config }}（scripts/** 或 sql/** 有变更）"
+          echo "backend-any      = ${{ needs.detect-changes.outputs.backend-any }}"
+          echo "frontend         = ${{ needs.detect-changes.outputs.frontend }}"
+          echo "docker-config    = ${{ needs.detect-changes.outputs.docker-config }}"
+          echo "build-and-push   = ${{ needs.build-and-push.result }}"
+          echo "security-scan    = ${{ needs.security-scan.result }}"
+          echo "secret-scan      = ${{ needs.secret-scan.result }}"
+          if [ "${{ needs.detect-changes.outputs.any-change }}" = "true" ]; then
+            echo "==> 部署路径：BUILD_DEPLOY（镜像 tag=${{ github.sha }} 已由 build-and-push 构建并推送）"
+          elif [ "${{ needs.detect-changes.outputs.scripts-config }}" = "true" ]; then
+            echo "==> 部署路径：DEPLOY_ONLY（scripts/sql-only：无新镜像；服务器只对准提交 + 同步 scripts/*.sh；"
+            echo "    compose 仍引用 tag=dev = 上次构建的镜像，UPDATE_SVC 为空 ⇒ 不拉镜像、不重启容器）"
+          else
+            echo "==> 部署路径：UNKNOWN（既非 any-change 也非 scripts-config —— 若出现请立即排查 detect-changes 输出）"
+          fi
+          echo "========================================="
+
       - name: Determine deploy target
         id: target
         run: |
@@ -1378,27 +1449,29 @@ jobs:
 
             # 必须先刷新克隆，才能拿到「本次提交」里的脚本实体（否则会拿上一次的旧脚本去部署）。
             # 拉取失败必须中止：继续用旧脚本部署比直接失败更危险（run #104 的教训）。
+            #
+            # ── 幂等对准（2026-10-11 P1-3 修复，取代旧「无条件 git pull --ff-only」）──
+            # 旧引导层在 SHA 守卫**之前**无条件 pull：上一轮部署的 SHA 守卫已把 /www/zxyz-repo
+            # checkout 成 detached HEAD ⇒ 下一轮 pull 必炸 "You are not currently on a branch"
+            # ⇒ 部署全灭（9e7a62a3 因未跑到 deploy 而被 P1-1 掩盖）。且 detached 下 pull 本就
+            # 无上游语义。新语义（与 deploy-on-server.sh / nacos-import 三方同口径）：
+            #   ① 漂移守卫**前移**到任何 git 引用操作之前 —— 旧版先 pull 后查脏区，而下面的
+            #      checkout 会静默丢弃本地改动，脏区必须先拦下（保留原「漂移需人工确认」语义）；
+            #   ② CI 路径（GITHUB_SHA 注入）：fetch origin <sha> + checkout --force <sha>。
+            #      detached 无所谓：fetch 的「取回指定对象」语法在 detached HEAD 下正常；
+            #      HEAD 已对准时整体 no-op（幂等），并与并发 nacos-import 收敛到同一提交；
+            #   ③ 手工路径（无 GITHUB_SHA）：fetch origin dev + checkout -B dev origin/dev。
+            #      等价于旧 pull --ff-only 且严格更强：-B 直接以 origin/dev 重建本地 dev
+            #      （强制重附着），克隆停在 detached / 任意旧分支也能被拉回，不依赖上游配置。
+            #   两条路径失败均 fail-closed 中止（拿旧脚本继续部署比失败更危险）。
             if [ -d "$REPO_DIR/.git" ]; then
-              if ! git -C "$REPO_DIR" pull --ff-only -q; then
-                echo "::error::REPO_PULL_FAILED: 无法更新 $REPO_DIR，取不到最新部署脚本，已中止"
-                git -C "$REPO_DIR" status --porcelain 2>/dev/null || true
+              BOOT_DRIFT="$(git -C "$REPO_DIR" status --porcelain)"
+              if [ -n "$BOOT_DRIFT" ]; then
+                echo "::error::GIT_DRIFT_DETECTED: $REPO_DIR 工作区存在未提交/漂移变更，拒绝自动对准（需人工确认）"
+                printf '%s\n' "$BOOT_DRIFT"
                 exit 1
               fi
-              # ── 2026-10-11 加固（backup.sh 落后事件）：pull 成功 ≠ 内容对准本次提交 ──
-              # 服务器克隆可能停在旧分支（2026-10-11 只读核验发现其 HEAD 在 feat/* 而非 dev）。
-              # 若不校验，引导层会拿「别的分支/旧提交」里的脚本去执行部署实体（exec bash），
-              # 下游 deploy-on-server.sh 的 SHA 校验此时已经太晚 —— 脚本本身可能就是旧的。
-              # 故在执行任何脚本**之前**，用 CI 注入的 GITHUB_SHA 把克隆对准本次提交；
-              # 对不齐（提交不属于远端可达历史等）即中止。幂等：HEAD 已对准时是 no-op。
-              # 漂移守卫：脏工作区先中止（checkout --force 会静默丢弃本地改动，
-              # 不能让它吃掉「漂移需人工确认」的原有语义）。
               if [ -n "${GITHUB_SHA:-}" ]; then
-                BOOT_DRIFT="$(git -C "$REPO_DIR" status --porcelain)"
-                if [ -n "$BOOT_DRIFT" ]; then
-                  echo "::error::GIT_DRIFT_DETECTED: $REPO_DIR 工作区存在未提交/漂移变更，拒绝自动对准（需人工确认）"
-                  printf '%s\n' "$BOOT_DRIFT"
-                  exit 1
-                fi
                 if [ "$(git -C "$REPO_DIR" rev-parse HEAD)" != "$GITHUB_SHA" ]; then
                   echo "::notice::引导层校验：克隆 HEAD ≠ GITHUB_SHA，执行 git fetch + checkout 对准本次提交"
                   if ! git -C "$REPO_DIR" fetch origin "$GITHUB_SHA" \
@@ -1410,7 +1483,14 @@ jobs:
                 fi
                 echo "::notice::引导层校验通过：$REPO_DIR HEAD == GITHUB_SHA（本次部署提交）"
               else
-                echo "::warning::GITHUB_SHA 未注入，引导层跳过克隆对准校验（CI 部署路径必须注入）"
+                echo "::warning::GITHUB_SHA 未注入（手工路径？），引导层对准 origin/dev（-B 强制重附着 dev）"
+                if ! git -C "$REPO_DIR" fetch origin dev \
+                  || ! git -C "$REPO_DIR" checkout -q -B dev origin/dev; then
+                  echo "::error::REPO_ALIGN_FAILED: $REPO_DIR 无法对准 origin/dev，已中止"
+                  git -C "$REPO_DIR" status -sb 2>/dev/null || true
+                  exit 1
+                fi
+                echo "::notice::引导层对准完成：$REPO_DIR HEAD == origin/dev"
               fi
             else
               echo "::warning::REPO_MISSING: 未找到 $REPO_DIR 克隆，回退使用 $DEPLOY_DIR/scripts 下的副本"

@@ -52,6 +52,9 @@ services:
         limits:
           memory: 256M
           cpus: '0.5'
+    # TZ（2026-10-11 对齐主 compose 的 TZ 覆盖纪律：全部服务必带 TZ，见主文件头部注释）
+    environment:
+      TZ: Asia/Shanghai
     volumes:
       - ${DATA_DIR:-./data}/loki:/loki
       - ./deploy/loki-config.yml:/etc/loki/loki-config.yml:ro
@@ -80,6 +83,9 @@ services:
         limits:
           memory: 128M
           cpus: '0.25'
+    # TZ（2026-10-11 对齐主 compose 的 TZ 覆盖纪律：全部服务必带 TZ，见主文件头部注释）
+    environment:
+      TZ: Asia/Shanghai
     # 为什么：原 promtail 无 healthcheck，编排无法感知其异常。promtail 3.x ready 端点为 /ready，端口 9080（见 deploy/promtail-config.yml server.http_listen_port）。
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:9080/ready || exit 1"]
@@ -118,6 +124,9 @@ services:
         limits:
           memory: 512M
           cpus: '0.5'
+    # TZ（2026-10-11 对齐主 compose 的 TZ 覆盖纪律：全部服务必带 TZ，见主文件头部注释）
+    environment:
+      TZ: Asia/Shanghai
     # 为什么：挂载配置与规则为只读，数据卷持久化 TSDB，避免容器重建丢失历史指标。
     volumes:
       - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
@@ -153,6 +162,9 @@ services:
         limits:
           memory: 256M
           cpus: '0.25'
+    # TZ（2026-10-11 对齐主 compose 的 TZ 覆盖纪律：全部服务必带 TZ，见主文件头部注释）
+    environment:
+      TZ: Asia/Shanghai
     volumes:
       - ./deploy/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
     command:
@@ -188,6 +200,8 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD 必须设置，禁止弱默认 admin}
       GF_SERVER_HTTP_PORT: "3000"
+      # TZ（2026-10-11 对齐主 compose 的 TZ 覆盖纪律：全部服务必带 TZ，见主文件头部注释）
+      TZ: Asia/Shanghai
     volumes:
       - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro

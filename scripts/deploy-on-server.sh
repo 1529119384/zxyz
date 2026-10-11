@@ -134,7 +134,12 @@ pick_script() {
 # 提前刷新后，后续步骤拿到的才是本次代码。
 # 刷新语义（2026-10-11 升级）：CI 路径（有 GITHUB_SHA）=「对准本次部署提交」
 # （fetch + checkout，幂等，且与引导层、nacos-import 三方收敛到同一提交）；
-# 手工路径（无 GITHUB_SHA）保持旧「git pull --ff-only」行为。
+# 手工路径（无 GITHUB_SHA）=「对准 origin/dev」（fetch + checkout -B dev origin/dev，
+# 强制重附着，等价于旧 pull --ff-only 且严格更强）。2026-10-11 P1-3 修复：
+# 旧手工路径的 `git pull --ff-only` 在 detached HEAD 下必炸（上一轮 CI 部署的
+# SHA 守卫会把克隆 checkout 成 detached；手工排障常发生在这种状态之后），
+# 且 pull 依赖「当前分支有上游」这一隐含前提 —— 改为 fetch + checkout -B 后
+# 两种状态都能被拉回。
 if [ -d "$REPO_DIR" ]; then
   # 审计 I-20（2026-10-03）：同一次 push 若同时改了代码与 nacos-config，会**同时**触发
   #   deploy 与 nacos-import 两个 job，两个 SSH 会话并发对同一个 $REPO_DIR 执行 git 操作。
@@ -161,14 +166,21 @@ if [ -d "$REPO_DIR" ]; then
       exit 1
     fi
   else
+    # 2026-10-11 P1-3 修复：手工路径从 `git pull --ff-only` 改为 fetch + checkout -B。
+    # 原因①：CI 部署的 SHA 守卫会把克隆 checkout 成 detached HEAD，pull 在 detached 下
+    #   必炸 "You are not currently on a branch"（正是引导层旧逻辑的同一颗雷，此处是
+    #   脚本内部的镜像位置）；原因②：pull 还要求「当前分支有上游」，克隆停在任意旧
+    #   分支时同样失败。fetch + checkout -B dev origin/dev 直接以远端重建本地 dev，
+    #   强制重附着，detached / 旧分支两种状态都能拉回，等价语义且严格更强。
     PULL_OK=0
     for _i in 1 2 3; do
-      if git -C "$REPO_DIR" pull --ff-only -q; then PULL_OK=1; break; fi
-      echo "pull 第 ${_i} 次失败（疑与 nacos-import 作业的 git 操作竞争），5s 后重试"
+      if git -C "$REPO_DIR" fetch origin dev \
+         && git -C "$REPO_DIR" checkout -q -B dev origin/dev; then PULL_OK=1; break; fi
+      echo "对准 origin/dev 第 ${_i} 次失败（疑与 nacos-import 作业的 git 操作竞争），5s 后重试"
       sleep 5
     done
     if [ "$PULL_OK" != "1" ]; then
-      echo "::error::REPO_PULL_FAILED: 无法更新 $REPO_DIR（常见原因：工作区有漂移改动，或持续抢不到 git 锁）。已中止，后续脚本需最新版本"
+      echo "::error::REPO_PULL_FAILED: 无法把 $REPO_DIR 对准 origin/dev（常见原因：工作区有漂移改动，或持续抢不到 git 锁）。已中止，后续脚本需最新版本"
       git -C "$REPO_DIR" status --porcelain 2>/dev/null || true
       exit 1
     fi
@@ -343,10 +355,13 @@ if [ -d "$REPO_DIR" ]; then
     printf '%s' "$h"
   }
   OLD_HASH="$(_compose_hash)"
-  # GITHUB_SHA 路径：克隆已在本脚本最前面对准本次提交，无需再 pull
-  # （detached HEAD 下 `git pull` 因无上游必然失败，故 CI 路径刻意跳过；手工路径保持旧行为）
+  # CI 路径：克隆已在本脚本最前面对准本次提交，无需再动（detached HEAD 下
+  # `git pull` 因无上游必然失败，故 CI 路径刻意跳过）。
+  # 手工路径：与上方刷新逻辑同口径 —— fetch + checkout -B dev origin/dev
+  # 强制重附着（2026-10-11 P1-3：旧 `git pull --ff-only` 在 detached HEAD 下必炸）。
   if [ -z "${GITHUB_SHA:-}" ]; then
-    cd "$REPO_DIR" && git pull --ff-only -q
+    cd "$REPO_DIR" && git fetch origin dev && git checkout -q -B dev origin/dev
+    cd "$DEPLOY_DIR"
   fi
 
   # --- 漂移检测：拉取后若工作区非空即中止并要求人工确认 ---
