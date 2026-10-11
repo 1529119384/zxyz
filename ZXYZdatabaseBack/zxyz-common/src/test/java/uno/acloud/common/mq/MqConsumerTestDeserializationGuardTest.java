@@ -172,10 +172,12 @@ class MqConsumerTestDeserializationGuardTest {
         }
 
         // 规则 2：陈旧豁免 —— 名单里的文件已不再违规 ⇒ 名单成了谎言，要求移除条目
+        // ⚠️ 路径拼接必须走 Paths.get（CI 的 Linux 上 '\' 是合法文件名字符而非分隔符——
+        //   2026-10-11 CI 首跑实证：".replace('/', '\\')" 让 5 条豁免全部「文件不存在」假红）
         List<String> staleExemptions = new ArrayList<>();
         for (Map.Entry<String, Set<String>> entry : GRANDFATHERED_MOCK_MAPPER_TESTS.entrySet()) {
             for (String relativePath : entry.getValue()) {
-                Path file = backendRoot.resolve(entry.getKey()).resolve(relativePath.replace('/', '\\'));
+                Path file = backendRoot.resolve(entry.getKey()).resolve(relativePath);
                 if (!Files.isRegularFile(file)) {
                     staleExemptions.add(entry.getKey() + " → " + relativePath + "（文件不存在）");
                     continue;
