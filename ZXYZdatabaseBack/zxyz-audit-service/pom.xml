@@ -104,6 +104,13 @@
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-mysql</artifactId>
         </dependency>
+        <!-- 54 号审计 A2：AuditContextSmokeTest 用内存 H2（MODE=MySQL）跑通 OperateLog
+             消费→持久化路径。test scope 不进生产镜像；驱动类名由 application-test.yml 提供 -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

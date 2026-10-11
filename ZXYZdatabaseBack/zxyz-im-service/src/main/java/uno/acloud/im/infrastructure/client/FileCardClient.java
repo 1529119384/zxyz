@@ -25,9 +25,17 @@ import java.util.List;
 
 /**
  * 文件卡片 HTTP 客户端。通过 X-Internal-Service-Token 进行服务间鉴权。
+ *
+ * <p>P1-1（ISSUE/54 §2.7）修复：内部链路在 file 端排除 Sa-Token（无用户会话），
+ * 操作者身份必须由本端显式传递 —— 每个请求携带 {@code X-Acting-User-Id} 头，
+ * file 端从该头解析 userId 做文件访问控制。头值由调用链传入
+ * （发卡片 = WS 握手身份，解析卡片 = HTTP 拦截器身份），<b>不</b>取 StpUtil 上下文。</p>
  */
 @Component
 public class FileCardClient extends AbstractServiceClient {
+
+    /** 内部链路操作者身份请求头，与 file 端 ActingUserIdResolver 对齐（common 不放常量，绕开 common 修改约束）。 */
+    public static final String ACTING_USER_ID_HEADER = "X-Acting-User-Id";
 
     private static final List<DateTimeFormatter> MODIFY_TIME_FORMATTERS = List.of(
             DateTimeFormatter.ISO_LOCAL_DATE_TIME,
@@ -45,11 +53,14 @@ public class FileCardClient extends AbstractServiceClient {
         return "文件服务";
     }
 
-    public FileCardContent snapshot(List<Long> fileIds) {
+    public FileCardContent snapshot(Long actingUserId, List<Long> fileIds) {
         try {
             String responseBody = restClient().post()
                     .uri(baseUrl() + "/api/internal/im-file-cards/snapshot")
-                    .headers(this::internalHeaders)
+                    .headers(headers -> {
+                        internalHeaders(headers);
+                        setActingUserHeader(headers, actingUserId);
+                    })
                     .body(objectMapper().createObjectNode().putPOJO("fileIds", fileIds))
                     .retrieve()
                     .body(String.class);
@@ -63,11 +74,14 @@ public class FileCardClient extends AbstractServiceClient {
         }
     }
 
-    public FileCardResolveResult resolve(FileCardContent content) {
+    public FileCardResolveResult resolve(Long actingUserId, FileCardContent content) {
         try {
             String responseBody = restClient().post()
                     .uri(baseUrl() + "/api/internal/im-file-cards/resolve")
-                    .headers(this::internalHeaders)
+                    .headers(headers -> {
+                        internalHeaders(headers);
+                        setActingUserHeader(headers, actingUserId);
+                    })
                     .body(content)
                     .retrieve()
                     .body(String.class);
@@ -79,6 +93,18 @@ public class FileCardClient extends AbstractServiceClient {
         } catch (Exception e) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "解析文件卡片资源状态失败");
         }
+    }
+
+    /**
+     * 写入操作者身份头：file 端据此解析 userId（缺失/非法会被明确拒绝）。
+     * <p>防御性兜底：调用链（WS 握手 / HTTP 拦截器）保证 userId 非空，
+     * 但作为跨服务契约的发送端仍显式校验，避免把「无主」内部请求发给对端。</p>
+     */
+    private void setActingUserHeader(org.springframework.http.HttpHeaders headers, Long actingUserId) {
+        if (actingUserId == null || actingUserId <= 0) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "内部调用缺少操作者用户 ID");
+        }
+        headers.set(ACTING_USER_ID_HEADER, String.valueOf(actingUserId));
     }
 
     private FileCardContent parseSnapshotResponse(String responseBody) throws Exception {

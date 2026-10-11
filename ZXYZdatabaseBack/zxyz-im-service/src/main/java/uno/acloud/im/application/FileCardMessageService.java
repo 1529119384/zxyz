@@ -73,7 +73,9 @@ public class FileCardMessageService {
         mutePolicyService.requireCanSend(senderUserId, conversationId);
 
         // HTTP call outside transaction to avoid holding DB connection during remote I/O
-        FileCardContent fileCardContent = fileCardClient.snapshot(fileIds);
+        // P1-1：file 端内部链路无用户会话，操作者身份必须随请求头传递（X-Acting-User-Id）。
+        // senderUserId 来自 WS 握手身份（ImCommandDispatcher.requireLogin），非 StpUtil 上下文。
+        FileCardContent fileCardContent = fileCardClient.snapshot(senderUserId, fileIds);
 
         // DB operations via transaction helper to ensure proper transaction boundary
         return transactionHelper.execute(status ->
@@ -103,7 +105,8 @@ public class FileCardMessageService {
         }
 
         FileCardContent content = readFileCardContent(message.getContent());
-        FileCardResolveResult result = fileCardClient.resolve(content);
+        // P1-1：操作者即发起解析的会话成员（HTTP 拦截器身份），显式传给 file 端做访问控制。
+        FileCardResolveResult result = fileCardClient.resolve(userId, content);
         Set<Long> fileIds = content.getEntries().stream().map(FileCardEntrySnapshot::getFileId).collect(Collectors.toSet());
         fileCardResolveCache.put(messageId, fileIds, result);
         return toResolveVO(result);

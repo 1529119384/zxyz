@@ -14,7 +14,7 @@
 | **上下文冒烟测试** | 验证 Spring 上下文能加载 | 1 类（`ZxyzImApplicationTests`） | 中（需 Spring） |
 | **组件测试** | 验证 Vue 组件渲染和交互 | 已建立（`@vue/test-utils`；见「组件测试模式」） | 中 |
 
-> **规模口径（2026-10-11 复测）**：后端按 `ZXYZdatabaseBack/**/src/test/java/**/*.java` 实测（**174 个文件**，含抽象基类 `AbstractIntegrationTest` 与 2 个非 `*Test` 命名的辅助类）；`*Test.java` 命名的**测试类 172 个** —— `*IntegrationTest` 10、`*ConsumerTest` 8、冒烟 1，其余为单元测试。2026-10-09 Boot 4 迁移（f8b5dbf）新增 5 个 Jasypt 加解密测试（zxyz-common）、ISSUE/51-DAILY-AUDIT-2026-10-10.md §P3-2 修复批次（c823694）新增 ENC() 判定一致性测试、2026-10-10 IM WS 会话续签新增 3 个测试（zxyz-im-service）与并行批次的 `SaTokenConfigBindingTest`（zxyz-common）、2026-10-11 P3 安全批次新增 `LoginFailureLockoutServiceTest`（zxyz-user-service）后为当前值。前端为 `*.spec.js` 共 **68** 个文件（权威计数见 `CLAUDE.md`，由 `npm run doc-count:check` 校验）。
+> **规模口径（2026-10-11 复测）**：后端按 `ZXYZdatabaseBack/**/src/test/java/**/*.java` 实测（**197 个文件**，含抽象基类 `AbstractIntegrationTest` 与 3 个非 `*Test` 命名的辅助类）；`*Test.java` 命名的**测试类 194 个** —— `*IntegrationTest` 10、`*ConsumerTest` 8、冒烟 1，其余为单元测试。2026-10-09 Boot 4 迁移（f8b5dbf）新增 5 个 Jasypt 加解密测试（zxyz-common）、ISSUE/51-DAILY-AUDIT-2026-10-10.md §P3-2 修复批次（c823694）新增 ENC() 判定一致性测试、2026-10-10 IM WS 会话续签新增 3 个测试（zxyz-im-service）与并行批次的 `SaTokenConfigBindingTest`（zxyz-common）、2026-10-11 P3 安全批次新增 `LoginFailureLockoutServiceTest`（zxyz-user-service）、54 号全量审计批次（2026-10-11 晚）新增 MQ wire 契约/门禁三件（zxyz-common）、audit 上下文冒烟+实体-DDL 守护（zxyz-audit-service）、IM 文件卡片链路与 MQ 消费者 30 用例（zxyz-im-service）、team 29 @Log 契约与拓扑（zxyz-team-service）、file 搜索索引守护+拓扑（zxyz-file-service）、email 回捞+project MVC 双轨实证（各自模块）后为当前值。前端为 `*.spec.js` 共 **68** 个文件（权威计数见 `CLAUDE.md`，由 `npm run doc-count:check` 校验）。
 
 **回归测试**：修改代码后运行全量测试（`mvn test` + `npm run test`），确保未引入破坏性变更。
 
@@ -1311,27 +1311,27 @@ Vitest 5 已**移除** `coverage.all` 选项（`CoverageOptions` 里已无 `all`
 
 ### 测试文件清单（实测，按模块）
 
-#### 后端（共 174 个文件 / 172 个 `*Test.java` 测试类）
+#### 后端（共 197 个文件 / 194 个 `*Test.java` 测试类）
 
-> **2026-10-11 实测**（口径：`ZXYZdatabaseBack/**/src/test/java/**/*.java`，含抽象基类 `AbstractIntegrationTest` 与 2 个非 `*Test` 命名的辅助类）。历史读数：2026-09-22 为 137/135；2026-10-03 修复批次后为 162/160；`701af68`（alone-redis 门禁）新增 `AloneRedisWiringContractTest.java`（zxyz-common）后为 163/161；2026-10-09 Boot 4 迁移（f8b5dbf）新增 5 个 Jasypt 加解密测试（zxyz-common）、ISSUE/51-DAILY-AUDIT-2026-10-10.md §P3-2 修复批次（c823694）新增 ENC() 判定一致性测试后为 169/167；2026-10-10 IM WS 会话续签新增 3 个（zxyz-im-service：`ImSessionKeepAliveServiceTest`、`ImWebSocketFrameHandlerTest`、`ImWebSocketAuthHandlerTest`）与并行批次的 `SaTokenConfigBindingTest`（zxyz-common）后为 173/171；2026-10-11 P3 安全批次新增 `LoginFailureLockoutServiceTest`（zxyz-user-service）后为当前值。文件数按模块：
+> **2026-10-11 实测**（口径：`ZXYZdatabaseBack/**/src/test/java/**/*.java`，含抽象基类 `AbstractIntegrationTest` 与 2 个非 `*Test` 命名的辅助类）。历史读数：2026-09-22 为 137/135；2026-10-03 修复批次后为 162/160；`701af68`（alone-redis 门禁）新增 `AloneRedisWiringContractTest.java`（zxyz-common）后为 163/161；2026-10-09 Boot 4 迁移（f8b5dbf）新增 5 个 Jasypt 加解密测试（zxyz-common）、ISSUE/51-DAILY-AUDIT-2026-10-10.md §P3-2 修复批次（c823694）新增 ENC() 判定一致性测试后为 169/167；2026-10-10 IM WS 会话续签新增 3 个（zxyz-im-service：`ImSessionKeepAliveServiceTest`、`ImWebSocketFrameHandlerTest`、`ImWebSocketAuthHandlerTest`）与并行批次的 `SaTokenConfigBindingTest`（zxyz-common）后为 173/171；2026-10-11 P3 安全批次新增 `LoginFailureLockoutServiceTest`（zxyz-user-service）、54 号全量审计批次（2026-10-11 晚）新增 MQ wire 契约/门禁三件（zxyz-common）、audit 上下文冒烟+实体-DDL 守护（zxyz-audit-service）、IM 文件卡片链路与 MQ 消费者 30 用例（zxyz-im-service）、team 29 @Log 契约与拓扑（zxyz-team-service）、file 搜索索引守护+拓扑（zxyz-file-service）、email 回捞+project MVC 双轨实证（各自模块）后为当前值。文件数按模块：
 
 | 模块 | 文件数 | 其中 `*Test.java` |
 |---|---|---|
-| `zxyz-common` | 33（含 1 抽象基类 `AbstractIntegrationTest`；含 alone-redis 接线契约门禁 `AloneRedisWiringContractTest`；含 Boot 4 迁移新增的 5 个 Jasypt 加解密测试；含 `SaTokenConfigBindingTest`） | 33 |
+| `zxyz-common` | 36（含 1 抽象基类 `AbstractIntegrationTest`；含 alone-redis 接线契约门禁 `AloneRedisWiringContractTest`；含 Boot 4 迁移新增的 5 个 Jasypt 加解密测试；含 `SaTokenConfigBindingTest`；含 54 号批次新增 MQ wire 契约 `MqWireContractTest` 与两道门禁 `MqConsumerTestDeserializationGuardTest`/`MqListenerQueueAlignmentGateTest`） | 36 |
 | `zxyz-admin-service` | 7 | 7 |
-| `zxyz-audit-service` | 4 | 4 |
-| `zxyz-email-service` | 12 | 11 |
-| `zxyz-file-service` | 30 | 30 |
+| `zxyz-audit-service` | 6（54 号批次新增全上下文冒烟 `AuditContextSmokeTest` 与实体-DDL 守护 `OperateLogEntityDdlGuardTest`） | 6 |
+| `zxyz-email-service` | 13（54 号批次新增 SENDING 回捞 `EmailDispatchServiceRecoverStaleSendingTest`） | 12 |
+| `zxyz-file-service` | 35（54 号批次新增拓扑契约 + 搜索索引守护 `FileSearchOrderingIndexTest` + 文件卡片链路测试组） | 35 |
 | `zxyz-gateway` | 9 | 9 |
-| `zxyz-im-service` | 19（含 2026-10-10 会话续签新增 3 个测试） | 18 |
-| `zxyz-project-service` | 12 | 12 |
-| `zxyz-share-service` | 15 | 15 |
+| `zxyz-im-service` | 24（含 2026-10-10 会话续签 3 个；54 号批次新增 MQ 消费者 4 类 30 用例 + LogAspect 契约） | 23 |
+| `zxyz-project-service` | 15（54 号批次新增拓扑契约 + MVC LocalDateTime 双轨实证 `MvcLocalDateTimeFormatTest`） | 14 |
+| `zxyz-share-service` | 16（54 号批次新增拓扑契约） | 16 |
 | `zxyz-starter` | 5 | 5 |
-| `zxyz-team-service` | 15 | 15 |
+| `zxyz-team-service` | 18（54 号批次新增 Publisher 契约/Consumer 重写/拓扑契约/LogAspect） | 18 |
 | `zxyz-user-service` | 13（含 2026-10-11 P3 批新增 `LoginFailureLockoutServiceTest`） | 13 |
 
-总和（文件数）：33 + 7 + 4 + 12 + 30 + 9 + 19 + 12 + 15 + 5 + 15 + 13 = **174**
-总和（`*Test.java`）：172（174 − 2 个非 `*Test` 命名辅助类：im 1 + email 1）
+总和（文件数）：36 + 7 + 6 + 13 + 35 + 9 + 24 + 15 + 16 + 5 + 18 + 13 = **197**
+总和（`*Test.java`）：194（197 − 3 个非 `*Test` 命名辅助类：im 1 + email 1 + project 1）
 
 #### 前端（共 68 个文件）
 

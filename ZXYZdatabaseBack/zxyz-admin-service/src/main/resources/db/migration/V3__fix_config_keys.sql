@@ -115,7 +115,7 @@ ON DUPLICATE KEY UPDATE
     `is_editable` = VALUES(`is_editable`);
 
 INSERT INTO `sys_config` (`config_key`, `config_value`, `config_type`, `value_type`, `description`, `default_value`, `is_editable`) VALUES
-('app.team.min-password-length', '6', 'SECURITY', 'NUMBER', '团队密码最小长度', '6', 1)
+('app.team.min-password-length', '8', 'SECURITY', 'NUMBER', '团队密码最小长度', '8', 1)
 ON DUPLICATE KEY UPDATE
     `config_value` = VALUES(`config_value`),
     `config_type` = VALUES(`config_type`),

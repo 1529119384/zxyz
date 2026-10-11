@@ -53,6 +53,30 @@ class ConfigAdminControllerTest {
         assertEquals(ErrorCode.SUCCESS, result.getCode());
     }
 
+    /**
+     * ISSUE/54 R2 同源掩码：列表接口不得明文回敏感键 configValue。
+     * 与 GET /configs/{key} 共用 ConfigService 的 isSensitive 清单。
+     */
+    @Test
+    void listAll_masksSensitiveKeysAndKeepsOthersIntact() {
+        SysConfig sensitive = new SysConfig();
+        sensitive.setConfigKey("smtp.password");
+        sensitive.setConfigValue("plain-secret-stored-in-db");
+        SysConfig sensitiveCipher = new SysConfig();
+        sensitiveCipher.setConfigKey("oss.accessKey");
+        sensitiveCipher.setConfigValue("ENC(ciphertext)");
+        SysConfig normal = new SysConfig();
+        normal.setConfigKey("app.team.default-max-members");
+        normal.setConfigValue("100");
+        when(configMapper.selectList(any())).thenReturn(List.of(sensitive, sensitiveCipher, normal));
+
+        Result<List<SysConfig>> result = controller.listAll();
+
+        assertEquals("ENC:****", result.getData().get(0).getConfigValue());
+        assertEquals("ENC:****", result.getData().get(1).getConfigValue());
+        assertEquals("100", result.getData().get(2).getConfigValue());
+    }
+
     // ---- getByKey ----
 
     @Test

@@ -16,7 +16,7 @@ import uno.acloud.im.infrastructure.persistence.entity.ImConversation;
 import uno.acloud.im.infrastructure.persistence.entity.TeamInvitation;
 import uno.acloud.im.infrastructure.persistence.entity.TeamMember;
 import uno.acloud.im.infrastructure.mapper.ConversationMapper;
-import uno.acloud.im.infrastructure.mapper.ImEntityMapper;
+import uno.acloud.im.convert.ImEntityMapper;
 import uno.acloud.im.infrastructure.mapper.TeamInvitationMapper;
 import uno.acloud.im.infrastructure.mapper.TeamMapper;
 import uno.acloud.im.dto.InviteUserRequest;

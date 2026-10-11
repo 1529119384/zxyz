@@ -366,6 +366,14 @@ public class EnterpriseTeamService implements EnterpriseTeamPort {
     public TeamMemberVO updateMemberStatus(Long teamId, Long targetUserId, UpdateTeamMemberStatusRequest request, Long operatorUserId) {
         teamFileAccessService.check(operatorUserId, teamId, TeamPermissionCodes.TEAM_MEMBER_REMOVE);
 
+        Team team = requireTeam(teamId);
+        // P2-1（54 号 §2.7）：owner 保护与 removeMember 同型 —— 持权成员若能把 owner 置为
+        // DISABLED，owner 既登不进团队也改不了成员状态，团队会被锁死。
+        // 错误码对齐 removeMember 的既有语义：TEAM_PERMISSION_DENIED + 「不能禁用团队大管理员」。
+        if (targetUserId.equals(team.getOwnerUserId())) {
+            throw new ForbiddenException(TeamErrorCode.TEAM_PERMISSION_DENIED.getCode(), "不能禁用团队大管理员");
+        }
+
         return lockTemplate.withLock("zxyz:team:member:" + teamId, LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS, () -> {
             int status = request == null || request.getStatus() == null
                     ? TeamMemberStatus.ACTIVE : request.getStatus();

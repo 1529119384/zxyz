@@ -1,0 +1,17 @@
+# 测试专用 application.yml：**遮蔽** main/resources/application.yml（Maven 测试 classpath 上
+# test-classes 优先于 classes，与 zxyz-im-service/src/test/resources/application.yml 同一先例）。
+#
+# 目的：让 AuditContextSmokeTest 能离线装配全上下文——
+# 1. 砍掉 nacos: 强制 import（CI / 本地均无 Nacos；主 application.yml 里的三个 nacos: 条目
+#    会在上下文加载期直连 localhost:8848）；
+# 2. 全局关闭 Flyway（迁移链是 MySQL 方言，H2 冒烟库不用它；operate_log 的建表由
+#    src/test/resources/sql/h2/audit_schema_h2.sql 承担，DDL 与实体的对齐守护在
+#    OperateLogEntityDdlGuardTest，它读的是真实迁移链文件而非本脚本）。
+spring:
+  application:
+    name: zxyz-audit-service
+  config:
+    import:
+      - classpath:application-common.yml
+  flyway:
+    enabled: false

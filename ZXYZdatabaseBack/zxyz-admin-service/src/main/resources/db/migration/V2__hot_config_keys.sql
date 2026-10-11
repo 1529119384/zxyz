@@ -49,7 +49,7 @@ INSERT INTO `sys_config` (`config_key`, `config_value`, `config_type`, `value_ty
 -- 团队默认配额
 ('app.team.default-max-members', '100', 'SYSTEM', 'NUMBER', '团队默认成员上限', '100', 1),
 ('app.team.default-storage-limit-bytes', '107374182400', 'SYSTEM', 'NUMBER', '团队默认存储上限（字节，默认 100GB）', '107374182400', 1),
-('app.team.min-password-length', '6', 'SECURITY', 'NUMBER', '团队密码最小长度', '6', 1);
+('app.team.min-password-length', '8', 'SECURITY', 'NUMBER', '团队密码最小长度', '8', 1);
 
 -- ============================================================================
 -- 阶段二：缓存 TTL + REST 客户端超时 + Resilience4j 熔断/重试

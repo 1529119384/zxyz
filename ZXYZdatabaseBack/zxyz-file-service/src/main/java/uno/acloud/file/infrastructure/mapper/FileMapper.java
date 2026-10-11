@@ -69,17 +69,8 @@ public interface FileMapper {
                                           @Param("projectId") Long projectId,
                                           @Param("userId") Long userId);
 
-    default List<FileNode> getFileNodesByParentId(Long parentId, Long teamId, Long userId) {
-        return getFileNodesByParentId(parentId, teamId, null, null, userId);
-    }
-
-    default List<FileNode> getFileNodesByParentId(Long parentId) {
-        return getFileNodesByParentId(parentId, null, null);
-    }
-
-    default List<FileNode> getFileNodesByParentId(Long parentId, Long teamId) {
-        return getFileNodesByParentId(parentId, teamId, null);
-    }
+    // （2026-10-11 54 号 🔴-3）getFileNodesByParentId 的三个便捷重载已删（同上：恒真短路防御缺失，
+    //   无生产调用方；FileQueryService 全部走五参重载）。
 
     List<FileNode> getFileNodesByParentIdPaged(@Param("parentId") Long parentId,
                                                @Param("teamId") Long teamId,
@@ -100,9 +91,9 @@ public interface FileMapper {
                                                     @Param("teamId") Long teamId,
                                                     @Param("userId") Long userId);
 
-    default List<FileNode> getChildrenByParentIdWithDeleted(Long parentId) {
-        return getChildrenByParentIdWithDeleted(parentId, null, null);
-    }
+    // （2026-10-11 54 号 🔴-3）便捷重载已删：其 SQL 分支含 (#{userId} IS NULL OR upload_user_id = #{userId})
+    //   恒真短路——无生产调用方（全链 userId 来自网关鉴权非空），保留入口只会给未来调用者埋
+    //   「漏传 userId 即全量放行」的防御缺失；测试一律走完整重载。
 
     List<FileNode> getShareChildrenByParentIdWithDeleted(@Param("parentId") Long parentId);
 
@@ -149,19 +140,14 @@ public interface FileMapper {
     /** 关键词命中总数；与 {@link #searchByKeyword} 同形（已迁至 mapper/FileMapper.xml）。 */
     int countByKeyword(@Param("userId") long userId, @Param("teamId") Long teamId, @Param("keyword") String keyword);
 
-    default int countByKeyword(long userId, String keyword) {
-        return countByKeyword(userId, null, keyword);
-    }
-
     List<FileSearchItemVO> searchByKeyword(@Param("userId") long userId,
                                            @Param("teamId") Long teamId,
                                            @Param("keyword") String keyword,
                                            @Param("pageSize") int pageSize,
                                            @Param("offset") int offset);
 
-    default List<FileSearchItemVO> searchByKeyword(long userId, String keyword, int pageSize, int offset) {
-        return searchByKeyword(userId, null, keyword, pageSize, offset);
-    }
+    // （2026-10-11 54 号 🔴-3）countByKeyword/searchByKeyword 的便捷重载已删（同上：teamId=null 时
+    //   走个人空间分支，便捷形态丢了调用方显式选择空间语义的机会；生产链 FileQueryService 全走三参/五参）。
 
     // 以下 5 条单行 UPDATE 已迁至 mapper/FileMapper.xml（P2-7 批次 1）
 

@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import uno.acloud.common.Result;
+import uno.acloud.common.audit.Log;
 import uno.acloud.im.application.FileCardMessageService;
 import uno.acloud.im.config.ImAuthContext;
 import uno.acloud.im.dto.MessageFileCardResolveRequest;
@@ -28,6 +29,7 @@ public class FileCardController {
     }
 
     @Operation(summary = "解析文件卡片")
+    @Log
     @PostMapping("/messages/{messageId}/file-card/resolve")
     public Result<FileCardResolveVO> resolveFileCard(@PathVariable Long messageId,
                                                      @Valid @RequestBody(required = false) MessageFileCardResolveRequest request) {

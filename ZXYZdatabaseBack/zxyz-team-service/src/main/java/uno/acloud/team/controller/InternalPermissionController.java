@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.TeamErrorCode;
 import uno.acloud.common.Result;
+import uno.acloud.common.audit.Log;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.team.dto.permission.AssignTeamMemberRoleRequest;
 import uno.acloud.team.vo.permission.PermissionAuditVO;
@@ -94,6 +95,7 @@ public class InternalPermissionController {
     }
 
     @Operation(summary = "创建或更新系统角色")
+    @Log
     @PostMapping("/system-roles")
     public Result<RoleItemVO> saveSystemRole(@Valid @RequestBody InternalRoleSaveRequest request) {
         return Result.of(permissionService.saveSystemRole(
@@ -101,6 +103,7 @@ public class InternalPermissionController {
     }
 
     @Operation(summary = "分配系统角色给用户")
+    @Log
     @PostMapping("/system-roles/assign")
     public Result<Void> assignRoleToUser(@Valid @RequestBody InternalRoleAssignRequest request) {
         permissionService.assignRoleToUser(
@@ -111,6 +114,7 @@ public class InternalPermissionController {
     // ==================== 团队级角色管理（已有桩方法，现已实现） ====================
 
     @Operation(summary = "创建或更新团队角色")
+    @Log
     @PostMapping("/team-roles")
     public Result<TeamRoleVO> saveTeamRole(@Valid @RequestBody SaveTeamRoleRequest request) {
         return Result.of(roleManagementService.saveRole(request.getTeamId(), null, request, null));
@@ -123,6 +127,7 @@ public class InternalPermissionController {
     }
 
     @Operation(summary = "分配团队角色给成员")
+    @Log
     @PostMapping("/team-roles/assign")
     public Result<Void> assignTeamRole(@Valid @RequestBody AssignTeamMemberRoleRequest request) {
         roleManagementService.assignMemberRole(request.getTeamId(), request, null);
@@ -162,6 +167,7 @@ public class InternalPermissionController {
     }
 
     @Operation(summary = "确保用户拥有默认角色")
+    @Log
     @PostMapping("/ensure-default-role")
     public Result<Void> ensureDefaultRole(@Valid @RequestBody EnsureDefaultRoleRequest request) {
         permissionService.ensureDefaultRole(request.getUserId(), request.getUsername());
@@ -169,6 +175,7 @@ public class InternalPermissionController {
     }
 
     @Operation(summary = "分配引导管理员角色")
+    @Log
     @PostMapping("/assign-bootstrap-admin")
     public Result<Void> assignBootstrapAdminRole(@Valid @RequestBody UserIdRequest request) {
         permissionService.assignBootstrapAdminRole(request.getUserId());
@@ -186,6 +193,7 @@ public class InternalPermissionController {
 
     /** 授权内置角色（供 IM Service 在成员同步时调用） */
     @Operation(summary = "授权内置角色")
+    @Log
     @PostMapping("/team/grant-role")
     public Result<Void> grantBuiltInRole(@Valid @RequestBody GrantRoleRequest request) {
         roleManagementService.grantBuiltInRole(request.getTeamId(), request.getUserId(), request.getRoleCode());
@@ -194,6 +202,7 @@ public class InternalPermissionController {
 
     /** 清除成员角色（供 IM Service 在成员移除时调用） */
     @Operation(summary = "清除成员角色")
+    @Log
     @PostMapping("/team/clear-role")
     public Result<Void> clearMemberRole(@Valid @RequestBody TeamMemberRequest request) {
         roleManagementService.clearMemberRole(request.getTeamId(), request.getUserId());
@@ -202,6 +211,7 @@ public class InternalPermissionController {
 
     /** 初始化内置角色（供 IM Service 在团队同步时调用） */
     @Operation(summary = "初始化团队内置角色")
+    @Log
     @PostMapping("/team/initialize")
     public Result<Void> initializeBuiltInRoles(@Valid @RequestBody InitializeRolesRequest request) {
         roleManagementService.initializeBuiltInRoles(request.getTeamId(), request.getOwnerUserId());

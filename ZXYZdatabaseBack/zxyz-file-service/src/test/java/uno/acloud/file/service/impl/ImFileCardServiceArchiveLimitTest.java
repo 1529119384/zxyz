@@ -9,7 +9,6 @@ import uno.acloud.common.ErrorCode;
 import uno.acloud.dto.FileInfoDTO;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.file.service.FileQueryPort;
-import uno.acloud.satoken.AuthServicePort;
 import uno.acloud.vo.FileDownloadUrlVO;
 
 import java.util.ArrayList;
@@ -36,6 +35,11 @@ import static org.mockito.Mockito.*;
  * <h2>为什么选择「明确拒绝」而不是「静默截断」</h2>
  * <p>截断会让用户拿到一个<b>少了文件</b>的压缩包且无从察觉 —— 归档场景下这是数据完整性问题，
  * 比一个可读的 400 错误严重得多。故超限时抛出带上限数值与替代方式的 {@code BusinessException}。</p>
+ *
+ * <h2>P1-1 重构说明（ISSUE/54 §2.3 假证据修复）</h2>
+ * <p>本测试此前 mock 掉 {@code AuthServicePort} —— 但生产链路里该服务根本不该被走到
+ * （内部链路无用户会话，userId 由 X-Acting-User-Id 头经 Controller 显式传入）。
+ * 已随 P1-1 修复移除该 mock：userId 现在是方法参数，走真实传参语义。</p>
  */
 @ExtendWith(MockitoExtension.class)
 class ImFileCardServiceArchiveLimitTest {
@@ -44,14 +48,12 @@ class ImFileCardServiceArchiveLimitTest {
     private FileDomainValidator fileDomainValidator;
     @Mock
     private FileQueryPort fileQueryPort;
-    @Mock
-    private AuthServicePort authServicePort;
 
     private ImFileCardService service;
 
     @BeforeEach
     void setUp() {
-        service = new ImFileCardService(fileDomainValidator, fileQueryPort, authServicePort);
+        service = new ImFileCardService(fileDomainValidator, fileQueryPort);
     }
 
     private static FileInfoDTO file(long id, String name, long parentId) {

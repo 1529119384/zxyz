@@ -16,8 +16,6 @@ import uno.acloud.file.vo.im.FileCardResolveVO;
 import uno.acloud.file.vo.im.FileCardSnapshotVO;
 
 import org.springframework.lang.Nullable;
-import uno.acloud.satoken.AuthServicePort;
-
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -60,18 +58,15 @@ public class ImFileCardService implements ImFileCardPort {
 
     private final FileDomainValidator fileDomainValidator;
     private final FileQueryPort fileQueryPort;
-    private final AuthServicePort authServicePort;
 
-    public ImFileCardService(FileDomainValidator fileDomainValidator, FileQueryPort fileQueryPort, AuthServicePort authServicePort) {
+    public ImFileCardService(FileDomainValidator fileDomainValidator, FileQueryPort fileQueryPort) {
         this.fileDomainValidator = fileDomainValidator;
         this.fileQueryPort = fileQueryPort;
-        this.authServicePort = authServicePort;
     }
 
     @Override
-    public FileCardSnapshotVO createSnapshot(FileCardSnapshotRequest request) {
+    public FileCardSnapshotVO createSnapshot(FileCardSnapshotRequest request, Long currentUserId) {
         List<Long> normalizedFileIds = fileDomainValidator.normalizeFileIds(request == null ? null : request.getFileIds());
-        Long currentUserId = authServicePort.getCurrentUserId();
         Map<Long, FileInfoDTO> fileInfoMap = requireAccessibleActiveFiles(normalizedFileIds, currentUserId);
         List<FileInfoDTO> orderedFiles = normalizedFileIds.stream()
                 .map(fileInfoMap::get)
@@ -85,7 +80,7 @@ public class ImFileCardService implements ImFileCardPort {
                 .toList();
         return new FileCardSnapshotVO(
                 shareType,
-                authServicePort.getCurrentUserId(),
+                currentUserId,
                 parentId,
                 entries.size(),
                 entries
@@ -93,11 +88,11 @@ public class ImFileCardService implements ImFileCardPort {
     }
 
     @Override
-    public FileCardResolveVO resolve(FileCardResolveRequest request) {
-        return resolve(request, authServicePort.getCurrentUserId());
+    public FileCardResolveVO resolve(FileCardResolveRequest request, Long currentUserId) {
+        return resolveInternal(request, currentUserId);
     }
 
-    FileCardResolveVO resolve(FileCardResolveRequest request, Long currentUserId) {
+    FileCardResolveVO resolveInternal(FileCardResolveRequest request, Long currentUserId) {
         List<FileCardEntryRequest> requestedEntries = normalizeEntries(request);
         Map<Long, FileCardEntryRequest> requestEntryMap = requestedEntries.stream()
                 .collect(Collectors.toMap(FileCardEntryRequest::getFileId, entry -> entry, (left, right) -> left, LinkedHashMap::new));

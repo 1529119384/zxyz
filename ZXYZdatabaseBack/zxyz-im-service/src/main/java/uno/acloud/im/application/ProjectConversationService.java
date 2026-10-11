@@ -7,7 +7,7 @@ import uno.acloud.exception.BusinessException;
 import uno.acloud.im.domain.enums.ConversationType;
 import uno.acloud.im.infrastructure.persistence.entity.ImConversation;
 import uno.acloud.im.infrastructure.mapper.ConversationMapper;
-import uno.acloud.im.infrastructure.mapper.ImEntityMapper;
+import uno.acloud.im.convert.ImEntityMapper;
 import uno.acloud.im.dto.CreateProjectConversationRequest;
 import uno.acloud.im.dto.ProjectCreateRequestMessageRequest;
 import uno.acloud.im.dto.ProjectCreateRequestReviewResultRequest;

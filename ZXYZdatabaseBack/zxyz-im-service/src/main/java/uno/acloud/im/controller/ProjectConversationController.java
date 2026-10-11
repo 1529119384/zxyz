@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import uno.acloud.common.Result;
+import uno.acloud.common.audit.Log;
 import uno.acloud.im.application.ProjectConversationService;
 import uno.acloud.im.dto.CreateProjectConversationRequest;
 import uno.acloud.im.dto.ProjectCreateRequestMessageRequest;
@@ -30,12 +31,14 @@ public class ProjectConversationController {
     }
 
     @Operation(summary = "创建或获取项目会话")
+    @Log
     @PostMapping("/conversations")
     public Result<ProjectConversationVO> createConversation(@Valid @RequestBody CreateProjectConversationRequest request) {
         return Result.of(projectConversationService.createOrGet(request));
     }
 
     @Operation(summary = "归档项目会话")
+    @Log
     @PatchMapping("/{projectId}/archive")
     public Result<Void> archiveConversation(@PathVariable Long projectId) {
         projectConversationService.archive(projectId);
@@ -43,6 +46,7 @@ public class ProjectConversationController {
     }
 
     @Operation(summary = "发送项目创建申请消息")
+    @Log
     @PostMapping("/creation-applications/messages")
     public Result<Void> appendProjectCreateRequestMessage(@Valid @RequestBody ProjectCreateRequestMessageRequest request) {
         projectConversationService.appendProjectCreateRequestMessage(request);
@@ -50,6 +54,7 @@ public class ProjectConversationController {
     }
 
     @Operation(summary = "发送项目创建申请结果消息")
+    @Log
     @PostMapping("/creation-applications/{applicationId}/result-messages")
     public Result<Void> appendProjectCreateRequestResultMessage(@PathVariable Long applicationId,
                                                                  @Valid @RequestBody ProjectCreateRequestReviewResultRequest request) {

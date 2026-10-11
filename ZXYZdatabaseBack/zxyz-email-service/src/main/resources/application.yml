@@ -41,6 +41,9 @@ email:
   batch-size: ${EMAIL_BATCH_SIZE:50}
   retry-fixed-delay-ms: ${EMAIL_RETRY_FIXED_DELAY_MS:60000}
   retry-initial-delay-ms: ${EMAIL_RETRY_INITIAL_DELAY_MS:10000}
+  # P2-2（ISSUE/54）：SENDING 卡死回捞阈值（分钟）—— markSending 后进程崩溃的邮件记录
+  # 由 EmailRetryTask 按「update_time 早于 now - 本阈值」回捞重置。默认 10 分钟。
+  sending-stale-minutes: ${EMAIL_SENDING_STALE_MINUTES:10}
   verify-code-expire-minutes: ${EMAIL_VERIFY_CODE_EXPIRE_MINUTES:10}
   # 验证码摘要 pepper（HMAC-SHA256 密钥，绝不落库；库里只存摘要）。
   # 缺省回退 Jasypt 主密钥；未配置或为公开占位值时启动失败（fail-closed）。

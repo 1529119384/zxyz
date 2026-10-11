@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import uno.acloud.common.Result;
+import uno.acloud.common.audit.Log;
 import uno.acloud.im.application.AnnouncementService;
 import uno.acloud.im.application.ImRealtimePushService;
 import uno.acloud.im.application.JoinRequestService;
@@ -77,6 +78,7 @@ public class TeamCollaborationController {
     }
 
     @Operation(summary = "邀请用户加入团队")
+    @Log
     @SaCheckPermission(SystemPermissionCodes.IM_TEAM_INVITE)
     @PostMapping("/teams/{teamId}/invitations")
     public Result<TeamInvitationVO> invite(@PathVariable Long teamId, @Valid @RequestBody InviteUserRequest request) {
@@ -84,6 +86,7 @@ public class TeamCollaborationController {
     }
 
     @Operation(summary = "发布公告")
+    @Log
     @SaCheckPermission(SystemPermissionCodes.IM_TEAM_ANNOUNCEMENT)
     @PostMapping("/teams/{teamId}/announcements")
     public Result<ImMessageVO> publishAnnouncement(@PathVariable Long teamId, @Valid @RequestBody PublishAnnouncementRequest request) {
@@ -93,6 +96,7 @@ public class TeamCollaborationController {
     }
 
     @Operation(summary = "禁言成员")
+    @Log
     @SaCheckPermission(SystemPermissionCodes.IM_TEAM_MUTE)
     @PostMapping("/teams/{teamId}/mutes")
     public Result<TeamMuteVO> mute(@PathVariable Long teamId, @Valid @RequestBody MuteMemberRequest request) {
@@ -107,6 +111,7 @@ public class TeamCollaborationController {
     }
 
     @Operation(summary = "解除禁言")
+    @Log
     @SaCheckPermission(SystemPermissionCodes.IM_TEAM_MUTE)
     @DeleteMapping("/teams/{teamId}/mutes/{userId}")
     public Result<Void> unmute(@PathVariable Long teamId, @PathVariable Long userId) {
@@ -115,6 +120,7 @@ public class TeamCollaborationController {
     }
 
     @Operation(summary = "创建邀请链接")
+    @Log
     @SaCheckPermission(SystemPermissionCodes.IM_TEAM_INVITE_LINK)
     @PostMapping("/teams/{teamId}/invite-links")
     public Result<TeamInviteLinkVO> createInviteLink(@PathVariable Long teamId, @Valid @RequestBody(required = false) CreateInviteLinkRequest request) {
@@ -129,6 +135,7 @@ public class TeamCollaborationController {
     }
 
     @Operation(summary = "提交加入申请")
+    @Log
     @SaCheckPermission(SystemPermissionCodes.IM_TEAM_JOIN_REQUEST)
     @PostMapping("/invite-links/{token}/join-requests")
     public Result<TeamJoinRequestVO> submitJoinRequest(@PathVariable String token) {
@@ -136,6 +143,7 @@ public class TeamCollaborationController {
     }
 
     @Operation(summary = "批准加入申请")
+    @Log
     @SaCheckPermission(SystemPermissionCodes.IM_TEAM_JOIN_REQUEST)
     @PostMapping("/join-requests/{requestId}/approve")
     public Result<TeamJoinRequestVO> approveJoinRequest(@PathVariable Long requestId) {
@@ -143,6 +151,7 @@ public class TeamCollaborationController {
     }
 
     @Operation(summary = "拒绝加入申请")
+    @Log
     @SaCheckPermission(SystemPermissionCodes.IM_TEAM_JOIN_REQUEST)
     @PostMapping("/join-requests/{requestId}/reject")
     public Result<TeamJoinRequestVO> rejectJoinRequest(@PathVariable Long requestId) {
@@ -150,6 +159,7 @@ public class TeamCollaborationController {
     }
 
     @Operation(summary = "接受邀请")
+    @Log
     @SaCheckPermission(SystemPermissionCodes.IM_CONVERSATION_CREATE)
     @PostMapping("/team-invitations/{invitationId}/accept")
     public Result<TeamInvitationVO> acceptInvitation(@PathVariable Long invitationId) {
@@ -157,6 +167,7 @@ public class TeamCollaborationController {
     }
 
     @Operation(summary = "拒绝邀请")
+    @Log
     @SaCheckPermission(SystemPermissionCodes.IM_CONVERSATION_CREATE)
     @PostMapping("/team-invitations/{invitationId}/reject")
     public Result<TeamInvitationVO> rejectInvitation(@PathVariable Long invitationId) {

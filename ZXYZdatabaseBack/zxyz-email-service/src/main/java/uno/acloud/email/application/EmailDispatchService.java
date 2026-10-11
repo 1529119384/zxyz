@@ -139,6 +139,30 @@ public class EmailDispatchService {
         return successCount;
     }
 
+    /**
+     * P2-2（ISSUE/54）：回捞「卡死在 SENDING」的邮件记录。
+     *
+     * <p>{@code markSending} 把记录置为 SENDING 后若进程崩溃/被杀，该记录永远停在
+     * SENDING，而 {@link #dispatchDueRecords(int)} 只扫 PENDING —— 邮件从此永久滞留。
+     * 由 {@code EmailRetryTask} 周期性调用本方法：
+     * <ul>
+     *   <li>超龄（update_time 早于 now - {@code email.sending-stale-minutes}，默认 10 分钟）
+     *       且未超重试上限的记录：重置回 PENDING，由随后的 dispatchDueRecords 正常捞起重发；
+     *       attempt_count 不再 +1（markSending 已计过一次，重复计数会让重试预算被崩溃额外消耗）；</li>
+     *   <li>超龄且已达上限的记录：改判 FAILED 终态，避免「回捞 → 再崩 → 再回捞」死循环。</li>
+     * </ul>
+     * 返回值为诊断信息（成功重置数），发送成功与否仍以 dispatchDueRecords 的统计为准。
+     */
+    public int recoverStaleSending() {
+        int staleMinutes = Math.max(1, emailProperties.getSendingStaleMinutes());
+        int recovered = emailRecordMapper.recoverStaleSending(staleMinutes);
+        int abandoned = emailRecordMapper.failStaleSending(staleMinutes);
+        if (recovered > 0 || abandoned > 0) {
+            log.warn("SENDING 卡死记录回捞完成：重发回捞={}，超限放弃={}", recovered, abandoned);
+        }
+        return recovered;
+    }
+
     public boolean dispatchRecord(Long recordId) {
         if (recordId == null || emailRecordMapper.markSending(recordId) != 1) {
             return false;

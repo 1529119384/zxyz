@@ -15,6 +15,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.TeamMemberStatus;
 import uno.acloud.common.lock.DistributedLockTemplate;
 import static uno.acloud.common.TeamErrorCode.*;
 import uno.acloud.common.UserErrorCode;
@@ -640,12 +641,100 @@ class EnterpriseTeamServiceTest {
 
         doNothing().when(teamFileAccessService).check(operatorUserId, teamId, TeamPermissionCodes.TEAM_MEMBER_REMOVE);
 
+        // P2-1 后守卫在抢锁前 requireTeam：普通成员目标需能读到活跃团队才能走到抢锁
+        Team team = new Team();
+        team.setId(teamId);
+        team.setOwnerUserId(operatorUserId);
+        team.setStatus(0);
+        when(teamMapper.selectById(teamId)).thenReturn(team);
+
         when(redissonClient.getLock("zxyz:team:member:" + teamId)).thenReturn(rLock);
         when(rLock.tryLock(5L, 30L, TimeUnit.SECONDS)).thenReturn(false);
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> enterpriseTeamService.updateMemberStatus(teamId, targetUserId, request, operatorUserId));
         assertEquals(ErrorCode.CONCURRENT_OPERATION, ex.getErrorCode());
+    }
+
+    // ==================== P2-1：updateMemberStatus 的 owner 保护（54 号 §2.7） ====================
+
+    /**
+     * 守卫触发：目标成员是团队大管理员时拒绝禁用。
+     * 与 removeMember 的 owner 守卫同型 —— 持权成员若能把 owner 置为 DISABLED，
+     * owner 既登不进团队也改不了成员状态，团队会被锁死。
+     */
+    @Test
+    void updateMemberStatus_targetIsOwner_shouldRejectWithPermissionDenied() {
+        Long teamId = 10L;
+        Long ownerUserId = 1L;
+
+        UpdateTeamMemberStatusRequest request = new UpdateTeamMemberStatusRequest();
+        request.setStatus(TeamMemberStatus.DISABLED);
+
+        doNothing().when(teamFileAccessService).check(ownerUserId, teamId, TeamPermissionCodes.TEAM_MEMBER_REMOVE);
+
+        Team team = new Team();
+        team.setId(teamId);
+        team.setOwnerUserId(ownerUserId);
+        team.setStatus(0);
+        when(teamMapper.selectById(teamId)).thenReturn(team);
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> enterpriseTeamService.updateMemberStatus(teamId, ownerUserId, request, ownerUserId));
+        assertEquals(TEAM_PERMISSION_DENIED.getCode(), ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("不能禁用团队大管理员"));
+
+        // 守卫必须发生在任何写库动作之前：成员行绝不能被改成 DISABLED
+        verify(teamMapper, never()).updateMemberStatus(anyLong(), anyLong(), anyInt());
+    }
+
+    /**
+     * 守卫放行：目标不是 owner 时正常走完状态更新（DISABLED 落库）。
+     */
+    @Test
+    void updateMemberStatus_targetIsNotOwner_shouldProceedToUpdateStatus() throws Exception {
+        Long teamId = 10L;
+        Long ownerUserId = 1L;
+        Long targetUserId = 2L;
+
+        UpdateTeamMemberStatusRequest request = new UpdateTeamMemberStatusRequest();
+        request.setStatus(TeamMemberStatus.DISABLED);
+
+        doNothing().when(teamFileAccessService).check(ownerUserId, teamId, TeamPermissionCodes.TEAM_MEMBER_REMOVE);
+
+        Team team = new Team();
+        team.setId(teamId);
+        team.setOwnerUserId(ownerUserId);
+        team.setStatus(0);
+        when(teamMapper.selectById(teamId)).thenReturn(team);
+
+        when(redissonClient.getLock("zxyz:team:member:" + teamId)).thenReturn(rLock);
+        when(rLock.tryLock(5L, 30L, TimeUnit.SECONDS)).thenReturn(true);
+        when(rLock.isHeldByCurrentThread()).thenReturn(true);
+
+        when(teamMapper.updateMemberStatus(teamId, targetUserId, TeamMemberStatus.DISABLED)).thenReturn(1);
+
+        TeamMember target = new TeamMember();
+        target.setTeamId(teamId);
+        target.setUserId(targetUserId);
+        target.setRoleCode(TeamRoleCodes.MEMBER);
+        target.setStatus(TeamMemberStatus.DISABLED);
+        when(teamMapper.listMembers(teamId)).thenReturn(List.of(target));
+
+        UserInfoDTO targetUser = new UserInfoDTO();
+        targetUser.setId(targetUserId);
+        targetUser.setUsername("member2");
+        when(userServiceClient.listByIds(List.of(targetUserId))).thenReturn(List.of(targetUser));
+
+        TeamMemberVO memberVO = new TeamMemberVO(targetUserId, "member2", null, null, null,
+                TeamRoleCodes.MEMBER, TeamMemberStatus.DISABLED, null);
+        when(teamEntityMapper.toMemberVO(eq(target), any())).thenReturn(memberVO);
+
+        TeamMemberVO result = enterpriseTeamService.updateMemberStatus(teamId, targetUserId, request, ownerUserId);
+
+        assertNotNull(result);
+        assertEquals(targetUserId, result.getUserId());
+        verify(teamMapper).updateMemberStatus(teamId, targetUserId, TeamMemberStatus.DISABLED);
     }
 
     // ==================== createTeam — lock not acquired ====================
@@ -666,6 +755,40 @@ class EnterpriseTeamServiceTest {
 
         // User should never be created
         verify(userServiceClient, never()).createTeamUser(anyString(), anyString(), any(), any(), any(), any());
+    }
+
+    // ==================== A4：成员创建事件的 afterCommit 语义 ====================
+
+    /**
+     * MQ 发布必须延迟到事务提交之后（事务红线：HTTP/MQ 远程调用勿放事务内）。
+     * 用真实事务同步把该时序钉住：真实注册 synchronization → 在「事务已注册、尚未提交」的
+     * 快照点断言 0 次发布 → 触发 afterCommit → 断言 1 次发布。
+     * 一旦有人把 runAfterCommit 挪回事务体内直接发布，本用例立刻变红。
+     */
+    @Test
+    void createMember_publishesMemberAddedEventOnlyAfterCommit() throws Exception {
+        Long teamId = 10L;
+        Long operatorUserId = 1L;
+        Long newUserId = 2L;
+        CreateTeamMemberRequest request = newTeamMemberRequest();
+
+        stubSuccessfulCreateMember(teamId, operatorUserId, newUserId, request);
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            enterpriseTeamService.createMember(teamId, request, operatorUserId);
+
+            // 事务同步已注册但尚未提交：此刻绝不能有 MQ 发布
+            verify(teamEventPublisher, never()).publishMemberCreated(anyLong(), any(), any());
+
+            // 模拟 Spring 提交事务：afterCommit 回调触发
+            TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(TransactionSynchronization::afterCommit);
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+
+        verify(teamEventPublisher).publishMemberCreated(eq(teamId), any(), any());
     }
 
     // ==================== P1-2 回归：用户锁必须包住整个事务 ====================

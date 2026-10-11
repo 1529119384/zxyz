@@ -26,6 +26,8 @@ public class WsTicketController {
     }
 
     @Operation(summary = "创建 WebSocket 认证票据")
+    // 刻意不挂 @Log：响应体是 WS 认证票据本身（等价凭据），脱敏器按字段名匹配、
+    // 裸字符串返回值不会被命中 ⇒ 挂 @Log 会把凭据明文写进 operate_log（R2 同型审计泄漏）。
     @PostMapping("/ws/ticket")
     public Result<String> createTicket() {
         Long userId = ImAuthContext.currentUserId();

@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import uno.acloud.common.Result;
+import uno.acloud.common.audit.Log;
 import uno.acloud.im.application.ImMessageService;
 import uno.acloud.im.application.ImRealtimePushService;
 import uno.acloud.im.application.MessageModerationService;
@@ -78,6 +79,7 @@ public class MessageController {
     }
 
     @Operation(summary = "撤回消息")
+    @Log
     @SaCheckPermission(SystemPermissionCodes.IM_MESSAGE_SEND)
     @PostMapping("/messages/{messageId}/recall")
     public Result<MessageRecallVO> recallMessage(@PathVariable Long messageId,

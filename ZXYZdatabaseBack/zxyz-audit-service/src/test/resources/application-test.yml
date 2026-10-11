@@ -1,0 +1,29 @@
+# audit 上下文冒烟专用 profile（AuditContextSmokeTest @ActiveProfiles("test")）。
+#
+# 目标：全上下文 bean 装配一次，但零外部依赖 —— 不连 MySQL / RabbitMQ / Redis / Nacos：
+# - 数据源 = 内存 H2（MODE=MySQL）+ INIT 幂等建 operate_log（IF NOT EXISTS 是必须的：
+#   H2 的 INIT=RUNSCRIPT 对连接池里每条新连接都会执行一次，非幂等脚本会在第二条连接上炸）；
+# - RabbitMQ：RabbitTemplate 由测试 @MockitoBean 替换、listener 容器 auto-startup=false
+#   （两个 @RabbitListener 容器仍会被注册——这正是冒烟要覆盖的装配面——但绝不连接 broker）；
+# - Redis：指向必然无人监听的死端口 6399（任何「上下文加载期真实去连 Redis」的回归都会
+#   立刻红，参照 zxyz-im-service ZxyzImApplicationTests 的假绿防回归设计）。
+# 刻意不放 dev profile 的任何宽松开关：test profile 只负责「把上下文拉起来」这一件事。
+spring:
+  datasource:
+    driver-class-name: org.h2.Driver
+    url: jdbc:h2:mem:audit_smoke;MODE=MySQL;DATABASE_TO_LOWER=TRUE;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DB_CLOSE_DELAY=-1;INIT=RUNSCRIPT FROM 'classpath:sql/h2/audit_schema_h2.sql'
+    username: sa
+    password: ""
+  data:
+    redis:
+      host: localhost
+      port: 6399
+
+app:
+  internal-service-token: test-internal-token
+  audit:
+    retention-days: 90
+
+mybatis:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl

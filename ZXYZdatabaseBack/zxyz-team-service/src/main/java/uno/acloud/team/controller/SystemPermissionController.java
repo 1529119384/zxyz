@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import uno.acloud.common.Result;
 import uno.acloud.common.SystemRoleCodes;
+import uno.acloud.common.audit.Log;
 import uno.acloud.common.web.CurrentUser;
 import uno.acloud.team.dto.permission.RolePermissionAssignRequest;
 import uno.acloud.team.vo.permission.PermissionAuditVO;
@@ -51,18 +52,21 @@ public class SystemPermissionController {
     }
 
     @Operation(summary = "创建系统角色")
+    @Log
     @PostMapping("/roles")
     public Result<RoleItemVO> createSystemRole(@CurrentUser Long userId, @Valid @RequestBody RoleUpsertRequest request, HttpServletRequest httpRequest) {
         return Result.of(permissionPort.saveSystemRole(request, userId, null, httpRequest.getRemoteAddr()));
     }
 
     @Operation(summary = "更新系统角色")
+    @Log
     @PatchMapping("/roles/{roleId}")
     public Result<RoleItemVO> updateSystemRole(@CurrentUser Long userId, @PathVariable Integer roleId, @Valid @RequestBody RoleUpsertRequest request, HttpServletRequest httpRequest) {
         return Result.of(permissionPort.saveSystemRole(request, userId, roleId, httpRequest.getRemoteAddr()));
     }
 
     @Operation(summary = "删除系统角色")
+    @Log
     @DeleteMapping("/roles/{roleId}")
     public Result<Void> deleteSystemRole(@CurrentUser Long userId, @PathVariable Integer roleId, HttpServletRequest httpRequest) {
         permissionPort.deleteSystemRole(roleId, userId, httpRequest.getRemoteAddr());
@@ -70,6 +74,7 @@ public class SystemPermissionController {
     }
 
     @Operation(summary = "分配角色权限")
+    @Log
     @PostMapping("/roles/{roleId}/permissions")
     public Result<Void> assignRolePermissions(@CurrentUser Long userId, @PathVariable Integer roleId, @Valid @RequestBody RolePermissionAssignRequest request, HttpServletRequest httpRequest) {
         permissionPort.assignPermissionsToRole(roleId, request, userId, httpRequest.getRemoteAddr());
@@ -77,6 +82,7 @@ public class SystemPermissionController {
     }
 
     @Operation(summary = "分配用户系统角色")
+    @Log
     @PostMapping("/users/{userId}/roles")
     public Result<Void> assignUserRole(@CurrentUser Long operatorId, @PathVariable Long userId, @Valid @RequestBody UserRoleAssignRequest request, HttpServletRequest httpRequest) {
         permissionPort.assignRoleToUser(userId, request.getRoleCode(), operatorId, httpRequest.getRemoteAddr());

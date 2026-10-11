@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.Result;
 import uno.acloud.common.TeamPermissionCodes;
+import uno.acloud.common.audit.Log;
 import uno.acloud.common.web.CurrentUser;
 import uno.acloud.team.vo.permission.TeamPermissionAuditVO;
 import uno.acloud.team.vo.permission.TeamPermissionVO;
@@ -61,6 +62,7 @@ public class TeamPermissionController {
     }
 
     @Operation(summary = "创建团队角色")
+    @Log
     @PostMapping("/roles")
     @RequiresTeamPermission(TeamPermissionCodes.TEAM_ROLE_MANAGE)
     public Result<TeamRoleVO> createRole(@CurrentUser Long userId, @PathVariable Long teamId, @Valid @RequestBody SaveTeamRoleRequest request) {
@@ -68,6 +70,7 @@ public class TeamPermissionController {
     }
 
     @Operation(summary = "更新团队角色")
+    @Log
     @PatchMapping("/roles/{roleId}")
     @RequiresTeamPermission(TeamPermissionCodes.TEAM_ROLE_MANAGE)
     public Result<TeamRoleVO> updateRole(@CurrentUser Long userId, @PathVariable Long teamId, @PathVariable Long roleId, @Valid @RequestBody SaveTeamRoleRequest request) {
@@ -75,6 +78,7 @@ public class TeamPermissionController {
     }
 
     @Operation(summary = "删除团队角色")
+    @Log
     @DeleteMapping("/roles/{roleId}")
     @RequiresTeamPermission(TeamPermissionCodes.TEAM_ROLE_MANAGE)
     public Result<Void> deleteRole(@CurrentUser Long userId, @PathVariable Long teamId, @PathVariable Long roleId) {
@@ -83,6 +87,7 @@ public class TeamPermissionController {
     }
 
     @Operation(summary = "分配角色权限")
+    @Log
     @PostMapping("/roles/{roleId}/permissions")
     @RequiresTeamPermission(TeamPermissionCodes.TEAM_ROLE_MANAGE)
     public Result<Void> assignRolePermissions(@CurrentUser Long userId,
@@ -94,6 +99,7 @@ public class TeamPermissionController {
     }
 
     @Operation(summary = "分配成员角色")
+    @Log
     @PostMapping("/member-roles")
     @RequiresTeamPermission(TeamPermissionCodes.TEAM_MEMBER_ASSIGN_ROLE)
     public Result<Void> assignMemberRole(@CurrentUser Long userId, @PathVariable Long teamId, @Valid @RequestBody AssignTeamMemberRoleRequest request) {

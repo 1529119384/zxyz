@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import uno.acloud.common.Result;
 import uno.acloud.common.SystemPermissionCodes;
+import uno.acloud.common.web.CurrentUser;
 import uno.acloud.file.dto.im.FileCardResolveRequest;
 import uno.acloud.file.dto.im.FileCardSnapshotRequest;
 import uno.acloud.file.service.ImFileCardPort;
@@ -30,14 +31,16 @@ public class ImFileCardController {
     @Operation(summary = "创建文件卡片快照")
     @PostMapping("/snapshot")
     @SaCheckPermission(SystemPermissionCodes.IM_FILE_CARD)
-    public Result<FileCardSnapshotVO> snapshot(@Valid @RequestBody FileCardSnapshotRequest request) {
-        return Result.of(imFileCardPort.createSnapshot(request));
+    public Result<FileCardSnapshotVO> snapshot(@CurrentUser Long userId,
+                                               @Valid @RequestBody FileCardSnapshotRequest request) {
+        return Result.of(imFileCardPort.createSnapshot(request, userId));
     }
 
     @Operation(summary = "解析文件卡片")
     @PostMapping("/resolve")
     @SaCheckPermission(SystemPermissionCodes.IM_FILE_CARD)
-    public Result<FileCardResolveVO> resolve(@Valid @RequestBody FileCardResolveRequest request) {
-        return Result.of(imFileCardPort.resolve(request));
+    public Result<FileCardResolveVO> resolve(@CurrentUser Long userId,
+                                             @Valid @RequestBody FileCardResolveRequest request) {
+        return Result.of(imFileCardPort.resolve(request, userId));
     }
 }

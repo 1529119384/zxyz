@@ -52,8 +52,12 @@ public abstract class AbstractLogAspect {
 
         String returnValue = truncate(maskReturnValue(result));
         long costTime = end - start;
+        // 全参构造最后一个参数是 messageHash（54 号审计 🔴-1 补字段后加入）：
+        // 发布端不计算哈希 —— 消费端 OperateLogConsumer 对「线上原始消息体」做 SHA-256，
+        // 发布端序列化出的 JSON 与最终消息体存在脱敏/字段顺序差异，此处填值只会埋下
+        // 「哈希对不上」的隐患，保持 null 由消费端统一负责。
         OperateLog operateLog = new OperateLog(null, getServiceName(), operateUserId, operateTime,
-                className, methodName, methodParams, returnValue, null, null, costTime);
+                className, methodName, methodParams, returnValue, null, null, costTime, null);
         auditEventPublisher.publish(operateLog);
         return result;
     }

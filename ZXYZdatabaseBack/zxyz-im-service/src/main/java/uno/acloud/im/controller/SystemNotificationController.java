@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import uno.acloud.common.Result;
+import uno.acloud.common.audit.Log;
 import uno.acloud.im.application.SystemNotificationService;
 import uno.acloud.im.config.ImAuthContext;
 import uno.acloud.im.vo.SystemNotificationVO;
@@ -44,6 +45,7 @@ public class SystemNotificationController {
     }
 
     @Operation(summary = "标记通知已读")
+    @Log
     @PatchMapping("/{notificationId}/read")
     public Result<Void> markRead(@PathVariable Long notificationId) {
         systemNotificationService.markRead(ImAuthContext.currentUserId(), notificationId);

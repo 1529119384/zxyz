@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import uno.acloud.common.Result;
+import uno.acloud.common.audit.Log;
 import uno.acloud.im.config.ImAuthContext;
 import uno.acloud.im.application.ConversationReadService;
 import uno.acloud.im.application.ConversationService;
@@ -63,6 +64,7 @@ public class ConversationController {
     }
 
     @Operation(summary = "创建单聊会话")
+    @Log
     @SaCheckPermission(SystemPermissionCodes.IM_CONVERSATION_CREATE)
     @PostMapping("/direct-conversations")
     public Result<ConversationSummaryVO> createDirectConversation(@Valid @RequestBody CreateDirectConversationRequest request) {
@@ -81,6 +83,7 @@ public class ConversationController {
     }
 
     @Operation(summary = "更新已读位置")
+    @Log
     @SaCheckPermission(SystemPermissionCodes.IM_CONVERSATION_READ)
     @PostMapping("/conversations/{conversationId}/read")
     public Result<ConversationReadVO> updateReadPosition(@PathVariable Long conversationId,

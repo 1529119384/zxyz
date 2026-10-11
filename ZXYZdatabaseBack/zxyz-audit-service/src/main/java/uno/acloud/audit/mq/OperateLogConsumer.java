@@ -96,7 +96,12 @@ public class OperateLogConsumer {
             redactSensitiveFields(operateLog);
             // 幂等下沉到 DB 唯一约束 unique(message_hash)：直接插入，命中唯一键冲突视为重复消息跳过（ACK）。
             // 不再依赖 Redis 先占位后插入（先占位在 insert 失败时会阻断重投，导致审计日志永久丢失）。
-            int rows = operateLogMapper.insertWithHash(operateLog, sha256Hex(message));
+            String messageHash = sha256Hex(message);
+            // 54 号审计 🔴-1：实体已补 messageHash 字段，insert 前同步写回 ——
+            // 保证「实体状态」与「insertWithHash 显式列清单写入的列」一致，
+            // 任何后续走 MyBatis-Plus 公共 insert() 的代码也不会再把 message_hash NULL 化。
+            operateLog.setMessageHash(messageHash);
+            int rows = operateLogMapper.insertWithHash(operateLog, messageHash);
             if (rows != 1) {
                 // 防御性兜底：唯一键冲突由异常承载，理论上不会走到这里；
                 // 一旦发生说明「写了但没写进去」，不能静默当成功。

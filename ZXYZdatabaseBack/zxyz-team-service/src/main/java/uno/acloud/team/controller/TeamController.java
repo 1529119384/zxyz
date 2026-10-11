@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import uno.acloud.common.Result;
 import uno.acloud.common.TeamPermissionCodes;
+import uno.acloud.common.audit.Log;
 import uno.acloud.common.web.CurrentUser;
 import uno.acloud.common.oss.AvatarUploadSignRequest;
 import uno.acloud.common.oss.OssSignInfo;
@@ -49,6 +50,7 @@ public class TeamController {
     }
 
     @Operation(summary = "更新团队信息")
+    @Log
     @RequiresTeamPermission(TeamPermissionCodes.TEAM_UPDATE)
     @PatchMapping("/{teamId}")
     public Result<TeamVO> updateTeam(@CurrentUser Long userId, @PathVariable Long teamId, @Valid @RequestBody UpdateTeamRequest request) {
@@ -69,6 +71,7 @@ public class TeamController {
     }
 
     @Operation(summary = "添加团队成员")
+    @Log
     @RequiresTeamPermission(TeamPermissionCodes.TEAM_MEMBER_CREATE)
     @PostMapping("/{teamId}/members")
     public Result<TeamMemberVO> createMember(@CurrentUser Long userId, @PathVariable Long teamId, @Valid @RequestBody CreateTeamMemberRequest request) {
@@ -76,6 +79,7 @@ public class TeamController {
     }
 
     @Operation(summary = "更新团队成员状态")
+    @Log
     @RequiresTeamPermission(TeamPermissionCodes.TEAM_MEMBER_ASSIGN_ROLE)
     @PatchMapping("/{teamId}/members/{userId}/status")
     public Result<TeamMemberVO> updateMemberStatus(@CurrentUser Long operatorId,
@@ -86,6 +90,7 @@ public class TeamController {
     }
 
     @Operation(summary = "移除团队成员")
+    @Log
     @RequiresTeamPermission(TeamPermissionCodes.TEAM_MEMBER_REMOVE)
     @DeleteMapping("/{teamId}/members/{userId}")
     public Result<Void> removeMember(@CurrentUser Long operatorId, @PathVariable Long teamId, @PathVariable Long userId) {
@@ -94,6 +99,7 @@ public class TeamController {
     }
 
     @Operation(summary = "退出团队")
+    @Log
     @PostMapping("/{teamId}/leave")
     public Result<Void> leaveTeam(@CurrentUser Long userId, @PathVariable Long teamId) {
         teamPort.leaveTeam(teamId, userId);
@@ -107,6 +113,7 @@ public class TeamController {
     }
 
     @Operation(summary = "更新成员个人存储配额")
+    @Log
     @RequiresTeamPermission(TeamPermissionCodes.TEAM_STORAGE_ALLOCATE)
     @PatchMapping("/{teamId}/members/{userId}/storage")
     public Result<Void> updateMemberPersonalStorageLimit(@CurrentUser Long operatorId,

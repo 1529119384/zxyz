@@ -32,6 +32,15 @@ public class EmailProperties {
     private boolean verifyCodeAllowInsecurePepper;
     private int ipLimitPerMinute = 3;
     private int emailLimitPerMinute = 1;
+    /**
+     * SENDING 卡死回捞阈值（分钟）：status=SENDING 且 update_time 早于「当前时间 - 本阈值」
+     * 的记录，视为进程崩溃/中断遗留的僵尸记录，由 {@code EmailRetryTask} 回捞重置。
+     * 默认 10 分钟 —— 正常一封邮件的 SMTP 发送在秒级完成，10 分钟仍处于 SENDING
+     * 的记录几乎必然是崩溃残留；太小（< 几分钟）有把「正在慢速发送中的邮件」
+     * 二次投递的风险（重复邮件），太大则崩溃遗留的邮件滞留过久。
+     * 对应 {@code email.sending-stale-minutes}。
+     */
+    private int sendingStaleMinutes = 10;
 
     public String getHost() {
         return host;
@@ -167,5 +176,13 @@ public class EmailProperties {
 
     public void setEmailLimitPerMinute(int emailLimitPerMinute) {
         this.emailLimitPerMinute = emailLimitPerMinute;
+    }
+
+    public int getSendingStaleMinutes() {
+        return sendingStaleMinutes;
+    }
+
+    public void setSendingStaleMinutes(int sendingStaleMinutes) {
+        this.sendingStaleMinutes = sendingStaleMinutes;
     }
 }

@@ -46,6 +46,8 @@ Topic Exchange `zxyz.topic`，各服务监听各自 routing key。
 | `/ws`, `/ws/**` | im-service:19090（直连 Netty） |
 | `/api/admin/email/**` | email-service |
 | `/api/admin/database/**` | project-service |
+
+> 2026-10-11（54 号 P2-3）：`/api/admin/email-providers/**` 端点已**删除**——它此前被网关 admin-service 通配路由剥前缀转发到只有 `/configs` 的 admin-service 必然 404（6 月起即死端点）；前端 0 调用方、SPI 自述未接入发送链路，按最小攻击面原则移除而非补路由。另注：`/api/admin/storage-providers` 条目历史欠账（同样不在本表），待该链路文档化时一并补。
 | `/api/internal/files/**` | file-service（内部服务直连，不经网关） |
 | `/api/**`（兜底） | project-service |
 

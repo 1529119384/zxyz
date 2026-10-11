@@ -353,7 +353,7 @@ docker compose down -v
 | `RABBITMQ_MGMT_PORT` | `15672` | RabbitMQ 管理界面端口 |
 | `FRONTEND_BASE_URL` | `http://YOUR_SERVER_IP` | 前端访问地址，用于生成分享链接 |
 | `CORS_ALLOWED_ORIGINS` | `*` | 允许的跨域来源，生产环境建议改为实际域名 |
-| —（已移除） | — | **真实客户端 IP 不需要任何配置项**：`zxyz-common` 的 `server.forward-headers-strategy: native`（框架层解析 `X-Forwarded-For`）+ nginx 覆盖式写入 `X-Forwarded-For`/`X-Real-IP` 已保证 `getRemoteAddr()` 就是真实客户端 IP，2026-09-13 用 4 个不同来源做过线上实证（4 个不同限流桶，nginx/网关容器 IP 从未出现）。历史变量 `GATEWAY_TRUSTED_PROXIES` 在本拓扑下配与不配结果相同，已从 `.env.example` / `docker-compose.yml` / `scripts/validate-env.sh` 一并移除——**前提是业务服务与网关都不向宿主机发布端口**，若将来改变该拓扑需重新评估 |
+| `GATEWAY_TRUSTED_PROXIES` | `172.18.0.0/16`（compose 注入） | **网关可信代理白名单（限流正确性的前提）**：为空时网关不信任任何 X-Forwarded-For，`ClientIpResolver` 短路返回直连方地址——在本拓扑即 frontend-nginx 容器 IP，登录限流/分享提取码/注册/验证码冷却全部塌缩成同一个全局桶，外部按 20/min 打登录接口即可让全平台用户一起被拒（2026-10-11 54 号审计实证，订正本行此前的「不需要任何配置项」结论——该结论对应的「4 源 4 桶」实证属 trusted-proxies 曾生效的时期，与现网代码行为矛盾）。compose 以 `${GATEWAY_TRUSTED_PROXIES:-172.18.0.0/16}` 注入默认网段（nginx→gateway 内网）；仅用本仓 compose 部署时保持默认即可，**网关前有自建反代/云 LB（SLB/CDN/Cloudflare）时必须改为直连网关那层代理的 IP/网段**（逗号分隔多个）——填了不可信网段 = 任何人可伪造 X-Real-IP 绕过限流。修改后按「4 个不同来源 → 4 个不同限流桶」实证法复测 |
 | `AUTH_COOKIE_SECURE` | `false` | Sa-Token Cookie secure 标志（生产环境改为 true） |
 | `AUTH_COOKIE_DOMAIN` | （空） | Sa-Token Cookie 域名（跨子域共享 session 时设置） |
 | `AUTH_TOKEN_TIMEOUT` | `43200` | 普通登录 Token 超时时间（秒），默认 12 小时 |
@@ -1280,16 +1280,96 @@ docker compose start
 
 ### 恢复 Redis
 
+> ⚠️ **ISSUE/54 🟡-5（2026-10-11）订正**：Redis 以 `--appendonly yes` 运行（docker-compose.yml），
+> **AOF 优先于 RDB 加载——AOF 在位时只替换 dump.rdb 无效**：旧 AOF 会把 RDB 恢复进去的数据
+> 再覆盖回旧状态（等于白做）。正确顺序是「停服 → 清 AOF（appendonlydir）→ 放 RDB → 起动 → 实测校验」。
+
 ```bash
 # 1. 停止所有服务
 docker compose stop
 
-# 2. 替换 RDB 文件
-cp backups/redis_20260608_030000.rdb data/redis/dump.rdb
+# 2. 移走整个 AOF 目录（多部分 AOF：manifest/base/incr 全在里面，清一个文件不够）
+#    不删除、留备份：万一 RDB 本身有问题还能回退
+mv data/redis/appendonlydir data/redis/appendonlydir.bak.$(date +%Y%m%d_%H%M%S)
 
-# 3. 启动
+# 3. 替换 RDB 文件
+cp backups/redis_YYYYMMDD_HHMMSS.rdb data/redis/dump.rdb
+
+# 4. 启动
+docker compose start
+
+# 5. 实测校验（「容器起来了」≠「数据回来了」，缺一不可）
+docker exec zxyz-redis sh -c 'redis-cli -a "$REDIS_PASSWORD" --no-auth-warning DBSIZE'        # 必须 > 0
+docker exec zxyz-redis sh -c 'redis-cli -a "$REDIS_PASSWORD" --no-auth-warning -n 9 --scan --pattern "satoken:login:*"' | head -n1   # 会话库非空
+```
+
+若第 5 步 dbsize = 0（个别 Redis 7+ 版本在「appendonly 开启但 AOF 目录缺失」时按空数据集
+启动、不回退加载 RDB），用**确定性兜底**：临时关 AOF 启动一次，强制加载 RDB，确认后再回正常配置：
+
+```bash
+docker compose stop redis
+docker run -d --name zxyz-redis-recovery \
+  -v $(pwd)/data/redis:/data \
+  redis:8.10-alpine redis-server --appendonly no --requirepass "$REDIS_PASSWORD"
+docker exec zxyz-redis-recovery redis-cli -a "$REDIS_PASSWORD" --no-auth-warning DBSIZE   # 此时应 > 0
+docker stop zxyz-redis-recovery && docker rm zxyz-redis-recovery
+docker compose start redis    # 回正常 compose 配置（AOF 重新生成，数据已在内存）
+```
+
+### 恢复 MySQL 到指定时间点（PITR）
+
+前提：binlog 增量链在位（`backup.sh` 每日产出 `binlog_*.tar.gz`，全量 dump 头部带
+`CHANGE REPLICATION SOURCE TO` 位点锚点，二者是 PITR 的起点坐标）。
+**先用只读演练验证可恢复性**（临时容器，不触生产卷）：`./scripts/restore-drill.sh pitr`。
+
+生产真恢复：
+
+```bash
+# 1. 停止全部业务服务（停写；MySQL 本身不停）
+docker compose stop project-service im-service email-service share-service \
+  file-service team-service audit-service user-service
+
+# 2. 灌入全量 dump；从文件头注释取锚点：
+#    gunzip -c <dump> | grep -m1 "CHANGE REPLICATION SOURCE TO"
+gunzip -c backups/mysql_YYYYMMDD_HHMMSS.sql.gz | \
+  docker exec -i zxyz-mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD"
+
+# 3. 解包 binlog 增量，从锚点文件+pos 起逐个应用（锚点之后整文件应用；
+#    目标时间点在最后一个文件内时加 --stop-datetime='YYYY-MM-DD HH:MM:SS' 截断）
+tar xzf backups/binlog_YYYYMMDD_HHMMSS.tar.gz -C /tmp/binlogs
+docker cp /tmp/binlogs/mysql-bin.000NNN zxyz-mysql:/tmp/
+docker exec zxyz-mysql sh -c 'mysqlbinlog --start-position=<锚点pos> /tmp/mysql-bin.000NNN' | \
+  docker exec -i zxyz-mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD"
+
+# 4. 抽查业务表确认目标状态（如误删数据是否已回来），再启动业务服务
 docker compose start
 ```
+
+### 恢复 RabbitMQ 拓扑
+
+definitions 备份只含**拓扑**（交换机/队列/绑定/用户/policy），不含队列里的消息；
+用于「broker 重建 / 服务器迁移 / 拓扑被误删」场景。生产导入：
+
+```bash
+docker cp backups/rabbitmq_YYYYMMDD_HHMMSS.json zxyz-rabbitmq:/tmp/defs.json
+docker exec zxyz-rabbitmq rabbitmqctl import_definitions /tmp/defs.json
+docker exec zxyz-rabbitmq rabbitmqctl list_queues      # 校验队列数与预期一致
+```
+
+### 恢复演练（只读，不触生产卷）
+
+四种恢复路径均有对应演练模式（临时容器 + 演练临时目录，退出即清理），定期执行：
+
+| 模式 | 命令 | 验证内容 |
+|---|---|---|
+| MySQL 全量 | `./scripts/restore-drill.sh` | 核心表行数非空 |
+| MySQL PITR | `./scripts/restore-drill.sh pitr [--target 'YYYY-MM-DD HH:MM:SS']` | 全量+binlog 应用后核心表仍非空 |
+| Redis RDB | `./scripts/restore-drill.sh redis` | 临时容器 dbsize > 0（另抽查 db9 satoken 键） |
+| RabbitMQ | `./scripts/restore-drill.sh rabbitmq` | definitions 导入后队列数 > 0 |
+
+> 备份产物命名：`mysql_*.sql.gz` / `redis_*.rdb` / `rabbitmq_*.json` / `binlog_*.tar.gz`
+> （+ `binlog_pos_*.txt` 位点参考），全部由 `backup.sh` 产出并按保留期清理
+> （⚠️ 已知遗留：`binlog_pos_*.txt` 目前不在清理清单内，见 54 号 🟢 记录）。
 
 ---
 

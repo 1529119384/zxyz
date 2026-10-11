@@ -54,6 +54,10 @@ public class ConfigAdminController {
         List<SysConfig> list = configMapper.selectList(
                 new LambdaQueryWrapper<SysConfig>()
                         .orderByAsc(SysConfig::getConfigType, SysConfig::getConfigKey));
+        // 敏感键与 GET /configs/{key} 同源掩码（ISSUE/54 R2）：列表响应不得明文回 configValue，
+        // 掩码判定复用 ConfigService 同一份 isSensitive 清单，避免两处分叉
+        list.forEach(config ->
+                config.setConfigValue(ConfigService.maskIfSensitive(config.getConfigKey(), config.getConfigValue())));
         return Result.of(list);
     }
 

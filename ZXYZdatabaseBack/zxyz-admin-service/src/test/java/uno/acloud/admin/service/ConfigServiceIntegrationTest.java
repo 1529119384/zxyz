@@ -92,7 +92,7 @@ class ConfigServiceIntegrationTest extends AbstractIntegrationTest {
      */
     @Test
     void update_triggersRedisNotificationAfterCommit() {
-        // 1. 插入测试数据，使 updateValue 有行可更新
+        // 1. 插入测试数据，使 updateValue 有行可更新（非敏感键：落库值 = 原值）
         SysConfig config = new SysConfig();
         config.setConfigKey("test.key.notify.2");
         config.setConfigValue("value");
@@ -114,5 +114,42 @@ class ConfigServiceIntegrationTest extends AbstractIntegrationTest {
 
         // 5. 验证 Redis Pub/Sub 通知已发送
         verify(stringRedisTemplate).convertAndSend("zxyz:config:changed", "test.key.notify.2");
+    }
+
+    /**
+     * R2（ISSUE/54）：敏感键 update 必须以 ENC(...) 密文落库（Testcontainers 真实 MySQL），
+     * 且单键 GET 回掩码、审计两列回掩码。单测（ConfigServiceTest）用 mock 钉交互，
+     * 本用例在可运行上下文里钉「落库形态」这一最终效果。
+     */
+    @Test
+    void update_sensitiveKey_persistsEncCiphertext_andReadBackMasked() {
+        // 0. updateValue 是 UPDATE 语句而非 upsert：先插入既有行（明文），再走 update 链路
+        SysConfig existing = new SysConfig();
+        existing.setConfigKey("test.key.sensitive.password");
+        existing.setConfigValue("plain-old");
+        existing.setConfigType("SYSTEM"); // config_type NOT NULL 无默认值（真实 MySQL 严格模式）
+        sysConfigMapper.insert(existing);
+
+        // 1. Mock Jasypt：encrypt/decrypt 走可逆假实现（不依赖真实 Jasypt 密钥），
+        //    isEncrypted 按真实前缀口径判定
+        when(jasyptEncryptor.encrypt(anyString()))
+                .thenAnswer(inv -> "ENC(fake-" + inv.getArgument(0, String.class).length() + ")");
+        when(jasyptEncryptor.isEncrypted(anyString()))
+                .thenAnswer(inv -> {
+                    String v = inv.getArgument(0, String.class);
+                    return v != null && v.startsWith("ENC(") && v.endsWith(")") && v.length() > 5;
+                });
+        when(jasyptEncryptor.decrypt(anyString()))
+                .thenAnswer(inv -> inv.getArgument(0, String.class));
+
+        // 2. 敏感键（键名含 password）update 明文
+        configService.update("test.key.sensitive.password", "plain-secret", 3L);
+
+        // 3. 落库值必须是 ENC 密文而非明文（真实 MySQL 回读）
+        SysConfig stored = sysConfigMapper.selectByKey("test.key.sensitive.password");
+        assertEquals("ENC(fake-12)", stored.getConfigValue());
+
+        // 4. 单键 GET 回掩码，绝不回明文/密文
+        assertEquals("ENC:****", configService.get("test.key.sensitive.password"));
     }
 }

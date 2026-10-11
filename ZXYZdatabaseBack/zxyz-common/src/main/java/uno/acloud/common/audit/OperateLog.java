@@ -33,4 +33,15 @@ public class OperateLog implements Serializable {
     private String beforeValue;
     private String afterValue;
     private Long costTime;
+    /**
+     * 消息体 SHA-256 十六进制哈希（64 位），对应 operate_log.message_hash CHAR(64)。
+     *
+     * <p>幂等锚点：DB 唯一约束 uk_operate_log_message_hash 靠它去重。历史上实体长期
+     * 缺这个字段（54 号审计 🔴-1），哈希只能靠 OperateLogMapper.insertWithHash 的显式
+     * 列清单旁路写入 —— 任何走 MyBatis-Plus 公共 insert() 的代码都会把 message_hash
+     * 静默 NULL 化（唯一索引允许多 NULL ⇒ 幂等失效、重复消息可多条入库）。补上本字段后
+     * 实体与 DDL 对齐，公共 insert() 不再是幂等炸弹。哈希由 audit-service 的
+     * OperateLogConsumer 在消费入口计算填充，发布端无需关心。</p>
+     */
+    private String messageHash;
 }

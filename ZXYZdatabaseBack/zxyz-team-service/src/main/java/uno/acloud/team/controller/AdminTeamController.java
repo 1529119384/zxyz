@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 import uno.acloud.common.PageResult;
 import uno.acloud.common.Result;
 import uno.acloud.common.SystemRoleCodes;
+import uno.acloud.common.audit.Log;
 import uno.acloud.team.dto.system.BroadcastSystemMessageRequest;
 import uno.acloud.team.vo.team.AdminTeamOverviewVO;
 import uno.acloud.team.vo.team.TeamVO;
@@ -40,6 +41,7 @@ public class AdminTeamController {
     }
 
     @Operation(summary = "创建团队")
+    @Log
     @PostMapping
     public Result<TeamVO> createTeam(@Valid @RequestBody CreateTeamRequest request) {
         return Result.of(teamPort.createTeam(request));
@@ -63,12 +65,14 @@ public class AdminTeamController {
     }
 
     @Operation(summary = "更新团队配额")
+    @Log
     @PatchMapping("/{teamId}/quota")
     public Result<AdminTeamOverviewVO> updateTeamQuota(@PathVariable Long teamId, @Valid @RequestBody UpdateTeamQuotaRequest request) {
         return Result.of(adminTeamPort.updateTeamQuota(teamId, request));
     }
 
     @Operation(summary = "广播系统消息")
+    @Log
     @PostMapping("/system-messages")
     public Result<Void> broadcastSystemMessage(@Valid @RequestBody BroadcastSystemMessageRequest request) {
         adminTeamPort.broadcastSystemMessage(request);
@@ -76,6 +80,7 @@ public class AdminTeamController {
     }
 
     @Operation(summary = "计划系统邮件批次")
+    @Log
     @PostMapping("/system-emails/scheduled-batches")
     public Result<Void> scheduleSystemEmailBatch(@Valid @RequestBody ScheduledEmailBatchRequest request) {
         adminTeamPort.scheduleSystemEmailBatch(request);

@@ -167,7 +167,7 @@ class FileMapperIntegrationTest extends AbstractIntegrationTest {
         assertNotNull(child.getId(), "File item should get auto-generated ID");
 
         // Query children of root
-        List<FileNode> children = fileMapper.getFileNodesByParentId(root.getId());
+        List<FileNode> children = fileMapper.getFileNodesByParentId(root.getId(), null, null, null, null);
         assertEquals(1, children.size(), "Root should have exactly one child");
         assertEquals("test.txt", children.get(0).getOriginalName());
         assertTrue(children.get(0) instanceof FileItem, "Child should be deserialized as FileItem");
@@ -368,14 +368,13 @@ class FileMapperIntegrationTest extends AbstractIntegrationTest {
         assertEquals(3, mine.size(), "个人空间分支应只返回 upload_user_id = userA 的行");
         assertTrue(mine.stream().allMatch(n -> n.getUploadUserId() == userA));
 
-        // 3 参 default 重载 → teamId=null, spaceType=null, projectId=null, userId=userA
-        assertEquals(3, fileMapper.getFileNodesByParentId(root.getId(), null, userA).size());
-        // 2 参 default 重载 → 内层把 userId 置 null
+        // 五参主方法 → teamId=null, spaceType=null, projectId=null, userId=userA
+        assertEquals(3, fileMapper.getFileNodesByParentId(root.getId(), null, null, null, userA).size());
+        // 便捷重载已删（54 号 🔴-3）——恒真语义用显式 null 双参表达：
         //   （`#{userId} IS NULL OR upload_user_id = #{userId}` 的第一分支命中，不再按人过滤）
-        assertEquals(4, fileMapper.getFileNodesByParentId(root.getId(), null).size(),
+        assertEquals(4, fileMapper.getFileNodesByParentId(root.getId(), null, null, null, null).size(),
                 "userId 传 null 时个人空间分支不再按人过滤");
-        // 1 参 default 重载
-        assertEquals(4, fileMapper.getFileNodesByParentId(root.getId()).size());
+        assertEquals(4, fileMapper.getFileNodesByParentId(root.getId(), null, null, null, null).size());
 
         // 分页：ORDER BY file_type DESC, original_name ASC ⇒ 文件在前、文件夹在后
         List<FileNode> page = fileMapper.getFileNodesByParentIdPaged(root.getId(), null, 1, null, userA, 2, 0);
@@ -488,8 +487,8 @@ class FileMapperIntegrationTest extends AbstractIntegrationTest {
         assertEquals(2, all.size(), "必须连软删的一起返回（回收站视图依赖）");
         assertEquals(1, all.stream().filter(n -> !n.isActive()).count(), "恰有 1 行非活跃");
 
-        // default 重载 → teamId = null, userId = null
-        assertEquals(2, fileMapper.getChildrenByParentIdWithDeleted(sub.getId()).size());
+        // 便捷重载已删（54 号 🔴-3：恒真短路防御缺失）——恒真语义改用显式 null 双参表达
+        assertEquals(2, fileMapper.getChildrenByParentIdWithDeleted(sub.getId(), null, null).size());
 
         // 限定 userId 后不返回别人的行
         assertEquals(0, fileMapper.getChildrenByParentIdWithDeleted(sub.getId(), null, nextId()).size(),
@@ -666,23 +665,23 @@ class FileMapperIntegrationTest extends AbstractIntegrationTest {
         fileMapper.insertFileItem(buildFileItem("gamma-data.csv", -1L, userId));
 
         // Search "alpha" with pageSize=2, offset=0 — should return 2 results
-        List<FileSearchItemVO> page1 = fileMapper.searchByKeyword(userId, "alpha", 2, 0);
+        List<FileSearchItemVO> page1 = fileMapper.searchByKeyword(userId, null, "alpha", 2, 0);
         assertEquals(2, page1.size(), "First page should have 2 alpha results");
         assertTrue(page1.stream().allMatch(f -> f.getOriginalName().startsWith("alpha")),
                 "All page1 results should start with 'alpha'");
 
         // Search "alpha" with pageSize=2, offset=2 — should return the remaining 1
-        List<FileSearchItemVO> page2 = fileMapper.searchByKeyword(userId, "alpha", 2, 2);
+        List<FileSearchItemVO> page2 = fileMapper.searchByKeyword(userId, null, "alpha", 2, 2);
         assertEquals(1, page2.size(), "Second page should have 1 alpha result");
         assertTrue(page2.get(0).getOriginalName().startsWith("alpha"));
 
         // Search "beta" — should match exactly 1 file
-        List<FileSearchItemVO> betaResults = fileMapper.searchByKeyword(userId, "beta", 10, 0);
+        List<FileSearchItemVO> betaResults = fileMapper.searchByKeyword(userId, null, "beta", 10, 0);
         assertEquals(1, betaResults.size());
         assertEquals("beta-summary.doc", betaResults.get(0).getOriginalName());
 
         // Search "nonexistent" — should return empty
-        List<FileSearchItemVO> empty = fileMapper.searchByKeyword(userId, "nonexistent", 10, 0);
+        List<FileSearchItemVO> empty = fileMapper.searchByKeyword(userId, null, "nonexistent", 10, 0);
         assertTrue(empty.isEmpty(), "Search for non-existent prefix should return empty");
     }
 
@@ -702,7 +701,7 @@ class FileMapperIntegrationTest extends AbstractIntegrationTest {
         // 4 参主方法，teamId = null ⇒ 个人空间分支
         assertEquals(2, fileMapper.countByKeyword(userId, null, prefix));
         // 3 参 default 重载 → 内层置 teamId = null
-        assertEquals(2, fileMapper.countByKeyword(userId, prefix));
+        assertEquals(2, fileMapper.countByKeyword(userId, null, prefix));
 
         List<FileSearchItemVO> hits = fileMapper.searchByKeyword(userId, null, prefix, 10, 0);
         assertEquals(2, hits.size());

@@ -125,6 +125,14 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- P2-4（ISSUE/54）：Boot 4 把 @WebMvcTest / MockMvc 切片测试迁到独立构件
+             spring-boot-webmvc-test（Boot 3 时代在 spring-boot-test-autoconfigure 内，
+             starter-test 不再传递）。LocalDateTime MVC 序列化实证测试依赖它。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-webmvc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>uno.acloud</groupId>
             <artifactId>zxyz-common</artifactId>
