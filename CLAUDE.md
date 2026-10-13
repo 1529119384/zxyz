@@ -76,7 +76,7 @@ cd ZXYZdatabaseBack && git diff HEAD --ignore-cr-at-eol --numstat && cd ..
 cd ZXYZdatabaseFront && git diff HEAD --ignore-cr-at-eol --numstat && cd ..
 ```
 
-**判据要点（2026-10-13 ISSUE/55 P1-3 收口，勿回退到旧口径）**：
+**判据要点（2026-10-13 `ISSUE/55-INCIDENT-NGINX-DNS-AND-PIPELINE-2026-10-13.md` P1-3 收口，勿回退到旧口径）**：
 - `git status`/porcelain 的 `modified` 多为 **CRLF/stat 幻影**（Windows `core.autocrlf=true` 检出，内容剥 `\r` 后与 HEAD 逐字节一致）——后端子仓曾实测 234 行幻影，**porcelain 非空不能判漂移**；
 - `--name-only` 也不能作真漂移判据（名字清单在内容过滤之前生成，纯 EOL 变更文件整名列出但逐文件 patch=0 字节，前端曾实测 314 个假阳性名）；
 - **真漂移** = `--ignore-cr-at-eol --numstat` 非空；「porcelain 脏 + 内容级 diff 全空」= 幻影，放行；

@@ -614,12 +614,24 @@ jobs:
           echo "Flyway filename sanity: all filenames valid."
 
       - name: Reject modifying applied migrations (diff guard)
+        env:
+          BEFORE: ${{ github.event.before }}
         run: |
+          # ⚠️ 55 号 P1-4（2026-10-13）：旧版 push 臂退化为 `git diff origin/dev...HEAD`
+          #   —— CI checkout 的就是被推提交 ⇒ origin/dev==HEAD ⇒ diff 恒空 ⇒ 守卫空转。
+          #   本轮 V2/V3 6→8 原地修改真实发生且没拦（靠人工 flyway repair 收场）。
+          #   新判据：push 用 github.event.before...HEAD；PR 保持 base_ref（本就正确）。
+          #   fail-closed：before 全零 / 对象取回失败 / 未知事件 = 无比对基线 ⇒ 红 + 迁移清单。
           FAIL=0
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE="${{ github.base_ref }}"
             git fetch origin "$BASE" --quiet 2>/dev/null || true
-            # diff guard: status 'M' on an existing db/migration/*.sql = modified applied migration
+            if ! git rev-parse --verify "origin/${BASE}" >/dev/null 2>&1; then
+              echo "::error::FLYWAY_GUARD_NO_BASE: PR base origin/${BASE} 无法解析（fail-closed）"
+              git ls-files '*db/migration/*.sql'
+              exit 1
+            fi
+            echo "diff guard: PR base=origin/${BASE}"
             while IFS=$'\t' read -r status path; do
               case "$path" in
                 *db/migration/*.sql)
@@ -633,32 +645,39 @@ jobs:
               esac
             done < <(git diff --name-status "origin/${BASE}...HEAD" 2>/dev/null || true)
           elif [ "${{ github.event_name }}" = "push" ]; then
-            # push: no base_ref. Fall back to origin/dev if it exists.
-            if git rev-parse --verify origin/dev >/dev/null 2>&1; then
-              echo "push event without base_ref; falling back to origin/dev for modify-guard."
-              while IFS=$'\t' read -r status path; do
-                case "$path" in
-                  *db/migration/*.sql)
-                    case "$status" in
-                      M|R*)
-                        echo "::error::FLYWAY_MODIFIED_APPLIED: ${path} modifies/renames an already-released migration — migrations must be append-only"
-                        FAIL=1
-                        ;;
-                    esac
-                    ;;
-                esac
-              done < <(git diff --name-status "origin/dev...HEAD" 2>/dev/null || true)
-            else
-              echo "::warning::push event without base_ref and origin/dev missing; skipping modify-guard (dedup + filename checks already ran)"
+            if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+              echo "::error::FLYWAY_GUARD_NO_BASE: push before 为全零（新分支/首推），无比对基线（fail-closed）——以下为全量迁移文件清单，请人工核对是否含原地修改："
+              git ls-files '*db/migration/*.sql'
+              exit 1
             fi
+            if ! git cat-file -e "$BEFORE" 2>/dev/null; then
+              echo "::error::FLYWAY_GUARD_NO_BASE: before 对象 $BEFORE 取回失败（浅克隆？）（fail-closed）——以下为全量迁移文件清单："
+              git ls-files '*db/migration/*.sql'
+              exit 1
+            fi
+            echo "diff guard: push before=$BEFORE...HEAD"
+            while IFS=$'\t' read -r status path; do
+              case "$path" in
+                *db/migration/*.sql)
+                  case "$status" in
+                    M|R*)
+                      echo "::error::FLYWAY_MODIFIED_APPLIED: ${path} modifies/renames an already-released migration — migrations must be append-only"
+                      FAIL=1
+                      ;;
+                  esac
+                  ;;
+              esac
+            done < <(git diff --name-status "${BEFORE}...HEAD" 2>/dev/null || true)
           else
-            echo "::warning::event ${{ github.event_name }} has no base_ref; skipping modify-guard"
+            echo "::error::FLYWAY_GUARD_NO_BASE: event ${{ github.event_name }} 无比对基线（fail-closed）——以下为全量迁移文件清单："
+            git ls-files '*db/migration/*.sql'
+            exit 1
           fi
 
           if [ "$FAIL" -ne 0 ]; then
             exit 1
           fi
-          echo "Flyway modify-guard: no already-released migrations were modified."
+          echo "Flyway modify-guard: no already-released migrations were modified (base: before...HEAD)."
 
   # ============================================================
   # Job: Nacos 配置等价性门禁（审计 D2）
@@ -1404,13 +1423,20 @@ jobs:
           echo "build-and-push   = ${{ needs.build-and-push.result }}"
           echo "security-scan    = ${{ needs.security-scan.result }}"
           echo "secret-scan      = ${{ needs.secret-scan.result }}"
-          if [ "${{ needs.detect-changes.outputs.any-change }}" = "true" ]; then
-            echo "==> 部署路径：BUILD_DEPLOY（镜像 tag=${{ github.sha }} 已由 build-and-push 构建并推送）"
-          elif [ "${{ needs.detect-changes.outputs.scripts-config }}" = "true" ]; then
-            echo "==> 部署路径：DEPLOY_ONLY（scripts/sql-only：无新镜像；服务器只对准提交 + 同步 scripts/*.sh；"
-            echo "    compose 仍引用 tag=dev = 上次构建的镜像，UPDATE_SVC 为空 ⇒ 不拉镜像、不重启容器）"
-          else
+          if [ "${{ needs.detect-changes.outputs.any-change }}" != "true" ] && [ "${{ needs.detect-changes.outputs.scripts-config }}" != "true" ]; then
             echo "==> 部署路径：UNKNOWN（既非 any-change 也非 scripts-config —— 若出现请立即排查 detect-changes 输出）"
+          elif [ "${{ needs.build-and-push.result }}" = "success" ]; then
+            # 判据用 build-and-push.result（而非 any-change）：any-change=true 只说明「有可构建变更」，
+            # 不说明镜像真的建了 —— quality 失败 ⇒ build skipped ⇒ GHCR 无该 sha 镜像
+            # （ISSUE/55 排障实录：deploy 日志打「已构建并推送」而 GHCR not found，误导 40 分钟）。
+            # build-and-push 实际打双 tag：${{ needs.detect-changes.outputs.tag }}（push 下=dev，主）+ github.sha（精确回滚）。
+            echo "==> 部署路径：BUILD_DEPLOY（build-and-push=success；镜像双 tag=${{ needs.detect-changes.outputs.tag }} + ${{ github.sha }}）"
+          elif [ "${{ needs.build-and-push.result }}" = "skipped" ]; then
+            echo "==> 部署路径：DEPLOY_ONLY（臂②：build-and-push 全 skip ⇒ 无任何新镜像；镜像 tag=dev 不变=上次构建的镜像；"
+            echo "    GITHUB_SHA=${{ github.sha }} 仅用于克隆对准与部署留痕，不构成镜像 tag）"
+            echo "    ⚠️ 迁移文件（db/migration/**）随服务镜像生效，不走本通道——改迁移必须触发镜像重建"
+          else
+            echo "==> 部署路径：BUILD_DEPLOY 但 build-and-push result=${{ needs.build-and-push.result }}（非 success 非 skipped —— 异常态，若出现请排查上游 job）"
           fi
           echo "========================================="
 

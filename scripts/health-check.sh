@@ -65,3 +65,23 @@ if [ "$unhealthy" -gt 0 ]; then
   echo "Unhealthy: $unhealthy"
   exit 1
 fi
+
+# ---------------------------------------------------------------------------
+# 跨跳探测（ISSUE/55 P0 事故收口，2026-10-13）：容器全 healthy ≠ 链路通。
+# 55 号事故：nginx→gateway 跨跳断掉（DNS 缓存旧 IP）12h，16/16 healthy 全绿无人知晓。
+# 经 frontend-nginx 自身 proxy 链打 /api/：未登录 401 = 网关活证；只拒 5xx/000
+# （curl -sf 无法区分 401=通 与 502=断，故取码判断）。
+# ---------------------------------------------------------------------------
+echo "----- 跨跳探测（nginx → gateway，55 号事故防线）-----"
+CROSS_CODE=$(docker exec zxyz-frontend-nginx sh -c "curl -s -o /dev/null -w '%{http_code}' --max-time 10 http://localhost/api/" 2>/dev/null)
+if [ -z "$CROSS_CODE" ]; then CROSS_CODE="000"; fi
+echo "跨跳探测 HTTP 状态: $CROSS_CODE"
+case "$CROSS_CODE" in
+  5*|000)
+    echo "ERROR: 跨跳探测失败（HTTP $CROSS_CODE）——nginx→gateway 链路断裂（55 号事故形态），即使容器全 healthy 也判失败"
+    exit 1
+    ;;
+  *)
+    echo "跨跳探测 OK（HTTP $CROSS_CODE = 网关存活/正常拒绝）"
+    ;;
+esac

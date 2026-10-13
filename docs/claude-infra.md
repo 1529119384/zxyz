@@ -126,7 +126,7 @@
 
 **排障入口**：`tail -50 /www/zxyz/deploy-last.log`（最近部署指纹）、`cat /www/zxyz/DEPLOYED_REVISION`（线上镜像版本）。手工执行 `deploy-on-server.sh`（无 `GITHUB_SHA`）时检测层降级为告警，不阻断人工路径。
 
-### 子仓库同步闸门：内容级判据（2026-10-13 ISSUE/55 P1-3 重写）
+### 子仓库同步闸门：内容级判据（2026-10-13 `ISSUE/55-INCIDENT-NGINX-DNS-AND-PIPELINE-2026-10-13.md` P1-3 重写）
 
 `.husky/pre-push` 在根仓库 `git push` 前运行 `scripts/check-subrepo-sync.sh`（退出码语义：0=同步/幻影放行，1=真实漂移拦截 push，2=环境错误 fail-closed——目录存在而 `.git` 缺失按 2 硬失败，不允许跳过）。判据要点与事故背景：
 
@@ -136,7 +136,7 @@
   2. 真漂移（A 维，子仓未提交改动）= 「`git diff HEAD --numstat` 与 `--ignore-cr-at-eol --numstat` 双保险」非空 → 候选逐个走「逐文件 `--ignore-cr-at-eol` numstat 预筛 + 剥 `\r` 双端规范化哈希仲裁」（工作区文件原始字节 vs HEAD blob，同一 `tr -d '\r' | git hash-object --stdin` 管道）；⚠️ 工作区侧不可读索引 `git show :path`——未 stage 的纯工作区改动里 index==HEAD，会误判幻影漏拦（重写过程实测踩坑）；
   3. 树漂移（B 维，子仓已提交、根仓未同步）= 双侧 `git ls-tree -r` 剥前缀逐 blob 对比；
   4. 「双 diff 全空 + porcelain 无 untracked」= 幻影放行（`--name-only` 在内容过滤前生成名单，对 314 个纯 EOL 文件报假阳性名，不可作判据）；untracked(`??`) 是未提交 WIP，不计漂移仅提示。
-- **跨平台**：脚本不硬编码路径分隔符（`$ROOT_DIR/$sub` 正斜杠拼接在 Windows git-bash 与 Linux CI 均有效）、哈希用 `git hash-object` 不依赖 sha256sum、大清单管道只用 awk 不用 head（防 SIGPIPE 静默中止，ISSUE/51 P2-6 纪律）。
+- **跨平台**：脚本不硬编码路径分隔符（`$ROOT_DIR/$sub` 正斜杠拼接在 Windows git-bash 与 Linux CI 均有效）、哈希用 `git hash-object` 不依赖 sha256sum、大清单管道只用 awk 不用 head（防 SIGPIPE 静默中止，51 号 P2-6 纪律）。
 - **验证记录**（2026-10-13 本机实测）：仿真 a（234 行幻影工作区）PASS 放行；仿真 b（子仓注入一行真实改动）exit 1 且精确列出该文件、其余 233 行幻影同时放行；手工复验 pre-push 钩子 HOOK_EXIT=0。
 - **手册判据**：日常自查用 `git diff HEAD --ignore-cr-at-eol --numstat`（非空=真漂移），口径见 CLAUDE.md「同步遗漏检查」。
 
