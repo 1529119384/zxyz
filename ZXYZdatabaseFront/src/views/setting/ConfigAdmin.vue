@@ -39,7 +39,7 @@
           </el-table-column>
           <el-table-column label="更新时间" width="180">
             <template #default="{ row }">
-              {{ row.updatedAt || '-' }}
+              {{ fmtTime(row.updatedAt) }}
             </template>
           </el-table-column>
           <el-table-column label="操作" width="100" fixed="right">
@@ -65,7 +65,11 @@
           <el-table-column prop="oldValue" label="原值" min-width="200" show-overflow-tooltip />
           <el-table-column prop="newValue" label="新值" min-width="200" show-overflow-tooltip />
           <el-table-column prop="changedBy" label="操作人" width="120" />
-          <el-table-column prop="changedAt" label="变更时间" width="180" />
+          <el-table-column label="变更时间" width="180">
+            <template #default="{ row }">
+              {{ fmtTime(row.changedAt) }}
+            </template>
+          </el-table-column>
         </el-table>
 
         <div class="audit-pagination">
@@ -119,6 +123,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 
 import { createConfig, fetchAllConfigs, fetchAuditLogs, updateConfig } from '@/api/configAdmin'
 import { handleBusinessError } from '@/utils/error'
+import { fmtTime } from '@/utils/format'
 
 const configs = ref([])
 const loading = ref(false)
@@ -140,6 +145,11 @@ const form = reactive({
   configValue: '',
   description: '',
 })
+
+// 54 号审计 §2.6（时间口径收口）：此前两张表分别用 `row.updatedAt || '-'` 和
+// 裸 prop 直显时间戳 —— 既是 CLAUDE.md「显示时间戳用 fmtTime」约定的漏网点，
+// 也是与 EmailRecordPanel/EmailServerPanel 漂移的第三处口径。收口到 fmtTime：
+// 空值 '-'、ISO → zh-CN 格式均与全仓一致；空值显示行为与原来的 `|| '-'` 等价。
 
 const filteredConfigs = computed(() => {
   const keyword = searchKey.value.trim().toLowerCase()

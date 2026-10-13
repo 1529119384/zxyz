@@ -683,6 +683,84 @@ describe('realtimeDomain', () => {
     })
   })
 
+  // 54 号审计 §2.6：connectionLock 的复位此前完全依赖 onStatusChange 必然到来，
+  // 存在两条异常路径把锁永久卡在 true（之后所有 ensureWebSocketConnected 被短路，
+  // IM 永久离线且无自愈）。以下用例把两条路径 + 正常路径的守恒行为一起钉住。
+  describe('连接锁卡死兜底（54 号审计 §2.6）', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('connect() 同步抛错时立即释放锁并记录错误，下一次调用可重新发起连接', () => {
+      const { state, domain } = createDomain()
+      domain.ensureWebSocketConnected()
+      const wsClient = wsClientInstance
+      expect(wsClient.connect).toHaveBeenCalledTimes(1)
+
+      // 先走一次状态回调把首轮的锁释放掉，模拟「上一轮连接已终结」
+      onStatusChangeHandler(IM_WS_STATUS.DISCONNECTED)
+
+      wsClient.connect.mockImplementation(() => {
+        throw new Error('WebSocket 构造失败')
+      })
+      // 修复前：异常穿出 ensureWebSocketConnected，锁停在 true
+      expect(() => domain.ensureWebSocketConnected()).not.toThrow()
+      expect(state.lastWsError.value).toBe('WebSocket 构造失败')
+
+      // 修复前：锁卡死 ⇒ 这次调用被短路，connect 计数停在 2
+      domain.ensureWebSocketConnected()
+      expect(wsClient.connect).toHaveBeenCalledTimes(3)
+    })
+
+    it('连接长期无状态回调时看护超时（30s）强制释放锁，后续调用可重连', () => {
+      const { domain } = createDomain()
+      domain.ensureWebSocketConnected()
+      const wsClient = wsClientInstance
+      expect(wsClient.connect).toHaveBeenCalledTimes(1)
+
+      // 看护到点前锁必须仍然生效（负向对照：不能提前放行）
+      vi.advanceTimersByTime(29_999)
+      domain.ensureWebSocketConnected()
+      expect(wsClient.connect).toHaveBeenCalledTimes(1)
+
+      vi.advanceTimersByTime(1)
+      domain.ensureWebSocketConnected()
+      expect(wsClient.connect).toHaveBeenCalledTimes(2)
+    })
+
+    it('状态回调到达即释放锁：断连后的下一次 ensureWebSocketConnected 不被旧锁拦截', () => {
+      const { domain } = createDomain()
+      domain.ensureWebSocketConnected()
+      const wsClient = wsClientInstance
+
+      onStatusChangeHandler(IM_WS_STATUS.CONNECTED)
+      onStatusChangeHandler(IM_WS_STATUS.DISCONNECTED)
+
+      // 锁已由状态回调释放：重连调用能立即再次发起 connect。
+      // （真实 WebSocket 已连接时由 imWebSocket.connect 内部守卫短路，不会双连接。）
+      domain.ensureWebSocketConnected()
+      expect(wsClient.connect).toHaveBeenCalledTimes(2)
+    })
+
+    it('disconnectWebSocket 释放连接锁：CONNECTING 挂起期间手动断开后仍能重连', () => {
+      const { state, domain } = createDomain()
+      domain.ensureWebSocketConnected()
+      const wsClient = wsClientInstance
+      expect(wsClient.connect).toHaveBeenCalledTimes(1)
+
+      // 此时不派发任何状态回调（模拟 CONNECTING 挂起），直接手动断开
+      domain.disconnectWebSocket()
+      expect(state.wsStatus.value).toBe(IM_WS_STATUS.DISCONNECTED)
+
+      // 修复前：锁从未复位 ⇒ 这里被短路，connect 计数停在 1
+      domain.ensureWebSocketConnected()
+      expect(wsClient.connect).toHaveBeenCalledTimes(2)
+    })
+  })
+
   describe('出站任务超时（30s）', () => {
     beforeEach(() => {
       vi.useFakeTimers()

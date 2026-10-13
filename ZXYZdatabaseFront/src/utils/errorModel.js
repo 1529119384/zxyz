@@ -61,10 +61,11 @@ export function getErrorCode(error) {
   return Number.isFinite(normalized) ? normalized : null
 }
 
-export function isImConversationAccessError(error) {
-  const code = getErrorCode(error)
-  return code === 4030 || code === 4400 || code === 4401
-}
+// 54 号审计 §2.6：曾在此导出的 isImConversationAccessError 已删除 ——
+// 全仓 0 个生产消费点（只有本模块自己的测试在续命），且 IM 专属谓词不该住在通用
+// 错误工具里。同一份判定逻辑的**唯一现存副本**在 IM 域内：
+// store/im/conversationDomain.js 的 isConversationAccessError（数据源
+// store/im/normalizers.js 的 IM_ACCESS_DENIED_CODES），后续改动请去那里。
 
 export function logUploadError(stage, file, error, extra = {}) {
   logger.error(`[upload failed] ${stage}`, {

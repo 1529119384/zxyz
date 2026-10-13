@@ -6,7 +6,6 @@ import {
   getErrorDetail,
   getErrorMessage,
   isHandledByGlobalError,
-  isImConversationAccessError,
   logUploadError,
   markGlobalErrorHandled,
 } from '@/utils/errorModel'
@@ -165,20 +164,9 @@ describe('getErrorCode', () => {
   })
 })
 
-describe('isImConversationAccessError', () => {
-  it.each([4030, 4400, 4401])('code=%i 判定为会话访问错误', (code) => {
-    expect(isImConversationAccessError({ response: { data: { code } } })).toBe(true)
-  })
-
-  it.each([401, 403, 404, 4010, 500])('code=%i 不判定为会话访问错误', (code) => {
-    expect(isImConversationAccessError({ response: { data: { code } } })).toBe(false)
-  })
-
-  it('没有 code 时为 false', () => {
-    expect(isImConversationAccessError({})).toBe(false)
-    expect(isImConversationAccessError(null)).toBe(false)
-  })
-})
+// 54 号审计 §2.6：isImConversationAccessError 已删除（3 副本收敛进 IM 域），
+// 其行为由 src/store/im/__tests__/conversationDomain.spec.js 的
+// isConversationAccessError describe 块继续钉住。
 
 describe('logUploadError', () => {
   it('以 [upload failed] 前缀记录阶段，并带上文件与响应信息', () => {

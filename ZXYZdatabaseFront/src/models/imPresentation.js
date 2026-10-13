@@ -1,5 +1,5 @@
 // @ts-check
-import { formatSize } from '@/utils/format'
+import { fmtTime, formatSize } from '@/utils/format'
 
 /**
  * 后端 IM 消息原始记录（宽松描述：只列本模块读取的字段）。
@@ -42,7 +42,7 @@ import { formatSize } from '@/utils/format'
 
 /**
  * 聊天时间格式化函数签名（默认实现 formatChatTime，便于测试注入桩）。
- * @typedef {(value: string|number|Date|null) => string|number|Date} ChatTimeFormatter
+ * @typedef {(value: string|number|Date|null) => string} ChatTimeFormatter
  */
 
 /**
@@ -240,12 +240,23 @@ export function formatProjectQuotaText(value) {
 }
 
 /**
+ * 聊天时间格式化（54 号审计 §2.6 时间口径收口）。
+ *
+ * 此前这里是全仓第二套自造时间格式（`M-D HH:mm`，手写 getMonth/getDate/getHours
+ * 拼接），与 utils/format.js 的 fmtTime（zh-CN 完整 `YYYY-M-D HH:mm:ss`）口径漂移：
+ * 两处各自维护解析/容错逻辑，任何一处修 bug 另一处不会跟进。
+ *
+ * 收口方式：格式与解析**只**委托 fmtTime —— 空值 '-'、无法解析回显原值等边界
+ * 行为也随之与全仓 15+ 个 fmtTime 调用点完全一致；聊天 UI 偏好的「不带年份」
+ * 短格式在此作为**展示裁剪**保留，裁剪规则由新增的 spec 钉住。
+ * fmtTime 若改格式，这里自动跟进，不再漂移。
+ *
  * @param {string|number|Date|null} [value]
- * @returns {string|number|Date}
+ * @returns {string}
  */
 export function formatChatTime(value) {
-  if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return `${date.getMonth() + 1}-${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+  const full = fmtTime(value)
+  if (full === '-') return ''
+  const match = full.match(/^\d{4}-(\d{1,2}-\d{1,2} \d{2}:\d{2}):\d{2}$/)
+  return match ? match[1] : full
 }

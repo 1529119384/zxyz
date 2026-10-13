@@ -17,7 +17,14 @@
  * 会把模板里的 `el-*` 编译成 element-plus 的具名导入，整模块替换会让组件在 import
  * 阶段就炸。改为 `global.stubs` 逐个桩。
  * ⚠️ `v-loading` 是**指令**不是组件，桩不了；这里显式给一份空指令。
+ *
+ * ⚠️ 本文件必须跑在 **jsdom** 下（54 号审计 §2.6）：happy-dom 虽让 DOMPurify
+ * 报 `isSupported: true`，但净化实际是**空转** —— 实测 `<script>`/`onclick`/
+ * `javascript:` 全部原样穿透（DOMPurify 依赖的 DOMParser/模板能力 happy-dom 不完整），
+ * 等于给安全测试配了个假护栏。jsdom 下真实 DOMPurify 正常工作，因此用 per-file
+ * pragma 覆盖全局的 happy-dom；文件顶部其余用例在两种环境下行为一致。
  */
+// @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { provide, reactive, watch } from 'vue'
@@ -29,7 +36,10 @@ vi.mock('@/api/emailAdmin', () => ({
   fetchEmailRecords: vi.fn(),
   fetchEmailRecordDetail: vi.fn(),
 }))
-vi.mock('dompurify', () => ({ default: { sanitize: (html) => html } }))
+// 54 号审计 §2.6：不再把 DOMPurify mock 成恒等函数 —— 恒等 mock 让全仓唯一 HTML
+// 注入点的净化链零验证。现改为使用真实 DOMPurify（happy-dom 环境可跑），
+// 既有 7 个用例的 fixture 均为良性 HTML，真实净化对其原样透传，行为不变；
+// 净化链本身由文件末尾的专用 describe 钉住。
 
 const TABLE_ROWS = Symbol('test:tableRows')
 
@@ -331,5 +341,74 @@ describe('EmailRecordPanel: 详情', () => {
     expect(wrapper.find('.stub-descriptions-item[data-label="收件人"]').text()).toContain(
       'a@example.com',
     )
+  })
+})
+
+// 54 号审计 §2.6（🟡-1 净化链零测试）：此前 DOMPurify 被 mock 成恒等函数，
+// 「含 <script>/onerror 的恶意 HTML 会被清洗」这一安全性质从未被任何测试验证。
+// 现用真实 DOMPurify（依赖真实 DOM，happy-dom 环境可用）走完整净化链：
+// 组件 computed（EmailRecordPreviewHtml）→ DOMPurify.sanitize → iframe srcdoc。
+describe('EmailRecordPanel: DOMPurify 净化链（真实实现）', () => {
+  /** 打开「详情」弹窗并把 contentHtml 换成指定值，返回挂载后的 wrapper。 */
+  async function openDetailWithContent(contentHtml) {
+    fetchEmailRecordDetail.mockResolvedValue(ok({ ...LIST_ROW, contentHtml }))
+    const wrapper = mountPanel()
+    await flushPromises()
+    const detail = column(wrapper, '操作').findAll('.stub-col__row')[0].find('button')
+    await detail.trigger('click')
+    await flushPromises()
+    return wrapper
+  }
+
+  function previewIframe(wrapper) {
+    return wrapper.find('iframe.email-record-preview')
+  }
+
+  it('sandbox 属性在位（无 allow-scripts），脚本即便漏过净化也无法在预览帧执行', async () => {
+    const wrapper = await openDetailWithContent('<p>正常内容</p>')
+    const iframe = previewIframe(wrapper)
+    expect(iframe.exists()).toBe(true)
+    const sandbox = iframe.attributes('sandbox')
+    expect(sandbox).toBeDefined()
+    // 无值 sandbox = 全限制模式；无论实现给空串还是缺 allow-*，都绝不允许出现脚本权限
+    expect(String(sandbox)).not.toContain('allow-scripts')
+  })
+
+  it('恶意 HTML：<script> 与 onerror 内联事件被真实 DOMPurify 清洗', async () => {
+    const malicious =
+      '<p onclick="steal()">点我</p><script>alert(1)</scr' +
+      'ipt><img src=x onerror="alert(2)"><a href="javascript:alert(3)">链接</a>'
+    const wrapper = await openDetailWithContent(malicious)
+
+    const srcdoc = previewIframe(wrapper).attributes('srcdoc')
+    // ① 脚本标签整体移除（而非转义成可见文本后仍留在文档里）
+    expect(srcdoc).not.toContain('<script')
+    expect(srcdoc).not.toContain('alert(1)')
+    // ② 内联事件处理器属性被剥除，但元素本体与文本保留
+    expect(srcdoc).toContain('<p>点我</p>')
+    expect(srcdoc).not.toContain('onclick')
+    expect(srcdoc).not.toContain('onerror')
+    // ③ javascript: 协议链接被中和（DOMPurify 移除 href 属性）
+    expect(srcdoc).not.toContain('javascript:')
+  })
+
+  it('正常富文本（标题/加粗/列表/内联样式/图片）净化后原样保留', async () => {
+    const rich =
+      '<h2 style="color:#409eff">月度账单</h2><p>总额 <strong>¥1,024</strong></p><ul><li>明细一</li><li>明细二</li></ul><img src="https://example.com/chart.png" alt="图表">'
+    const wrapper = await openDetailWithContent(rich)
+
+    const srcdoc = previewIframe(wrapper).attributes('srcdoc')
+    // 组件把净化结果包进完整文档壳，这里按顺序断言关键结构未被误伤
+    expect(srcdoc).toContain('<h2 style="color:#409eff">月度账单</h2>')
+    expect(srcdoc).toContain('<strong>¥1,024</strong>')
+    expect(srcdoc).toContain('<ul><li>明细一</li><li>明细二</li></ul>')
+    expect(srcdoc).toContain('<img src="https://example.com/chart.png" alt="图表">')
+  })
+
+  it('详情为空时回落占位 HTML 也经过净化壳（无内容分支不绕过净化链）', async () => {
+    const wrapper = await openDetailWithContent('')
+    const srcdoc = previewIframe(wrapper).attributes('srcdoc')
+    expect(srcdoc).toContain('无内容')
+    expect(srcdoc).toContain('<!doctype html>')
   })
 })
