@@ -1174,7 +1174,7 @@ services:
       # 🔴 55 号事故（2026-10-13）：原为 curl 自身静态首页——nginx→gateway 跨跳断掉（502）时
       #   依旧全绿，全站不可用 ~12h 无人知晓。改为经自身 proxy 链打 /api/（未登录 401=网关活证），
       #   取码后只拒 5xx（curl -sf 无法区分 401=通 与 502=断）。
-      test: ["CMD-SHELL", "code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost/api/); echo code=$code; [ \"$code\" -ge 1 ] && [ \"$code\" -lt 500 ]"]
+      test: ["CMD-SHELL", "code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost/api/); echo code=$$code; [ \"$code\" -ge 1 ] && [ \"$code\" -lt 500 ]"]
       interval: 15s
       timeout: 10s
       retries: 6
