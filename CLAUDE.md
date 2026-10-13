@@ -71,14 +71,18 @@ WHEN 执行 git 操作, DO cd 到对应目录再执行，避免跨仓库误操�
 # 在根目录执行：检查根仓库是否有未同步的子仓库变更
 git status ZXYZdatabaseBack/ ZXYZdatabaseFront/
 
-# 对比子仓库 HEAD 与根仓库跟踪内容（无输出 = 一致）
-cd ZXYZdatabaseBack && git diff HEAD --stat && cd ..
-cd ZXYZdatabaseFront && git diff HEAD --stat && cd ..
+# 内容级判据（有输出 = 真实漂移，需补提交）
+cd ZXYZdatabaseBack && git diff HEAD --ignore-cr-at-eol --numstat && cd ..
+cd ZXYZdatabaseFront && git diff HEAD --ignore-cr-at-eol --numstat && cd ..
 ```
 
-若 `git status` 显示子目录有 `modified`/`new file` 未暂存，说明子仓库已提交但根仓库遗漏同步，需补提交到根仓库。
+**判据要点（2026-10-13 ISSUE/55 P1-3 收口，勿回退到旧口径）**：
+- `git status`/porcelain 的 `modified` 多为 **CRLF/stat 幻影**（Windows `core.autocrlf=true` 检出，内容剥 `\r` 后与 HEAD 逐字节一致）——后端子仓曾实测 234 行幻影，**porcelain 非空不能判漂移**；
+- `--name-only` 也不能作真漂移判据（名字清单在内容过滤之前生成，纯 EOL 变更文件整名列出但逐文件 patch=0 字节，前端曾实测 314 个假阳性名）；
+- **真漂移** = `--ignore-cr-at-eol --numstat` 非空；「porcelain 脏 + 内容级 diff 全空」= 幻影，放行；
+- untracked(`??`) 文件是未提交 WIP，不计漂移，提交时 `git add -A` 一并处理。
 
-**pre-push 自动校验**: 根仓库 `.husky/pre-push` 在每次 `git push` 前自动运行 `scripts/check-subrepo-sync.sh`（安装钩子：`scripts/install-hooks.sh`；跳过校验：`git push --no-verify`）。若双提交漏掉根仓库这一步，push 会被钩子拦截并提示补提交——不要用 `--force` 绕过，先补提交。
+**pre-push 自动校验**: 根仓库 `.husky/pre-push` 在每次 `git push` 前自动运行 `scripts/check-subrepo-sync.sh`（安装钩子：`scripts/install-hooks.sh`；跳过校验：`git push --no-verify`）。钩子按上述内容级判据执行：**真实漂移拦截**（列出漂移文件清单）+ **幻影自动放行**。若双提交漏掉根仓库这一步，push 会被钩子拦截并提示补提交——不要用 `--no-verify`/`--force` 绕过，先补提交（33h 仓库冻结教训详见 [docs/claude-infra.md](docs/claude-infra.md)）。
 
 ## Build & Test Commands
 

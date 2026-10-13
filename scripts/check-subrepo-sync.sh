@@ -1,10 +1,52 @@
 #!/usr/bin/env bash
 # ============================================================
 # check-subrepo-sync.sh
-# 校验 monorepo 根仓库与嵌套子仓库的提交内容是否一致。
+# 校验 monorepo 根仓库与嵌套子仓库的提交内容是否一致（内容级判据）。
 # 用法: bash scripts/check-subrepo-sync.sh [--fix-hint]
-#   --fix-hint  输出修复命令（默认开启）
-# 退出码: 0=同步  1=不同步  2=环境错误
+#   --fix-hint  历史参数，仅为兼容保留（无效果）
+# 退出码: 0=同步（含幻影放行）  1=真实漂移（拦截 push）  2=环境错误
+#
+# 【判据模型 —— ISSUE/55 §二 P1-3 重写（2026-10-13），Lead 认可】
+# 旧判据（重写前）：
+#   1) `git status --porcelain` 非空 ⇒ 判漂移；
+#   2) root ls-tree == sub ls-tree 不一致 ⇒ 判漂移。
+# Windows(core.autocrlf=true) 检出产生数百行「CRLF/stat 幻影」（后端子仓
+# 实测 238 行；内容剥 \r 后与 HEAD 逐字节一致，仅行尾/stat 不同），两判据
+# 同时误红 ⇒ 33h 冻结只能 `--no-verify` 绕过 = 闸门被废。
+#
+# 新判据（fail-closed 语义不变）：
+#   真实漂移 = 以下任一：
+#   A) 子仓工作区/索引 vs 子仓 HEAD 存在内容级差异：
+#      - 快速放行门（判据第 4 条）：「双 diff 全空」——
+#        `git diff HEAD --numstat` 与 `--ignore-cr-at-eol --numstat` 均空
+#        且 porcelain 无 untracked ⇒ porcelain 全为 stat/索引幻影，放行。
+#        正确性：git diff 输出只反映内容（stat 脏但内容与 HEAD 一致的文件
+#        根本不进 diff），故「双 diff 全空」严格蕴含「无被跟踪文件有内容
+#        级差异」；untracked 不进 diff HEAD，必须单独排除，否则新文件漏网。
+#      - 双 diff 任一非空（或 porcelain 含 untracked）⇒ 逐候选：先做「逐文件
+#        --ignore-cr-at-eol numstat」预筛（git 内容引擎裁决，空=幻影），
+#        非空再进「剥 \r 双端规范化哈希」仲裁终裁：工作区文件原始字节 vs
+#        HEAD blob（`cat-file blob HEAD:path`），同一 tr -d '\r' +
+#        git hash-object --stdin 管道，不一致 ⇒ 真漂移。
+#        ⚠️ 工作区侧绝不能读 `git show :path`（索引）——未 stage 的纯工作区
+#        改动里 index==HEAD，两侧相等会误判幻影放行（55 号仿真 b 实测漏放，
+#        fail-open），必须读工作区文件原始字节。
+#      ⚠️ `--name-only`/`--numstat` 的【文件名清单】在内容过滤之前生成：
+#        纯幻影文件也会被列名（55 号实测：前端 314 个名字 / 逐文件
+#        patch=0 字节），且 rename 形态为 `old => new`、特殊字符路径会被
+#        引号改写——名字清单不可靠，因此本版不做名字匹配，porcelain(-z)
+#        才是候选真源。已知极限：文件名内含制表符时 porcelain -z 与
+#        diff HEAD 的路径同形，仲裁不受影响。
+#   B) 根仓库跟踪树 ≠ 子仓 HEAD 树（子仓已提交、根仓未同步，双提交漏第 2 步）：
+#      双侧 `git ls-tree -r` 剥前缀后逐 blob 对比。
+#   untracked(??) 文件属未提交 WIP：不进任何 HEAD，无法「漏同步」，故不计
+#   漂移仅提示（刻意不沿用旧版「porcelain 非空即拦」——那是 33h 冻结的成因
+#   之一）；staged 纯 rename 由 A 维仲裁（R 记录取新路径）+ B 维兜底。
+#
+# 【跨平台】不硬编码路径分隔符（$ROOT_DIR/$sub 正斜杠拼接在 Windows git-bash
+#   与 Linux CI 均有效）；所有 git 调用显式 `git -C`；哈希仲裁用
+#   `git hash-object --stdin`，不依赖 sha256sum/cksum 等外部命令差异。
+# 【SIGPIPE 纪律】大清单管道只用 awk（读完整输入），不用 head（ISSUE/51 P2-6）。
 # ============================================================
 set -euo pipefail
 
@@ -25,7 +67,38 @@ else
   RED=''; GREEN=''; YELLOW=''; NC=''
 fi
 
-echo "===== 子仓库同步一致性检查 ====="
+# 剥 \r 双端规范化哈希：两侧（工作区文件原始字节 与 HEAD blob 字节流）
+# 走同一条 tr + hash-object 管道，哈希域一致才可比。
+stripped_hash() {
+  tr -d '\r' | git hash-object --stdin
+}
+
+# 哈希仲裁：$1=sub_path $2=相对路径。输出 0=一致（幻影） 1=不一致/任一侧
+# 取不到值（fail-closed：删了被跟踪文件、路径消失等都按真漂移处理）。
+# 工作区侧必须读文件原始字节（索引 git show :path 在「未 stage 的纯工作区
+# 改动」下 == HEAD，两侧相等 = 幻影误判 = 真漂移漏放，勿改回）。
+hash_arbitrate() {
+  local h_work h_head
+  if [ -f "$1/$2" ]; then
+    h_work=$(stripped_hash < "$1/$2")
+  else
+    h_work=""
+  fi
+  h_head=$(git -C "$1" cat-file blob "HEAD:$2" 2>/dev/null | stripped_hash || true)
+  if [ -z "$h_work" ] || [ -z "$h_head" ] || [ "$h_work" != "$h_head" ]; then
+    return 1
+  fi
+  return 0
+}
+
+# 逐文件内容级预筛：该文件在 --ignore-cr-at-eol numstat 下非空 ⇒ 有真实
+# 内容差异（git 内容引擎裁决，对纯 EOL 幻影文件为空）。空输出 ⇒ 幻影。
+# 用 --no-optional-locks 避免触碰子仓 index 的 stat 缓存。
+file_has_content_drift() {
+  [ -n "$(git --no-optional-locks -C "$1" diff HEAD --ignore-cr-at-eol --numstat -- "$2" 2>/dev/null || true)" ]
+}
+
+echo "===== 子仓库同步一致性检查（内容级判据，CRLF/stat 幻影自动放行） ====="
 echo "根仓库: $ROOT_DIR"
 echo ""
 
@@ -50,63 +123,95 @@ for sub in "${SUB_REPOS[@]}"; do
     exit 2
   fi
 
-  # --- 1. 子仓库未提交变更检查 ---
-  sub_dirty_all=$(git -C "$sub_path" status --porcelain 2>/dev/null || true)
-  if [ -n "$sub_dirty_all" ]; then
-    HAS_DRIFT=1
-    dirty_count=$(printf '%s\n' "$sub_dirty_all" | wc -l | tr -d ' ')
-    # ⚠️ 不用 `head -N`（ISSUE/51 P2-6）：head 取够 N 行就提前退出，上游写端在
-    # 大清单（后端脏清单曾实测 1014 行 / 84978 字节 > 64KiB 管道缓冲）上收到
-    # SIGPIPE → 管道退出码 141 → set -euo pipefail 直接静默中止整个脚本，
-    # 漂移详情一个字都打不出来。改用 awk 'NR<=N'：读完全部输入再结束，
-    # 不提前关管道 = 无 SIGPIPE，输出与 head 完全一致。
-    dirty_preview=$(printf '%s\n' "$sub_dirty_all" | awk 'NR<=10 {print "  " $0}')
-    DRIFT_DETAILS="${DRIFT_DETAILS}\n[${sub}] 子仓库有 ${dirty_count} 个未提交变更:"
-    DRIFT_DETAILS="${DRIFT_DETAILS}\n${dirty_preview}"
-    if [ "$dirty_count" -gt 10 ]; then
-      DRIFT_DETAILS="${DRIFT_DETAILS}\n  ... 还有 $((dirty_count - 10)) 个文件"
-    fi
-  fi
+  # --- 0. porcelain → 候选清单（v1 -z 字节安全：文件名不被引号/转义破坏；
+  #        stderr 丢弃 —— 大量「CRLF will be replaced」warning 是纯噪音）---
+  porcelain_total=0
+  untracked_count=0
+  prev_rename=0
+  CANDIDATES=()
+  while IFS= read -r -d '' entry; do
+    if [ "$prev_rename" -eq 1 ]; then prev_rename=0; continue; fi
+    # rename/copy 记录为「R  <new>\0<old>\0」：只取新路径作候选；旧路径已不在
+    # 索引，若参与仲裁（git show :old 失败）会 fail-closed 误报真漂移。
+    porcelain_total=$((porcelain_total + 1))
+    xy="${entry:0:2}"
+    path="${entry:3}"
+    case "$xy" in
+      *R*|*C*) prev_rename=1 ;;
+      '??') untracked_count=$((untracked_count + 1)); continue ;;
+    esac
+    CANDIDATES+=("$path")
+  done < <(git -C "$sub_path" status --porcelain=v1 -z 2>/dev/null || true)
 
-  # --- 2. 内容一致性比较（blob hash 对比） ---
-  # 根仓库中该目录的文件 hash
-  root_tree=$(git ls-tree -r HEAD -- "$sub/" 2>/dev/null \
-    | awk '{print $3, $4}' \
-    | sed "s| $sub/| |" \
-    | sort -k2 || true)
+  # --- 1. A 维：子仓工作区/索引 vs 子仓 HEAD 的内容级双 diff ---
+  content_numstat=$(git -C "$sub_path" diff HEAD --ignore-cr-at-eol --numstat 2>/dev/null || true)
+  raw_numstat=$(git -C "$sub_path" diff HEAD --numstat 2>/dev/null || true)
 
-  # 子仓库自身 HEAD 的文件 hash
-  sub_tree=$(git -C "$sub_path" ls-tree -r HEAD 2>/dev/null \
-    | awk '{print $3, $4}' \
-    | sort -k2 || true)
+  GENUINE_A=()
+  phantom_count=0
 
-  if [ -z "$root_tree" ] && [ -z "$sub_tree" ]; then
-    echo -e "${GREEN}[OK]${NC}   $sub — 双方均无跟踪文件"
-    continue
-  fi
-
-  # 比较差异
-  diff_output=$(diff <(echo "$root_tree") <(echo "$sub_tree") 2>/dev/null || true)
-
-  if [ -z "$diff_output" ]; then
-    echo -e "${GREEN}[OK]${NC}   $sub — 根仓库与子仓库内容一致"
+  if [ -z "$content_numstat" ] && [ -z "$raw_numstat" ] && [ "$untracked_count" -eq 0 ]; then
+    # 快速放行门（判据第 4 条）：双 diff 全空 ⇒ porcelain 全为幻影，放行
+    phantom_count=$porcelain_total
   else
-    HAS_DRIFT=1
-    # 以下管道同 P2-6 注释：全部用 awk 读完整输入（grep -c/awk/wc 都不提前退出），
-    # 不用 head —— 大差异清单下 head 会触发 SIGPIPE → 141 → pipefail 静默中止。
-    only_root=$(printf '%s\n' "$diff_output" | awk '$1=="<" {c++} END {print c+0}')
-    only_sub=$(printf '%s\n' "$diff_output" | awk '$1==">" {c++} END {print c+0}')
-    DRIFT_DETAILS="${DRIFT_DETAILS}\n[${sub}] 内容不一致 (根仓库独有: ${only_root}, 子仓库独有/不同: ${only_sub}):"
+    # 双 diff 任一非空（或有 untracked）⇒ 逐候选：先逐文件 numstat 预筛，
+    # 非空再进哈希仲裁（绝大多数幻影文件在预筛即空，避免 234 次全量哈希）
+    for f in ${CANDIDATES[@]+"${CANDIDATES[@]}"}; do
+      if file_has_content_drift "$sub_path" "$f" || ! hash_arbitrate "$sub_path" "$f"; then
+        GENUINE_A+=("$f")
+      else
+        phantom_count=$((phantom_count + 1))
+      fi
+    done
+  fi
+  genuine_count="${#GENUINE_A[@]}"
 
-    # 提取具体不同步文件（取前 15 个）
-    drift_files=$(printf '%s\n' "$diff_output" | awk '$1=="<" || $1==">" {print $NF}' | sort -u | awk 'NR<=15')
+  # --- 2. B 维：根仓库跟踪树 vs 子仓 HEAD 树（子仓已提交、根仓未同步）---
+  # awk -F'\t' 保留含空格完整路径；前缀剥离必须在 awk 内做（ls-tree 的路径在
+  # TAB 后，sed 的 ^ 锚点匹配不到——55 号实测踩坑）。
+  root_tree=$(git ls-tree -r HEAD -- "$sub/" 2>/dev/null \
+    | awk -F'\t' -v p="$sub/" '{ split($1, m, " "); pth=$2; sub("^" p, "", pth); print m[3] "\t" pth }' \
+    | sort || true)
+  sub_tree=$(git -C "$sub_path" ls-tree -r HEAD 2>/dev/null \
+    | awk -F'\t' '{ split($1, m, " "); print m[3] "\t" $2 }' | sort || true)
 
-    DRIFT_DETAILS="${DRIFT_DETAILS}\n$(printf '%s\n' "$drift_files" | sed 's/^/  /')"
-
-    total_drift=$(printf '%s\n' "$diff_output" | awk '$1=="<" || $1==">" {print $NF}' | sort -u | wc -l | tr -d ' ')
-    if [ "${total_drift:-0}" -gt 15 ]; then
-      DRIFT_DETAILS="${DRIFT_DETAILS}\n  ... 还有 $((total_drift - 15)) 个文件"
+  B_DIFF_FILES=""
+  if [ -n "$root_tree" ] || [ -n "$sub_tree" ]; then
+    b_diff=$(diff <(printf '%s' "$root_tree") <(printf '%s' "$sub_tree") 2>/dev/null || true)
+    if [ -n "$b_diff" ]; then
+      B_DIFF_FILES=$(printf '%s\n' "$b_diff" \
+        | awk '/^[<>] / { sub(/^[<>] [0-9a-f]+\t/, ""); if ($0 != "") print }' | sort -u)
     fi
+  fi
+
+  # --- 3. A 维小结输出 ---
+  if [ "$genuine_count" -gt 0 ]; then
+    HAS_DRIFT=1
+    echo -e "${RED}[漂移]${NC}   $sub — ${genuine_count} 个文件与子仓 HEAD 存在真实内容差异（未提交）"
+    if [ "$phantom_count" -gt 0 ]; then
+      echo "           （另有 ${phantom_count} 行 porcelain 为 CRLF/stat 幻影，已自动放行）"
+    fi
+    DRIFT_DETAILS="${DRIFT_DETAILS}\n[${sub}] 真实漂移 ${genuine_count} 个文件（工作区 vs 子仓 HEAD，内容级）:"
+    DRIFT_DETAILS="${DRIFT_DETAILS}\n$(printf '%s\n' ${GENUINE_A[@]+"${GENUINE_A[@]}"} \
+      | awk '{ if (NR<=30) printf "  M %s\n", $0; c++ } END { if (c>30) printf "  ... 还有 %d 个文件\n", c-30 }')"
+  elif [ "$phantom_count" -gt 0 ]; then
+    echo -e "${YELLOW}[幻影放行]${NC} $sub — ${porcelain_total} 行 porcelain 为 CRLF/stat 幻影，内容级 diff 为空，放行"
+  elif [ "$porcelain_total" -gt 0 ]; then
+    echo -e "${YELLOW}[提示]${NC}   $sub — ${porcelain_total} 行 porcelain 全部为 untracked（未提交 WIP，不计漂移）"
+  else
+    echo -e "${GREEN}[OK]${NC}   $sub — 工作区与子仓 HEAD 内容一致"
+  fi
+  if [ "$untracked_count" -gt 0 ]; then
+    echo "           （另有 ${untracked_count} 个 untracked 文件属未提交 WIP，不计漂移；提交时请 git add 一并处理）"
+  fi
+
+  # --- 4. B 维结果 ---
+  if [ -n "$B_DIFF_FILES" ]; then
+    HAS_DRIFT=1
+    echo -e "${RED}[树漂移]${NC}  $sub — 根仓库跟踪内容与子仓 HEAD 不一致"
+    DRIFT_DETAILS="${DRIFT_DETAILS}\n[${sub}] 根仓库跟踪树 ≠ 子仓 HEAD 树（子仓已提交但根仓未同步）:"
+    DRIFT_DETAILS="${DRIFT_DETAILS}\n$(printf '%s\n' "$B_DIFF_FILES" \
+      | awk '{ if (NR<=30) printf "  T %s\n", $0; c++ } END { if (c>30) printf "  ... 还有 %d 个文件\n", c-30 }')"
   fi
 done
 
@@ -114,12 +219,12 @@ echo ""
 
 # --- 输出结果 ---
 if [ "$HAS_DRIFT" -eq 0 ]; then
-  echo -e "${GREEN}✓ 所有子仓库与根仓库同步一致${NC}"
+  echo -e "${GREEN}✓ 所有子仓库与根仓库内容级同步一致（CRLF/stat 幻影不判漂移）${NC}"
   exit 0
 else
-  echo -e "${RED}✗ 检测到子仓库不同步！${NC}"
+  echo -e "${RED}✗ 检测到子仓库真实漂移（内容级判据）！${NC}"
   echo ""
-  echo "===== 不同步详情 ====="
+  echo "===== 漂移详情 ====="
   echo -e "$DRIFT_DETAILS"
   echo ""
   echo "===== 修复步骤 ====="
@@ -137,6 +242,6 @@ else
   echo "   git -C ZXYZdatabaseBack push origin HEAD"
   echo "   git -C ZXYZdatabaseFront push origin HEAD"
   echo ""
-  echo "::error::SUBREPO_SYNC_DRIFT: 子仓库与根仓库内容不一致，请先同步再推送"
+  echo "::error::SUBREPO_SYNC_DRIFT: 子仓库与根仓库存在真实内容级漂移，请先同步再推送"
   exit 1
 fi
