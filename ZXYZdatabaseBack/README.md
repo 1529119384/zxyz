@@ -365,7 +365,7 @@ zxyz-gateway/src/main/resources/
   application.yml                 # 网关配置（路由、CORS、Sa-Token 鉴权）
 
 zxyz-project-service/src/main/resources/
-  application.yml                 # 项目服务配置（端口、数据库、Knife4j）
+  application.yml                 # 项目服务配置（端口、数据库、springdoc）
 
 zxyz-im-service/src/main/resources/
   application.yml                 # IM 服务配置（端口、数据库、Netty、服务依赖）

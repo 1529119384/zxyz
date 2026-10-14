@@ -10,7 +10,7 @@ import java.io.Serializable;
 
 @Getter
 @Setter
-@ToString
+@ToString(exclude = {"token"})
 @AllArgsConstructor
 @Schema(description = "账号切换响应")
 public class AccountSwitchVO implements Serializable {

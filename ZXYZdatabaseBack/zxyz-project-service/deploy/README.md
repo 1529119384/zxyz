@@ -16,7 +16,7 @@
 
 ### 1. 安装运行环境
 
-- Java 17
+- Java 21
 - `systemd`
 - `curl`
 

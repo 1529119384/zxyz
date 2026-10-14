@@ -29,7 +29,9 @@
       <el-table-column label="申请人" min-width="140">
         <template #default="{ row }">{{ row.name || row.username || row.userId }}</template>
       </el-table-column>
-      <el-table-column prop="createTime" label="申请时间" min-width="160" />
+      <el-table-column label="申请时间" min-width="160">
+        <template #default="{ row }">{{ fmtTime(row.createTime) }}</template>
+      </el-table-column>
       <el-table-column label="操作" width="140">
         <template #default="{ row }">
           <el-button
@@ -53,6 +55,8 @@
 
 <script setup>
 import { computed } from 'vue'
+
+import { fmtTime } from '@/utils/format'
 
 const props = defineProps({
   joinRequests: { type: Array, default: () => [] },

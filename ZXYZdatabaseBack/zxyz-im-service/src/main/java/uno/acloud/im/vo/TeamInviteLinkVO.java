@@ -8,7 +8,7 @@ import lombok.ToString;
 import java.io.Serializable;
 import java.time.LocalDateTime;
 
-@Getter @Setter @ToString
+@Getter @Setter @ToString(exclude = {"token"})
 @AllArgsConstructor
 public class TeamInviteLinkVO implements Serializable {
     private static final long serialVersionUID = 1L;

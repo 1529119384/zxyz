@@ -12,12 +12,16 @@
       <el-table-column prop="operationType" label="操作" min-width="160" />
       <el-table-column prop="targetType" label="目标" min-width="120" />
       <el-table-column prop="afterValue" label="变更后" min-width="220" show-overflow-tooltip />
-      <el-table-column prop="operationTime" label="时间" min-width="180" />
+      <el-table-column label="时间" min-width="180">
+        <template #default="{ row }">{{ fmtTime(row.operationTime) }}</template>
+      </el-table-column>
     </el-table>
   </PermissionPanel>
 </template>
 
 <script setup>
+import { fmtTime } from '@/utils/format'
+
 import PermissionPanel from './PermissionPanel.vue'
 
 defineProps({

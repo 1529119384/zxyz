@@ -19,9 +19,13 @@ test.describe('只读冒烟', () => {
     await expect(page).toHaveTitle(TITLE)
   })
 
-  test('网关健康检查返回 200', async ({ request }) => {
+  test('网关鉴权链健康（未登录返回业务码 4010）', async ({ request }) => {
+    // /api/health 未在白名单内：未登录时网关统一返回 HTTP 200 + 业务码 4010
+    // （SaTokenFilterConfig.setError），这正说明网关 + 鉴权过滤链活着。
     const response = await request.get('/api/health')
     expect(response.status()).toBe(200)
+    const body = await response.json()
+    expect(body.code).toBe(4010)
   })
 
   test('未登录访问受保护路由被重定向到登录页', async ({ page }) => {

@@ -10,7 +10,7 @@ import java.time.LocalDateTime;
 
 @Getter
 @Setter
-@ToString
+@ToString(exclude = {"accessToken"})
 @AllArgsConstructor
 public class ShareVerifyResult {
     private ShareVerifyResponseVO response;

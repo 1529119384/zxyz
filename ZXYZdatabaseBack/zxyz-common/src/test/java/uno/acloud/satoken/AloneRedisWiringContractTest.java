@@ -91,23 +91,28 @@ import java.util.regex.Pattern;
  *   <li><b>豁免自净（门禁 H 规则 2）</b>：在豁免名单里却已三件套齐全 ⇒ 红（陈旧豁免）。</li>
  *   <li><b>豁免有效（门禁 H 规则 3）</b>：豁免名单含不存在或非可部署的模块名 ⇒ 红（防拼写失效）。</li>
  * </ol>
- * <p>在「可部署服务」这一层之上，另有两条只针对**已接线模块**的规则：</p>
+ * <p>在「可部署服务」这一层之上，另有三条只针对**已接线模块**的规则：</p>
  * <ul>
  *   <li><b>正向（B/C 项）</b>：凡声明了 {@code redis-template} 的模块，必须同时具备
  *       {@code alone-redis} + {@code commons-pool2}。该规则**天然对新模块生效**，无需登记模块名。</li>
  *   <li><b>反向（A 项）</b>：{@code zxyz-audit-service} / {@code zxyz-common} / {@code zxyz-starter}
  *       这三个**架构例外**模块不得混入（详见 {@link #FORBIDDEN_REDIS_TEMPLATE_MODULES}）。</li>
+ *   <li><b>scope 防降级（I 项，58 号 §二.8）</b>：三件套的 {@code <scope>} 必须是
+ *       {@code compile}（pom 未写 scope 即默认 compile）—— 降成 test/provided/runtime 会不进
+ *       生产 fat-jar，而旧门禁只匹配 artifactId、看不见 scope。</li>
  * </ul>
  * 于是「新增一个守规矩的服务」自动通过，「新增一个漏接依赖的服务」被 H（缺三件套）或 B/C（接了
- * {@code redis-template} 但漏接其余）点名拦下，「例外模块混入」被 A 点名拦下 ——
- * 三者都<b>不需要修改本测试文件</b>。
+ * {@code redis-template} 但漏接其余）点名拦下，「例外模块混入」被 A 点名拦下，
+ * 「scope 降级」被 I 点名拦下 ——
+ * 四者都<b>不需要修改本测试文件</b>。
  *
  * <p><b>演进史（供后人判断这道门禁的鉴别力，勿当作「当前状态」）</b>：
  * 本测试按「测试先行」落地 —— 首次提交时 pom/yml <b>尚未</b>接线，B/C/D/E 四条断言<b>确实为红</b>
  * （实测 `Tests run: 9, Failures: 4`，报错逐一点名缺失模块与缺失键）。
  * 接线完成后（父 pom 加版本管理、各服务加依赖、共享配置加 `alone-redis` 段）转为
  * `Tests run: 9, Failures: 0`；后续加固依次加入 nacos 落点断言（E2）、可扩展性改造
- * （A 由枚举快照改为禁入不变量）与全覆盖断言（H），现为 11 个用例。
+ * （A 由枚举快照改为禁入不变量）、全覆盖断言（H）与 scope 防降级断言（I，58 号 §二.8），
+ * 现为 12 个用例。
  * 这条「先红后绿」的演进可作回归基线：
  * 若某次改动让本测试变红，说明接线被破坏，而不是「门禁本来就是红的」。</p>
  */
@@ -229,6 +234,20 @@ class AloneRedisWiringContractTest {
     private static final Pattern EXCLUSIONS_BLOCK = Pattern.compile("<exclusions>.*?</exclusions>", Pattern.DOTALL);
     private static final Pattern XML_COMMENT = Pattern.compile("<!--.*?-->", Pattern.DOTALL);
     private static final Pattern PLACEHOLDER = Pattern.compile("^\\$\\{([^:}]+)(?::([^}]*))?}$");
+    private static final Pattern SCOPE_TAG = Pattern.compile("<scope>\\s*([^<\\s]+)\\s*</scope>");
+
+    /** Maven 依赖的默认 scope：pom 里不写 {@code <scope>} 时即为此值。 */
+    private static final String DEFAULT_SCOPE = "compile";
+
+    /**
+     * alone-redis 三件套允许的 scope：仅 {@code compile}。
+     * <p>58 号台账 §二.8（46/49/51 三轮点名的盲区）：此前 {@link #collectArtifacts} 只匹配
+     * artifactId、完全不解析 {@code <scope>} ⇒ 有人把三件套改成 {@code test}/provided/runtime
+     * 降级时，A/B/C/H 四条门禁**一个都看不见**（它们只看「artifactId 是否在集合里」），
+     * 而降级的后果恰恰是致命的：{@code test} scope 不进生产 fat-jar ⇒ 生产容器运行期
+     * {@code NoClassDefFoundError}，与门禁 C 防的那个缺陷同源、且发生在部署之后。</p>
+     */
+    private static final Set<String> ALLOWED_SESSION_SCOPES = Set.of(DEFAULT_SCOPE);
 
     // ==========================================================================
     // 数据模型
@@ -240,8 +259,16 @@ class AloneRedisWiringContractTest {
      * @param module           模块名（目录名）
      * @param artifacts        顶层 {@code <dependencies>} 里声明的 artifactId 集合
      * @param declaredVersions artifactId → 模块内<b>显式</b>写的 version（未写则不含该键）
+     * @param declaredScopes   artifactId → 模块内<b>显式</b>写的 scope（未写 scope 的依赖**不含**该键；
+     *                         语义上等于 Maven 默认的 {@code compile}，见 {@link #DEFAULT_SCOPE}）
      */
-    record ModuleDeps(String module, Set<String> artifacts, Map<String, String> declaredVersions) {
+    record ModuleDeps(String module, Set<String> artifacts, Map<String, String> declaredVersions,
+                      Map<String, String> declaredScopes) {
+
+        /** 自检夹具的便捷构造：不关心 scope 的样本一律按 Maven 默认值 compile 处理。 */
+        ModuleDeps(String module, Set<String> artifacts, Map<String, String> declaredVersions) {
+            this(module, artifacts, declaredVersions, Map.of());
+        }
     }
 
     // ==========================================================================
@@ -485,6 +512,69 @@ class AloneRedisWiringContractTest {
                     + "必须把它们从豁免名单移除，否则名单会慢慢变成「关于现状的谎言」，"
                     + "而文档性谎言比没有文档更糟（后来者会据此误判该服务不用会话）。"
                     + "\n修法：从 " + NO_SESSION_SERVICE_MODULES + " 删掉上述模块（它们已由 B/C 项覆盖）。");
+        }
+    }
+
+    // ==========================================================================
+    // 门禁 I：三件套的 <scope> 必须是 compile（防「test/provided/runtime 降级」静默逃过全部门禁）
+    // ==========================================================================
+
+    @Test
+    void I_三件套的scope必须是compile防降级() {
+        Map<String, ModuleDeps> deps = readAllModuleDeps();
+        Set<String> targets = modulesDeclaring(deps, ARTIFACT_REDIS_TEMPLATE);
+
+        checkSessionScopeIsCompile(targets, deps);
+    }
+
+    /**
+     * <b>scope 防降级不变量（58 号台账 §二.8）</b>：凡声明了 {@code redis-template} 的模块，
+     * 三件套每一条的 {@code <scope>} 必须是 {@code compile}（pom 未写 scope 即默认 compile，
+     * 解析结果里没有该键 = 默认 compile = 合法）。
+     *
+     * <h2>为什么需要这条（补的是 A/B/C/H 都看不见的空档）</h2>
+     * 门禁 A/B/C/H 的扫描都基于 {@link #collectArtifacts}，而它此前**只匹配 artifactId、
+     * 完全不解析 {@code <scope>}** ⇒ 把三件套整体降级成 {@code test}（或 provided/runtime），
+     * 四条门禁**一个都看不见** —— artifactId 仍在集合里，一切照旧绿。降级后的后果：
+     * {@code test} scope 不打进生产 fat-jar ⇒ 生产容器运行期 {@code NoClassDefFoundError}
+     * （与门禁 C 防的缺陷同源，但发生在部署之后、且九个服务同时炸）。
+     *
+     * <h2>实现口径</h2>
+     * {@code declaredScopes()} 是「artifactId → 显式写的 scope」映射，**键不存在** =
+     * Maven 默认值 compile = 合法；键存在且值 ≠ {@code compile} ⇒ 红。因此这条门禁
+     * 对「新服务」「降级老服务」都自动生效，无需登记模块名 —— 与 A/B/C 同一演进哲学。
+     */
+    private static void checkSessionScopeIsCompile(Set<String> targetModules, Map<String, ModuleDeps> deps) {
+        List<String> offenders = new ArrayList<>();
+        for (String module : new TreeSet<>(targetModules)) {
+            ModuleDeps moduleDeps = deps.get(module);
+            if (moduleDeps == null) {
+                continue; // pom 未读到的形态由门禁 B 的 offenders 分支负责点名
+            }
+            for (String artifact : SESSION_TRIO) {
+                if (!moduleDeps.artifacts().contains(artifact)) {
+                    continue; // 缺件由门禁 B/C/H 点名，本门禁只看「在场依赖的 scope」
+                }
+                String scope = moduleDeps.declaredScopes().get(artifact);
+                if (scope != null && !ALLOWED_SESSION_SCOPES.contains(scope)) {
+                    offenders.add(module + " → " + artifact + " 的 <scope>" + scope + "</scope>");
+                }
+            }
+        }
+
+        if (!offenders.isEmpty()) {
+            throw new AssertionError("【scope 降级】以下三件套依赖的 scope 不是 compile：\n  - "
+                    + String.join("\n  - ", offenders)
+                    + "\n为什么不能放过："
+                    + ARTIFACT_ALONE_REDIS + " / " + ARTIFACT_REDIS_TEMPLATE + " / "
+                    + ARTIFACT_COMMONS_POOL2
+                    + " 是**运行期**会话存储依赖 —— 写成 test/provided/runtime 都不会打进生产 fat-jar，"
+                    + "生产容器启动/运行期抛 NoClassDefFoundError，九个服务同时炸；"
+                    + "而旧门禁只匹配 artifactId、看不见 <scope>，四条既有门禁对这种降级全部失明"
+                    + "（58 号台账 §二.8，46/49/51 三轮点名的盲区）。"
+                    + "\n修法：删掉三件套依赖上的 <scope> 标签（Maven 默认即 compile），"
+                    + "或显式写 <scope>compile</scope>。不得以「仅测试用到」为由降级 —— "
+                    + "测试环境与会话无关，Sa-Token 的会话 DAO 在生产运行期必然被加载。");
         }
     }
 
@@ -986,6 +1076,21 @@ class AloneRedisWiringContractTest {
                         Set.of(), Map.of(), NO_SESSION_SERVICE_MODULES),
                 "识别出 0 个可部署服务时必须变红（反空扫）");
         assertMessageNames(emptyDeployableScan, "反空扫");
+
+        // 样本 20（门禁 I，58 号 §二.8）：三件套齐全、但 alone-redis 降级为 <scope>test</scope>
+        // —— artifactId 仍在集合里，A/B/C/H 全部放行，只有 scope 解析能抓住它。
+        // 样本形态刻意取「最隐蔽」的组合：不缺件、不私写 version，只多一个 scope 标签。
+        Map<String, String> testScopes = Map.of(
+                ARTIFACT_REDIS_TEMPLATE, "compile",
+                ARTIFACT_ALONE_REDIS, "test",
+                ARTIFACT_COMMONS_POOL2, "compile");
+        Map<String, ModuleDeps> scopeDemotedService = new LinkedHashMap<>();
+        scopeDemotedService.put(SAMPLE_NEW_SERVICE, new ModuleDeps(SAMPLE_NEW_SERVICE,
+                SESSION_TRIO, Map.of(), testScopes));
+        AssertionError scopeDemotionError = assertThrowsAssertionError(
+                () -> checkSessionScopeIsCompile(Set.of(SAMPLE_NEW_SERVICE), scopeDemotedService),
+                "三件套降级为 test scope 必须让门禁变红（旧门禁对它全部失明）");
+        assertMessageNames(scopeDemotionError, SAMPLE_NEW_SERVICE, ARTIFACT_ALONE_REDIS, "test");
     }
 
     @Test
@@ -1011,11 +1116,22 @@ class AloneRedisWiringContractTest {
                     + "）⇒ 无法证明可扩展性");
         }
 
-        // 十二条检查逐一跑在合规样本上，任何一条误报都会让本用例失败
+        // 全部检查逐一跑在合规样本上（含下方门禁 I 的 scope 合规面），任何一条误报都会让本用例失败
         checkRedisTemplateModuleSet(compliantModules);
         checkAloneRedisDeclared(compliantModules, compliantDeps);
         checkCommonsPool2Declared(compliantModules, compliantDeps);
         checkNoRedissonDao(Map.of("zxyz-gateway", Set.of(ARTIFACT_REDIS_TEMPLATE, ARTIFACT_COMMONS_POOL2)));
+
+        // 门禁 I 的合规面：三件套**显式**写 <scope>compile</scope> 不得误报
+        // （默认 compile 的形态已由上方 compliantDeps 覆盖 —— 它们走便捷构造、declaredScopes 为空）
+        Map<String, String> explicitCompileScopes = new LinkedHashMap<>();
+        for (String artifact : SESSION_TRIO) {
+            explicitCompileScopes.put(artifact, "compile");
+        }
+        Map<String, ModuleDeps> explicitCompileDeps = new LinkedHashMap<>();
+        explicitCompileDeps.put(SAMPLE_NEW_SERVICE, new ModuleDeps(SAMPLE_NEW_SERVICE,
+                SESSION_TRIO, Map.of(), explicitCompileScopes));
+        checkSessionScopeIsCompile(Set.of(SAMPLE_NEW_SERVICE), explicitCompileDeps);
 
         // 门禁 H 的合规面：① 全部三件套齐全、无豁免 ⇒ 不误报；
         // ② 豁免模块（三件套为空）⇒ 也不误报。两条合起来覆盖「二选一」的两个合法分支。
@@ -1177,7 +1293,7 @@ class AloneRedisWiringContractTest {
         for (String section : List.of("dependencyManagement", "build", "profiles", "reporting")) {
             xml = removeSection(xml, section);
         }
-        return new ModuleDeps(module, collectArtifacts(xml), collectVersions(xml));
+        return new ModuleDeps(module, collectArtifacts(xml), collectVersions(xml), collectScopes(xml));
     }
 
     private static Map<String, Set<String>> readArtifactsOf(Path pomXml, String label) {
@@ -1213,6 +1329,29 @@ class AloneRedisWiringContractTest {
             }
         }
         return versions;
+    }
+
+    /**
+     * 解析顶层依赖的 scope（artifactId → scope，不写 scope 的依赖**不含**该键）。
+     * <p>58 号 §二.8：与 {@link #collectVersions} 同一套「逐 {@code <dependency>} 块解析」手法，
+     * 保证不会把其它标签（如 {@code <optional>}）误当 scope，也不会漏掉
+     * {@code <exclusions>} 里的干扰文本（exclusions 块已被剔除）。</p>
+     */
+    private static Map<String, String> collectScopes(String xml) {
+        Map<String, String> scopes = new LinkedHashMap<>();
+        Matcher matcher = DEPENDENCY_BLOCK.matcher(xml);
+        while (matcher.find()) {
+            String block = EXCLUSIONS_BLOCK.matcher(matcher.group(1)).replaceAll("");
+            Matcher artifactId = ARTIFACT_ID_TAG.matcher(block);
+            if (!artifactId.find()) {
+                continue;
+            }
+            Matcher scope = SCOPE_TAG.matcher(block);
+            if (scope.find()) {
+                scopes.put(artifactId.group(1).trim(), scope.group(1).trim());
+            }
+        }
+        return scopes;
     }
 
     /**
