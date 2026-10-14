@@ -689,7 +689,10 @@ jobs:
         run: |
           FAIL=0
           # 收集两个 compose 文件里全部 ${VAR} / ${VAR:-default} 变量名，无默认值的给哑值
-          VARS=$(grep -ohE '\$\{[A-Z_][A-Z0-9_]*(:-[^}]*)?\}' docker-compose.yml docker-compose.tls.yml 2>/dev/null \
+          # ⚠️ 正则必须覆盖三种插值形态：${VAR}、${VAR:-default}、${VAR:?required}——
+          #   57 号首跑教训：只匹配 :- 形态漏掉 :?（required）类变量 ⇒ config 渲染时
+          #   ${VAR:?} 检查未定义变量硬失败（RENDER_FAILED），且 stderr 被丢弃无法排障。
+          VARS=$(grep -ohE '\$\{[A-Z_][A-Z0-9_]*(:[-?][^}]*)?\}' docker-compose.yml docker-compose.tls.yml 2>/dev/null \
             | grep -oE '[A-Z_][A-Z0-9_]*' | sort -u)
           for v in $VARS; do
             if [ -z "$(printenv "$v" 2>/dev/null)" ]; then export "$v=render-check-placeholder"; fi
@@ -697,7 +700,7 @@ jobs:
           echo "render-check: exported $(echo "$VARS" | wc -l) placeholder variables"
           for COMPOSE_ARGS in "-f docker-compose.yml" "-f docker-compose.yml -f docker-compose.tls.yml"; do
             # shellcheck disable=SC2086
-            if docker compose $COMPOSE_ARGS config > /tmp/rendered.yml 2>/dev/null; then
+            if docker compose $COMPOSE_ARGS config > /tmp/rendered.yml 2>/tmp/render-err.txt; then
               if grep -qE '\[ "" -(ge|lt)' /tmp/rendered.yml; then
                 echo "::error::HEALTHCHECK_EMPTY_COMPARE: rendered compose contains [ \"\" -ge/-lt ] — healthcheck verdict will be sh: out of range (see ISSUE/55: FailingStreak=1842)"
                 grep -nE '\[ "" -(ge|lt)' /tmp/rendered.yml
@@ -706,7 +709,8 @@ jobs:
                 echo "render-check OK: $COMPOSE_ARGS (no empty-var comparisons)"
               fi
             else
-              echo "::error::RENDER_FAILED: docker compose $COMPOSE_ARGS config 渲染失败（fail-closed）"
+              echo "::error::RENDER_FAILED: docker compose $COMPOSE_ARGS config 渲染失败（fail-closed）——stderr："
+              cat /tmp/render-err.txt | tail -20
               FAIL=1
             fi
           done
