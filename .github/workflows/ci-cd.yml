@@ -695,7 +695,15 @@ jobs:
           VARS=$(grep -ohE '\$\{[A-Z_][A-Z0-9_]*(:[-?][^}]*)?\}' docker-compose.yml docker-compose.tls.yml 2>/dev/null \
             | grep -oE '[A-Z_][A-Z0-9_]*' | sort -u)
           for v in $VARS; do
-            if [ -z "$(printenv "$v" 2>/dev/null)" ]; then export "$v=render-check-placeholder"; fi
+            if [ -z "$(printenv "$v" 2>/dev/null)" ]; then
+              # ⚠️ 占位值按变量名类型给：端口类（*_PORT）必须数字（compose 校验
+              #   ports hostPort，字符串占位 → invalid hostPort——57 号二轮首跑实证），
+              #   其余给字符串。新变量类型出现时在此处补分支。
+              case "$v" in
+                *_PORT) export "$v=18000" ;;
+                *)      export "$v=render-check-placeholder" ;;
+              esac
+            fi
           done
           echo "render-check: exported $(echo "$VARS" | wc -l) placeholder variables"
           for COMPOSE_ARGS in "-f docker-compose.yml" "-f docker-compose.yml -f docker-compose.tls.yml"; do
