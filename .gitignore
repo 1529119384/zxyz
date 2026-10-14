@@ -97,6 +97,11 @@ deliverables/
 # 把工作区视为"脏"从而拒推。
 .last_ci_run
 
+# spss 作业目录（卡方检验 .sps/.docx 等课程产物，与项目无关）：
+# 2026-10-14 P3-2 防再混入 —— 目录本体已移至仓库外 D:\code\databaseZXYZ\spss_homework\，
+# 此行防止再次被误放进仓库（同 deliverables/、任务.md 的本地保留口径）。
+spss_homework/
+
 # ===== .qoder：只保留 rules，其余 AI 产物不入库 =====
 # repowiki = 311 文件 / 5.88 MB，纯 AI 生成的代码 wiki，且曾因"整目录豁免"造成 Gitleaks 311 文件盲区。
 # better-harness/ = AI 评审跑批产出（canvas.json/findings.json/report.canvas.tsx），同属 AI 产物。

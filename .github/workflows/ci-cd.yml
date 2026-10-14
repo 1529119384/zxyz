@@ -636,8 +636,8 @@ jobs:
               case "$path" in
                 *db/migration/*.sql)
                   case "$status" in
-                    M|R*)
-                      echo "::error::FLYWAY_MODIFIED_APPLIED: ${path} modifies/renames an already-released migration — migrations must be append-only"
+                    M|R*|D)
+                      echo "::error::FLYWAY_MODIFIED_APPLIED: ${path} modifies/renames/deletes an already-released migration — migrations must be append-only"
                       FAIL=1
                       ;;
                   esac
@@ -660,8 +660,8 @@ jobs:
               case "$path" in
                 *db/migration/*.sql)
                   case "$status" in
-                    M|R*)
-                      echo "::error::FLYWAY_MODIFIED_APPLIED: ${path} modifies/renames an already-released migration — migrations must be append-only"
+                    M|R*|D)
+                      echo "::error::FLYWAY_MODIFIED_APPLIED: ${path} modifies/renames/deletes an already-released migration — migrations must be append-only"
                       FAIL=1
                       ;;
                   esac
@@ -678,6 +678,42 @@ jobs:
             exit 1
           fi
           echo "Flyway modify-guard: no already-released migrations were modified (base: before...HEAD)."
+
+      # ── 57 号建议 3（P3-1 收口）：healthcheck 渲染自检 ──
+      # 动机（55 号事故链条）：nginx 探针因 compose 转义不全恒失败（`[ "" -ge 1 ]` →
+      # `sh: out of range`，FailingStreak=1842），而 docs-consistency 的「healthcheck
+      # 15/15」数量门禁照常 PASS —— 数量不构成可用性证据。
+      # 手法（SOP 34 条）：用权威解释器 `docker compose config` 渲染一遍，渲染输出里
+      # 出现空变量比较（`[ "" -ge` / `[ "" -lt`）即失败。CI runner 自带 docker compose。
+      - name: Healthcheck render self-check (no empty-var comparisons)
+        run: |
+          FAIL=0
+          # 收集两个 compose 文件里全部 ${VAR} / ${VAR:-default} 变量名，无默认值的给哑值
+          VARS=$(grep -ohE '\$\{[A-Z_][A-Z0-9_]*(:-[^}]*)?\}' docker-compose.yml docker-compose.tls.yml 2>/dev/null \
+            | grep -oE '[A-Z_][A-Z0-9_]*' | sort -u)
+          for v in $VARS; do
+            if [ -z "$(printenv "$v" 2>/dev/null)" ]; then export "$v=render-check-placeholder"; fi
+          done
+          echo "render-check: exported $(echo "$VARS" | wc -l) placeholder variables"
+          for COMPOSE_ARGS in "-f docker-compose.yml" "-f docker-compose.yml -f docker-compose.tls.yml"; do
+            # shellcheck disable=SC2086
+            if docker compose $COMPOSE_ARGS config > /tmp/rendered.yml 2>/dev/null; then
+              if grep -qE '\[ "" -(ge|lt)' /tmp/rendered.yml; then
+                echo "::error::HEALTHCHECK_EMPTY_COMPARE: rendered compose contains [ \"\" -ge/-lt ] — healthcheck verdict will be sh: out of range (see ISSUE/55: FailingStreak=1842)"
+                grep -nE '\[ "" -(ge|lt)' /tmp/rendered.yml
+                FAIL=1
+              else
+                echo "render-check OK: $COMPOSE_ARGS (no empty-var comparisons)"
+              fi
+            else
+              echo "::error::RENDER_FAILED: docker compose $COMPOSE_ARGS config 渲染失败（fail-closed）"
+              FAIL=1
+            fi
+          done
+          if [ "$FAIL" -ne 0 ]; then
+            exit 1
+          fi
+          echo "Healthcheck render self-check: both composes render clean."
 
   # ============================================================
   # Job: Nacos 配置等价性门禁（审计 D2）
@@ -1360,7 +1396,9 @@ jobs:
   # ============================================================
   deploy:
     # 审计 2.3.6：security-scan（Trivy HIGH/CRITICAL，exit-code=1）必须成为部署硬前置。
-    needs: [detect-changes, build-and-push, secret-scan, security-scan]
+    # 57 号 P2-4（2026-10-14）：flyway-check 加入 needs —— 它此前不在依赖里，红了也
+    # 不阻断部署（宣称 fail-closed 强于实际）。无 if ⇒ 恒运行，两臂均要求 success。
+    needs: [detect-changes, build-and-push, secret-scan, security-scan, flyway-check]
     # ── 2026-10-11 P1-1 修复：「scripts-only 永不部署」双雷中的门禁雷 ──
     # 旧 if 把 `needs.build-and-push.result == 'success'` 当硬前置，而 build-and-push 的
     # any-change 白名单刻意不含 scripts/** ⇒ scripts-only 提交（9e7a62a3）build/scan 全
@@ -1379,11 +1417,14 @@ jobs:
     #       security-scan 整体 skipped 同样属预期（无新镜像可扫）。
     #   secret-scan **无条件运行**（不设 if ⇒ 永不 skipped），必须恒 success —— 它是
     #       两臂共同的门禁，任何失败都让整个表达式为 false（fail-closed 不变）。
+    #   flyway-check 同为无条件运行（57 号 P2-4 收口）：sql/** 变更恰是最需要迁移
+    #       守卫的场景，两臂均要求 success，无豁免。
     #   detect-changes 无 if，恒运行；它失败时 run 已失败，无需在此重复判断。
     #   `!cancelled()` 兜底「上游被取消」的残局（正常串行不会走到）。
     if: |
       !cancelled() &&
       needs.secret-scan.result == 'success' &&
+      needs.flyway-check.result == 'success' &&
       (
         (
           needs.detect-changes.outputs.any-change == 'true' &&

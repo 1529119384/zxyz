@@ -38,7 +38,9 @@
 #        才是候选真源。已知极限：文件名内含制表符时 porcelain -z 与
 #        diff HEAD 的路径同形，仲裁不受影响。
 #   B) 根仓库跟踪树 ≠ 子仓 HEAD 树（子仓已提交、根仓未同步，双提交漏第 2 步）：
-#      双侧 `git ls-tree -r` 剥前缀后逐 blob 对比。
+#      双侧 `git ls-tree -r` 剥前缀后按 mode+blob+path 三元组对比（2026-10-14 P2-5：
+#      旧版只比 blob hash 丢 mode 位，chmod +x 这类 mode-only 变更假放行 ——
+#      ad21124c6 backup.sh 可执行位丢失致每日备份全失败即该类别生产事故）。
 #   untracked(??) 文件属未提交 WIP：不进任何 HEAD，无法「漏同步」，故不计
 #   漂移仅提示（刻意不沿用旧版「porcelain 非空即拦」——那是 33h 冻结的成因
 #   之一）；staged 纯 rename 由 A 维仲裁（R 记录取新路径）+ B 维兜底。
@@ -169,18 +171,21 @@ for sub in "${SUB_REPOS[@]}"; do
   # --- 2. B 维：根仓库跟踪树 vs 子仓 HEAD 树（子仓已提交、根仓未同步）---
   # awk -F'\t' 保留含空格完整路径；前缀剥离必须在 awk 内做（ls-tree 的路径在
   # TAB 后，sed 的 ^ 锚点匹配不到——55 号实测踩坑）。
+  # key = mode\tblob\tpath（2026-10-14 P2-5）：旧版只取 m[3]（blob hash）丢 mode 位，
+  # chmod +x 这类 mode-only 变更（两侧 blob 相同、mode 100644↔100755）假放行；mode 入 key
+  # 后 B 维对 mode-only 变更同样非空，与内容变更一视同仁。
   root_tree=$(git ls-tree -r HEAD -- "$sub/" 2>/dev/null \
-    | awk -F'\t' -v p="$sub/" '{ split($1, m, " "); pth=$2; sub("^" p, "", pth); print m[3] "\t" pth }' \
+    | awk -F'\t' -v p="$sub/" '{ split($1, m, " "); pth=$2; sub("^" p, "", pth); print m[1] "\t" m[3] "\t" pth }' \
     | sort || true)
   sub_tree=$(git -C "$sub_path" ls-tree -r HEAD 2>/dev/null \
-    | awk -F'\t' '{ split($1, m, " "); print m[3] "\t" $2 }' | sort || true)
+    | awk -F'\t' '{ split($1, m, " "); print m[1] "\t" m[3] "\t" $2 }' | sort || true)
 
   B_DIFF_FILES=""
   if [ -n "$root_tree" ] || [ -n "$sub_tree" ]; then
     b_diff=$(diff <(printf '%s' "$root_tree") <(printf '%s' "$sub_tree") 2>/dev/null || true)
     if [ -n "$b_diff" ]; then
       B_DIFF_FILES=$(printf '%s\n' "$b_diff" \
-        | awk '/^[<>] / { sub(/^[<>] [0-9a-f]+\t/, ""); if ($0 != "") print }' | sort -u)
+        | awk '/^[<>] / { sub(/^[<>] [0-9a-f]+\t[0-9a-f]+\t/, ""); if ($0 != "") print }' | sort -u)
     fi
   fi
 

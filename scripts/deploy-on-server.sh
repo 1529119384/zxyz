@@ -91,6 +91,24 @@ write_deploy_manifest() {
   echo "已写部署指纹 → ${DEPLOY_DIR}/deploy-last.log（outcome=$outcome）"
 }
 
+# --- 异常退出留痕（EXIT trap，2026-10-14 P2-2 收口）---
+# 为什么：上方 write_deploy_manifest 只在三个「正常终态出口」（success/rollback/no-op）
+#   被调用；而 set -euo pipefail 下的中途失败（exit 1）与 ssh-action 超时/取消引发的
+#   kill（退出码 143/137）会让脚本静默消失 —— deploy-last.log 里没有任何本次记录。
+#   实证：55/57 号两次「无留痕事故」，容器 11:44Z 已重建但部署日志查无痕迹，
+#   排障只能靠 GHCR 镜像推送时间倒推。本 trap 与三个终态互补：exit 0（正常终态已
+#   由 write_deploy_manifest 留痕）静默返回；仅补「异常退出」形态一行：
+#   outcome=aborted exit=N phase=... —— 与既有 outcome 字段同形（不引入新字段名），
+#   兼容 200 行截断与 tail -50 排障入口。DEPLOY_PHASE 在各主阶段入口推进（见下）。
+on_deploy_exit() {
+  local exit_code="$1"
+  [ "$exit_code" -eq 0 ] && return 0
+  echo "outcome=aborted exit=${exit_code} phase=${DEPLOY_PHASE:-startup} ts=$(date -u '+%Y-%m-%dT%H:%M:%SZ') deployed_sha=${GITHUB_SHA:-$IMAGE_TAG} deploy_env=${DEPLOY_ENV:-unknown}" \
+    >> "${DEPLOY_DIR}/deploy-last.log" 2>/dev/null || true
+}
+trap 'on_deploy_exit $?' EXIT
+DEPLOY_PHASE="startup"
+
 # --- 归一化 IMAGE_PREFIX 并 export（必须在任何 compose 调用之前）---
 # 为什么必须在这里做、而不是只写进 .env：
 #   docker-compose.yml 里是「裸拼接」—— ${IMAGE_PREFIX:-}zxyz-frontend-nginx:${APP_IMAGE_TAG:-latest}
@@ -140,6 +158,7 @@ pick_script() {
 # SHA 守卫会把克隆 checkout 成 detached；手工排障常发生在这种状态之后），
 # 且 pull 依赖「当前分支有上游」这一隐含前提 —— 改为 fetch + checkout -B 后
 # 两种状态都能被拉回。
+DEPLOY_PHASE="repo-align"
 if [ -d "$REPO_DIR" ]; then
   # 审计 I-20（2026-10-03）：同一次 push 若同时改了代码与 nacos-config，会**同时**触发
   #   deploy 与 nacos-import 两个 job，两个 SSH 会话并发对同一个 $REPO_DIR 执行 git 操作。
@@ -225,6 +244,7 @@ if [ -d "$REPO_DIR" ]; then
     #   后续检测层的 diff -q 校验与本层清单一一对应，失败可定位到单个文件。
     # =============================================================================
     SYNCED_SCRIPTS=()
+    DEPLOY_PHASE="sync-scripts"
     mkdir -p "$DEPLOY_DIR/scripts"
     for _sh in "$REPO_DIR/scripts/"*.sh; do
       [ -f "$_sh" ] || continue
@@ -276,6 +296,7 @@ echo "Image tag: $IMAGE_TAG"
 # 为什么：部署会覆盖旧镜像/旧 .env，若部署中途失败且无备份则无回退点。
 # 此处只备 MySQL（状态核心，且快），全量/异地备份仍由 crontab 跑 backup.sh 完成。
 # 在 set -euo pipefail 下，backup.sh 返回非 0 即中止部署——这正是想要的行为。
+DEPLOY_PHASE="backup"
 echo "===== Pre-deploy MySQL backup ====="
 if [ -f "$DEPLOY_DIR/scripts/backup.sh" ]; then
   if ! bash "$DEPLOY_DIR/scripts/backup.sh" --mysql-only; then
@@ -295,6 +316,7 @@ fi
 # 幂等：已有非占位符值跳过，避免重启后换密码破坏 MySQL/Redis/Jasypt 连接与跨服务 token 一致。
 # 外部凭证（OSS 访问密钥/邮箱密码/前端地址等）init-secrets.sh 不生成，仍由后续 validate-env 拦截手填。
 echo "===== Initializing secrets (if missing) ====="
+DEPLOY_PHASE="init-secrets"
 # 注意：不再要求 .env 预先存在 —— init-secrets.sh 自身在 .env 缺失时会
 # 自动从 .env.example 复制（N5）。此前要求「脚本与 .env 同时存在」，
 # 导致全新服务器直接跳过初始化，随后 compose 解析 ${SVC_GATEWAY_KEY:?...}
@@ -334,6 +356,7 @@ if [ -d "$REPO_DIR" ]; then
   VALIDATE_SCRIPT="$(pick_script validate-env.sh || true)"
   if [ -n "$VALIDATE_SCRIPT" ] && [ -f "$DEPLOY_DIR/.env" ]; then
     echo "===== Validating .env (prod gate) ====="
+    DEPLOY_PHASE="validate-env"
     if ! bash "$VALIDATE_SCRIPT" "$DEPLOY_DIR/.env"; then
       echo "::error::VALIDATE_ENV_FAILED: .env 校验未通过（必需变量缺失或仍为占位符），已中止部署"
       exit 1
@@ -354,6 +377,7 @@ if [ -d "$REPO_DIR" ]; then
     fi
     printf '%s' "$h"
   }
+  DEPLOY_PHASE="config-sync"
   OLD_HASH="$(_compose_hash)"
   # CI 路径：克隆已在本脚本最前面对准本次提交，无需再动（detached HEAD 下
   # `git pull` 因无上游必然失败，故 CI 路径刻意跳过）。
@@ -425,6 +449,7 @@ fi
 # 跨部署稳定，改密会导致运行中的服务断连，故此处绝不 ALTER USER。
 # 前提：MySQL 已运行（与上方 backup.sh --mysql-only 完全同一前提；首次部署
 # 需先手动起基础设施，本脚本不负责起 mysql 容器）。
+DEPLOY_PHASE="grant-db"
 GRANT_SCRIPT="$(pick_script grant-least-privilege.sh || true)"
 if [ -n "$GRANT_SCRIPT" ]; then
   echo "===== Applying least-privilege DB accounts ====="
@@ -503,6 +528,7 @@ fi
 #   resolve : lstat ***/ZXYZdatabaseBack: no such file or directory（服务器上确实没有该目录）
 # 判据选择：不直接拿 pull 的退出码当结论，而是检查「compose up 时该镜像在不在本地」——
 # 这才是决定它会不会退化成源码构建的真正前提；退出码非零但镜像已在本地不算故障。
+DEPLOY_PHASE="pull-images"
 echo "===== Pulling images ====="
 PULL_PIDS=()
 for svc in "${UPDATE_SVC[@]}"; do
@@ -604,6 +630,7 @@ echo "===== Restarting services ====="
 # --no-build：服务器上只有 docker-compose.yml，没有 ZXYZdatabaseBack/Front 源码，
 # 所以「构建」在这里永远不可能成功，只会把真实错误替换成 lstat 之类的噪声。
 # 直接禁止构建，让缺镜像以明确报错暴露（配合上方 pull 后的镜像存在性预检，双保险）。
+DEPLOY_PHASE="compose-up"
 docker compose up -d --no-deps --no-build $UP_FLAGS "${UPDATE_SVC[@]}"
 
 # --- 确保 nacos 日志清理 sidecar 处于运行状态（N-5，2026-09-18）---
@@ -713,6 +740,7 @@ else
   done
   echo "Health gate targets: common=[${COMMON_SVC[*]}] gateway frontend-nginx"
 
+DEPLOY_PHASE="health"
   echo "===== Waiting for common services ====="
   for i in $(seq 1 30); do
     if assert_services_ready "${COMMON_SVC[*]}"; then
@@ -881,6 +909,7 @@ else
   fi
 fi
 
+DEPLOY_PHASE="finalize"
 write_deployed_revision "$IMAGE_TAG" "false"
 
 echo "===== Container status ====="

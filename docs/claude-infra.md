@@ -122,7 +122,7 @@
 |---|---|---|
 | ① 同步层 | 白名单逐文件同步 `scripts/*.sh`，逐文件留痕 | cp 失败 / 零文件同步 ⇒ 部署中止 |
 | ② 检测层 | 克隆 HEAD == `GITHUB_SHA` 校验（防旧 checkout/错误分支）；`backup.sh`/`deploy-on-server.sh`/`rollback.sh` 同步后 `diff -q` 内容校验 | MISMATCH / DIFF ⇒ ERROR 退出 |
-| ③ 自证层 | 部署终态写指纹到 `/www/zxyz/deploy-last.log`（append，保留最近 200 行）：`outcome`（success/no-op/rollback）+ `deployed_sha` + `repo_head`/`repo_branch` + `synced_scripts=[...]` + UTC 时间戳 | — |
+| ③ 自证层 | 部署终态写指纹到 `/www/zxyz/deploy-last.log`（append，保留最近 200 行）：`outcome`（success/no-op/rollback）+ `deployed_sha` + `repo_head`/`repo_branch` + `synced_scripts=[...]` + UTC 时间戳；另有 **EXIT trap 兜底**（2026-10-14 P2-2）：中途失败/被 kill（exit≠0）时写一行 `outcome=aborted exit=N phase=<失败阶段>`——正常终态由 write_deploy_manifest 覆盖，trap 只补异常退出形态（55/57 号两次「无留痕事故」收口） | — |
 
 **排障入口**：`tail -50 /www/zxyz/deploy-last.log`（最近部署指纹）、`cat /www/zxyz/DEPLOYED_REVISION`（线上镜像版本）。手工执行 `deploy-on-server.sh`（无 `GITHUB_SHA`）时检测层降级为告警，不阻断人工路径。
 
@@ -134,10 +134,11 @@
 - **新判据**（fail-closed 语义不变，幻影不判漂移）：
   1. porcelain(-z) 仅作候选清单与统计，不单独判漂移；
   2. 真漂移（A 维，子仓未提交改动）= 「`git diff HEAD --numstat` 与 `--ignore-cr-at-eol --numstat` 双保险」非空 → 候选逐个走「逐文件 `--ignore-cr-at-eol` numstat 预筛 + 剥 `\r` 双端规范化哈希仲裁」（工作区文件原始字节 vs HEAD blob，同一 `tr -d '\r' | git hash-object --stdin` 管道）；⚠️ 工作区侧不可读索引 `git show :path`——未 stage 的纯工作区改动里 index==HEAD，会误判幻影漏拦（重写过程实测踩坑）；
-  3. 树漂移（B 维，子仓已提交、根仓未同步）= 双侧 `git ls-tree -r` 剥前缀逐 blob 对比；
+  3. 树漂移（B 维，子仓已提交、根仓未同步）= 双侧 `git ls-tree -r` 剥前缀按 **mode+blob+path 三元组**对比（2026-10-14 P2-5：旧版只比 blob hash 丢 mode 位，chmod +x 这类 mode-only 变更假放行——ad21124c6 backup.sh 可执行位丢失致每日备份全失败即该类别事故）；
   4. 「双 diff 全空 + porcelain 无 untracked」= 幻影放行（`--name-only` 在内容过滤前生成名单，对 314 个纯 EOL 文件报假阳性名，不可作判据）；untracked(`??`) 是未提交 WIP，不计漂移仅提示。
 - **跨平台**：脚本不硬编码路径分隔符（`$ROOT_DIR/$sub` 正斜杠拼接在 Windows git-bash 与 Linux CI 均有效）、哈希用 `git hash-object` 不依赖 sha256sum、大清单管道只用 awk 不用 head（防 SIGPIPE 静默中止，51 号 P2-6 纪律）。
 - **验证记录**（2026-10-13 本机实测）：仿真 a（234 行幻影工作区）PASS 放行；仿真 b（子仓注入一行真实改动）exit 1 且精确列出该文件、其余 233 行幻影同时放行；手工复验 pre-push 钩子 HOOK_EXIT=0。
+- **mode 位回归验证**（2026-10-14 P2-5 本机实测）：真实钩子端到端仿真——子仓 chmod +x（blob 不变、mode 644→755）+ 根仓落后 ⇒ exit 1 报「树漂移 T backup.sh」；根仓同步后 exit 0。反证：旧 key（blob\tpath）同场景 diff 为空（真实假放行）。Windows 仿真注意：MSYS 的 chmod +x 不落盘，临时仓须 `core.fileMode=false` + `git update-index --chmod` 强制（与真实 chmod 的 HEAD 树 delta 完全同构）。
 - **手册判据**：日常自查用 `git diff HEAD --ignore-cr-at-eol --numstat`（非空=真漂移），口径见 CLAUDE.md「同步遗漏检查」。
 
 ## 部署注意事项与运维提示
