@@ -4,8 +4,11 @@ name: MySQL 恢复演练（默认关闭，仅手动触发）
 # 为什么【默认关闭】——这是本 workflow 的第一性原则，改动前请先读完：
 #
 #   生产机 160.202.46.118 的真实规格为 4 核 / 7.94 GB / **无 swap**。而
-#   docker-compose.yml 里 15 个容器的 limits 之和已达 **7.875 GiB**
-#   （审计文档按另一口径记为 8.125 GiB），几乎吃满物理内存 —— 留给内核与 Docker
+#   docker-compose.yml 里 15 个容器的 limits 之和已达 **7808 MiB = 7.625 GiB**
+#   （2026-10-14 复算：mysql 896M + nacos 1024M + redis 896M + rabbitmq 384M
+#   + 10 个后端服务各 448M + frontend-nginx 128M；nacos-log-cleanup 与 flyway 无
+#   limits，不计入。历史口径 7.875 GiB 对应更早的 limits 版本，已失效），
+#   几乎吃满物理内存 —— 留给内核与 Docker
 #   自身的余量近乎为零。在这种机器上，恢复演练会在**同一台机**上额外拉起一个
 #   mysql:8.4 容器并灌入全量备份；一旦内存吃紧，内核 OOM killer 挑中的很可能是
 #   正在跑的 MySQL 容器 —— 那是数据安全事故，代价远大于一次演练的收益。
