@@ -644,6 +644,25 @@ jobs:
                   ;;
               esac
             done < <(git diff --name-status "origin/${BASE}...HEAD" 2>/dev/null || true)
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # dispatch 只在 dev 上触发（ci-cd.yml 顶部限定）⇒ origin/dev = 上一版
+            if git rev-parse --verify origin/dev >/dev/null 2>&1; then
+              echo "diff guard: workflow_dispatch, base=origin/dev (dispatch has no before)"
+              while IFS=$'\t' read -r status path; do
+                case "$path" in
+                  *db/migration/*.sql)
+                    case "$status" in
+                      M|R*|D)
+                        echo "::error::FLYWAY_MODIFIED_APPLIED: ${path} modifies/renames/deletes an already-released migration — migrations must be append-only"
+                        FAIL=1
+                        ;;
+                    esac
+                    ;;
+                esac
+              done < <(git diff --name-status "origin/dev...HEAD" 2>/dev/null || true)
+            else
+              echo "::warning::workflow_dispatch without origin/dev; skipping modify-guard"
+            fi
           elif [ "${{ github.event_name }}" = "push" ]; then
             if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
               echo "::error::FLYWAY_GUARD_NO_BASE: push before 为全零（新分支/首推），无比对基线（fail-closed）——以下为全量迁移文件清单，请人工核对是否含原地修改："
