@@ -38,7 +38,11 @@ docker-compose.dev.yml
 nacos-config/**
 scripts/**
 sql/**
+conf/**
+DEPLOYMENT.md
 ```
+
+> 58 号 §二.6 / §二.9 白名单补两项的通道归属：`conf/**`（`conf/rabbitmq.conf` 是 rabbitmq 水位线的唯一配置来源，compose bind mount 进容器）与 `DEPLOYMENT.md`（根目录部署指南）都**只进顶层 paths**（lint-config/secret-scan 会跑，消除「改它零检查」盲区），刻意**不进任何 dorny 部署 filter** —— 纯配置/纯文档变更不需要重建任何镜像（与 `docker-compose.dev.yml` 同款通道归属逻辑）。⚠️ 注意：`deploy-on-server.sh` 的同步白名单刻意不含 `conf/`（运行时资产）⇒ 改 `conf/rabbitmq.conf` 后须人工同步到 `/www/zxyz/conf/` 并重启 rabbitmq，自动同步白名单是否扩展见 58 号台账移交项。
 
 不在此白名单内的文件变更（如 `CLAUDE.md`、`docs/**`）**不触发** workflow。`dorny/paths-filter` 进一步按服务目录判断哪些镜像需要重建。
 
@@ -76,7 +80,7 @@ cd ZXYZdatabaseBack && git diff HEAD --ignore-cr-at-eol --numstat && cd ..
 cd ZXYZdatabaseFront && git diff HEAD --ignore-cr-at-eol --numstat && cd ..
 ```
 
-**判据要点（2026-10-13 `ISSUE/55-INCIDENT-NGINX-DNS-AND-PIPELINE-2026-10-13.md` P1-3 收口，勿回退到旧口径）**：
+**判据要点（2026-10-13 `ISSUE/55-INCIDENT-NGINX-DNS-AND-PIPELINE-2026-10-13.md` P1-3 收口，勿回退到旧口径）**：（已归档 D:\code\databaseZXYZ\oldmd\）
 - `git status`/porcelain 的 `modified` 多为 **CRLF/stat 幻影**（Windows `core.autocrlf=true` 检出，内容剥 `\r` 后与 HEAD 逐字节一致）——后端子仓曾实测 234 行幻影，**porcelain 非空不能判漂移**；
 - `--name-only` 也不能作真漂移判据（名字清单在内容过滤之前生成，纯 EOL 变更文件整名列出但逐文件 patch=0 字节，前端曾实测 314 个假阳性名）；
 - **真漂移** = `--ignore-cr-at-eol --numstat` 非空；「porcelain 脏 + 内容级 diff 全空」= 幻影，放行；
@@ -90,7 +94,7 @@ cd ZXYZdatabaseFront && git diff HEAD --ignore-cr-at-eol --numstat && cd ..
 
 ```bash
 mvn clean -DskipTests compile                   # baseline compile check
-mvn test                                         # all tests（194 个测试类 / 197 个测试源文件，见 docs/testing.md）
+mvn test                                         # all tests（200 个测试文件 / 197 个测试类，见 docs/testing.md）
 mvn test -pl zxyz-team-service                   # single module tests
 mvn test -pl zxyz-file-service -Dtest=FileUploadServiceTest  # single test class
 mvn clean package -DskipTests                    # package for Docker build
@@ -220,7 +224,7 @@ WHEN 添加 setting 子路由, DO 确保 `route.name` 在 Setting 组件 watcher
 **CI/CD**: `.github/workflows/ci-cd.yml` 按路径变更选择性构建部署。push 到 **dev**、PR、手动 dispatch（⚠️ 只触发 dev：`ci-cd.yml:5-8`——远程**不存在 `main` 分支、0 个 tag**，保留 `main`/`v*` tag 等于留一条「一触发就以空主机 ssh 必失败」的死路，故 2026-09-18 刻意删掉）；`dorny/paths-filter` 按服务目录判断重建；backend-common 变更触发全部后端重建；**`scripts/**`、`sql/**` 变更走 deploy-only 通道**（2026-10-11 P1-1 事故收口）：只同步脚本到服务器、不重建镜像、不重启服务（UPDATE_SVC 为空），deploy 的 if 已容忍 build/scan 整体 skipped；**`docker-compose.yml`/`.env.example` 变更会触发全量 11 服务重建与部署（docker-config），改它（哪怕只改注释）前须知晓此代价**；workflow_dispatch 输入 `tag`（必填）/`skip_quality`/`fast_deploy`/`force_deploy`/`run_e2e`。辅助 workflow：`lint-workflows.yml`（actionlint）、`ghcr-cleanup.yml`、`restore-drill.yml`（手动恢复演练，带凭据 fail-closed 断言）。
 
 > Gateway 路由表与服务间调用图：`docs/infrastructure.md`；技术栈：`docs/architecture.md`；部署指南：`DEPLOYMENT.md`。
-> 项目审查/台账报告在 `ISSUE/`（目录已 gitignore，仅本机保留）：**现行台账/日报 = `44`–`49` 号 + `DAILY-AUDIT-CHECKLIST.md`（每日审核 SOP）**；`ISSUE/review-2026-10-02/` 现存 6 份均为 **2026-10-08 的 ALONE-REDIS 专项报告**（目录名是 10-02 起稿时的历史遗留，10-02 那批 `review-part-*.md` 已随总报告归档，勿按目录名猜内容）；**`07`、`18~39` 号均属已归档历史台账**（含 `38-CODE-REVIEW` / `39-UNFINISHED` 两份 10-02 总报告），等价原件在仓库外 `D:\code\databaseZXYZ\oldmd\`（含早期 `PROJECT-REVIEW-2026-07-27.md` / `PROJECT-DEEP-REVIEW-2026-07-28.md` 全份）。
+> 项目审查/台账报告在 `ISSUE/`（目录已 gitignore，仅本机保留）：**现行台账/清账 = `58` 号（唯一现行欠账清单，接续 44-OPEN-ITEMS 角色）+ `DAILY-AUDIT-CHECKLIST.md`（每日审核 SOP）**；`44`–`57` 号已全部归档至仓库外 `D:\code\databaseZXYZ\oldmd\`（2026-10-14 58 号清账动作），`ISSUE/review-2026-10-02/` 六份 ALONE-REDIS 专项报告亦随归档；等价原件均在 oldmd\，勿按 ISSUE/ 现存文件猜测历史内容。
 > docker-compose 服务编排详情、deploy-fast/rollback/backup/dev-up 脚本参数、部署注意事项与运维提示详见 [docs/claude-infra.md](docs/claude-infra.md)。
 
 ## 服务间接口设计规范

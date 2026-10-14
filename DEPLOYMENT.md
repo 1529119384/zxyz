@@ -884,10 +884,14 @@ server {
 # 手动执行
 ./scripts/backup.sh
 
-# 设置每日凌晨 3 点自动备份
+# 设置每日凌晨 3 点自动备份（北京时间）
 crontab -e
 # 添加：0 3 * * * /path/to/zxyz/scripts/backup.sh >> /var/log/zxyz-backup.log 2>&1
 ```
+
+> ⚠️ **时区注记**：服务器 crontab 按 **UTC** 解释。若希望北京时间 03:00 执行，cron 表达式应写
+> `0 19 * * *`（UTC 19:00 = 北京 03:00）；生产当前 crontab 即按此写。若直接写 `0 3 * * *`，
+> 实际会在北京时间 11:00 执行。
 
 备份内容、保留策略等详见 [九、备份与恢复](#九备份与恢复)。
 
@@ -1258,10 +1262,13 @@ docker compose ps
 # 手动执行
 ./scripts/backup.sh
 
-# 定时任务（每日凌晨 3 点）
+# 定时任务（每日凌晨 3 点，北京时间；见下方时区注记）
 crontab -e
 # 添加：0 3 * * * /path/to/zxyz/scripts/backup.sh >> /var/log/zxyz-backup.log 2>&1
 ```
+
+> ⚠️ **时区注记**：服务器 crontab 按 **UTC** 解释，`0 3 * * *` 实际是北京时间 11:00 执行。
+> 若要北京时间凌晨 3 点备份，cron 表达式应写 `0 19 * * *`（UTC 19:00 = 北京 03:00）。
 
 ### 恢复 MySQL
 

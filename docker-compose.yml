@@ -112,6 +112,19 @@
 #   ③ 服务器 .env 切 `CONFIG_DB_USERNAME=zxyz_config`（见下方 flyway 服务的 I-9 说明）
 #   完整执行步骤与上线后验证命令：**docs/claude-infra.md《维护窗口》章节**。
 # ---------------------------------------------------------------------------
+# 【2026-10-14 58 号清账：54 号设计值入库】
+# ---------------------------------------------------------------------------
+# 1) gateway environment 补 GATEWAY_TRUSTED_PROXIES:${...:-172.19.0.0/16}
+#    （58 号 §一.1：该键只存在于旧史 83d89b94f→6bba424b8，54 号设计从未入库；
+#      缺它则限流塌缩全局单桶，R1 复发风险）
+# 2) mysql command 补 --max-connections=300（58 号 §一.2：生产实跑 151=8.4 默认值，设计值从未生效）
+# 3) rabbitmq 挂载 deploy/rabbitmq/enabled_plugins（management+prometheus；
+#    bind mount 生效需容器重建，见 rabbitmq 服务 volumes 注释）
+# 4) 10 个后端 + gateway 的 healthcheck start_period 30s → 90s（54 号设计值 90s×10）。
+#    ⚠️ frontend-nginx / nginx / mysql / nacos / redis / rabbitmq 的 healthcheck 不在本次口径，未动。
+# ⚠️ 本文件任何改动 ⇒ CI 走 docker-config 全量 11 服务重建部署（见上方【重要】说明）；
+#    mysql/rabbitmq 的变更另需按维护窗口重建基础设施容器（deploy 的 UPDATE_SVC 不含 infra）。
+# ---------------------------------------------------------------------------
 services:
   mysql:
     image: mysql:8.4.0-oraclelinux8@sha256:f7a8e140a7d6d1e6e0c99eeb0489c50a186ee4ac44ff55323a176529b9a43d33
@@ -139,6 +152,10 @@ services:
       - --log-bin=mysql-bin
       - --binlog-format=ROW
       - --binlog-expire-logs-seconds=604800
+      # 【2026-10-14 58 号 §一.2 入库】连接数上限（54 号设计值）：生产实跑 151（MySQL 8.4 默认值，从未生效）。
+      # 消费方为 10 个后端连接池 + flyway/nacos，151 在峰值期会排队/拒连；每个连接约占数 MB，
+      # 896M limit 下 300 安全。改本行需重建 mysql 容器（deploy 的 UPDATE_SVC 不含 infra，走维护窗口）。
+      - --max-connections=300
     volumes:
       - ${DATA_DIR:-./data}/mysql:/var/lib/mysql
       - ./sql/00-init-zxyz.sh:/docker-entrypoint-initdb.d/00-init-zxyz.sh:ro
@@ -376,6 +393,13 @@ services:
     volumes:
       - ${DATA_DIR:-./data}/rabbitmq:/var/lib/rabbitmq
       - ./conf/rabbitmq.conf:/etc/rabbitmq/conf.d/99-memory-watermark.conf:ro
+      # 【2026-10-14 58 号 §一.2 入库】management UI + prometheus 指标插件（54 号设计意图）。
+      # ⚠️ 55 号事故教训：enabled_plugins 必须以**文件**形式入库（deploy/rabbitmq/enabled_plugins
+      # 单行带句点），服务器上 mkdir 会把它建成目录导致挂载失败——勿在服务器重建为目录。
+      # ⚠️ 生产当前实跑无 prometheus 插件——bind mount 生效需容器重建
+      # （`docker compose up -d --force-recreate rabbitmq`，走维护窗口；deploy 的 UPDATE_SVC 不含 infra），
+      # 重建即启用 prometheus 插件（方向正确）；验证：rabbitmq-plugins list -e 应见两插件 enabled。
+      - ./deploy/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
     networks:
       - zxyz-net
     healthcheck:
@@ -459,7 +483,8 @@ services:
       interval: 10s
       timeout: 3s
       retries: 4
-      start_period: 30s
+      # start_period 90s（2026-10-14 58 号 §一.2 入库，54 号设计值 90s×10；原 30s）
+      start_period: 90s
     logging:
       driver: json-file
       options:
@@ -530,7 +555,8 @@ services:
       interval: 10s
       timeout: 3s
       retries: 4
-      start_period: 30s
+      # start_period 90s（2026-10-14 58 号 §一.2 入库，54 号设计值 90s×10；原 30s）
+      start_period: 90s
     logging:
       driver: json-file
       options:
@@ -609,7 +635,8 @@ services:
       interval: 10s
       timeout: 3s
       retries: 4
-      start_period: 30s
+      # start_period 90s（2026-10-14 58 号 §一.2 入库，54 号设计值 90s×10；原 30s）
+      start_period: 90s
     logging:
       driver: json-file
       options:
@@ -679,7 +706,8 @@ services:
       interval: 10s
       timeout: 3s
       retries: 4
-      start_period: 30s
+      # start_period 90s（2026-10-14 58 号 §一.2 入库，54 号设计值 90s×10；原 30s）
+      start_period: 90s
     logging:
       driver: json-file
       options:
@@ -761,7 +789,8 @@ services:
       interval: 10s
       timeout: 3s
       retries: 4
-      start_period: 30s
+      # start_period 90s（2026-10-14 58 号 §一.2 入库，54 号设计值 90s×10；原 30s）
+      start_period: 90s
     logging:
       driver: json-file
       options:
@@ -838,7 +867,8 @@ services:
       interval: 10s
       timeout: 3s
       retries: 4
-      start_period: 30s
+      # start_period 90s（2026-10-14 58 号 §一.2 入库，54 号设计值 90s×10；原 30s）
+      start_period: 90s
     logging:
       driver: json-file
       options:
@@ -905,7 +935,8 @@ services:
       interval: 10s
       timeout: 3s
       retries: 4
-      start_period: 30s
+      # start_period 90s（2026-10-14 58 号 §一.2 入库，54 号设计值 90s×10；原 30s）
+      start_period: 90s
     logging:
       driver: json-file
       options:
@@ -969,7 +1000,8 @@ services:
       interval: 10s
       timeout: 3s
       retries: 4
-      start_period: 30s
+      # start_period 90s（2026-10-14 58 号 §一.2 入库，54 号设计值 90s×10；原 30s）
+      start_period: 90s
     logging:
       driver: json-file
       options:
@@ -1063,7 +1095,8 @@ services:
       interval: 10s
       timeout: 3s
       retries: 4
-      start_period: 30s
+      # start_period 90s（2026-10-14 58 号 §一.2 入库，54 号设计值 90s×10；原 30s）
+      start_period: 90s
     logging:
       driver: json-file
       options:
@@ -1102,6 +1135,14 @@ services:
       APP_INTERNAL_SERVICE_KEY: ${SVC_GATEWAY_KEY:?启用矩阵必须设置 SVC_GATEWAY_KEY}
       # 启用矩阵必须设置 SVC_GATEWAY_KEY（缺失则网关拒绝启动，fail-closed）
       SVC_GATEWAY_KEY: ${SVC_GATEWAY_KEY:?启用矩阵必须设置 SVC_GATEWAY_KEY}
+      # 【2026-10-14 58 号 §一.1 入库】可信代理网段（R1 限流塌缩回退风险）：
+      # 该键只存在于旧史（83d89b94f 加入 → 6bba424b8 删除），54 号设计从未入库，生产 gateway env 曾 ABSENT。
+      # 接收端 ZXYZdatabaseBack/zxyz-gateway/src/main/resources/application.yml:195
+      # `trusted-proxies: ${GATEWAY_TRUSTED_PROXIES:}`（键名精确匹配）。缺省为空时网关不信任
+      # 任何 XFF，限流按直连方（frontend-nginx 容器 IP）计数 → 登录/提取码/验证码全局单桶。
+      # 默认 172.19.0.0/16 与本文件 networks.ipam 钉死的 zxyz-net 子网一致，
+      # 口径对齐 .env.example:149-153（网关前有自建代理/LB 时由 .env 覆盖）。
+      GATEWAY_TRUSTED_PROXIES: ${GATEWAY_TRUSTED_PROXIES:-172.19.0.0/16}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
@@ -1126,7 +1167,8 @@ services:
       interval: 10s
       timeout: 3s
       retries: 6
-      start_period: 30s
+      # start_period 90s（2026-10-14 58 号 §一.2 入库，54 号设计值 90s×10；原 30s）
+      start_period: 90s
     logging:
       driver: json-file
       options:

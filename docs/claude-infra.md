@@ -126,7 +126,7 @@
 
 **排障入口**：`tail -50 /www/zxyz/deploy-last.log`（最近部署指纹）、`cat /www/zxyz/DEPLOYED_REVISION`（线上镜像版本）。手工执行 `deploy-on-server.sh`（无 `GITHUB_SHA`）时检测层降级为告警，不阻断人工路径。
 
-### 子仓库同步闸门：内容级判据（2026-10-13 `ISSUE/55-INCIDENT-NGINX-DNS-AND-PIPELINE-2026-10-13.md` P1-3 重写）
+### 子仓库同步闸门：内容级判据（2026-10-13 `ISSUE/55-INCIDENT-NGINX-DNS-AND-PIPELINE-2026-10-13.md` P1-3 重写）（已归档 D:\code\databaseZXYZ\oldmd\）
 
 `.husky/pre-push` 在根仓库 `git push` 前运行 `scripts/check-subrepo-sync.sh`（退出码语义：0=同步/幻影放行，1=真实漂移拦截 push，2=环境错误 fail-closed——目录存在而 `.git` 缺失按 2 硬失败，不允许跳过）。判据要点与事故背景：
 
@@ -187,11 +187,11 @@
 >
 > ⚠️ **声明值 ≠ 运行值（2026-10-08/09 双日实测）**：上表「改后」是 compose **声明值**。生产 `HostConfig.Memory` 实测：mysql/nacos 仍 1024 MiB、rabbitmq 仍 512 MiB（三容器创建于 2026-09-14、未重建）⇒ **运行值合计 7424 MiB = 93.5%、余量仅 517 MiB**。按旧的「1.19 GiB 余量」做容量决策会吃穿物理内存（rabbitmq 已于 2026-10-08 真实被 OOM 杀过一次）。**先重建 infra 三容器使声明值生效，再做任何扩容决策**。
 
-> 【2026-10-10 `ISSUE/51-DAILY-AUDIT-2026-10-10.md` P1 内存防线追加（声明值口径更新）】
+> 【2026-10-10 `ISSUE/51-DAILY-AUDIT-2026-10-10.md` P1 内存防线追加（声明值口径更新）】（已归档 D:\code\databaseZXYZ\oldmd\）
 > - `redis` 256 MiB → **896 MiB**（reservations 128M → 448M 同步上调；db9 会话防线三件套：896M limit + `maxmemory 512mb` + `noeviction`，详见 docker-compose.yml redis 服务注释）；
 > - `rabbitmq` limit 384 MiB **不动**，改加内存水位线（挂载 `conf/rabbitmq.conf`：`vm_memory_high_watermark.relative = 0.6`——env 变量方式在 3.13 已废弃且带空格会打崩 erl 启动）；
 > - ⇒ **声明值累加 6912 → 7552 MiB = 7.375 GiB**：7552 / 7941 = **95.1%**，余量 **389 MiB（4.9%）**——低于 10-03 的 13.0%，属**有意取舍**：用宿主余量换「Redis OOM = 全站会话丢失」失败面的消失（noeviction + 896M limit 后 Redis 只会拒写、不会被 OOM 杀）。
-> - ⚠️ **maxmemory / watermark 都必须容器重建才生效**（前者在 redis 启动命令参数里、后者是挂载文件），而 CI deploy 固定 `--no-deps`、从不重建 infra 容器——生产是否落地以 `redis-cli config get maxmemory` + `docker inspect HostConfig.Memory` + rabbitmq 水位实测为准（防线是否落地 + 实测命令见 `ISSUE/51-DAILY-AUDIT-2026-10-10.md` P1；2026-10-10 实测结论见 `ISSUE/52-DAILY-AUDIT-2026-10-10.md`）。
+> - ⚠️ **maxmemory / watermark 都必须容器重建才生效**（前者在 redis 启动命令参数里、后者是挂载文件），而 CI deploy 固定 `--no-deps`、从不重建 infra 容器——生产是否落地以 `redis-cli config get maxmemory` + `docker inspect HostConfig.Memory` + rabbitmq 水位实测为准（防线是否落地 + 实测命令见 `ISSUE/51-DAILY-AUDIT-2026-10-10.md` P1；2026-10-10 实测结论见 `ISSUE/52-DAILY-AUDIT-2026-10-10.md`）。（已归档 D:\code\databaseZXYZ\oldmd\）
 
 > 【2026-10-11 `ISSUE/51-DAILY-AUDIT-2026-10-10.md` P1 追加二（声明值口径更新；历史读数：10-03 为 6912/87.0%/1029，10-10 为 7552/95.1%/389，以下为当前值）】
 > - `nacos` 768 MiB → **1024 MiB**（reservations 192M → 256M 同步上调）。OOM 实证：05:14→05:44 被连杀 8 次（约每 4 分钟一次），容器 rss 778 MiB 撞 768M limit；此前靠服务器本地 `docker-compose.override.yml`（1280M）缓解——该文件不在仓库、不被 CI 同步，换机即丢；本仓落 **1024M 兜底**，服务器 override 仍保留作额外冗余（1280 > 1024 不冲突）。

@@ -67,6 +67,21 @@ on:
       # （「零检查变更 = 盲区」形态，ISSUE/51 P1-3）。文档不参与镜像构建，代价仅一次轻量 run。
       - 'CLAUDE.md'
       - 'docs/**'
+      # conf/**（58 号 §二.6）：conf/rabbitmq.conf 是 rabbitmq 水位线的**唯一配置来源**
+      # （docker-compose.yml bind mount 进容器），此前不在白名单 ⇒ 改它零检查零触发
+      # （「零检查变更 = 盲区」形态）。通道归属与 docker-compose.dev.yml 同款逻辑：
+      # **只进顶层 paths**（lint-config / secret-scan 会跑），刻意**不进任何 dorny
+      # 部署 filter** —— conf 文件不参与任何镜像构建，进 filter 只会白付全量 11 服务
+      # 重建的代价。
+      # ⚠️ 已知缺口（58 号台账移交 Lead）：deploy-on-server.sh 的同步白名单（:238-242、
+      # DEPLOYMENT.md §11.9）**刻意不含 conf/**（与 .env/logs/data 同列运行时资产）⇒
+      # conf 变更目前没有自动上线通道，须人工同步到 /www/zxyz/conf/ 并重启 rabbitmq。
+      # 后续应给 sync 层加 conf/*.conf 白名单（或文档化人工步骤），与本注释保持一致。
+      - 'conf/**'
+      # DEPLOYMENT.md（58 号 §二.9）：根目录部署指南。CLAUDE.md / docs/** 已在白名单
+      # 而它漏了 ⇒ 改它零检查。只进顶层 paths（lint 级，文档门禁 + 路径引用有效性），
+      # 不进部署 filter —— 纯文档提交不需要重建任何镜像。
+      - 'DEPLOYMENT.md'
   pull_request:
     # 同上（D-3）：只覆盖 dev。Dependabot 的 PR base 本就是 dev。
     branches: [dev]
@@ -107,6 +122,11 @@ on:
       # 只进 lint-config，不进构建 —— 文档门禁的全部声明源都在这两个路径下（ISSUE/51 P1-3）。
       - 'CLAUDE.md'
       - 'docs/**'
+      # ⚠️ 与 push.paths 对齐（漏一处 ⇒ 该类 PR 一条 CI 都不跑）：conf/** 与 DEPLOYMENT.md
+      # 只进 lint 级检查（lint-config / secret-scan），不进任何 dorny 部署 filter ——
+      # 通道归属理由见 push.paths 处注释（58 号 §二.6 / §二.9）。
+      - 'conf/**'
+      - 'DEPLOYMENT.md'
   workflow_dispatch:
     inputs:
       tag:
@@ -535,8 +555,15 @@ jobs:
       #   任何「像真实凭证」的取值都会让本步失败 ⇒ 盲区不再依赖人的记忆力。
       #   完整判据（含高熵单串拦截，与「敏感键名额外只允许占位值」）见脚本 docstring：
       #   scripts/check-env-example-values.py
-      - name: .env.example 取值形态断言（gitleaks 整文件豁免的补偿门禁）
-        run: python3 scripts/check-env-example-values.py .env.example
+      #
+      # 58 号 §二.5（46/49/51 三轮点名的盲区）：gitleaks 豁免正则 `(^|/)\.env\.example$`
+      # 覆盖**每一个**同名模板 —— 根目录 .env.example 与 ZXYZdatabaseFront/.env.example
+      # 都在豁免面内；而本 step 此前只校验根目录一个文件 ⇒ 前端子仓模板「被豁免却无人看」。
+      # 修正：脚本已改为**按文件名自动发现**（git ls-files 全仓遍历，新增 .env.example
+      # 零维护自动纳入，逐文件校验、任一失败即红），本 step 不传参 ⇒ 校验面与
+      # gitleaks 豁免面严格对齐。
+      - name: .env.example 取值形态断言（gitleaks 整文件豁免的补偿门禁，自动发现全仓模板）
+        run: python3 scripts/check-env-example-values.py
 
   # ============================================================
   # Job 1.5: Flyway 迁移门禁

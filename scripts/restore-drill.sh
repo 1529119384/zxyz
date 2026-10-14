@@ -16,7 +16,10 @@
 #   - 临时容器会占用端口（映射到随机可用端口），演练结束后自动删除
 #   - 临时容器被**硬性封顶在 512 MB 内存 / 0 swap**（--memory=512m --memory-swap=512m）：
 #     生产机为 4 核 / 7.94 GB / **无 swap**，而 docker-compose.yml 里容器 limits 之和
-#     已达 7.875 GiB，几乎吃满物理内存。演练若再拉起一个无上限的 MySQL 容器，
+#     已达 7808 MiB = 7.625 GiB（2026-10-14 复算：mysql 896M + nacos 1024M + redis 896M
+#     + rabbitmq 384M + 10 个后端服务各 448M + frontend-nginx 128M；nacos-log-cleanup
+#     与 flyway 无 limits。此前旧口径 7.875 GiB 对应更早的 limits 版本，已失效），
+#     几乎吃满物理内存。演练若再拉起一个无上限的 MySQL 容器，
 #     有把内核 OOM killer 引向生产 MySQL 的真实风险 —— 故此处必须封顶。
 #   - 定期执行：CI 侧另有 .github/workflows/restore-drill.yml，但**默认关闭**
 #     （仅 workflow_dispatch 手动触发），原因同上；也可自行接 crontab（见该文件头）。

@@ -417,6 +417,59 @@ else
   echo "  OK: ADMIN_INIT_PASSWORD 已设置（该口令不会写入任何日志）"
 fi
 
+echo ""
+echo "--- 镜像 tag（APP_IMAGE_TAG 三源一致性；58 号 §一.4 第二道防线） ---"
+# 背景：scripts-only / no-op 部署路径曾把 .env 的 APP_IMAGE_TAG 无条件写成
+# github.sha（deploy-on-server.sh 旧 :429-433，58 号 §一.3 已后置修复），留下
+# 「.env 指向 GHCR 拉不到的 sha」状态 —— 与 DEPLOYED_REVISION / 运行镜像三源分裂，
+# 手工 docker compose up / rollback 时报 b6ee888e not found（2026-10-11 事故）。
+# 本断言即该事故的独立第二道防线：tag 应为 dev/latest/版本号；若是 40 位 sha，
+# 必须与「实际部署事实」DEPLOYED_REVISION 一致才算合法（CI 部署正常落盘的 sha
+# 满足该条件，不误伤部署链）。
+# 语境门：CI 部署链（GITHUB_SHA 注入）在 validate 之后必以本次 IMAGE_TAG 覆盖 .env，
+# 分裂属即将被修复的暂态 → 只 WARN 留痕；手工语境（无 CI 覆盖，.env 值会被
+# docker compose 直接消费）才 fail-closed 为 ERROR。
+_tag="${APP_IMAGE_TAG:-}"
+if [ -n "$_tag" ] && echo "$_tag" | grep -qE '^[0-9a-f]{40}$'; then
+  _rev_file="$(cd "$(dirname "$ENV_FILE")" && pwd)/DEPLOYED_REVISION"
+  _rev="$(sed -n 's/^DEPLOYED_REVISION=//p' "$_rev_file" 2>/dev/null | head -1 || true)"
+  if [ -n "$_rev" ] && [ "$_tag" = "$_rev" ]; then
+    echo "  OK: APP_IMAGE_TAG 为 40 位 sha，且与 DEPLOYED_REVISION 一致（上次部署的真实 tag）"
+  elif [ -n "${GITHUB_SHA:-}" ]; then
+    echo "  WARN: APP_IMAGE_TAG 为 40 位 sha 且 ≠ DEPLOYED_REVISION（三源分裂暂态）；本次 CI 部署将以 IMAGE_TAG 覆盖 .env"
+    WARNINGS=$((WARNINGS + 1))
+  else
+    echo "  ERROR: APP_IMAGE_TAG 是 40 位 sha 且与 DEPLOYED_REVISION 不一致/缺失 ——"
+    echo "         .env 指向一个没有部署事实背书的 sha，手工重建必报 image not found（b6ee888e 事故同型）。"
+    echo "         修复：改回 dev/latest/版本号，或与 $(dirname "$ENV_FILE")/DEPLOYED_REVISION 一致的上次部署 sha；当前值: $_tag"
+    ERRORS=$((ERRORS + 1))
+  fi
+else
+  echo "  OK: APP_IMAGE_TAG=${_tag:-<未设置>}（非 40 位 sha：dev/latest/版本号形态，合法）"
+fi
+
+echo ""
+echo "--- RabbitMQ 内存水位线配置存在性（58 号 §二.6 / #7） ---"
+# compose 的 rabbitmq 服务 bind mount ./conf/rabbitmq.conf → /etc/rabbitmq/conf.d/
+# 99-memory-watermark.conf（docker-compose.yml rabbitmq volumes）。该文件是
+# vm_memory_high_watermark.absolute=230MiB 防线的唯一来源；缺失或被误建成目录时，
+# docker 会把挂载点当目录处理/容器创建失败（55 号 mkdir 事故同型）⇒ 水位线静默消失。
+# ⚠️ deploy-on-server.sh 的同步白名单刻意不含 conf/（运行时资产，见其同步层注释），
+# 服务器 /www/zxyz/conf/ 靠人工维护 —— 本断言同时拦住「换机即丢」形态（fail-closed）。
+_rabbit_conf="$(cd "$(dirname "$ENV_FILE")" && pwd)/conf/rabbitmq.conf"
+if [ -f "$_rabbit_conf" ]; then
+  echo "  OK: conf/rabbitmq.conf 存在（$_rabbit_conf）"
+elif [ -d "$_rabbit_conf" ]; then
+  echo "  ERROR: conf/rabbitmq.conf 是一个目录而非文件（mkdir 事故同型）：$_rabbit_conf"
+  echo "         删除该目录并从仓库 conf/ 复制真实文件后重跑。"
+  ERRORS=$((ERRORS + 1))
+else
+  echo "  ERROR: conf/rabbitmq.conf 不存在：$_rabbit_conf"
+  echo "         它是 rabbitmq 内存水位线（230MiB）唯一来源（compose bind mount 源），缺失 = 防线静默消失。"
+  echo "         服务器侧修复：mkdir -p $(dirname "$ENV_FILE")/conf 并从仓库复制 conf/rabbitmq.conf。"
+  ERRORS=$((ERRORS + 1))
+fi
+
 echo "===== 结果 ====="
 if [ $ERRORS -gt 0 ]; then
   echo "ERROR: $ERRORS 个错误，$WARNINGS 个警告"

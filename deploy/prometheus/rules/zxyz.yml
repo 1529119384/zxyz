@@ -42,3 +42,18 @@ groups:
         annotations:
           summary: "{{ $labels.service }} 5xx 错误率 > 10%"
           description: "近 5 分钟 5xx 占比 {{ $value | humanizePercentage }}"
+
+      # 容器 OOM 风险（JVM 形态替代）：容器级 OOM 指标（container_oom_events_total 等）
+      # 需 cadvisor/容器采集器前置，而 prometheus.yml 的 scrape 面目前只有 11 个
+      # Spring Boot actuator 端点 + prometheus 自身，没有容器指标源。未部署采集器时
+      # 以「JVM 堆使用率 > 95% 持续 5m」作为逼近容器 OOMKill 的临界信号（severity
+      # 升为 critical，与上方 90% 的 warning 形成阶梯）。部署 cadvisor 后应改写为
+      # increase(container_oom_events_total[5m]) > 0 的容器级原生规则。
+      - alert: JvmHeapOomRisk
+        expr: jvm_memory_used_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"} > 0.95
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }} JVM 堆内存 > 95%（OOM 风险）"
+          description: "堆内存使用率 {{ $value | humanizePercentage }} 已持续 5 分钟，逼近容器 OOMKill"

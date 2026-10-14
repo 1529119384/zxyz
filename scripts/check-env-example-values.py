@@ -45,16 +45,31 @@ gitleaks 不会拦（豁免粒度原则见该文件头 11-24 行的血泪教训�
 
 ## 用法
 
-    python3 scripts/check-env-example-values.py [.env.example]
+    python3 scripts/check-env-example-values.py [path ...]
 
-退出码：0 = 通过；1 = 发现疑似真实凭证/非法取值。
+**自动发现（CI 形态，不传参时启用）**：不带参数时，脚本自动遍历仓库内**全部**名为
+`.env.example` 的文件（`git ls-files` 优先，异常时回退 `pathlib.rglob`，排除
+`node_modules/`/`.git/`/`target/`/`dist/`）逐个校验 —— 任何一个 `.env.example` 都逃不出本门禁。
+
+> 为什么必须自动发现（58 号台账 §二.5，46/49/51 三轮点名的盲区）：
+> `.gitleaks.toml` 的整文件豁免正则是 `(^|/)\\.env\\.example$` —— 它**同时**豁免
+> 根目录 `.env.example` **和** `ZXYZdatabaseFront/.env.example`（以及未来任何目录下的
+> 同名模板）。而 CI 此前只对根目录那一个传参校验 ⇒ 前端子仓的模板是**豁免了却没人看**
+> 的永久盲区，将来再出现第 3 个 `.env.example` 也一样会漏。按文件名自动发现 +
+> 逐文件校验，才能让门禁覆盖面与 gitleaks 豁免面**严格对齐**，且新增模板零维护。
+
+也兼容显式传参（逐个文件校验，任一失败即 exit 1）——便于本地只复查某个文件。
+
+退出码：0 = 通过；1 = 发现疑似真实凭证/非法取值（或文件缺失）。
 CI 的 lint-config 作业直接调用本脚本（同一份逻辑，本地可复跑，不会出现两套口径漂移）。
 """
 
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
+from pathlib import Path
 
 # --- 判据 1：允许的取值形态（整值匹配） ---
 ALLOWED = [
@@ -124,16 +139,46 @@ def check(path: str) -> int:
                 continue
 
     if bad:
-        print("FAIL: .env.example 出现疑似真实凭证/非法取值。")
-        print("  该文件在 .gitleaks.toml 里是**整文件豁免** ⇒ 本断言是它唯一的补偿门禁。")
+        print(f"FAIL: {path} 出现疑似真实凭证/非法取值。")
+        print("  该文件命中 .gitleaks.toml 的整文件豁免 ⇒ 本断言是它唯一的补偿门禁。")
         for lineno, line, why in bad:
             print(f"  line {lineno}: {why}")
             print(f"    {line[:120]}")
         print("  修法：真实凭证**只允许**存在于服务器 .env；模板里一律写 CHANGE_ME_* 占位符。")
         return 1
 
-    print("PASS: .env.example 取值形态全部合法（占位符/布尔/数字/URL/引用/公开标识）")
+    print(f"PASS: {path} 取值形态全部合法（占位符/布尔/数字/URL/引用/公开标识）")
     return 0
+
+
+def discover_env_examples() -> list[str]:
+    """自动发现仓库内全部 `.env.example`（58 号 §二.5：覆盖面须与 gitleaks 豁免正则对齐）。
+
+    优先用 `git ls-files`（与 CI 检出的文件集一致，天然尊重 .gitignore）；
+    git 不可用/非仓库目录时回退 `pathlib.rglob`，并排除依赖/构建目录与版本库目录。
+    """
+    try:
+        out = subprocess.run(
+            ["git", "ls-files", "--", "**/.env.example", ".env.example"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=True,
+        ).stdout
+        found = [line.strip() for line in out.splitlines() if line.strip()]
+        if found:
+            return found
+    except (OSError, subprocess.SubprocessError):
+        pass  # 无 git / 不在仓库内：走 rglob 回退
+
+    skip_parts = {"node_modules", ".git", "target", "dist", "build", ".venv", "venv"}
+    found = []
+    for path in Path(".").rglob(".env.example"):
+        if any(part in skip_parts for part in path.parts):
+            continue
+        found.append(path.as_posix())
+    return sorted(found)
 
 
 def main() -> int:
@@ -144,12 +189,24 @@ def main() -> int:
     except (AttributeError, ValueError):  # pragma: no cover
         pass
 
-    path = sys.argv[1] if len(sys.argv) > 1 else ".env.example"
-    try:
-        return check(path)
-    except FileNotFoundError:
-        print(f"FAIL: 找不到 {path}")
+    paths = [arg for arg in sys.argv[1:] if not arg.startswith("-")]
+    if not paths:
+        # 自动发现形态（CI 默认）：与 gitleaks 豁免正则 `(^|/)\.env\.example$` 的覆盖面对齐
+        paths = discover_env_examples()
+
+    if not paths:
+        print("FAIL: 自动发现 0 个 .env.example —— 门禁扫描失效，宁可响亮失败也不静默通过")
         return 1
+
+    exit_code = 0
+    for path in paths:
+        try:
+            if check(path) != 0:
+                exit_code = 1  # 逐文件校验，任一失败仍继续跑完其余文件（报告完整）
+        except FileNotFoundError:
+            print(f"FAIL: 找不到 {path}")
+            exit_code = 1
+    return exit_code
 
 
 if __name__ == "__main__":

@@ -37,7 +37,7 @@ MyBatis `@MapperScan` can hijack MapStruct `@Mapper` interfaces in the same pack
 
 ## 安全约定
 
-**Config encryption**: Sensitive values in Nacos use `ENC(ciphertext)` format. Jasypt 3.0.5 + AES/GCM/NoPadding, key via `JASYPT_PASSWORD` env var. See `docs/jasypt-key-management.md`.
+**Config encryption**: Sensitive values use `ENC(ciphertext)` format, decrypted by **self-built Jasypt wiring** (Boot 4 migration — the `jasypt-spring-boot-starter` was removed; the dependency is now the bare `org.jasypt:jasypt:1.9.3` kernel with zero Spring deps). Three pieces, all in `zxyz-common`: `JasyptPropertiesEncryptorAutoConfiguration` (provides the `StringEncryptor` bean) + `JasyptConfigDecryptingHook` (`EnvironmentPostProcessor`, lazily decrypts `ENC(...)` at startup; environments with no `ENC()` value are untouched). Algorithm: `PBEWITHHMACSHA512ANDAES_256` + `RandomIvGenerator` — this must be a **PBE algorithm name**, NOT a Cipher transformation like `AES/GCM/NoPadding` (that value fails `SecretKeyFactory` init and any `ENC()` value would crash startup). Key via `JASYPT_PASSWORD` env var, **fail-closed** (missing/placeholder values abort instead of running keyless). See `docs/jasypt-key-management.md`.
 
 **Entity security**: `User` and `Share` entities use `@JsonProperty(access = WRITE_ONLY)` on `password` field + `@ToString(exclude = {"password"})` to prevent accidental serialization of BCrypt hashes. Any sensitive field (passwords, tokens, cipher text) on entities/DTOs must have `@JsonProperty(access = WRITE_ONLY)` or `@JsonIgnore`. Config classes that should never serialize use `@JsonIgnore`.
 

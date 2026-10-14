@@ -73,6 +73,7 @@ write_deployed_revision() {
 write_deploy_manifest() {
   local outcome="$1"
   local synced="${SYNCED_SCRIPTS[*]:-（未执行同步：克隆缺失或脚本目录不存在）}"
+  local conf_synced="${SYNCED_CONF[*]:-}"
   local sha="${GITHUB_SHA:-$IMAGE_TAG}"
   {
     echo "----- deploy $(date -u '+%Y-%m-%dT%H:%M:%SZ') -----"
@@ -83,6 +84,7 @@ write_deploy_manifest() {
     echo "repo_head=$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || echo 'REPO_DIR 缺失，未校验')"
     echo "repo_branch=$(git -C "$REPO_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
     echo "synced_scripts=[$synced]"
+  echo "synced_conf=[$conf_synced]"
   } >> "${DEPLOY_DIR}/deploy-last.log"
   chmod 644 "${DEPLOY_DIR}/deploy-last.log" 2>/dev/null || true
   # 只保留最近 200 行（约最近 22 次部署 × 9 行），防止 append 无限增长
@@ -260,6 +262,30 @@ if [ -d "$REPO_DIR" ]; then
       echo "::error::SCRIPT_SYNC_EMPTY: $REPO_DIR/scripts 下没有任何 *.sh 被同步，疑似克隆损坏，已中止"
       exit 1
     fi
+    # -----------------------------------------------------------------------------
+    # 【同步层·conf 白名单】（2026-10-14 58 号 §二.6/7 收口）
+    # -----------------------------------------------------------------------------
+    # 背景：conf/rabbitmq.conf 是 rabbitmq 水位线唯一来源（compose bind mount 进容器），
+    #   但本脚本白名单此前刻意不含 conf/ ⇒ 「改了有 CI 检查、却没有上线通道」
+    #   （58 号清账 B 路发现）。deploy/rabbitmq/enabled_plugins 同理（插件启用清单）。
+    # 边界仍极小：只同步这两个具名文件（conf/*.conf + deploy/rabbitmq/enabled_plugins），
+    #   逐文件留痕；内容级 diff -q 校验与 scripts 同款。变更了 rabbitmq 配置的服务器侧
+    #   生效动作 = 重启 rabbitmq 容器（本脚本不做，维护窗口人工执行——compose 注释已写明）。
+    # =============================================================================
+    SYNCED_CONF=()
+    for _conf_rel in "conf/rabbitmq.conf" "deploy/rabbitmq/enabled_plugins"; do
+      if [ -f "$REPO_DIR/$_conf_rel" ]; then
+        _dst="$DEPLOY_DIR/$_conf_rel"
+        mkdir -p "$(dirname "$_dst")"
+        if [ -d "$_dst" ]; then
+          # 55 号事故形态：目标被 mkdir 误建成目录 → rmdir 后写文件
+          rmdir "$_dst" 2>/dev/null || { echo "::error::CONF_SYNC_BLOCKED: $_dst 是目录且非空，无法落文件（人工清理后重试）"; exit 1; }
+        fi
+        cp -f "$REPO_DIR/$_conf_rel" "$_dst"
+        SYNCED_CONF+=("$_conf_rel")
+        echo "[sync] $_conf_rel ← repo（conf 白名单同步）"
+      fi
+    done
     # ⚠️ U-1（2026-10-07 生产实测修复）：`cp -f` **不保留可执行位**，而仓库里
     #   除 dev-up.sh 外的 22 个 *.sh 在 git 中都是 100644（非可执行）。服务器 crontab
     #   用相对路径直接调用（`cd /www/zxyz && ./scripts/backup.sh ...`）⇒ 644 无 x 位
@@ -422,15 +448,15 @@ if [ -d "$REPO_DIR" ]; then
   [ "$OLD_HASH" != "$NEW_HASH" ] && UP_FLAGS="--force-recreate" && echo "compose 定义（含 TLS 覆盖层）已变更，将 --force-recreate"
 fi
 
-# --- 更新 .env ---
+# --- 更新 .env（IMAGE_PREFIX）---
 # 为什么不用 `sed ... || echo 追加`：sed 对「行不存在」返回 0（不报错），
 # || 兜底永远不触发。.env.example 若缺 IMAGE_PREFIX 行，前缀会静默丢失，
 # compose 把 image 解析成无 registry 前缀的 zxyz-xxx → GHCR 私有镜像 pull 401。
-if grep -qE "^APP_IMAGE_TAG=" .env; then
-  sed -i "s|^APP_IMAGE_TAG=.*|APP_IMAGE_TAG=$IMAGE_TAG|" .env
-else
-  echo "APP_IMAGE_TAG=$IMAGE_TAG" >> .env
-fi
+# 【58 号 §一.3】APP_IMAGE_TAG 的 sed 写入已**后置**到 UPDATE_SVC 非空确认之后
+# （见下方 "Will update" 之后的同名段）：此前这里无条件执行、先于 UPDATE_SVC 筛选
+# 与 no-op 退出，scripts-only / no-op 路径也会把 .env 指向 GHCR 拉不到的 sha，
+# 造成 .env / DEPLOYED_REVISION / 运行镜像三源分裂 —— 10-11 事故 b6ee888e not
+# found 的机制性复源地（55 号遗留 → 57 号遗留 5）。
 # 这里的 IMAGE_PREFIX 已在文件顶部归一化（保证恰好一个尾斜杠）并 export，
 # 直接落盘即可 —— 不要再在此处重新拼斜杠，否则又会出现「两处各算一次」的分叉。
 # 注意：写对 .env 只是让「非 CI 手工执行」和「后续 rollback.sh 复用 .env」正确；
@@ -494,6 +520,19 @@ if [ ${#UPDATE_SVC[@]} -eq 0 ]; then
   exit 0
 fi
 echo "Will update: ${UPDATE_SVC[*]}"
+
+# --- 写入本次部署的 APP_IMAGE_TAG（【58 号 §一.3】已从"更新 .env"段后置到这里）---
+# 为什么后置：旧位置无条件执行、先于 UPDATE_SVC 筛选与本 no-op 退出 —— scripts-only
+# / no-op 路径也会把 .env 的 APP_IMAGE_TAG 改成 GHCR 拉不到的 github.sha，造成
+# .env / DEPLOYED_REVISION / 运行镜像三源分裂（10-11 事故 b6ee888e not found 的
+# 机制性复源地，55 号遗留 → 57 号遗留 5）。移到「确认本次确有服务要更新」之后，
+# 只有真实部署才落 sha；validate-env.sh 的 sha×DEPLOYED_REVISION 断言（§一.4）
+# 是其独立第二道防线。回滚记录（.env.previous）在更早处已捕获旧值，不受影响。
+if grep -qE "^APP_IMAGE_TAG=" .env; then
+  sed -i "s|^APP_IMAGE_TAG=.*|APP_IMAGE_TAG=$IMAGE_TAG|" .env
+else
+  echo "APP_IMAGE_TAG=$IMAGE_TAG" >> .env
+fi
 
 # --- TLS 覆盖层（U2）：TLS_ENABLED=true 时叠加 docker-compose.tls.yml ---
 # 用 COMPOSE_FILE 环境变量统一生效，而非在每个 docker compose 命令后追加 -f：

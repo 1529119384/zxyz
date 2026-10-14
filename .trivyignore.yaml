@@ -18,7 +18,8 @@
 # 「重新评估条件 2」（Boot 升到 4.x ⇒ 豁免应删除）摘除——Boot 4.0.8 迁移已落地
 # spring-framework 7.0.9（三 CVE 47884/47890/47892 的唯一修复版）。
 # 历史论证留档：仓库外 ..\oldmd\41-CVE-2026-47884-SPRING-2026-10-08.md、
-# 本地台账 ISSUE/47-CVE-SSE-HEADER-BYPASS-2026-10-09.md、ISSUE/48-BOOT4-MIGRATION-PLAN-2026-10-09.md §十。
+# 本地台账 ISSUE/47-CVE-SSE-HEADER-BYPASS-2026-10-09.md、ISSUE/48-BOOT4-MIGRATION-PLAN-2026-10-09.md §十
+# （已归档 D:\code\databaseZXYZ\oldmd\）。
 # ⚠️ 若 security-scan 仍报以上三 CVE：先核对镜像内 spring-webmvc/webflux 实际版本
 #    （应为 7.0.9，见 ISSUE/boot4-migration/dep-tree-boot4.txt）再评估是否需要新豁免，
 #    不得无理由恢复裸 ID 豁免。
