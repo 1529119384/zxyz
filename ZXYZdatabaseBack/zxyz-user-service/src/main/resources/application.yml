@@ -2,9 +2,9 @@ spring:
   config:
     import:
       - classpath:application-common.yml
-      - nacos:zxyz-static.yml?group=ZXYZ&refreshEnabled=false
-      - nacos:zxyz-dynamic.yml?group=ZXYZ&refreshEnabled=true
-      - nacos:zxyz-user-service.yml?group=ZXYZ&refreshEnabled=false
+      - optional:nacos:zxyz-static.yml?group=ZXYZ&refreshEnabled=false
+      - optional:nacos:zxyz-dynamic.yml?group=ZXYZ&refreshEnabled=true
+      - optional:nacos:zxyz-user-service.yml?group=ZXYZ&refreshEnabled=false
   cloud:
     nacos:
       config:
