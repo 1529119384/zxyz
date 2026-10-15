@@ -8,13 +8,13 @@
 
 Redis 的逻辑库编号固定为 **0–15（共 16 个）**，这是服务端常量，不是配置项。
 
-**当前占用**（`docker-compose.yml` 实测：`REDIS_DATABASE` 共 **9 处** environment 兜底 = 9 个消费服务各一（**gateway 是其中之一**，库号 0）；`application-common.yml:52` 主库为 `${REDIS_DATABASE:0}`、`:135` 会话库硬编码 `database: 9`）：
+**当前占用**（`docker-compose.yml` 实测：`REDIS_DATABASE` 共 **9 处** environment 兜底 = 9 个消费服务各一（**gateway 是其中之一**，库号 0）；`application-common.yml` 主库为 `${REDIS_DATABASE:0}`（`spring.data.redis.database`）、会话库硬编码 `database: 9`（`sa-token.alone-redis` 段）——两处均按**键名/段名**定位，勿引行号）：
 
 | 库号 | 用途 |
 |---|---|
-| db0 | gateway（业务键，`docker-compose.yml:1039`） |
-| db1–db8 | project / im / email / user / share / file / team / audit（业务键，`:365,440,512,589,660,742,819,950` 兜底序） |
-| **db9** | **Sa-Token 会话（全站统一）**，`application-common.yml:135` `database: 9` |
+| db0 | gateway（业务键；按 service 名定位 `docker-compose.yml`，勿引行号） |
+| db1–db8 | project / im / email / user / share / file / team / audit（业务键；按 **service 名**定位 `docker-compose.yml` 内各服务 environment 的 `REDIS_DATABASE` 兜底——**勿引行号**，本表不与 compose 行号耦合） |
+| **db9** | **Sa-Token 会话（全站统一）**，`application-common.yml` 的 `sa-token.alone-redis.database: 9`（按段名定位） |
 | db10–db15 | **空闲** |
 
 **要点**：
@@ -26,16 +26,22 @@ Redis 的逻辑库编号固定为 **0–15（共 16 个）**，这是服务端�
 2. **必须先改前缀、才能上集群**：Redis Cluster **不支持多库**（`SELECT` 不可用，只有 db0）——所以「上集群」和「继续分库」互斥，前缀化是上集群的**前置条件**，不是可选项。
 3. 迁移路径是「先加前缀（双写或灰度）→ 再切集群」，与本会话布局无耦合；但**凡是新写的 Redis 访问代码，键名应当已经带业务前缀**，不要新增裸键名（如 `user:42` 这种），减少将来前缀化的面积。
 
-## 2. `maxmemory 0` + `noeviction`：Redis 数据按「持久数据」对待
+## 2. `maxmemory 512mb` + `noeviction`：数据集有上限、写满即拒写
 
-**实测口径**（Lead 于 2026-10-08 在生产 `160.202.46.118` 测得，命令 `docker exec zxyz-redis redis-cli CONFIG GET maxmemory maxmemory-policy`，本任务未重跑生产命令，引用其读数并注明来源）：
+**现行口径**（`docker-compose.yml` 静态核对，2026-10-15，60 号审计 A-2）：
 
 ```
-maxmemory        → 0        （不限制 Redis 自身内存）
-maxmemory-policy → noeviction（写满即报错/阻塞，不淘汰任何键）
+maxmemory        → 512mb    （数据集上限，写死在启动命令）
+maxmemory-policy → noeviction（到达上限后拒绝写入并报错，绝不按策略逐出既有键）
+容器内存限额     → limits 896M / reservations 448M（deploy.resources）
+启动命令         → redis-server --appendonly yes --requirepass … --maxmemory 512mb --maxmemory-policy noeviction
 ```
 
-容器侧事实（`docker-compose.yml` 实测）：redis 服务内存限额 **256 MiB**（`deploy.resources.limits.memory`），启动命令 `redis-server --appendonly yes --requirepass "$${REDIS_PASSWORD}"`（`docker-compose.yml:271`，AOF 已开）⇒ **内存涨到 256 MiB 不会淘汰键，而是 Redis 被 OOM kill**（AOF 保证重启后数据回来）。
+896M 与 512mb 的差值 = AOF 重写 fork COW / 连接缓冲 / 碎片等 Redis 自身开销的余量——**先由 maxmemory 拒写自保护，cgroup limit 只作最后兜底**（`docker-compose.yml` redis 服务注释有完整推演）。
+
+**失效模式：写满即拒写，不是 OOM kill**。此前口径（2026-10-08 记档时）是「maxmemory 0 + 容器 256 MiB limit」——内存涨到 256 MiB 无处可去，Redis 进程被 OOM kill，**全站会话瞬间丢失**（AOF 只能保证重启后数据回来，丢的是可用性窗口）。2026-10-10 的 P1 内存防线批次改为现口径后，主失效模式变成**写路径拒绝**：db9 只存 Sa-Token 会话（单 session 键 <2KB，万级用户 << 512mb），数据集涨满时**新登录显式失败、易定位**，既有键（包括所有在线会话）一个都不会被逐出——evicted 会话 = 用户被莫名登出 = 静默故障，这是 noeviction 刻意买下的保证。
+
+**为什么这样演进（教学价值，勿回退）**：旧形态的失败面是「OOM 杀容器 = 全站会话丢失」，新形态的失败面是「拒写 = 只影响写入路径（新登录/新会话键）」。同样的内存压力，旧口径用户全体掉线、新口径用户无感（只是登录不进去，报错显式可见）。⚠️ 宿主侧同步代价：redis limit 256M → 896M 使 compose 内存累加占用升至 95%+（2026-10-10 P1 内存防线批次的取舍，演进史见 `docker-compose.yml` redis 服务注释）——用宿主余量换失败面收窄，是有意取舍；全仓内存口径详见 `docs/known-limitations.md` §3。
 
 **与会话布局的关系**：会话集中到 db9 后，Redis 里的数据分两类——
 - **业务缓存/锁（db0–db8）**：丢了可重建（缓存回源、锁重抢），用户无感；
@@ -43,7 +49,7 @@ maxmemory-policy → noeviction（写满即报错/阻塞，不淘汰任何键）
 
 ⇒ 「Redis 数据按持久数据对待」（挂 AOF、`noeviction` 不淘汰、入备份策略）与「会话放在 Redis 里」是**自洽**的：正因为 noeviction 不会把会话当缓存挤掉，会话放 Redis 才安全。反过来说，**若将来有人想改 `allkeys-lru` 之类的淘汰策略，必须先回答「会话被挤掉等于全站强制下线，你能接受吗」**——默认答案是不能，所以改淘汰策略前必须先把会话挪走（按库设 maxmemory 是 per-DB 粒度，Redis 不支持，等于否定该方向）。
 
-运维含义：Redis 内存水位要当**容量指标**监控（256 MiB 顶到就 OOM），而不是当「反正会自动淘汰」的黑盒。当前内存口径见 `docs/claude-infra.md`《维护窗口》节。
+运维含义：Redis 内存水位要当**容量指标**监控（512mb 数据集顶到即开始拒写新登录），而不是当「反正会自动淘汰」的黑盒。内存口径与演进史见 `docs/known-limitations.md` §3 与 `docs/claude-infra.md`《维护窗口》节。
 
 ## 3. 门禁的可扩展性口径：表达不变量，不表达快照
 
@@ -66,7 +72,7 @@ maxmemory-policy → noeviction（写满即报错/阻塞，不淘汰任何键）
 
 1. **pom 引三件套**：`sa-token-redis-template` + `sa-token-alone-redis` + `commons-pool2`，三者缺一不可——缺 pool2 是**启动失败**（`NoClassDefFoundError`，插件 `catch(Exception)` 罩不住，反编译实证见 `ALONE-REDIS-MECHANISM-2026-10-08.md`）；引 alone-redis 而不引 redis-template 则 `Class.forName` 探测失败同样静默不生效。版本一律不写在模块 pom（B/D 项钉住）。
 2. **若该服务不需要会话**（纯 MQ 消费者、无 HTTP 端点），**「什么都不引」不再是可以默默完成的默认状态**——它现在是一个**必须显式声明、且会被门禁复核的决定**：A′（门禁 H）的全集不变量要求每个可部署服务显式二选一，你什么都不引且不登记 ⇒ 直接红；登记进豁免名单 `NO_SESSION_SERVICE_MODULES` 后，门禁还会持续盯两类退化——**陈旧豁免**（哪天你接了三件套却忘了从名单移除 ⇒ 红）与**无效条目**（拼错名字让规则静默失效 ⇒ 红）。为什么这条禁令存在：只引 `sa-token-core` 而不接 DAO 是「半截 Sa-Token」形态——一旦将来有人加了带 `@Log` 的 Controller（切面会调 `isLogin()`），`SaManager` 会**静默**落到 JVM 内存 DAO（`SaTokenDaoDefaultImpl`），无报错、重启即失效、与 db9 不通。`zxyz-audit-service/pom.xml:72-84` 的禁令注释是完整说明（它是当前**唯一**合法豁免：纯 MQ 消费者、无 HTTP 端点、main 代码 0 会话调用点）。
-3. **会话库永远是 db9**：写死在 `application-common.yml`（E 项钉住），**不得**改成跟随 `REDIS_DATABASE`——那会让「写会话的服务」与「校验会话的 gateway」分家（gateway 不读 nacos static，见 application-common.yml:105-111 的完整推演），表现为登录成功、下一请求 401。
+3. **会话库永远是 db9**：写死在 `application-common.yml`（E 项钉住），**不得**改成跟随 `REDIS_DATABASE`——那会让「写会话的服务」与「校验会话的 gateway」分家（gateway 不读 nacos static，完整推演见 `application-common.yml` 内「网关不 import nacos 的 zxyz-static.yml」注释段，按文字锚点定位），表现为登录成功、下一请求 401。
 
 **库号上限与门禁的关系**：门禁 A 不限制新增服务数量（新服务按规矩接线即自动通过），但**库号上限会**——所以「新增服务」在门禁之外还有一道**人工检查**：db10–db15 还剩几个空位？用完了怎么办？答案见本文第 1 节（前缀化），提前规划，不要等启动时报「DB index is out of range」。
 
@@ -97,7 +103,7 @@ docker exec zxyz-redis redis-cli -n 9 --scan --pattern 'satoken*'
 ## 诚实边界
 
 - **生产 CONFIG 读数与 db10–db15 空置状态**：引用 Lead 的 2026-10-08 生产实测（`docker exec zxyz-redis redis-cli CONFIG GET ...` / `INFO keyspace`），本任务未重跑生产命令；本地无 Docker、无生产 SSH，无法自行复测。
-- **「db10–db15 实测全空」**：同上，采信 Lead 读数；本任务用 `docker-compose.yml`（9 处 `REDIS_DATABASE` 兜底 = 9 个消费服务各一，gateway 是其中之一）与 `application-common.yml:135`（`database: 9`）的**静态核对**交叉印证了「已用 0–9」这一面。
+- **「db10–db15 实测全空」**：同上，采信 Lead 读数；本任务用 `docker-compose.yml`（9 处 `REDIS_DATABASE` 兜底 = 9 个消费服务各一，gateway 是其中之一）与 `application-common.yml`（`sa-token.alone-redis.database: 9`）的**静态核对**交叉印证了「已用 0–9」这一面。
 - **Cluster 行为**（`SELECT` 不可用）为 Redis 官方文档口径，未在本仓实测（无集群环境）。
 - **门禁引用以锚点文本为准，不写行号**：`AloneRedisWiringContractTest.java` 在持续演进（行号会漂移），本文只引用其**原则口径**（不变量/禁入名单/豁免名单）。定位方式 = 在该文件内搜索锚点标识符：设计原则与演进史 → 搜 `设计原则：表达不变量`；禁入名单 → 搜 `FORBIDDEN_REDIS_TEMPLATE_MODULES`；豁免名单 → 搜 `NO_SESSION_SERVICE_MODULES`；门禁 H 判定 → 搜 `checkDeployableServicesDeclareSessionDeps`；nacos 落点断言 → 搜 `E2_aloneRedis`；自检样本 → 搜 `G1_门禁自检`。
 - **A′ 的覆盖边界（Lead 定级并要求如实记录）**：「可部署服务」的判据是 `src/main/resources/application.yml` 的**存在性** ⇒ 若新服务**忘了建该文件**、或把配置放到**非标准路径**（如 `config/` 子目录、`application-<env>.yml`），门禁 H 就**看不见它**（会被当成库模块，三件套缺失不红）。反空扫只能兜住「判据整体失效」（可部署集合为 0 ⇒ 红），**兜不住个别模块漏判**。当前 12 个模块均在标准路径、无实际风险——但这条边界要记下来，**别把 A′ 当成万能门禁**：新增服务时，「有没有 `application.yml`」要作为 checklist 的一项人工确认。

@@ -11,7 +11,7 @@ Schema 文件：**表结构仅由各服务的 Flyway 迁移管理** —— `ZXYZ
 
 默认 localhost:6379。分布式锁（Redisson）在**业务库**（按 `REDIS_DATABASE` 隔离：gateway 0 / project 1 / im 2 / email 3 / user 4 / share 5 / file 6 / team 7 / audit 8，admin 不消费该键）。
 
-**Sa-Token 会话存储代码已切到独立库 db9**（2026-10-08，`701af68` 合并）：9 个服务（gateway/project/im/email/user/share/file/team/admin）引入 `sa-token-alone-redis`，会话统一落 `sa-token.alone-redis` 配置的独立连接（`database: 9`，配置在 `zxyz-common/src/main/resources/application-common.yml`；`zxyz-audit-service` 纯 MQ 消费者，刻意不引）。该键**刻意只写 application-common.yml、不进 nacos** —— gateway 不 import `zxyz-static.yml`，写错落点会导致「业务服务写 db9、gateway 校验读 db0」= 全站登录失效。✅ **生产已生效**（2026-10-10 实测：db9 有 13 个 `satoken:login:*` 活跃键、db0–8 无 satoken 键，51/52 号台账）：凡 db9 相关变更，部署后仍必须 `redis-cli -n 9 --scan --pattern 'satoken*'` 见非空 key 才算生效（插件对配置异常静默吞，**服务起来了 ≠ 会话已迁移**）。
+**Sa-Token 会话存储代码已切到独立库 db9**（2026-10-08，`701af68` 合并）：9 个服务（gateway/project/im/email/user/share/file/team/admin）引入 `sa-token-alone-redis`，会话统一落 `sa-token.alone-redis` 配置的独立连接（`database: 9`，配置在 `zxyz-common/src/main/resources/application-common.yml`；`zxyz-audit-service` 纯 MQ 消费者，刻意不引）。该键**刻意只写 application-common.yml、不进 nacos** —— gateway 不 import `zxyz-static.yml`，写错落点会导致「业务服务写 db9、gateway 校验读 db0」= 全站登录失效。✅ **生产已生效**（2026-10-10 实测：db9 的 `satoken:login:*` 键**非空**、db0–8 无 satoken 键，51/52 号台账；键数随会话自然波动（如 3–13 个），**勿钉死具体数字——判据是「非空」不是「等于 N」**，与 CLAUDE.md 同款纪律）：凡 db9 相关变更，部署后仍必须 `redis-cli -n 9 --scan --pattern 'satoken*'` 见非空 key 才算生效（插件对配置异常静默吞，**服务起来了 ≠ 会话已迁移**）。
 
 ## Nacos
 
@@ -32,24 +32,31 @@ Topic Exchange `zxyz.topic`，各服务监听各自 routing key。
 
 ## Gateway 路由映射
 
-| 请求路径 | 目标服务 |
-|---|---|
-| `/api/users/**` | user-service |
-| `/api/projects/**`, `/api/project-members/**`, `/api/project-catalog/**`, `/api/project-catalogs/**`, `/api/project-quotas/**`, `/api/project-create-requests/**`, `/api/storage/**` | project-service |
-| `/api/files/**`, `/api/folders/**`, `/api/trash/**`, `/api/im-file-cards/**` | file-service |
-| `/api/teams/**`, `/api/admin/teams/**`, `/api/permissions/**` | team-service |
-| `/api/shares/**` | share-service（需登录） |
-| `/api/public/shares/**` | share-service（无需登录） |
-| `/api/email/**` | email-service |
-| `/im-api/**` | im-service（StripPrefix） |
-| `/api/im/**`, `/api/team-collaboration/**` | im-service |
-| `/ws`, `/ws/**` | im-service:19090（直连 Netty） |
-| `/api/admin/email/**` | email-service |
-| `/api/admin/database/**` | project-service |
+Gateway 共 **14 条具名路由**（`ZXYZdatabaseBack/zxyz-gateway/src/main/resources/application.yml:59-179`），**无任何 `/api/**` 兜底路由**——未匹配下列任何前缀的请求一律 **404**，不会落到 project-service 或其他服务。
 
-> 2026-10-11（54 号 P2-3）：`/api/admin/email-providers/**` 端点已**删除**——它此前被网关 admin-service 通配路由剥前缀转发到只有 `/configs` 的 admin-service 必然 404（6 月起即死端点）；前端 0 调用方、SPI 自述未接入发送链路，按最小攻击面原则移除而非补路由。另注：`/api/admin/storage-providers` 条目历史欠账（同样不在本表），待该链路文档化时一并补。
-| `/api/internal/files/**` | file-service（内部服务直连，不经网关） |
-| `/api/**`（兜底） | project-service |
+| # | 请求路径 | 目标服务 | 转发语义 |
+|---|---|---|---|
+| 1 | `/ws`, `/ws/**` | im-service:19090（直连 Netty） | SetPath=/ws |
+| 2 | `/im-api/**` | im-service | StripPrefix=1 |
+| 3 | `/api/im/**`, `/api/team-collaboration/**` | im-service | 原样转发 |
+| 4 | `/api/email/**` | email-service | 原样转发 |
+| 5 | `/api/public/shares/**` | share-service（无需登录） | 原样转发 |
+| 6 | `/api/shares/**` | share-service（需登录） | 原样转发 |
+| 7 | `/api/files/**`, `/api/folders/**`, `/api/trash/**`, `/api/im-file-cards/**` | file-service | 原样转发 |
+| 8 | `/api/teams/**`, `/api/admin/teams/**`, `/api/permissions/**` | team-service | 原样转发 |
+| 9 | `/api/users/**` | user-service | 原样转发 |
+| 10 | `/api/admin/email/**` | email-service | RewritePath → `/api/email/internal/**` + 网关注入内部头（见下注） |
+| 11 | `/api/admin/database/**` | project-service | 原样转发，**刻意不注入**内部头（见下注） |
+| 12 | `/api/admin/storage-providers/**` | file-service | 原样转发 |
+| 13 | `/api/admin/**` | admin-service | RewritePath 剥 `/api/admin` 前缀 → `/{segment}` |
+| 14 | `/api/projects/**`, `/api/project-members/**`, `/api/project-catalog/**`, `/api/project-catalogs/**`, `/api/project-quotas/**`, `/api/project-create-requests/**`, `/api/storage/**` | project-service | 原样转发 |
+
+> **路由表纪律**：本表与 gateway `application.yml:59-179` 逐条比对于 2026-10-15（60 号审计 A-1，14 条一一对应）；**新增路由必须同步此表**（CLAUDE.md 既有纪律）。历史教训：本节曾长期声称「`/api/**`（兜底）→ project-service」，实际 gateway 从未有过兜底路由——排查 404 时勿按「有兜底」的直觉判断。
+>
+> - `/api/admin/email/**`：网关自注入 `X-Internal-Service-Token`（`${SVC_GATEWAY_KEY:${INTERNAL_SERVICE_TOKEN}}`）+ `X-Internal-Caller-Service: zxyz-gateway`，重写为 `/api/email/internal/**`——真正走服务间鉴权的桥接（详见 `docs/claude-backend.md`「服务间接口设计规范」）。
+> - `/api/admin/database/**`：由 project-service 的 Sa-Token 登录态 + `@SaCheckRole(SYSTEM_ADMIN)` 把关，不参与服务间鉴权（详见 `docs/claude-backend.md`）。
+> - `/api/internal/files/**` 是 Docker 内网服务间直连路径（share-service → file-service），**不经网关**，不占路由条目。
+> - 2026-10-11（54 号 P2-3）：`/api/admin/email-providers/**` 端点已**删除**——它此前被 admin-service 通配路由剥前缀转发到只有 `/configs` 的 admin-service 必然 404（6 月起即死端点）；前端 0 调用方、SPI 自述未接入发送链路，按最小攻击面原则移除而非补路由。
 
 鉴权白名单：`/api/users/login`, `/api/users/register`, `/api/public/shares/**`, `/actuator/**`
 

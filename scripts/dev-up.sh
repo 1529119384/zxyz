@@ -4,6 +4,14 @@
 # 仅启动基础设施（MySQL / Nacos / Redis / RabbitMQ），不启动 Java 服务。
 # Java 服务通过 IDE 本地运行，连接容器网络。
 #
+# 审计 2026-10-15 P1-1：此前 up 分支用 `docker compose up -d`（无服务名），
+# 而 docker-compose.yml 里 10 个后端 + gateway + frontend-nginx 均无 profiles，
+# 无参 up 会把全部 17 个服务一并拉起 —— 10 个 JVM 容器（≈4.5GB limits）+ 80 端口
+# 全部落到开发机上，与「IDE 本地跑服务」的注释承诺完全相反。
+# 修法选「点名启动基础设施」（最小改动）：不引入 profiles 分组，不动 compose
+# 默认行为（生产 / CI 侧的 `docker compose up -d` 全量语义保持不变）；
+# nacos 依赖 mysql（service_healthy），点名 nacos 即隐含建好 mysql。
+#
 # 用法:
 #   ./scripts/dev-up.sh              # 启动基础设施
 #   ./scripts/dev-up.sh down         # 停止基础设施
@@ -35,10 +43,18 @@ if ! docker info >/dev/null 2>&1; then
     exit 1
 fi
 
+# 审计 2026-10-15 P1-1：点名基础设施服务，避免无参 up 拉起全部 17 个服务。
+# 注意 docker-compose.yml 的常驻基础设施共 5 个：mysql / nacos / nacos-log-cleanup /
+# redis / rabbitmq（flyway 是 profiles:["tools"] 的一次性运维容器，刻意不含）。
+# 只点名 nacos + nacos-log-cleanup + redis + rabbitmq：nacos depends_on mysql
+# （service_healthy）会隐含先起 mysql；nacos-log-cleanup 无依赖可并行。
+# down/reset/logs 保持全量操作（compose 会顺带处理依赖闭包，语义不变）。
+INFRA_SERVICES=(mysql nacos nacos-log-cleanup redis rabbitmq)
+
 case "$ACTION" in
     up|start)
         echo "启动本地开发基础设施（MySQL / Nacos / Redis / RabbitMQ）..."
-        docker compose -f "$COMPOSE_BASE" -f "$COMPOSE_DEV" up -d
+        docker compose -f "$COMPOSE_BASE" -f "$COMPOSE_DEV" up -d "${INFRA_SERVICES[@]}"
         echo ""
         echo "等待服务就绪..."
         docker compose -f "$COMPOSE_BASE" -f "$COMPOSE_DEV" ps

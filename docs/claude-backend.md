@@ -118,7 +118,9 @@ How to generate ciphertext / self-check / rotate the key: `docs/jasypt-key-manag
 
 **admin-service data source**: Uses `config.datasource.*` prefix (not `spring.datasource.*`) with `@Primary` DataSource. HikariCP requires `jdbc-url` (not `url`) in YAML when using `@ConfigurationProperties`.
 
-**Config management API**: admin-service exposes `GET/PUT /configs` (no `/api/admin` prefix — Gateway's `RewritePath` strips it). `ConfigGetter.get(key)` calls `GET /api/admin/configs/{key}` — ensure this single-key endpoint exists in `ConfigAdminController`. ConfigGetter 是项目内唯一的 HTTP 配置客户端，禁止再自行构建另一套 HTTP 配置客户端副本（如历史上的 ConfigServiceClient）。 Frontend page at `/setting/config-admin` (requires `requireSystemAdminRole()`). Redis Pub/Sub on `zxyz:config:changed` channel notifies config changes. Config keys follow `app.{domain}.{property}` naming convention.
+**Config management API**: admin-service exposes `GET/PUT /configs` (no `/api/admin` prefix — Gateway's `RewritePath` strips it). `ConfigGetter.get(key)` calls `GET /api/admin/configs/{key}` — ensure this single-key endpoint exists in `ConfigAdminController`. ConfigGetter 是项目内唯一的 HTTP 配置客户端，禁止再自行构建另一套 HTTP 配置客户端副本（如历史上的 ConfigServiceClient）。 Frontend page at `/setting/config-admin` (requires `requireSystemAdminRole()`). Config keys follow `app.{domain}.{property}` naming convention.
+
+**⚠️ `zxyz:config:changed` 链路现状（2026-10-15，60 号审计 A-3 如实标注）**：admin-service 的 `ConfigService` 在配置更新 afterCommit 时**仍在向 `zxyz:config:changed` 频道发布变更**（该发布链路是活的），但**订阅端默认关闭**——唯一订阅端 `ConfigClientAutoConfiguration` 已 `@Deprecated`，由 `@ConditionalOnProperty(name="app.config-client.enabled", havingValue="true")` 控制，全仓无任何地方设 `true` ⇒ **该频道当前 0 消费者，实际是「单向冗余广播」**：各服务配置缓存靠本地 Caffeine TTL（5 分钟）自愈，不靠该频道。**代码刻意不删**——它是热更新备用通道（重新启用开关 = `app.config-client.enabled=true`）；是否两端一并删除属架构决策，不是文档活。
 
 **Gateway route rewrite**: Routes with `RewritePath=/api/admin/(?<segment>.*)` → `/${segment}` strip the `/api/admin` prefix. Backend controllers must map to the rewritten path (e.g., `@RequestMapping("/configs")`, NOT `@RequestMapping("/api/admin/configs")`). Known issue: `ProviderAdminController` previously had wrong path `/api/admin/providers` → fixed to `/providers`.
 
@@ -126,7 +128,7 @@ How to generate ciphertext / self-check / rotate the key: `docs/jasypt-key-manag
 
 **RestClient timeout**: All 9 services use `JdkClientHttpRequestFactory` with `connectTimeout=3s, readTimeout=10s`. When creating new `RestClient` beans, always configure timeouts via `HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build()` and `factory.setReadTimeout(Duration.ofSeconds(10))`.
 
-**AbstractServiceClient HTTP helpers**: Base class provides `getJson`, `postJson`, `putJson`, `patchJson`, `deleteJson` — all wrapped with Resilience4j retry (3x, 500ms) + circuit breaker (10-window, 50%, 30s). Subclasses inherit these for free. New client classes should extend `AbstractServiceClient` (see admin-service's `EmailProviderClient`/`StorageProviderClient` as reference).
+**AbstractServiceClient HTTP helpers**: Base class provides `getJson`, `postJson`, `putJson`, `patchJson`, `deleteJson` — all wrapped with Resilience4j retry (3x, 500ms) + circuit breaker (10-window, 50%, 30s). Subclasses inherit these for free. New client classes should extend `AbstractServiceClient` (see share-service's `ShareFileServiceClient` + `ShareFileServiceClientTest` as reference; admin-service 的 `EmailProviderClient`/`StorageProviderClient` 已不在仓内，勿再引用为样例).
 
 **API response contract**: All backend APIs return `Result<T>` with `code: 1` = success (`ErrorCode.SUCCESS = 1`). Frontend `createApiClient.js` checks `payload?.code === 1`. See `docs/api-contract.md` for full contract.
 
@@ -157,6 +159,15 @@ How to generate ciphertext / self-check / rotate the key: `docs/jasypt-key-manag
 **MQ poison message handling**: When a consumer catches `JsonProcessingException` (deserialization failure that will never succeed on retry), throw `AmqpRejectAndDontRequeueException` to route the message to DLQ — do NOT just log and return (which silently ACKs the poison message). Import from `org.springframework.amqp.AmqpRejectAndDontRequeueException`.
 
 **Redis cache eviction**: Do NOT use `@CacheEvict(allEntries = true)` — it clears ALL entries when only one team's data changed. Use `StringRedisTemplate.scan(ScanOptions)` with pattern matching to evict only the affected keys (e.g., `team-permission::{teamId}:*`). See `TeamPermissionCacheService` for reference.
+
+### IM 跨节点能力（⚠️ 集群路由表未实现，2026-10-15，60 号审计 A-4）
+
+**im-service 的多副本（集群）模式只有「广播」一种跨节点机制，没有定向路由表**——`ImClusterProperties` 的 javadoc 声称「开启后连接路由表写入 Redis，跨节点推送通过 Redis Pub/Sub 广播」，但实测：
+
+- **真实存在的**：跨节点 Pub/Sub 广播——`NettyImRealtimePushService` 发布频道 `zxyz:im:cluster:push`（`ImClusterKeys.PUSH_CHANNEL`）→ `ImClusterSubscriber` 订阅去重（仅 `app.im.cluster.enabled=true` 时生效）。多副本部署下每个节点都收到全部推送并按 originNodeId 去重，功能是完整的。
+- **未实现的（死键定义）**：路由表/心跳两组键 `zxyz:im:route:user:{userId}`（`ImClusterKeys.ROUTE_KEY_PREFIX`/`routeKey()`）与 `zxyz:im:node:{nodeId}`（`NODE_KEY_PREFIX`/`nodeKey()`），以及 `routeTtlSeconds`/`heartbeatTtlSeconds`/`renewIntervalSeconds` 三个 TTL 配置——**全仓 0 调用点**，`grep ImClusterKeys.` 仅命中 PUSH_CHANNEL 两处。即「定向推送省广播」是纸面能力，别按它写依赖路由表的代码。
+
+代码不删（键常量与 TTL 设计是将来补 `ImClusterRouteRegistry` 的现成素材：TTL 120s/30s + 10s 续期）；补齐实现属后端代码侧决策，超出文档组边界。
 
 ## 服务间接口设计规范
 

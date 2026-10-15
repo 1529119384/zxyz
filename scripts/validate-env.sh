@@ -50,10 +50,13 @@ if [ -f "$EXAMPLE_FILE" ]; then
     if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
       key="${BASH_REMATCH[1]}"
       value="${BASH_REMATCH[2]}"
+      # 60 号收口：剥尾随 CR —— .env.example 在 Windows 检出为 CRLF 时，read 会把
+      #   \r 留在 value 里，追加进 .env 即污染值（bash source 后带隐藏字符）。
+      value="${value%$'\r'}"
       # 仅当 .env 中不存在该 KEY 时追加
       if ! grep -qE "^${key}=" "$ENV_FILE" 2>/dev/null; then
         echo "  补全: $key"
-        echo "$line" >> "$ENV_FILE"
+        echo "$key=$value" >> "$ENV_FILE"
         sync_count=$((sync_count + 1))
       fi
     fi

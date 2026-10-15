@@ -26,7 +26,9 @@ spring:
 im:
   invite-link:
     default-expire-hours: 24
-    default-max-uses: 0
+    # 60 号 🟡-6：默认签发的邀请链接最多 50 次使用（0 = 不限次已废除），
+    # 超限后加入申请复用「邀请链接无效」语义被拒；须 nacos-import 才对线上生效。
+    default-max-uses: 50
   netty:
     enabled: true
     websocket-path: /ws

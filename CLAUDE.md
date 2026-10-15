@@ -94,7 +94,7 @@ cd ZXYZdatabaseFront && git diff HEAD --ignore-cr-at-eol --numstat && cd ..
 
 ```bash
 mvn clean -DskipTests compile                   # baseline compile check
-mvn test                                         # all tests（200 个测试源文件 / 197 个测试类，见 docs/testing.md；⚠️ 措辞勿改回「测试文件」——前缀会被前端 doc-count 门禁的正则误抓）
+mvn test                                         # all tests（205 个测试源文件 / 202 个测试类，见 docs/testing.md；⚠️ 措辞勿改回「测试文件」——前缀会被前端 doc-count 门禁的正则误抓）
 mvn test -pl zxyz-team-service                   # single module tests
 mvn test -pl zxyz-file-service -Dtest=FileUploadServiceTest  # single test class
 mvn clean package -DskipTests                    # package for Docker build
@@ -194,7 +194,7 @@ WHEN 修改 Gateway 路由, DO 同步更新 `docs/infrastructure.md` 中的路�
 
 WHEN 编写前端代码, DO 在 `ZXYZdatabaseFront/` 目录执行 npm 命令。
 WHEN 添加 API 接口, DO 按领域放入对应 `api/` 文件，禁止跨领域引用。
-WHEN 选择 HTTP 客户端, DO 按场景选：`request.js`（已认证，默认）、`publicRequest.js`（公开/分享）、`imRequest.js`（IM）。所有客户端均 `withCredentials: true`。
+WHEN 选择 HTTP 客户端, DO 按场景选：`src/utils/request.js`（已认证，默认）、`src/utils/publicRequest.js`（公开/分享）、`src/utils/imRequest.js`（IM）。所有客户端均 `withCredentials: true`。
 WHEN 处理认证, DO 依赖 HttpOnly Cookie（`withCredentials: true`），不手动注入 Authorization Header。
 WHEN 显示时间戳, DO 使用 `fmtTime()` 函数（`utils/format.js`），不要直接 `|| '-'` 显示原始值。
 WHEN 设置时间戳默认值, DO 使用 `?? null`（而非 `|| null`），`||` 会将空字符串 `""` 和 `0` 误转为 `null`。

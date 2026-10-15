@@ -147,10 +147,33 @@ fi
 # --- 拉取镜像 ---
 if [ "$NO_PULL" = false ] && [ "$BUILD_FIRST" = false ]; then
   echo "===== Pulling images ====="
+  # ⚠️ 2026-10-15 修复（审计 infra-ci P1-2）：原来是 `docker compose pull "$svc" &` +
+  #   **无参 wait**。无参 wait 只等所有子进程结束，**不会把任一子进程的非零退出码
+  #   透传出来** —— pull 失败被静默吞掉，随后 `up -d --no-deps --no-build` 因本地无
+  #   目标镜像直接报"镜像不存在"（或更糟：带着本地旧 sha 镜像继续跑），而脚本以
+  #   exit 0 收场、无回滚锚点更新，排障方向被误导。同型缺陷已在
+  #   deploy-on-server.sh:572-583（主路径）与 rollback.sh:105-124 修为
+  #   逐 pid `wait "$pid"`，此处是全仓最后残留，照抄同款修法。
+  #   与回滚路径的差异（有意为之）：快速部署的目标是"上线指定版本"，pull 非零即中止，
+  #   不带病重启；deploy-on-server.sh 主路径的「本地已有镜像则放行」宽容分支需要
+  #   解析 .env 拼镜像名（IMAGE_PREFIX/APP_IMAGE_TAG），此处暂不引入（后续增强）。
+  PULL_PIDS=()
   for svc in "${SERVICES[@]}"; do
     docker compose pull "$svc" &
+    PULL_PIDS+=("$!:$svc")
   done
-  wait
+  PULL_FAILED=()
+  for entry in "${PULL_PIDS[@]}"; do
+    pid="${entry%%:*}"; svc="${entry#*:}"
+    if ! wait "$pid"; then
+      PULL_FAILED+=("$svc")
+    fi
+  done
+  if [ ${#PULL_FAILED[@]} -gt 0 ]; then
+    echo "ERROR: 以下服务镜像拉取失败，已中止部署（避免带着旧镜像继续）：${PULL_FAILED[*]}"
+    echo "排查方向：① .env 的 APP_IMAGE_TAG 指向的 tag 是否已由 CI 推送 ② 服务器 docker login ghcr.io 凭据 ③ 网络可达性"
+    exit 1
+  fi
   echo "Pull complete"
 fi
 

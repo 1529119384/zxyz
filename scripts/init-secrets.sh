@@ -92,6 +92,9 @@ gen_secret() {
   local key="$1" kind="${2:-default}"
   local cur="${!key:-}"
 
+  # 60 号收口：空值不算「已存在真实值」——sync-only 从 .env.example 补进来的空串
+  #   （如 VERIFY_CODE_PEPPER= 空）此前被此判据放行跳过 ⇒ compose :? 放行但语义缺失。
+  #   空值视同占位符，正常走生成流程。
   # 真实（非 CHANGE_ME）值始终跳过，--force 也不覆盖已部署的真实机密（防重部署误覆盖）
   if [ -n "$cur" ] && ! echo "$cur" | grep -qE '^CHANGE_ME'; then
     echo "  $key: 已存在真实值，跳过（--force 也不覆盖）"
