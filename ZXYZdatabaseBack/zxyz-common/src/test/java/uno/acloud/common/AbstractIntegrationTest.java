@@ -28,8 +28,11 @@ import org.springframework.test.context.DynamicPropertySource;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE, properties = {
         "spring.cloud.nacos.discovery.enabled=false",
+        "spring.cloud.nacos.config.enabled=false",
+        "spring.config.import=",
         "spring.autoconfigure.exclude="
                 + "com.alibaba.cloud.nacos.discovery.NacosDiscoveryAutoConfiguration,"
+                + "com.alibaba.cloud.nacos.NacosConfigSpringCloudAutoConfiguration,"
                 + "org.springframework.boot.amqp.autoconfigure.RabbitAutoConfiguration",
         "spring.rabbitmq.listener.simple.auto-startup=false",
         "spring.flyway.enabled=true"
@@ -123,6 +126,7 @@ public abstract class AbstractIntegrationTest {
         static {
             for (String fqn : new String[] {
                     "com.alibaba.cloud.nacos.discovery.NacosDiscoveryAutoConfiguration",
+                    "com.alibaba.cloud.nacos.NacosConfigSpringCloudAutoConfiguration",
                     "org.springframework.boot.amqp.autoconfigure.RabbitAutoConfiguration"}) {
                 if (!ClassUtils.isPresent(fqn, AbstractIntegrationTest.class.getClassLoader())) {
                     throw new IllegalStateException(
