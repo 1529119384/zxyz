@@ -163,6 +163,30 @@
     "responseDataType" : "uno.acloud.file.vo.im.FileCardSnapshotVO"
   }, {
     "method" : "POST",
+    "path" : "/api/internal/im/projects/conversations",
+    "requestBodyType" : "uno.acloud.im.dto.CreateProjectConversationRequest",
+    "requestBodyJsonFields" : [ "leaderUserId", "name", "projectId", "teamId" ],
+    "responseDataType" : "uno.acloud.im.vo.ProjectConversationVO"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/im/projects/creation-applications/messages",
+    "requestBodyType" : "uno.acloud.im.dto.ProjectCreateRequestMessageRequest",
+    "requestBodyJsonFields" : [ "applicationId", "description", "leaderName", "leaderUserId", "projectName", "requesterName", "requesterUserId", "storageLimit", "teamId" ],
+    "responseDataType" : "java.lang.Void"
+  }, {
+    "method" : "POST",
+    "path" : "/api/internal/im/projects/creation-applications/{applicationId}/result-messages",
+    "requestBodyType" : "uno.acloud.im.dto.ProjectCreateRequestReviewResultRequest",
+    "requestBodyJsonFields" : [ "applicationId", "approved", "projectId", "projectName", "reviewReason", "reviewerUserId", "teamId" ],
+    "responseDataType" : "java.lang.Void"
+  }, {
+    "method" : "PATCH",
+    "path" : "/api/internal/im/projects/{projectId}/archive",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.lang.Void"
+  }, {
+    "method" : "POST",
     "path" : "/api/internal/im/system-notifications/batch",
     "requestBodyType" : "uno.acloud.im.dto.InternalBatchSystemNotificationRequest",
     "requestBodyJsonFields" : [ "businessId", "businessType", "content", "teamId", "title", "type", "userIds" ],
