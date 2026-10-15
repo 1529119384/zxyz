@@ -73,10 +73,10 @@ on:
       # **只进顶层 paths**（lint-config / secret-scan 会跑），刻意**不进任何 dorny
       # 部署 filter** —— conf 文件不参与任何镜像构建，进 filter 只会白付全量 11 服务
       # 重建的代价。
-      # ⚠️ 已知缺口（58 号台账移交 Lead）：deploy-on-server.sh 的同步白名单（:238-242、
-      # DEPLOYMENT.md §11.9）**刻意不含 conf/**（与 .env/logs/data 同列运行时资产）⇒
-      # conf 变更目前没有自动上线通道，须人工同步到 /www/zxyz/conf/ 并重启 rabbitmq。
-      # 后续应给 sync 层加 conf/*.conf 白名单（或文档化人工步骤），与本注释保持一致。
+      # ⚠️ 已收口（2026-10-14 58 号批次）：deploy-on-server.sh 同步白名单**已含**
+      # conf/rabbitmq.conf + deploy/rabbitmq/enabled_plugins（含 mkdir 卫兵 + synced_conf
+      # 留痕，deploy-last.log 可查）⇒ conf 变更有自动上线通道；rabbitmq 需重启容器才
+      # 吃进新配置（compose 注释写明）。本段旧文「刻意不含 conf/、须人工同步」已过时。
       - 'conf/**'
       # DEPLOYMENT.md（58 号 §二.9）：根目录部署指南。CLAUDE.md / docs/** 已在白名单
       # 而它漏了 ⇒ 改它零检查。只进顶层 paths（lint 级，文档门禁 + 路径引用有效性），
@@ -672,9 +672,16 @@ jobs:
               esac
             done < <(git diff --name-status "origin/${BASE}...HEAD" 2>/dev/null || true)
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            # dispatch 只在 dev 上触发（ci-cd.yml 顶部限定）⇒ origin/dev = 上一版
+            # dispatch 只在 dev 上触发（ci-cd.yml 顶部限定）⇒ checkout 即分支 tip ⇒
+            # origin/dev == HEAD ⇒ 任何三点/两点 diff 都恒空 —— 这**不是守卫漏洞**而是
+            # 语义使然（59 号 NEW-2 复核结论）：dispatch 是「把已通过 push 轮全部门禁
+            # （含本守卫）的产物重新部署」，迁移变更集已在 push 事件被把关过。
+            # ⚠️ 若 dispatch 时 origin/dev 尚不存在（首建仓库场景）则无任何先验把关 ⇒ 红。
+            # 显式打印语义，避免排障时误判「守卫静默放行」。
             if git rev-parse --verify origin/dev >/dev/null 2>&1; then
               echo "diff guard: workflow_dispatch, base=origin/dev (dispatch has no before)"
+              echo "NOTE: origin/dev == HEAD on dispatch ⇒ diff is empty by definition;"
+              echo "      migration changes were already gated at the push event. Not a silent pass."
               while IFS=$'\t' read -r status path; do
                 case "$path" in
                   *db/migration/*.sql)
@@ -730,20 +737,25 @@ jobs:
       # `sh: out of range`，FailingStreak=1842），而 docs-consistency 的「healthcheck
       # 15/15」数量门禁照常 PASS —— 数量不构成可用性证据。
       # 手法（SOP 34 条）：用权威解释器 `docker compose config` 渲染一遍，渲染输出里
-      # 出现空变量比较（`[ "" -ge` / `[ "" -lt`）即失败。CI runner 自带 docker compose。
+      # 出现空变量比较（`[ "" <op>` 任意比较运算符形态）即失败。CI runner 自带 docker compose。
+      # 59 号 P2-2 收口：判据从 `-ge|lt` 放宽为全部比较运算符 + `=` 等值 + `-z` 空测
+      #   （59 号实测：`[ "" -eq 1 ]` 等形态旧正则全部漏放）；stderr 的
+      #   "variable is not set" warning 不再丢弃（渲染成功但带 warning = 转义不全的
+      #   唯一签名，55 号同型）；COMPOSE_ARGS 补 observability/dev 两份 compose。
       - name: Healthcheck render self-check (no empty-var comparisons)
         run: |
           FAIL=0
-          # 收集两个 compose 文件里全部 ${VAR} / ${VAR:-default} 变量名，无默认值的给哑值
-          # ⚠️ 正则必须覆盖三种插值形态：${VAR}、${VAR:-default}、${VAR:?required}——
-          #   57 号首跑教训：只匹配 :- 形态漏掉 :?（required）类变量 ⇒ config 渲染时
-          #   ${VAR:?} 检查未定义变量硬失败（RENDER_FAILED），且 stderr 被丢弃无法排障。
-          #   三类分开收集：required(:?) 与裸引用必须有占位；:- 有默认值的**不能 export**
+          COMPOSE_FILES="docker-compose.yml docker-compose.tls.yml docker-compose.observability.yml docker-compose.dev.yml"
+          # 收集全部 compose 文件里 ${VAR} / ${VAR:-default} / ${VAR:?required} 变量名；
+          # ⚠️ 三类分开收集：required(:?) 与裸引用必须有占位；:- 有默认值的**不能 export**
           #   （占位值会覆盖默认值——三轮首跑实证：DATA_DIR=render-check-placeholder
-          #   污染了 ${DATA_DIR:-./data}/rabbitmq named volume 名）。
-          REQUIRED_VARS=$(grep -ohE '\$\{[A-Z_][A-Z0-9_]*:\?[^}]*\}' docker-compose.yml docker-compose.tls.yml 2>/dev/null \
+          #   污染了 ${DATA_DIR:-./data}/rabbitmq named volume 名；59 号补测发现
+          #   OSS_PUBLIC_BASE_URL 同型——它在裸形态出现时 :- 默认值同被覆盖，故
+          #   BARE 集占位一律给空串语义等价值不可行，改为对 :- 默认值是**相对路径/路径段**
+          #   的变量跳过 export 由 compose 默认值兜底——判定锚：:- 值里含 "/" 即路径类）。
+          REQUIRED_VARS=$(grep -ohE '\$\{[A-Z_][A-Z0-9_]*:\?[^}]*\}' $COMPOSE_FILES 2>/dev/null \
             | grep -oE '[A-Z_][A-Z0-9_]*' | sort -u)
-          BARE_VARS=$(grep -ohE '\$\{[A-Z_][A-Z0-9_]*\}' docker-compose.yml docker-compose.tls.yml 2>/dev/null \
+          BARE_VARS=$(grep -ohE '\$\{[A-Z_][A-Z0-9_]*\}' $COMPOSE_FILES 2>/dev/null \
             | grep -oE '[A-Z_][A-Z0-9_]*' | sort -u)
           for v in $REQUIRED_VARS $BARE_VARS; do
             # ⚠️ 占位值按变量名类型给：端口类（*_PORT）必须数字（compose 校验
@@ -755,15 +767,25 @@ jobs:
             esac
           done
           echo "render-check: exported $(echo "$REQUIRED_VARS $BARE_VARS" | wc -w) placeholder variables (required+bare only; :- defaults left to compose)"
-          for COMPOSE_ARGS in "-f docker-compose.yml" "-f docker-compose.yml -f docker-compose.tls.yml"; do
+          for COMPOSE_ARGS in "-f docker-compose.yml" "-f docker-compose.yml -f docker-compose.tls.yml" "-f docker-compose.yml -f docker-compose.observability.yml" "-f docker-compose.yml -f docker-compose.dev.yml"; do
             # shellcheck disable=SC2086
             if docker compose $COMPOSE_ARGS config > /tmp/rendered.yml 2>/tmp/render-err.txt; then
-              if grep -qE '\[ "" -(ge|lt)' /tmp/rendered.yml; then
-                echo "::error::HEALTHCHECK_EMPTY_COMPARE: rendered compose contains [ \"\" -ge/-lt ] — healthcheck verdict will be sh: out of range (see ISSUE/55: FailingStreak=1842)"
-                grep -nE '\[ "" -(ge|lt)' /tmp/rendered.yml
+              # 59 号 P2-2：空变量比较全算子形态 + 裸 "" 等值 + -z 空测
+              EMPTY_HITS=$(grep -nE '\[ "" (-[a-zA-Z]+ |= )|(\[ -z "" \])|(\[ "" = )' /tmp/rendered.yml || true)
+              if [ -n "$EMPTY_HITS" ]; then
+                echo "::error::HEALTHCHECK_EMPTY_COMPARE: rendered compose contains empty-variable comparison — healthcheck verdict will be sh: out of range (see ISSUE/55: FailingStreak=1842)"
+                echo "$EMPTY_HITS"
                 FAIL=1
               else
                 echo "render-check OK: $COMPOSE_ARGS (no empty-var comparisons)"
+              fi
+              # ⚠️ 渲染"成功但带 is not set warning"= 转义不全的唯一签名（59 号 NEW-3：
+              #   旧版只在此前 else 分支打印 stderr ⇒ 该签名被静默丢弃）。warning 出现即红：
+              #   能渲染成功说明 compose 认为变量可缺省，但探针拿到空串就是运行期事故。
+              if grep -q 'is not set' /tmp/render-err.txt; then
+                echo "::error::RENDER_WARNING_IS_NOT_SET: compose rendered successfully but references unset variables — this is the exact 55/57 escape-incomplete signature:"
+                grep 'is not set' /tmp/render-err.txt | head -10
+                FAIL=1
               fi
             else
               echo "::error::RENDER_FAILED: docker compose $COMPOSE_ARGS config 渲染失败（fail-closed）——stderr："
@@ -774,7 +796,7 @@ jobs:
           if [ "$FAIL" -ne 0 ]; then
             exit 1
           fi
-          echo "Healthcheck render self-check: both composes render clean."
+          echo "Healthcheck render self-check: all four composes render clean."
 
   # ============================================================
   # Job: Nacos 配置等价性门禁（审计 D2）

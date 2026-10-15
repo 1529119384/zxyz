@@ -353,7 +353,7 @@ docker compose down -v
 | `RABBITMQ_MGMT_PORT` | `15672` | RabbitMQ 管理界面端口 |
 | `FRONTEND_BASE_URL` | `http://YOUR_SERVER_IP` | 前端访问地址，用于生成分享链接 |
 | `CORS_ALLOWED_ORIGINS` | `*` | 允许的跨域来源，生产环境建议改为实际域名 |
-| `GATEWAY_TRUSTED_PROXIES` | `172.18.0.0/16`（compose 注入） | **网关可信代理白名单（限流正确性的前提）**：为空时网关不信任任何 X-Forwarded-For，`ClientIpResolver` 短路返回直连方地址——在本拓扑即 frontend-nginx 容器 IP，登录限流/分享提取码/注册/验证码冷却全部塌缩成同一个全局桶，外部按 20/min 打登录接口即可让全平台用户一起被拒（2026-10-11 54 号审计实证，订正本行此前的「不需要任何配置项」结论——该结论对应的「4 源 4 桶」实证属 trusted-proxies 曾生效的时期，与现网代码行为矛盾）。compose 以 `${GATEWAY_TRUSTED_PROXIES:-172.18.0.0/16}` 注入默认网段（nginx→gateway 内网）；仅用本仓 compose 部署时保持默认即可，**网关前有自建反代/云 LB（SLB/CDN/Cloudflare）时必须改为直连网关那层代理的 IP/网段**（逗号分隔多个）——填了不可信网段 = 任何人可伪造 X-Real-IP 绕过限流。修改后按「4 个不同来源 → 4 个不同限流桶」实证法复测 |
+| `GATEWAY_TRUSTED_PROXIES` | `172.19.0.0/16`（compose 注入） | **网关可信代理白名单（限流正确性的前提）**：为空时网关不信任任何 X-Forwarded-For，`ClientIpResolver` 短路返回直连方地址——在本拓扑即 frontend-nginx 容器 IP，登录限流/分享提取码/注册/验证码冷却全部塌缩成同一个全局桶，外部按 20/min 打登录接口即可让全平台用户一起被拒（2026-10-11 54 号审计实证，订正本行此前的「不需要任何配置项」结论——该结论对应的「4 源 4 桶」实证属 trusted-proxies 曾生效的时期，与现网代码行为矛盾）。compose 以 `${GATEWAY_TRUSTED_PROXIES:-172.19.0.0/16}` 注入默认网段（nginx→gateway 内网，与 docker-compose.yml networks ipam 钉死的 zxyz-net 子网一致）；仅用本仓 compose 部署时保持默认即可，**网关前有自建反代/云 LB（SLB/CDN/Cloudflare）时必须改为直连网关那层代理的 IP/网段**（逗号分隔多个）——填了不可信网段 = 任何人可伪造 X-Real-IP 绕过限流。修改后按「4 个不同来源 → 4 个不同限流桶」实证法复测 |
 | `AUTH_COOKIE_SECURE` | `false` | Sa-Token Cookie secure 标志（生产环境改为 true） |
 | `AUTH_COOKIE_DOMAIN` | （空） | Sa-Token Cookie 域名（跨子域共享 session 时设置） |
 | `AUTH_TOKEN_TIMEOUT` | `43200` | 普通登录 Token 超时时间（秒），默认 12 小时 |
@@ -1177,6 +1177,8 @@ Trivy 矩阵**四层，属一次**部署系统升级**；收益是「infra 升�
 | `docker-compose.tls.yml` | ✅ | TLS 覆盖层（`TLS_ENABLED=true` 时叠加） |
 | `docker-compose.observability.yml` | ✅ | 可观测性栈（2026-09-19 补齐；**默认不启动**，见 §11.8 二） |
 | `scripts/*.sh` | ✅ | 部署/维护脚本（流程最早处白名单同步：逐文件 cp + chmod +x + 留痕；同步后对 `backup.sh`/`deploy-on-server.sh`/`rollback.sh` 做 `diff -q` 校验，DIFF 即中止 —— 2026-10-11 backup.sh 落后事件后加固，见下） |
+| `conf/rabbitmq.conf` | ✅ | rabbitmq 水位线（2026-10-14 58 号批次收口：bind mount 唯一配置来源；`synced_conf` 留痕；变更后需重启 rabbitmq 容器生效） |
+| `deploy/rabbitmq/enabled_plugins` | ✅ | rabbitmq 插件启用清单（58 号批次入库；同步含 mkdir 卫兵——目标被误建目录时 rmdir 后落文件，非空即中止） |
 | `docker-compose.dev.yml` | ❌ | 仅本地开发用 |
 | `deploy/**`（nginx/grafana/prometheus/loki 配置、`*.tmpl`） | ❌ | **渲染脚本从 `$REPO_DIR` 读取模板**，产物写到 `$DEPLOY_DIR`，故无需同步 |
 | `ZXYZdatabaseBack/**` / `ZXYZdatabaseFront/**` | ❌ | 服务器不做构建（部署固定 `--no-build`） |

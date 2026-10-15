@@ -79,7 +79,7 @@ docker run -d \
   --memory=512m --memory-swap=512m \
   -e MYSQL_ROOT_PASSWORD \
   -p "127.0.0.1:${DRILL_PORT}:3306" \
-  mysql:8.4 >/dev/null
+  mysql:8.4.0-oraclelinux8@sha256:f7a8e140a7d6d1e6e0c99eeb0489c50a186ee4ac44ff55323a176529b9a43d33 >/dev/null
 
 # 等待 MySQL 就绪（最多 120s）
 echo "等待 MySQL 就绪..."

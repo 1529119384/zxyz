@@ -185,7 +185,7 @@
 
 > ⚠️ **分母口径（2026-10-09 订正）**：本表此前用 **8130.56 MiB** 当物理内存分母——那是把「7.94 GB」按 GiB 换算（7.94×1024）的结果，属 GB/MiB 混算；生产 `free -m` 实测 **total = 7941 MiB**，一切百分比以 7941 为准（改回 8130 分母会把余量高估约 190 MiB，详见 46 号 P2-4 / 49 号 P2-3）。历史数字（99.2%/85.0%/66.56/1218.56）保留在上一版记录中，**勿再引用作决策**。
 >
-> ⚠️ **声明值 ≠ 运行值（2026-10-08/09 双日实测）**：上表「改后」是 compose **声明值**。生产 `HostConfig.Memory` 实测：mysql/nacos 仍 1024 MiB、rabbitmq 仍 512 MiB（三容器创建于 2026-09-14、未重建）⇒ **运行值合计 7424 MiB = 93.5%、余量仅 517 MiB**。按旧的「1.19 GiB 余量」做容量决策会吃穿物理内存（rabbitmq 已于 2026-10-08 真实被 OOM 杀过一次）。**先重建 infra 三容器使声明值生效，再做任何扩容决策**。
+> ⚠️ **声明值 ≠ 运行值（2026-10-08/09 双日实测）【历史读数，勿作现状引用】**：上表「改后」是 compose **声明值**。生产 `HostConfig.Memory` 实测：mysql/nacos 仍 1024 MiB、rabbitmq 仍 512 MiB（三容器创建于 2026-09-14、未重建）⇒ **运行值合计 7424 MiB = 93.5%、余量仅 517 MiB**。按旧的「1.19 GiB 余量」做容量决策会吃穿物理内存（rabbitmq 已于 2026-10-08 真实被 OOM 杀过一次）。**先重建 infra 三容器使声明值生效，再做任何扩容决策**。⇒ **该前提已于 2026-10-14 消失**：58 号批次后 infra 容器已全部重建，当前运行值 = **8064 MiB / 101.5% / 余量 −123 MiB（超卖）**（差异来源 = nacos 服务器 override 1280M），权威现状见 `docs/known-limitations.md` §3 运行值行。
 
 > 【2026-10-10 `ISSUE/51-DAILY-AUDIT-2026-10-10.md` P1 内存防线追加（声明值口径更新）】（已归档 D:\code\databaseZXYZ\oldmd\）
 > - `redis` 256 MiB → **896 MiB**（reservations 128M → 448M 同步上调；db9 会话防线三件套：896M limit + `maxmemory 512mb` + `noeviction`，详见 docker-compose.yml redis 服务注释）；
@@ -201,8 +201,9 @@
 
 
 > ⚠️ **口径提醒**：448M 那组是 **10 个**（project/im/email/share/file/team/audit/admin/user + gateway），
-> 不是 11 个 —— `frontend-nginx` 是 128M，**不要**并入 448 那组。本表数字由
-> `scripts/` 抽取脚本从 `docker-compose.yml` 实测核算，勿手算。
+> 不是 11 个 —— `frontend-nginx` 是 128M，**不要**并入 448 那组。本表数字**人工逐服务核对**
+> （2026-10-15 订正：此前写「由 `scripts/` 抽取脚本实测核算」——该脚本**不存在**，属假证据形态；
+> 若要自动化可新建一个 limits 抽取脚本（尚未落地），落地前以人工解析 + `docker inspect` 实测为准）。
 
 > **实测前提**：`deploy.resources.limits.memory` 在**非 swarm** 模式下**生效**
 > （`docker inspect` 的 `HostConfig.Memory` 为对应字节数）；同为 `deploy.resources` 下的

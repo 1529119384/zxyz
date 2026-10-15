@@ -42,7 +42,7 @@ conf/**
 DEPLOYMENT.md
 ```
 
-> 58 号 §二.6 / §二.9 白名单补两项的通道归属：`conf/**`（`conf/rabbitmq.conf` 是 rabbitmq 水位线的唯一配置来源，compose bind mount 进容器）与 `DEPLOYMENT.md`（根目录部署指南）都**只进顶层 paths**（lint-config/secret-scan 会跑，消除「改它零检查」盲区），刻意**不进任何 dorny 部署 filter** —— 纯配置/纯文档变更不需要重建任何镜像（与 `docker-compose.dev.yml` 同款通道归属逻辑）。⚠️ 注意：`deploy-on-server.sh` 的同步白名单刻意不含 `conf/`（运行时资产）⇒ 改 `conf/rabbitmq.conf` 后须人工同步到 `/www/zxyz/conf/` 并重启 rabbitmq，自动同步白名单是否扩展见 58 号台账移交项。
+> 58 号 §二.6 / §二.9 白名单补两项的通道归属：`conf/**`（`conf/rabbitmq.conf` 是 rabbitmq 水位线的唯一配置来源，compose bind mount 进容器）与 `DEPLOYMENT.md`（根目录部署指南）都**只进顶层 paths**（lint-config/secret-scan 会跑，消除「改它零检查」盲区），刻意**不进任何 dorny 部署 filter** —— 纯配置/纯文档变更不需要重建任何镜像（与 `docker-compose.dev.yml` 同款通道归属逻辑）。✅ 2026-10-14 收口：`deploy-on-server.sh` 同步白名单**已含** `conf/rabbitmq.conf` 与 `deploy/rabbitmq/enabled_plugins`（mkdir 卫兵 + `synced_conf` 留痕）⇒ conf 变更有自动上线通道；rabbitmq 需重启容器才吃进新配置。
 
 不在此白名单内的文件变更（如 `CLAUDE.md`、`docs/**`）**不触发** workflow。`dorny/paths-filter` 进一步按服务目录判断哪些镜像需要重建。
 
