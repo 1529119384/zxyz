@@ -1,6 +1,7 @@
 package uno.acloud.autoconfig;
 
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -53,8 +54,26 @@ public class MqOutboxAutoConfiguration {
     }
 
     @Bean
-    @ConditionalOnBean(ScheduledAnnotationBeanPostProcessor.class)
-    public MqOutboxRetryScheduler mqOutboxRetryScheduler(MqOutboxPublisher mqOutboxPublisher) {
-        return new MqOutboxRetryScheduler(mqOutboxPublisher);
+    // 60 号收口：与 mqOutboxPublisher 同生共死 —— 测试上下文排除了 RabbitAutoConfiguration
+    // （无 RabbitTemplate）时 publisher 因 @ConditionalOnBean(RabbitTemplate) 不创建，
+    // 而 ScheduledAnnotationBeanPostProcessor 总在 ⇒ scheduler 若只挂 PostProcessor 条件
+    // 就会因缺 MqOutboxPublisher 参数而 NoSuchBean（team IntegrationTest 实证）。
+    @ConditionalOnBean({ScheduledAnnotationBeanPostProcessor.class, RabbitTemplate.class})
+    public MqOutboxRetryScheduler mqOutboxRetryScheduler(
+            ObjectProvider<MqOutboxPublisher> outboxPublisherProvider) {
+        // 60 号收口二轮：参数改 ObjectProvider —— publisher 的 @ConditionalOnBean(RabbitTemplate)
+        // 与 scheduler 的求值顺序在「RabbitTemplate 为 @MockitoBean 替换」的测试上下文里不对称
+        // （先注册者过、后注册者 false），硬参数会在缺 publisher 时直接 NoSuchBean。
+        // 缺失时 scheduler 退化为 no-op（重投循环无对象可驱动 = 开关关闭语义）。
+        MqOutboxPublisher p = outboxPublisherProvider.getIfAvailable();
+        if (p == null) {
+            return new MqOutboxRetryScheduler(new MqOutboxPublisher(null, "disabled") {
+                @Override
+                protected RabbitTemplate rabbitTemplate() {
+                    return null;
+                }
+            });
+        }
+        return new MqOutboxRetryScheduler(p);
     }
 }

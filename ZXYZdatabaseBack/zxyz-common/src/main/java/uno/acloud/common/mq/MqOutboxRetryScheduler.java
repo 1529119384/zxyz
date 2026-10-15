@@ -28,6 +28,9 @@ public class MqOutboxRetryScheduler {
     @Scheduled(fixedDelayString = "${app.mq.outbox.retry-interval-ms:30000}",
             initialDelayString = "${app.mq.outbox.retry-initial-delay-ms:15000}")
     public void retryPendingOutboxEvents() {
+        if (outboxPublisher == null) {
+            return; // 60 号收口：disabled 哨兵（测试上下文无 RabbitTemplate ⇒ publisher 不创建）——直接返回，不碰 redis
+        }
         try {
             int retried = outboxPublisher.retryPending();
             if (retried > 0) {

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.retry.support.RetryTemplate;
 import org.springframework.stereotype.Component;
 import uno.acloud.common.ErrorCode;
@@ -67,6 +68,7 @@ public class TeamEventPublisher {
      */
     private final MqOutboxPublisher outboxPublisher;
 
+    @Autowired
     public TeamEventPublisher(RabbitTemplate rabbitTemplate, ObjectMapper objectMapper,
                               ObjectProvider<MqOutboxPublisher> outboxPublisherProvider) {
         this(rabbitTemplate, objectMapper, outboxPublisherProvider.getIfAvailable());
