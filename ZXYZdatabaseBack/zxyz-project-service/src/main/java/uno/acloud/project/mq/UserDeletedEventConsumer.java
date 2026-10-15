@@ -1,64 +1,30 @@
 package uno.acloud.project.mq;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
-import uno.acloud.common.RabbitMqConstants;
-import uno.acloud.common.event.UserDeletedEvent;
+import uno.acloud.common.mq.MqUserDeletedEventConsumerTemplate;
 import uno.acloud.project.config.RabbitMqConfig;
 import uno.acloud.project.service.ProjectUserCleanupService;
 
 /**
  * 消费用户注销/删除事件，委托给 ProjectUserCleanupService 执行清理。
+ *
+ * <p>消费骨架（事件过滤 + 幂等认领 + try-catch + 日志口径 + 毒消息进 DLQ）已收敛到
+ * {@link MqUserDeletedEventConsumerTemplate}（60 号审计 🟡-5 第 1 组），本类只保留
+ * 队列声明与清理动作委托；幂等三件套语义随 🟠-4 一并统一到 common。</p>
  */
-@Slf4j
 @Component
 public class UserDeletedEventConsumer {
 
-    private final ObjectMapper objectMapper;
-    private final ProjectUserCleanupService cleanupService;
+    private final MqUserDeletedEventConsumerTemplate template;
 
     public UserDeletedEventConsumer(ObjectMapper objectMapper, ProjectUserCleanupService cleanupService) {
-        this.objectMapper = objectMapper;
-        this.cleanupService = cleanupService;
+        this.template = new MqUserDeletedEventConsumerTemplate(objectMapper, cleanupService);
     }
 
     @RabbitListener(queues = RabbitMqConfig.QUEUE_USER_EVENTS)
     public void handleUserEvent(String message) {
-        try {
-            UserDeletedEvent event = objectMapper.readValue(message, UserDeletedEvent.class);
-            String eventType = event.eventType();
-            if (!RabbitMqConstants.ROUTING_KEY_USER_DELETED.equals(eventType)) {
-                log.debug("MQ: 忽略非 user.deleted 事件: eventType={}", eventType);
-                return;
-            }
-
-            long userId = event.userId();
-            String username = event.username();
-
-            if (!cleanupService.tryAcquireIdempotencyKey(userId)) {
-                log.warn("MQ: 重复用户删除事件，跳过处理: userId={}", userId);
-                return;
-            }
-
-            try {
-                log.info("MQ: 开始移除用户项目成员关系: userId={}, username={}", userId, username);
-                cleanupService.removeUserFromProjects(userId);
-                log.info("MQ: 用户项目成员关系移除完成: userId={}, username={}", userId, username);
-            } catch (Exception e) {
-                cleanupService.releaseIdempotencyKey(userId);
-                log.error("处理用户删除事件 RabbitMQ 消息失败（将重试）, userId={}, message={}", userId, message, e);
-                throw new RuntimeException("处理用户删除事件消息失败", e);
-            }
-        } catch (JsonProcessingException e) {
-            log.error("用户删除事件消息反序列化失败（丢弃消息）, message={}", message, e);
-            throw new AmqpRejectAndDontRequeueException("用户删除事件消息反序列化失败", e);
-        } catch (Exception e) {
-            log.error("处理用户删除事件 RabbitMQ 消息失败（将重试）, message={}", message, e);
-            throw new RuntimeException("处理用户删除事件消息失败", e);
-        }
+        template.handleUserEvent(message);
     }
 }

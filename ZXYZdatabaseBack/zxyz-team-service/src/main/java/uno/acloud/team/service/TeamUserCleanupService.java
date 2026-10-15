@@ -6,6 +6,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import uno.acloud.common.TeamRoleCodes;
+import uno.acloud.common.mq.MqUserDeletedCleanupSupport;
+import uno.acloud.common.mq.MqUserDeletedEventConsumerTemplate;
 import uno.acloud.team.entity.Team;
 import uno.acloud.team.mapper.TeamMapper;
 import uno.acloud.team.mapper.TeamPermissionMapper;
@@ -13,14 +15,20 @@ import uno.acloud.team.service.impl.TeamPermissionManager;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
-public class TeamUserCleanupService {
+public class TeamUserCleanupService implements MqUserDeletedEventConsumerTemplate.Cleanup {
 
-    private static final String IDEMPOTENCY_KEY_PREFIX = "mq:idempotent:user:deleted:team:";
-    private static final long IDEMPOTENCY_TTL_HOURS = 24;
+    /**
+     * 幂等键采用两段式（认领键 + done 键，F4），语义见
+     * {@link MqUserDeletedCleanupSupport} —— 60 号审计 🟠-4：此前本类是裸的 24h 占位键，
+     * 清理完成前崩溃会让重投递被占位键压制 24 小时（「半途而废」被误报成「重复事件」，
+     * 该用户的团队成员关系/所有者转让/解散终态全部被跳过）。
+     * 三件套语义已下沉 common，四处消费端统一调用；键前缀保持既有形态，历史键自然过期。
+     */
+    private static final String PROCESSING_KEY_PREFIX = "mq:idempotent:user:deleted:team:processing:";
+    private static final String DONE_KEY_PREFIX = "mq:idempotent:user:deleted:team:done:";
 
     private final TeamMapper teamMapper;
     private final TeamPermissionManager teamPermissionManager;
@@ -152,13 +160,28 @@ public class TeamUserCleanupService {
         }
     }
 
+    /** {@link MqUserDeletedEventConsumerTemplate.Cleanup} 适配：模板统一调 cleanup(long)。 */
+    @Override
+    public void cleanup(long userId) {
+        removeUserFromTeams(userId);
+    }
+
     public boolean tryAcquireIdempotencyKey(long userId) {
-        String key = IDEMPOTENCY_KEY_PREFIX + userId;
-        return redisTemplate.opsForValue().setIfAbsent(key, "1", IDEMPOTENCY_TTL_HOURS, TimeUnit.HOURS);
+        return MqUserDeletedCleanupSupport.tryAcquireIdempotencyKey(
+                redisTemplate, PROCESSING_KEY_PREFIX, DONE_KEY_PREFIX, userId);
+    }
+
+    public void markCleanupCompleted(long userId) {
+        MqUserDeletedCleanupSupport.markCleanupCompleted(
+                redisTemplate, PROCESSING_KEY_PREFIX, DONE_KEY_PREFIX, userId);
+    }
+
+    public boolean isCleanupCompleted(long userId) {
+        return MqUserDeletedCleanupSupport.isCleanupCompleted(redisTemplate, DONE_KEY_PREFIX, userId);
     }
 
     public void releaseIdempotencyKey(long userId) {
-        String key = IDEMPOTENCY_KEY_PREFIX + userId;
-        redisTemplate.delete(key);
+        MqUserDeletedCleanupSupport.releaseIdempotencyKey(
+                redisTemplate, PROCESSING_KEY_PREFIX, userId, log);
     }
 }

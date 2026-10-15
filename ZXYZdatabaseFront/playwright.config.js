@@ -4,8 +4,8 @@
 //   ui-mocked       —— UI 层回归：除浏览器外**不需要任何后端**（后端用 page.route() 打桩）。
 //                      默认自动起本地 dev server；也可用 E2E_LOCAL_BASE_URL 指向已部署环境
 //                      （此时加 E2E_SKIP_LOCAL_SERVER=1 跳过启动，见下方注释）。
-//   smoke-readonly  —— 只读冒烟：打**真实环境**（默认本站生产），**只发 GET**、不登录、不写数据。
-//   smoke-authed    —— 登录态只读冒烟（C-4）：打**真实环境**，用 E2E_USERNAME/E2E_PASSWORD
+//   smoke-readonly  —— 只读冒烟：只发 GET、不登录、不写数据。
+//   smoke-authed    —— 登录态只读冒烟（C-4）：用 E2E_USERNAME/E2E_PASSWORD
 //                      登录拿 HttpOnly Cookie，对白名单端点**只发 GET、只断形状**。
 //                      凭据缺失 → 响亮跳过；E2E_REQUIRE_AUTHED=1 且凭据缺失 → 直接 fail。
 //                      ⚠️ 不进默认 CI：登录端点有 IP+用户名双维度限流（loginRateLimiter），
@@ -13,8 +13,8 @@
 //
 // 用法：
 //   npx playwright test --project=ui-mocked                       # 本机：自动起 dev server
-//   npx playwright test --project=smoke-readonly                  # 只读冒烟（默认打线上主站）
-//   E2E_BASE_URL=http://127.0.0.1:8081 npx playwright test --project=smoke-readonly
+//   npx playwright test --project=smoke-readonly                  # 只读冒烟（默认打本地 dev server）
+//   E2E_BASE_URL=http://<已部署环境>:<端口> npx playwright test --project=smoke-readonly
 //   E2E_USERNAME=... E2E_PASSWORD=... npx playwright test --project=smoke-authed   # 登录态冒烟
 //   npx playwright test --list                                    # 只列用例（不下载浏览器、不联网）
 //
@@ -27,7 +27,10 @@
 import { defineConfig, devices } from '@playwright/test'
 
 const LOCAL_BASE_URL = process.env.E2E_LOCAL_BASE_URL || 'http://127.0.0.1:5173'
-const REMOTE_BASE_URL = process.env.E2E_BASE_URL || 'http://160.202.46.118:8081'
+// 审计 frontend 🟠-2：默认目标此前硬编码为生产 IP（随仓库分发 = 生产 IP 常驻代码库，
+// 扩大侦察面；且「默认打生产」与冒烟用例的低频手动定位相悖）。改为默认本地 dev server，
+// 打已部署环境时显式给 E2E_BASE_URL —— 与 smoke 两个 project 的「按需手动跑」语义一致。
+const REMOTE_BASE_URL = process.env.E2E_BASE_URL || 'http://localhost:5173'
 
 const uiProject = {
   name: 'ui-mocked',

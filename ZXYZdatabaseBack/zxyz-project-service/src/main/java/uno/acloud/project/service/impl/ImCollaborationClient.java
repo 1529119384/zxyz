@@ -41,7 +41,7 @@ public class ImCollaborationClient {
     public Long createProjectConversation(Long projectId, Long teamId, String projectName, Long leaderUserId) {
         try {
             Object response = restClient.post()
-                    .uri("/api/im/projects/conversations")
+                    .uri("/api/internal/im/projects/conversations")
                     .headers(this::internalHeaders)
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_JSON)
@@ -63,7 +63,7 @@ public class ImCollaborationClient {
     public void archiveProjectConversation(Long projectId) {
         try {
             restClient.patch()
-                    .uri("/api/im/projects/{projectId}/archive", projectId)
+                    .uri("/api/internal/im/projects/{projectId}/archive", projectId)
                     .headers(this::internalHeaders)
                     .retrieve()
                     .toBodilessEntity();
@@ -88,7 +88,7 @@ public class ImCollaborationClient {
         body.put("storageLimit", payload.getStorageLimit());
         try {
             restClient.post()
-                    .uri("/api/im/projects/creation-applications/messages")
+                    .uri("/api/internal/im/projects/creation-applications/messages")
                     .headers(this::internalHeaders)
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_JSON)
@@ -108,7 +108,7 @@ public class ImCollaborationClient {
         }
         try {
             restClient.post()
-                    .uri("/api/im/projects/creation-applications/{applicationId}/result-messages", payload.getApplicationId())
+                    .uri("/api/internal/im/projects/creation-applications/{applicationId}/result-messages", payload.getApplicationId())
                     .headers(this::internalHeaders)
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_JSON)

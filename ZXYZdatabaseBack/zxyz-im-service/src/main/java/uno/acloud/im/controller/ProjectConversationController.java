@@ -1,6 +1,6 @@
 package uno.acloud.im.controller;
 
-import cn.dev33.satoken.annotation.SaCheckLogin;
+import io.swagger.v3.oas.annotations.Hidden;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -18,10 +18,20 @@ import uno.acloud.im.dto.ProjectCreateRequestMessageRequest;
 import uno.acloud.im.dto.ProjectCreateRequestReviewResultRequest;
 import uno.acloud.im.vo.ProjectConversationVO;
 
-@SaCheckLogin
+/**
+ * 项目会话内部端点（仅限服务间调用）。
+ *
+ * <p>60 号 🟠-1 收口：本组端点的唯一调用方是 project-service 的 {@code ImCollaborationClient}
+ * （前端对 /api/im/projects/** 零引用，已 grep 核实），设计上就不该暴露在登录态通道。
+ * 原挂在 /api/im/projects/** 下仅有 @SaCheckLogin，任意登录用户可伪造项目申请消息、
+ * 归档/创建任意项目会话；现迁移至 /api/internal/im/projects/**，由
+ * {@code ImHttpAuthInterceptor} 的内部前缀判断接管（X-Internal-Service-Token +
+ * X-Internal-Caller-Service 白名单矩阵，fail-closed），Sa-Token 拦截器对该前缀豁免。</p>
+ */
+@Hidden
 @RestController
-@RequestMapping("/api/im/projects")
-@Tag(name = "项目会话", description = "项目专属会话与创建申请消息")
+@RequestMapping("/api/internal/im/projects")
+@Tag(name = "项目会话（内部）", description = "项目专属会话与创建申请消息（仅服务间调用）")
 public class ProjectConversationController {
 
     private final ProjectConversationService projectConversationService;
@@ -57,7 +67,7 @@ public class ProjectConversationController {
     @Log
     @PostMapping("/creation-applications/{applicationId}/result-messages")
     public Result<Void> appendProjectCreateRequestResultMessage(@PathVariable Long applicationId,
-                                                                 @Valid @RequestBody ProjectCreateRequestReviewResultRequest request) {
+                                                                @Valid @RequestBody ProjectCreateRequestReviewResultRequest request) {
         projectConversationService.appendProjectCreateRequestResultMessage(applicationId, request);
         return Result.success();
     }

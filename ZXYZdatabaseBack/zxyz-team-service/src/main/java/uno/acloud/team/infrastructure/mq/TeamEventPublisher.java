@@ -3,9 +3,11 @@ package uno.acloud.team.infrastructure.mq;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.retry.support.RetryTemplate;
 import org.springframework.stereotype.Component;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.mq.MqOutboxPublisher;
 import uno.acloud.common.mq.MqRetryTemplateFactory;
 import uno.acloud.common.RabbitMqConstants;
 import uno.acloud.common.event.TeamCreatedEvent;
@@ -57,10 +59,24 @@ public class TeamEventPublisher {
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
     private final RetryTemplate retryTemplate;
+    /**
+     * 60 号审计 🟠-2：领域事件 outbox —— afterCommit 发布重试耗尽后，事件落入 Redis outbox
+     * 由 {@code MqOutboxRetryScheduler} 补偿重发，不再只是 log.error 后永久丢失。
+     * {@code app.mq.outbox.enabled} 未开启（或本测试环境无 Bean）时为 null，行为退化为
+     * 既有「失败抛 BusinessException」口径。
+     */
+    private final MqOutboxPublisher outboxPublisher;
 
-    public TeamEventPublisher(RabbitTemplate rabbitTemplate, ObjectMapper objectMapper) {
+    public TeamEventPublisher(RabbitTemplate rabbitTemplate, ObjectMapper objectMapper,
+                              ObjectProvider<MqOutboxPublisher> outboxPublisherProvider) {
+        this(rabbitTemplate, objectMapper, outboxPublisherProvider.getIfAvailable());
+    }
+
+    TeamEventPublisher(RabbitTemplate rabbitTemplate, ObjectMapper objectMapper,
+                       MqOutboxPublisher outboxPublisher) {
         this.rabbitTemplate = rabbitTemplate;
         this.objectMapper = objectMapper;
+        this.outboxPublisher = outboxPublisher;
         this.retryTemplate = MqRetryTemplateFactory.createDefault(getClass().getName());
     }
 
@@ -125,6 +141,12 @@ public class TeamEventPublisher {
             });
         } catch (Exception e) {
             log.error("发布团队事件失败（已重试{}次）: routingKey={}", MAX_RETRY_ATTEMPTS, routingKey, e);
+            // 60 号审计 🟠-2：重试耗尽后落 Redis outbox 等定时补偿重发（不再是纯 log.error 永久丢失）。
+            // enqueue 自身吞 Redis 异常；此处无论 outbox 是否成功都继续抛，保持调用方（afterCommit）
+            // 的既有可观测口径不变。
+            if (outboxPublisher != null) {
+                outboxPublisher.enqueue(routingKey, json);
+            }
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "MQ事件发布失败: " + routingKey);
         }
     }

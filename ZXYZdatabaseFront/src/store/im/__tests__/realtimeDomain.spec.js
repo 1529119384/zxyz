@@ -71,6 +71,8 @@ function createDomain() {
     }),
     isConversationEffectivelyVisible: vi.fn(() => false),
     loadConversationMessages: vi.fn(() => Promise.resolve([])),
+    loadConversations: vi.fn(() => Promise.resolve([])),
+    loadUnreadCount: vi.fn(() => Promise.resolve(0)),
     mergeConversationMessage: vi.fn(),
     markBucketChanged: vi.fn(),
     scheduleReadSync: vi.fn(),
@@ -608,6 +610,90 @@ describe('realtimeDomain', () => {
       onStatusChangeHandler(IM_WS_STATUS.CONNECTED)
       expect(state.wsStatus.value).toBe(IM_WS_STATUS.CONNECTED)
       expect(deps.syncConversationMessages).toHaveBeenCalled()
+    })
+
+    it('重连成功（非 CONNECTED → CONNECTED）时全量刷新会话列表与系统通知未读数（审计 frontend 🟠-1）', () => {
+      const { state, deps, domain } = createDomain()
+      connect(domain)
+      state.wsStatus.value = IM_WS_STATUS.DISCONNECTED
+      onStatusChangeHandler(IM_WS_STATUS.CONNECTED)
+      expect(deps.loadConversations).toHaveBeenCalledTimes(1)
+      expect(deps.loadUnreadCount).toHaveBeenCalledTimes(1)
+    })
+
+    it('重复 CONNECTED 回调（previousStatus 已是 CONNECTED）不重复触发全量刷新', () => {
+      const { deps, domain } = createDomain()
+      connect(domain)
+      onStatusChangeHandler(IM_WS_STATUS.CONNECTED)
+      onStatusChangeHandler(IM_WS_STATUS.CONNECTED)
+      expect(deps.loadConversations).toHaveBeenCalledTimes(1)
+      expect(deps.loadUnreadCount).toHaveBeenCalledTimes(1)
+    })
+
+    it('非 CONNECTED 状态回调不触发全量刷新', () => {
+      const { deps, domain } = createDomain()
+      connect(domain)
+      onStatusChangeHandler(IM_WS_STATUS.RECONNECTING)
+      onStatusChangeHandler(IM_WS_STATUS.CONNECTION_ERROR)
+      onStatusChangeHandler(IM_WS_STATUS.DISCONNECTED)
+      expect(deps.loadConversations).not.toHaveBeenCalled()
+      expect(deps.loadUnreadCount).not.toHaveBeenCalled()
+    })
+
+    it('deps 未注入 loadConversations/loadUnreadCount 时重连不报错（向后兼容）', () => {
+      const { domain } = createDomain()
+      connect(domain)
+      // 模拟旧调用方（未注入两个新 deps）——通过新建一个不含新 deps 的 domain 验证
+      const bare = createRealtimeDomain(
+        {
+          wsStatus: ref(IM_WS_STATUS.DISCONNECTED),
+          lastPongTime: ref(null),
+          lastWsError: ref(null),
+          myPresence: ref(null),
+          conversations: ref([]),
+          activeConversationId: ref(null),
+        },
+        {
+          clearReadSyncTimers: vi.fn(),
+          ensureMessageBucket: vi.fn(() => []),
+          isConversationEffectivelyVisible: vi.fn(() => false),
+          loadConversationMessages: vi.fn(() => Promise.resolve([])),
+          mergeConversationMessage: vi.fn(),
+          markBucketChanged: vi.fn(),
+          scheduleReadSync: vi.fn(),
+          syncConversationMessages: vi.fn(() => Promise.resolve([])),
+          touchConversation: vi.fn(),
+          updateConversationUnread: vi.fn(),
+          updatePendingMessageStatus: vi.fn(),
+        },
+      )
+      bare.ensureWebSocketConnected()
+      expect(() => onStatusChangeHandler(IM_WS_STATUS.CONNECTED)).not.toThrow()
+      void domain
+    })
+
+    it('loadConversations 失败时记录 lastWsError 且不影响连接状态', async () => {
+      const { state, deps, domain } = createDomain()
+      connect(domain)
+      state.wsStatus.value = IM_WS_STATUS.DISCONNECTED
+      deps.loadConversations.mockReturnValue(Promise.reject(new Error('会话列表刷新失败')))
+      onStatusChangeHandler(IM_WS_STATUS.CONNECTED)
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(state.lastWsError.value).toBe('会话列表刷新失败')
+      expect(state.wsStatus.value).toBe(IM_WS_STATUS.CONNECTED)
+    })
+
+    it('loadUnreadCount 失败时记录 lastWsError 且不影响连接状态', async () => {
+      const { state, deps, domain } = createDomain()
+      connect(domain)
+      state.wsStatus.value = IM_WS_STATUS.DISCONNECTED
+      deps.loadUnreadCount.mockReturnValue(Promise.reject(new Error('未读数刷新失败')))
+      onStatusChangeHandler(IM_WS_STATUS.CONNECTED)
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(state.lastWsError.value).toBe('未读数刷新失败')
+      expect(state.wsStatus.value).toBe(IM_WS_STATUS.CONNECTED)
     })
 
     it('syncConversationMessages 失败时记录 lastWsError', async () => {

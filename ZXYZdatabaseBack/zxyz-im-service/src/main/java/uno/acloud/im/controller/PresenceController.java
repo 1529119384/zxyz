@@ -7,7 +7,9 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import uno.acloud.common.ErrorCode;
 import uno.acloud.common.Result;
+import uno.acloud.exception.BusinessException;
 import uno.acloud.im.application.UserPresenceService;
 import uno.acloud.im.config.ImAuthContext;
 import uno.acloud.im.vo.UserPresenceVO;
@@ -20,6 +22,9 @@ import java.util.List;
 @RequestMapping("/api/im/presence")
 @Tag(name = "在线状态", description = "用户在线状态查询")
 public class PresenceController {
+
+    /** 单次批量探测的 ID 上限（60 号 🟡-1）：抑制资源消耗与批量画像面。 */
+    static final int MAX_USER_IDS_PER_REQUEST = 20;
 
     private final UserPresenceService userPresenceService;
 
@@ -41,6 +46,10 @@ public class PresenceController {
                 .filter(value -> !value.isEmpty())
                 .map(Long::valueOf)
                 .toList();
-        return Result.of(userPresenceService.listPresence(parsedUserIds));
+        if (parsedUserIds.size() > MAX_USER_IDS_PER_REQUEST) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                    "单次最多查询 " + MAX_USER_IDS_PER_REQUEST + " 个用户的在线状态");
+        }
+        return Result.of(userPresenceService.listPresence(ImAuthContext.currentUserId(), parsedUserIds));
     }
 }

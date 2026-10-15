@@ -8,3 +8,4 @@ uno.acloud.autoconfig.TeamPermissionCacheAutoConfiguration
 uno.acloud.satoken.RemoteStpInterfaceAutoConfig
 uno.acloud.autoconfig.MqRecovererAutoConfiguration
 uno.acloud.autoconfig.AuditBufferRetryAutoConfiguration
+uno.acloud.autoconfig.MqOutboxAutoConfiguration

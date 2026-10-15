@@ -48,7 +48,9 @@ mybatis:
 im:
   invite-link:
     default-expire-hours: 24
-    default-max-uses: 0
+    # 60 号 🟡-6：默认签发的邀请链接 24h 内最多 50 次使用（超限后加入申请被拒，
+    # 复用既有「邀请链接无效」语义）；管理员仍可显式传 maxUses 覆盖。
+    default-max-uses: 50
   netty:
     enabled: true
     websocket-path: /ws

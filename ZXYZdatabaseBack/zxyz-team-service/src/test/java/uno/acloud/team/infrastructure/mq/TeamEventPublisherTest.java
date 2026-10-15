@@ -34,7 +34,8 @@ class TeamEventPublisherTest {
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper();
-        publisher = new TeamEventPublisher(rabbitTemplate, objectMapper);
+        // 测试不提供 outbox（null 路径 = 既有行为：失败抛 BusinessException），outbox 行为单测在 zxyz-common
+        publisher = new TeamEventPublisher(rabbitTemplate, objectMapper, (uno.acloud.common.mq.MqOutboxPublisher) null);
     }
 
     // ==================== publishTeamCreated — success on first attempt ====================

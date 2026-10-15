@@ -32,6 +32,8 @@ export function createRealtimeDomain(state, deps) {
     ensureMessageBucket,
     isConversationEffectivelyVisible,
     loadConversationMessages,
+    loadConversations,
+    loadUnreadCount,
     mergeConversationMessage,
     markBucketChanged,
     scheduleReadSync,
@@ -247,6 +249,24 @@ export function createRealtimeDomain(state, deps) {
               logger.warn('[realtimeDomain] syncConversationMessages failed:', error)
               lastWsError.value = error?.message || String(error)
             })
+            // 审计 frontend 🟠-1：断连期只对当前激活会话做了增量补拉
+            // （syncConversationMessages 默认取 activeConversationId），**其他**会话在断连期
+            // 收到的消息不产生 MESSAGE_RECEIVED 也不补拉 ⇒ 未读数/排序在长连接存续期内
+            // 停留在断连前的旧值，直到下次切团队/重进页面才被服务端校准，用户感知「丢消息」。
+            // 重连成功后全量刷新会话列表（服务端未读数为真源，conversationDomain 自带
+            // 过期响应令牌防竞态）与系统通知未读数；失败只记 lastWsError，不影响连接状态。
+            if (loadConversations) {
+              loadConversations().catch((error) => {
+                logger.warn('[realtimeDomain] loadConversations failed:', error)
+                lastWsError.value = error?.message || String(error)
+              })
+            }
+            if (loadUnreadCount) {
+              loadUnreadCount().catch((error) => {
+                logger.warn('[realtimeDomain] loadUnreadCount failed:', error)
+                lastWsError.value = error?.message || String(error)
+              })
+            }
             return
           }
           // 不在断连时立即失败所有待发任务，保留它们等待重连后重试

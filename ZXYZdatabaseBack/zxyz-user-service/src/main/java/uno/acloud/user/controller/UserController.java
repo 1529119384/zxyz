@@ -141,7 +141,7 @@ public class UserController {
             return Result.of("注册成功");
         }
 
-        log.error("用户 {} 注册失败", request.getUsername());
+        log.error("用户 {} 注册失败", LogMaskingUtil.maskUsername(request.getUsername()));
         throw new BusinessException(ErrorCode.SYSTEM_ERROR, "注册失败");
     }
 

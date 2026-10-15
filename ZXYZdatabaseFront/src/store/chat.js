@@ -94,6 +94,12 @@ export const useChatStore = defineStore('chat', () => {
       conversationDomain.isConversationEffectivelyVisible(conversationId),
     loadConversationMessages: (conversationId, params) =>
       conversationDomain.loadConversationMessages(conversationId, params),
+    // 审计 frontend 🟠-1：重连成功后除激活会话增量补拉外，还需全量刷新会话列表与
+    // 系统通知未读数（断连期其他会话的消息不产生 MESSAGE_RECEIVED，无此刷新则
+    // 未读/排序停在断连前旧值）。deps 缺省 undefined ⇒ realtimeDomain 侧跳过，
+    // 既有单测无需为未注入场景新增 mock。
+    loadConversations: (teamId) => conversationDomain.loadConversations(teamId),
+    loadUnreadCount: (teamId) => notificationDomain.loadUnreadCount(teamId),
     mergeConversationMessage: (conversationId, messageLike) =>
       conversationDomain.mergeConversationMessage(conversationId, messageLike),
     scheduleReadSync: (conversationId) => conversationDomain.scheduleReadSync(conversationId),

@@ -47,7 +47,8 @@ class TeamEventPublisherContractTest {
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper().findAndRegisterModules();
-        publisher = new TeamEventPublisher(rabbitTemplate, objectMapper);
+        // 测试不提供 outbox（null 路径 = 既有行为），outbox 行为单测在 zxyz-common 的 MqOutboxPublisherTest
+        publisher = new TeamEventPublisher(rabbitTemplate, objectMapper, (uno.acloud.common.mq.MqOutboxPublisher) null);
     }
 
     private Team team(long id, String name) {

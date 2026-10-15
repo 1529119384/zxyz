@@ -79,15 +79,14 @@ class MqConsumerTestDeserializationGuardTest {
      * <p>格式：{@code 模块名 → 测试文件相对模块根的路径}。</p>
      * <p><b>⚠️ 修复权归属</b>：修复归各服务代理/Lead（54 号批次分工），不归本门禁；
      * 修复完成（改为真实 mapper）后<b>必须</b>从此处移除对应条目，否则陈旧豁免断言会红。</p>
+     * <p><b>2026-10-15 更新（60 号审计 🟠-4/🟡-5）</b>：file/project/share 三份
+     * {@code UserDeletedEventConsumerTest} 已改为真实 mapper（消费骨架收敛到
+     * {@code MqUserDeletedEventConsumerTemplate}），条目按门禁要求移除。</p>
      */
     private static final Map<String, Set<String>> GRANDFATHERED_MOCK_MAPPER_TESTS = Map.of(
-            "zxyz-file-service", Set.of(
-                    "src/test/java/uno/acloud/file/mq/UserDeletedEventConsumerTest.java"),
             "zxyz-project-service", Set.of(
-                    "src/test/java/uno/acloud/project/mq/UserDeletedEventConsumerTest.java",
                     "src/test/java/uno/acloud/project/mq/StorageCacheInvalidationConsumerTest.java"),
             "zxyz-share-service", Set.of(
-                    "src/test/java/uno/acloud/share/mq/UserDeletedEventConsumerTest.java",
                     "src/test/java/uno/acloud/share/mq/UserProfileUpdatedEventConsumerTest.java"));
     // 历史：2026-10-11 盘点时本名单还含 zxyz-team-service 的 UserDeletedEventConsumerTest
     // （team 代理当轮并行修复为真实 mapper 后，陈旧豁免断言自动变红，条目已按门禁要求移除）。

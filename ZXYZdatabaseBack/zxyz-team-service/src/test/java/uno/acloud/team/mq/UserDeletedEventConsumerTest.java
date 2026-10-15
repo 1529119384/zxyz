@@ -13,15 +13,20 @@ import uno.acloud.common.RabbitMqConstants;
 import uno.acloud.common.event.UserDeletedEvent;
 import uno.acloud.team.service.TeamUserCleanupService;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 /**
- * 54 号 §2.3 A1/A4 修复：旧版把 {@link ObjectMapper} 整个 mock（「测试补上运行时缺的东西」
- * 第 5 类假证据）—— 事件反序列化能力零验证，事件 record 加字段时全链静默炸。
- * 现改为真实配置 mapper（findAndRegisterModules，与生产 Boot 自动配置同向）+ 真实 JSON 样例
- * 往返断言 + 毒消息路径（坏 JSON → AmqpRejectAndDontRequeueException 进 DLQ）。
+ * team 消费端测试：消费骨架已收敛到 {@code MqUserDeletedEventConsumerTemplate}
+ * （60 号审计 🟠-4/🟡-5），本类钉住「委托转发 + 幂等三件套语义」在 team 侧生效。
+ * 真实 mapper（findAndRegisterModules，与生产 Boot 自动配置同向），不再 mock ObjectMapper。
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -30,15 +35,16 @@ class UserDeletedEventConsumerTest {
     @Mock
     private TeamUserCleanupService cleanupService;
 
-    private ObjectMapper objectMapper;
     private UserDeletedEventConsumer consumer;
 
     @BeforeEach
     void setUp() {
         // 真实 mapper，不再 mock —— 反序列化走的是 Jackson 真实路径
-        objectMapper = new ObjectMapper().findAndRegisterModules();
-        consumer = new UserDeletedEventConsumer(objectMapper, cleanupService);
+        consumer = new UserDeletedEventConsumer(new ObjectMapper().findAndRegisterModules(), cleanupService);
     }
+
+    private static final String DELETED_JSON =
+            "{\"eventType\":\"user.deleted\",\"version\":1,\"timestamp\":1700000000000,\"userId\":1,\"username\":\"test\"}";
 
     // ==================== wire 契约：发布端 record ↔ 消费端真实 JSON 往返 ====================
 
@@ -48,10 +54,11 @@ class UserDeletedEventConsumerTest {
      */
     @Test
     void wireContract_publisherPayload_roundTripsThroughRealMapper() throws Exception {
+        ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
         UserDeletedEvent published = UserDeletedEvent.of(42L, "张三");
 
-        String json = objectMapper.writeValueAsString(published);
-        UserDeletedEvent consumed = objectMapper.readValue(json, UserDeletedEvent.class);
+        String json = mapper.writeValueAsString(published);
+        UserDeletedEvent consumed = mapper.readValue(json, UserDeletedEvent.class);
 
         assertEquals(published, consumed, "事件 record 必须可无损往返（含 eventType/version/timestamp 默认值补全）");
         assertEquals(RabbitMqConstants.ROUTING_KEY_USER_DELETED, consumed.eventType());
@@ -63,41 +70,38 @@ class UserDeletedEventConsumerTest {
     // ==================== 正常消费路径 ====================
 
     @Test
-    void handleUserEvent_validEvent_callsCleanup() {
-        String json = "{\"eventType\":\"user.deleted\",\"version\":1,\"timestamp\":1700000000000,\"userId\":1,\"username\":\"test\"}";
-
+    void handleUserEvent_validEvent_callsCleanupAndMarksCompleted() {
         when(cleanupService.tryAcquireIdempotencyKey(1L)).thenReturn(true);
 
-        consumer.handleUserEvent(json);
+        consumer.handleUserEvent(DELETED_JSON);
 
-        verify(cleanupService).removeUserFromTeams(1L);
+        verify(cleanupService).cleanup(1L);
+        verify(cleanupService).markCleanupCompleted(1L);
         verify(cleanupService, never()).releaseIdempotencyKey(anyLong());
     }
 
     @Test
-    void handleUserEvent_duplicateEvent_skipsProcessing() {
-        String json = "{\"eventType\":\"user.deleted\",\"version\":1,\"timestamp\":1700000000000,\"userId\":1,\"username\":\"test\"}";
-
+    void handleUserEvent_duplicateAlreadyCompleted_skipsProcessing() {
         when(cleanupService.tryAcquireIdempotencyKey(1L)).thenReturn(false);
+        when(cleanupService.isCleanupCompleted(1L)).thenReturn(true);
 
-        consumer.handleUserEvent(json);
+        assertDoesNotThrow(() -> consumer.handleUserEvent(DELETED_JSON));
 
-        verify(cleanupService, never()).removeUserFromTeams(anyLong());
+        verify(cleanupService, never()).cleanup(anyLong());
         verify(cleanupService, never()).releaseIdempotencyKey(anyLong());
     }
 
     @Test
     void handleUserEvent_cleanupThrows_releasesKeyAndRethrows() {
-        String json = "{\"eventType\":\"user.deleted\",\"version\":1,\"timestamp\":1700000000000,\"userId\":1,\"username\":\"test\"}";
-
         when(cleanupService.tryAcquireIdempotencyKey(1L)).thenReturn(true);
-        doThrow(new RuntimeException("DB error")).when(cleanupService).removeUserFromTeams(1L);
+        doThrow(new RuntimeException("DB error")).when(cleanupService).cleanup(1L);
 
-        RuntimeException ex = assertThrows(RuntimeException.class, () -> consumer.handleUserEvent(json));
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> consumer.handleUserEvent(DELETED_JSON));
         assertEquals("处理用户删除事件消息失败", ex.getMessage());
 
-        // 业务失败释放幂等键，让 MQ 重投时能重新处理
+        // 业务失败释放幂等键，让 MQ 重投时能重新处理；失败路径绝不写 done
         verify(cleanupService).releaseIdempotencyKey(1L);
+        verify(cleanupService, never()).markCleanupCompleted(anyLong());
     }
 
     // ==================== 毒消息路径（A4 明确要求） ====================
@@ -106,9 +110,7 @@ class UserDeletedEventConsumerTest {
     void handleUserEvent_invalidJson_throwsAmqpRejectAndDontRequeue() {
         // 坏 JSON 走真实 mapper：反序列化失败 → AmqpRejectAndDontRequeueException → 进 DLQ，
         // 不允许 log-and-return（静默 ACK 毒消息）
-        String poison = "{bad json";
-
-        assertThrows(AmqpRejectAndDontRequeueException.class, () -> consumer.handleUserEvent(poison));
+        assertThrows(AmqpRejectAndDontRequeueException.class, () -> consumer.handleUserEvent("{bad json"));
 
         verifyNoInteractions(cleanupService);
     }
@@ -126,12 +128,11 @@ class UserDeletedEventConsumerTest {
     @Test
     void handleUserEvent_nonDeleteEvent_ignored() {
         // 事件体反序列化成功但 eventType 非 user.deleted：按设计忽略（不占用幂等键）
-        String json = "{\"eventType\":\"user.registered\",\"version\":1,\"timestamp\":1700000000000,\"userId\":1,\"username\":\"test\"}";
-
-        consumer.handleUserEvent(json);
+        consumer.handleUserEvent(
+                "{\"eventType\":\"user.registered\",\"version\":1,\"timestamp\":1700000000000,\"userId\":1,\"username\":\"test\"}");
 
         verify(cleanupService, never()).tryAcquireIdempotencyKey(anyLong());
-        verify(cleanupService, never()).removeUserFromTeams(anyLong());
+        verify(cleanupService, never()).cleanup(anyLong());
         verify(cleanupService, never()).releaseIdempotencyKey(anyLong());
     }
 }

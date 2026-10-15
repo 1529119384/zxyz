@@ -52,6 +52,12 @@ app:
       lockout-minutes: 30
   team-service:
     base-url: ${TEAM_SERVICE_BASE_URL:http://zxyz-team-service}
+  # 60 号审计 🟠-2：领域事件 outbox —— user.deleted 发布重试耗尽后事件落 Redis（mq:outbox:*，TTL 24h），
+  # 由 MqOutboxRetryScheduler（30s 一轮）补偿重发，不再 log.error 后永久丢失。
+  # 残余风险（登记）：Redis 与 RabbitMQ 同时不可用且实例宕机 ⇒ 仍会丢，DB outbox 表为后续项。
+  mq:
+    outbox:
+      enabled: true
   email-service:
     base-url: ${EMAIL_SERVICE_BASE_URL:http://zxyz-email-service}
   verification:

@@ -4,47 +4,27 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import uno.acloud.file.infrastructure.entity.FileNode;
+import uno.acloud.common.mq.MqUserDeletedCleanupSupport;
+import uno.acloud.common.mq.MqUserDeletedEventConsumerTemplate;
 import uno.acloud.file.infrastructure.mapper.FileMapper;
-import uno.acloud.file.infrastructure.mapper.FileObjectRefMapper;
 import uno.acloud.file.service.impl.FileObjectReferenceManager;
 
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
-public class FileUserCleanupService {
+public class FileUserCleanupService implements MqUserDeletedEventConsumerTemplate.Cleanup {
 
     /**
-     * 幂等键采用<b>两段式</b>（F4，P2），刻意拆成「处理中」与「已完成」两个键：
-     *
-     * <ul>
-     *   <li>{@code …:processing:} —— 短 TTL（{@value #PROCESSING_TTL_MINUTES} 分钟），
-     *       表示「本次清理正在进行」。进程在清理完成前崩溃时，它会在短 TTL 后<b>自然过期</b>，
-     *       后续重投递得以重新接管执行；</li>
-     *   <li>{@code …:done:} —— 长 TTL（{@value #DONE_TTL_HOURS} 小时），只在清理<b>真正成功</b>后写入，
-     *       负责把重复投递拦在真正的「已完成」语义上。</li>
-     * </ul>
-     *
-     * <h2>为什么必须拆开（修复前的缺陷）</h2>
-     * <p>旧实现只有一个 24 小时的键，且它是「<b>认领</b>」而非「完成」的标记：
-     * {@code setIfAbsent} 成功后进程若在清理跑完前崩溃，键会<b>残留整整 24 小时</b>，
-     * 期间所有重投递都命中「重复用户删除事件，跳过」，日志还把「半途而废」误报成「重复事件」
-     * ⇒ 该用户的个人空间文件最长 24 小时清不掉，且运维从日志上看不出异常。</p>
-     * <p>拆开后，崩溃场景的恢复窗口从「最长 24 小时」缩短到
-     * {@value #PROCESSING_TTL_MINUTES} 分钟，而「真正已完成」的语义仍由长 TTL 的 done 键守住。</p>
+     * 幂等键采用<b>两段式</b>（F4，P2），语义与 TTL 见
+     * {@link MqUserDeletedCleanupSupport} —— 三件套已下沉 common 统一实现
+     * （60 号审计 🟠-4：本服务是范本，project/share/team 已同步收敛到同一实现）。
+     * 键前缀保持本服务既有形态（:processing: / :done:），历史键自然过期。
      */
-    private static final String IDEMPOTENCY_KEY_PREFIX = "mq:idempotent:user:deleted:file:processing:";
+    private static final String PROCESSING_KEY_PREFIX = "mq:idempotent:user:deleted:file:processing:";
 
     /** 已完成标记键前缀（长 TTL，只在清理成功后写入）。 */
     private static final String COMPLETED_KEY_PREFIX = "mq:idempotent:user:deleted:file:done:";
-
-    /** 处理中键的短 TTL（分钟）：崩溃后最多这么久就能被重投递接管。 */
-    private static final long PROCESSING_TTL_MINUTES = 10;
-
-    /** 已完成键的长 TTL（小时）：真正的重复投递在此窗口内被跳过。 */
-    private static final long DONE_TTL_HOURS = 24;
 
     private final FileMapper fileMapper;
     private final FileObjectReferenceManager fileObjectReferenceManager;
@@ -84,21 +64,24 @@ public class FileUserCleanupService {
         }
     }
 
+    /** {@link MqUserDeletedEventConsumerTemplate.Cleanup} 适配：模板统一调 cleanup(long)。 */
+    @Override
+    public void cleanup(long userId) {
+        cleanupUserPersonalFiles(userId);
+    }
+
     /**
      * 认领本次清理。返回 {@code false} 有两种成因，语义都是「本次不要再跑」：
      * <ol>
      *   <li>{@code done} 键存在 ⇒ 该用户的清理<b>已真正完成</b>（正常的重复投递）；</li>
      *   <li>{@code processing} 键仍在 ⇒ 另一个消费者正在处理（并发投递），或上一个消费者
-     *       崩溃后短 TTL 尚未过期 —— 后者最多 {@value #PROCESSING_TTL_MINUTES} 分钟后即可重试。</li>
+     *       崩溃后短 TTL 尚未过期 —— 后者最多 {@link MqUserDeletedCleanupSupport#PROCESSING_TTL_MINUTES}
+     *       分钟后即可重试。</li>
      * </ol>
      */
     public boolean tryAcquireIdempotencyKey(long userId) {
-        if (isCleanupCompleted(userId)) {
-            return false;
-        }
-        Boolean acquired = stringRedisTemplate.opsForValue()
-                .setIfAbsent(processingKey(userId), "1", PROCESSING_TTL_MINUTES, TimeUnit.MINUTES);
-        return Boolean.TRUE.equals(acquired);
+        return MqUserDeletedCleanupSupport.tryAcquireIdempotencyKey(
+                stringRedisTemplate, PROCESSING_KEY_PREFIX, COMPLETED_KEY_PREFIX, userId);
     }
 
     /**
@@ -107,25 +90,19 @@ public class FileUserCleanupService {
      * 重复投递会重新执行一遍清理（虽然幂等，但白跑一次；此处保持「宁可多跑不可漏清」之外的更优顺序）。</p>
      */
     public void markCleanupCompleted(long userId) {
-        stringRedisTemplate.opsForValue().set(completedKey(userId), "1", DONE_TTL_HOURS, TimeUnit.HOURS);
-        releaseIdempotencyKey(userId);
+        MqUserDeletedCleanupSupport.markCleanupCompleted(
+                stringRedisTemplate, PROCESSING_KEY_PREFIX, COMPLETED_KEY_PREFIX, userId);
     }
 
     /** 该用户的清理是否已真正完成（供消费者区分「已完成」与「处理中」以便日志准确）。 */
     public boolean isCleanupCompleted(long userId) {
-        return Boolean.TRUE.equals(stringRedisTemplate.hasKey(completedKey(userId)));
+        return MqUserDeletedCleanupSupport.isCleanupCompleted(
+                stringRedisTemplate, COMPLETED_KEY_PREFIX, userId);
     }
 
     /** 释放「处理中」认领（失败回滚路径）。 */
     public void releaseIdempotencyKey(long userId) {
-        stringRedisTemplate.delete(processingKey(userId));
-    }
-
-    private String processingKey(long userId) {
-        return IDEMPOTENCY_KEY_PREFIX + userId;
-    }
-
-    private String completedKey(long userId) {
-        return COMPLETED_KEY_PREFIX + userId;
+        MqUserDeletedCleanupSupport.releaseIdempotencyKey(
+                stringRedisTemplate, PROCESSING_KEY_PREFIX, userId, log);
     }
 }

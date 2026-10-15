@@ -3,9 +3,11 @@ package uno.acloud.user.infrastructure.mq;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.retry.support.RetryTemplate;
 import org.springframework.stereotype.Component;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.mq.MqOutboxPublisher;
 import uno.acloud.common.mq.MqRetryTemplateFactory;
 import uno.acloud.common.RabbitMqConstants;
 import uno.acloud.common.event.UserDeletedEvent;
@@ -17,6 +19,10 @@ import uno.acloud.exception.BusinessException;
  *
  * <p>使用 {@link UserProfileUpdatedEvent} 结构化事件 record 替代 HashMap，
  * 携带 eventType/version/timestamp 元数据。</p>
+ *
+ * <p>60 号审计 🟠-2：发布重试耗尽后，事件落 Redis outbox（{@link MqOutboxPublisher}）
+ * 由定时补偿器重发，不再只是 log.error 后永久丢失；{@code app.mq.outbox.enabled}
+ * 未开启时为 null，行为退化为既有「失败抛 BusinessException」口径。</p>
  */
 @Slf4j
 @Component
@@ -27,10 +33,13 @@ public class UserEventPublisher {
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
     private final RetryTemplate retryTemplate;
+    private final MqOutboxPublisher outboxPublisher;
 
-    public UserEventPublisher(RabbitTemplate rabbitTemplate, ObjectMapper objectMapper) {
+    public UserEventPublisher(RabbitTemplate rabbitTemplate, ObjectMapper objectMapper,
+                              ObjectProvider<MqOutboxPublisher> outboxPublisherProvider) {
         this.rabbitTemplate = rabbitTemplate;
         this.objectMapper = objectMapper;
+        this.outboxPublisher = outboxPublisherProvider.getIfAvailable();
         this.retryTemplate = MqRetryTemplateFactory.createDefault(getClass().getName());
     }
 
@@ -59,6 +68,7 @@ public class UserEventPublisher {
 
     /**
      * 发布用户注销/删除事件，供下游服务清理数据。
+     * <p>重试耗尽后落 Redis outbox 等定时补偿重发（60 号审计 🟠-2）。</p>
      */
     public void publishUserDeleted(Long userId, String username) {
         UserDeletedEvent event = UserDeletedEvent.of(userId, username);
@@ -76,6 +86,9 @@ public class UserEventPublisher {
             });
         } catch (Exception e) {
             log.error("发布用户删除事件失败（已重试{}次）: userId={}", MAX_RETRY_ATTEMPTS, userId, e);
+            if (outboxPublisher != null) {
+                outboxPublisher.enqueue(RabbitMqConstants.ROUTING_KEY_USER_DELETED, json);
+            }
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "MQ事件发布失败: " + RabbitMqConstants.ROUTING_KEY_USER_DELETED);
         }
     }

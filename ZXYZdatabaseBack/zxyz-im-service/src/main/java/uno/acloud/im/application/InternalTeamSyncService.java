@@ -1,12 +1,14 @@
 package uno.acloud.im.application;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import uno.acloud.common.ErrorCode;
 import uno.acloud.common.TeamErrorCode;
 import uno.acloud.common.TeamRoleCodes;
+import uno.acloud.common.util.TransactionUtils;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.im.domain.enums.ConversationType;
 import uno.acloud.common.TeamMemberStatus;
@@ -27,6 +29,15 @@ import java.time.LocalDateTime;
 import static uno.acloud.common.InputNormalizer.optionalText;
 import static uno.acloud.common.InputNormalizer.requireText;
 
+/**
+ * 团队 MQ 同步（team.created / team.member.* 事件的消费侧落库）。
+ *
+ * <p>60 号审计 🟠-1 整改：{@code removeMember} 此前在 {@code @Transactional} 内直接调
+ * {@code clearMemberRole}（跨服务写 HTTP），消费线程的重试期间占着 DB 连接。现把 DB 段
+ * 收窄到自代理事务方法，角色清除 HTTP 延迟到 afterCommit + 人工补偿日志（消费端本就有
+ * 幂等键释放 + MQ 重投，此处 afterCommit 失败的最坏情形与改前一致：team_member_role 残留，
+ * 由 ERROR 日志暴露）。</p>
+ */
 @Slf4j
 @Service
 public class InternalTeamSyncService {
@@ -35,15 +46,20 @@ public class InternalTeamSyncService {
     private final ConversationMapper conversationMapper;
     private final UserProfileMapper userProfileMapper;
     private final TeamPermissionService teamPermissionService;
+    /** 自代理：让 @Transactional 的 DB 段经代理生效。 */
+    private final InternalTeamSyncService self;
 
     public InternalTeamSyncService(TeamMapper teamMapper,
                                    ConversationMapper conversationMapper,
                                    UserProfileMapper userProfileMapper,
-                                   TeamPermissionService teamPermissionService) {
+                                   TeamPermissionService teamPermissionService,
+                                   @Lazy InternalTeamSyncService self) {
         this.teamMapper = teamMapper;
         this.conversationMapper = conversationMapper;
         this.userProfileMapper = userProfileMapper;
         this.teamPermissionService = teamPermissionService;
+        // @Lazy 自代理由容器注入；纯 mock 单测传 null 时回退 this（事务边界退化为无事务直调）。
+        this.self = self != null ? self : this;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -118,7 +134,6 @@ public class InternalTeamSyncService {
         }
     }
 
-    @Transactional(rollbackFor = Exception.class)
     public void removeMember(InternalTeamMemberRemovalRequest request) {
         if (request == null || request.getTeamId() == null || request.getUserId() == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "成员移除同步参数不完整");
@@ -129,9 +144,24 @@ public class InternalTeamSyncService {
             log.debug("MQ幂等: 成员已不存在或已移除，跳过移除: teamId={}, userId={}", request.getTeamId(), request.getUserId());
             return;
         }
-        teamMapper.deactivateMember(request.getTeamId(), request.getUserId());
-        teamPermissionService.clearMemberRole(request.getTeamId(), request.getUserId());
-        conversationMapper.deactivateUserConversationsInTeam(request.getTeamId(), request.getUserId());
+        self.removeMemberInTransaction(request.getTeamId(), request.getUserId());
+        // Remote I/O（角色清除 HTTP）deferred to afterCommit（60 号审计 🟠-1）
+        TransactionUtils.runAfterCommit("成员移除同步后清除角色 teamId=" + request.getTeamId() + ", userId=" + request.getUserId(),
+                () -> {
+                    try {
+                        teamPermissionService.clearMemberRole(request.getTeamId(), request.getUserId());
+                    } catch (Exception e) {
+                        log.error("成员已移除但清除 team-service 角色失败（需人工补偿）: teamId={}, userId={}",
+                                request.getTeamId(), request.getUserId(), e);
+                    }
+                });
+    }
+
+    /** DB 段（有事务）：成员行 + 会话可见性；无任何远程调用。 */
+    @Transactional(rollbackFor = Exception.class)
+    void removeMemberInTransaction(Long teamId, Long userId) {
+        teamMapper.deactivateMember(teamId, userId);
+        conversationMapper.deactivateUserConversationsInTeam(teamId, userId);
     }
 
     private void ensureTeamConversation(Long teamId, Long ownerUserId) {

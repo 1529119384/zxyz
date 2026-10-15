@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import uno.acloud.client.AbstractServiceClient;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.util.LogMaskingUtil;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.user.config.ServiceProperties;
 
@@ -45,7 +46,7 @@ public class EmailServiceMailClient extends AbstractServiceClient {
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
-            log.error("发送验证码失败: email={}", email, e);
+            log.error("发送验证码失败: email={}", LogMaskingUtil.maskEmail(email), e);
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "验证码发送失败，请稍后再试");
         }
     }
@@ -64,7 +65,7 @@ public class EmailServiceMailClient extends AbstractServiceClient {
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
-            log.error("校验验证码失败: email={}", email, e);
+            log.error("校验验证码失败: email={}", LogMaskingUtil.maskEmail(email), e);
             throw new BusinessException(ErrorCode.BAD_REQUEST, "验证码校验失败");
         }
     }

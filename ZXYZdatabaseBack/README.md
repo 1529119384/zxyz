@@ -310,10 +310,10 @@ mvn -pl zxyz-gateway spring-boot:run
 | PATCH | `/api/im/system-notifications/{notificationId}/read` | 标记通知已读 |
 | GET | `/api/im/presence/me` | 获取我的在线状态 |
 | GET | `/api/im/presence/users` | 批量获取用户在线状态 |
-| POST | `/api/im/projects/conversations` | 创建项目会话 |
-| PATCH | `/api/im/projects/{projectId}/archive` | 归档项目会话 |
-| POST | `/api/im/projects/creation-applications/messages` | 发送项目创建申请消息 |
-| POST | `/api/im/projects/creation-applications/{applicationId}/result-messages` | 发送项目创建结果消息 |
+| POST | `/api/internal/im/projects/conversations` | 创建项目会话（内部端点，服务间调用） |
+| PATCH | `/api/internal/im/projects/{projectId}/archive` | 归档项目会话（内部端点，服务间调用） |
+| POST | `/api/internal/im/projects/creation-applications/messages` | 发送项目创建申请消息（内部端点，服务间调用） |
+| POST | `/api/internal/im/projects/creation-applications/{applicationId}/result-messages` | 发送项目创建结果消息（内部端点，服务间调用） |
 | GET | `/api/team-collaboration/users/search` | 搜索用户（IM 侧） |
 | POST | `/api/team-collaboration/teams/{teamId}/invitations` | 邀请用户加入团队 |
 | POST | `/api/team-collaboration/teams/{teamId}/announcements` | 发布团队公告 |

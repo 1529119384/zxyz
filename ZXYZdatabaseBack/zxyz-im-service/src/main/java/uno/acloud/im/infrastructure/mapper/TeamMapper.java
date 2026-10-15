@@ -61,6 +61,20 @@ public interface TeamMapper extends BaseMapper<Team> {
             """)
     List<Long> listActiveMemberUserIds(Long teamId);
 
+    /**
+     * 查询两个用户共同所属的活跃团队 ID（60 号 🟡-1：presence 批量探测的关系校验依据）。
+     * 仅返回双方均为活跃成员（status = 0）且团队本身活跃（im_team.status = 0）的团队。
+     */
+    @Select("""
+            SELECT a.team_id
+            FROM team_member a
+            JOIN team_member b ON b.team_id = a.team_id AND b.user_id = #{otherUserId} AND b.status = 0
+            JOIN im_team t ON t.id = a.team_id AND t.status = 0
+            WHERE a.user_id = #{userId} AND a.status = 0
+            ORDER BY a.team_id ASC
+            """)
+    List<Long> listSharedActiveTeamIds(@Param("userId") Long userId, @Param("otherUserId") Long otherUserId);
+
     @Update("""
             UPDATE team_member
             SET status = 2
