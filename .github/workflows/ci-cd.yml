@@ -643,6 +643,7 @@ jobs:
       - name: Reject modifying applied migrations (diff guard)
         env:
           BEFORE: ${{ github.event.before }}
+        shell: bash
         run: |
           # ⚠️ 55 号 P1-4（2026-10-13）：旧版 push 臂退化为 `git diff origin/dev...HEAD`
           #   —— CI checkout 的就是被推提交 ⇒ origin/dev==HEAD ⇒ diff 恒空 ⇒ 守卫空转。
