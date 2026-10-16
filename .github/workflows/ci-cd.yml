@@ -696,9 +696,6 @@ jobs:
               git ls-files '*db/migration/*.sql'
               exit 1
             fi
-            else
-              echo "::warning::workflow_dispatch without origin/dev; skipping modify-guard"
-            fi
           elif [ "${{ github.event_name }}" = "push" ]; then
             if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
               echo "::error::FLYWAY_GUARD_NO_BASE: push before 为全零（新分支/首推），无比对基线（fail-closed）——以下为全量迁移文件清单，请人工核对是否含原地修改："
