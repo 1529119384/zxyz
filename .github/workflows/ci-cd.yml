@@ -696,6 +696,7 @@ jobs:
                         ;;
                     esac
                     ;;
+                esac
               done <<< "$GUARD_DIFF"
             else
               echo "::error::FLYWAY_GUARD_NO_BASE: workflow_dispatch 且 HEAD~1 不存在（浅克隆/单提交）——无比对基线（fail-closed）"
