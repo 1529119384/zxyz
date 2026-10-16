@@ -1,3 +1,9 @@
+/**
+ * ⚠️ 分域漂移登记（2026-10-15，60 号前端审计 🟡-5）：本文件名是 teamIm，但实际承载
+ * 团队权限/角色 CRUD 全套（21 个导出）——按 api/README.md 分域声明应属 team 域。
+ * 迁移到 team.js 会破坏大量 import 路径（影响面大），短期维持现状；
+ * 迁移时需同步：全部调用方 import 路径 + api/README.md 分域表 + 本注释删除。
+ */
 // @ts-check
 import imRequest from '@/utils/imRequest'
 

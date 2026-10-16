@@ -102,7 +102,10 @@ describe('InputDialog: 校验分支', () => {
     for (const result of [true, undefined, null]) {
       const wrapper = mountDialog({ defaultValue: 'x', validator: vi.fn(() => result) })
       await buttons(wrapper).confirm.trigger('click')
-      expect(ElMessage.warning, `validator 返回 ${String(result)} 时不应提示`).not.toHaveBeenCalled()
+      expect(
+        ElMessage.warning,
+        `validator 返回 ${String(result)} 时不应提示`,
+      ).not.toHaveBeenCalled()
       expect(wrapper.emitted('submit')?.[0]).toEqual(['x'])
       vi.clearAllMocks()
     }

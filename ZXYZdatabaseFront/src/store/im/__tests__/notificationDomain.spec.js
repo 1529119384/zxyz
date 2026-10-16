@@ -126,8 +126,11 @@ describe('notificationDomain', () => {
   describe('markRead', () => {
     it('标记已读成功后刷新列表', async () => {
       const { state, domain } = createDomain()
-      const { markSystemNotificationRead, fetchSystemNotifications, fetchSystemNotificationUnreadCount } =
-        await import('@/api/im')
+      const {
+        markSystemNotificationRead,
+        fetchSystemNotifications,
+        fetchSystemNotificationUnreadCount,
+      } = await import('@/api/im')
       markSystemNotificationRead.mockResolvedValue({})
       fetchSystemNotifications.mockResolvedValue({ data: [] })
       fetchSystemNotificationUnreadCount.mockResolvedValue({ data: { unreadCount: 0 } })

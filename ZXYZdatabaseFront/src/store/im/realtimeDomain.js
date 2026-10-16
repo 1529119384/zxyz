@@ -19,14 +19,7 @@ const OUTBOUND_TASK_TIMEOUT_MS = 30_000
 const CONNECTION_LOCK_WATCHDOG_MS = 30_000
 
 export function createRealtimeDomain(state, deps) {
-  const {
-    wsStatus,
-    lastPongTime,
-    lastWsError,
-    myPresence,
-    conversations,
-    activeConversationId,
-  } = state
+  const { wsStatus, lastPongTime, lastWsError, myPresence, conversations } = state
   const {
     clearReadSyncTimers,
     ensureMessageBucket,
@@ -340,9 +333,7 @@ export function createRealtimeDomain(state, deps) {
       connectionLockWatchdog = null
       if (connectionLock) {
         connectionLock = false
-        logger.warn(
-          '[realtimeDomain] 连接锁看护超时（连接长期无状态回调），已强制释放连接锁',
-        )
+        logger.warn('[realtimeDomain] 连接锁看护超时（连接长期无状态回调），已强制释放连接锁')
       }
     }, CONNECTION_LOCK_WATCHDOG_MS)
     try {

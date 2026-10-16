@@ -113,7 +113,10 @@ describe('PermissionDictionaryTable', () => {
   })
 
   it('提权提示为 prop 注入，非空时渲染', () => {
-    const wrapper = mountDict({ canRead: false, tip: '你没有团队权限中心查看权限，当前分区不可用。' })
+    const wrapper = mountDict({
+      canRead: false,
+      tip: '你没有团队权限中心查看权限，当前分区不可用。',
+    })
     expect(wrapper.find('.permission-tip').text()).toContain('你没有团队权限中心查看权限')
   })
 })

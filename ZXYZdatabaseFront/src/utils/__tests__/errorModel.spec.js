@@ -87,7 +87,9 @@ describe('getErrorMessage: 取值优先级', () => {
   })
 
   it('response.data.message 再次之', () => {
-    expect(getErrorMessage({ response: { data: { message: 'message 文案' } } })).toBe('message 文案')
+    expect(getErrorMessage({ response: { data: { message: 'message 文案' } } })).toBe(
+      'message 文案',
+    )
   })
 
   it('再退到 error.message', () => {

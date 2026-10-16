@@ -19,7 +19,7 @@
 <template>
   <main class="not-found-page">
     <section class="not-found-panel">
-      <p class="not-found-code" v-once>404</p>
+      <p v-once class="not-found-code">404</p>
       <h1 v-once>页面不存在</h1>
       <p v-once>你访问的地址不存在或已被移除，请检查链接是否完整。</p>
       <el-button type="primary" @click="goHome">返回首页</el-button>

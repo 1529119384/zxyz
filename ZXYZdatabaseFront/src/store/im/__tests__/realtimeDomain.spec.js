@@ -213,11 +213,10 @@ describe('realtimeDomain', () => {
         requestId: sentEnvelope.requestId,
         payload: { messageId: 500 },
       })
-      expect(deps.updatePendingMessageStatus).toHaveBeenCalledWith(
-        'c1',
-        clientMessageId,
-        { messageId: 500, status: 'STORED' },
-      )
+      expect(deps.updatePendingMessageStatus).toHaveBeenCalledWith('c1', clientMessageId, {
+        messageId: 500,
+        status: 'STORED',
+      })
 
       // 任务被 resolveOutboundTask 释放，下一条消息可继续发送
       domain.sendTextMessage('c1', 'again')
@@ -361,11 +360,9 @@ describe('realtimeDomain', () => {
       expect(() => domain.sendTextMessage('c1', 'hello')).toThrow('实时连接未建立')
       expect(deps.mergeConversationMessage).toHaveBeenCalledTimes(1)
       expect(deps.touchConversation).toHaveBeenCalledWith('c1')
-      expect(deps.updatePendingMessageStatus).toHaveBeenCalledWith(
-        'c1',
-        expect.any(String),
-        { status: 'FAILED' },
-      )
+      expect(deps.updatePendingMessageStatus).toHaveBeenCalledWith('c1', expect.any(String), {
+        status: 'FAILED',
+      })
     })
 
     it('已连接时入队发送并返回 clientMessageId', () => {
@@ -444,11 +441,9 @@ describe('realtimeDomain', () => {
       wsClient.sendEnvelope.mockReturnValue(false)
 
       domain.sendTextMessage('c1', 'hello')
-      expect(deps.updatePendingMessageStatus).toHaveBeenCalledWith(
-        'c1',
-        expect.any(String),
-        { status: 'FAILED' },
-      )
+      expect(deps.updatePendingMessageStatus).toHaveBeenCalledWith('c1', expect.any(String), {
+        status: 'FAILED',
+      })
       expect(state.lastWsError.value).toBe('实时连接未建立')
     })
 
@@ -492,11 +487,9 @@ describe('realtimeDomain', () => {
         payload: { message: '队列任务失败' },
       })
       expect(state.lastWsError.value).toBe('队列任务失败')
-      expect(deps.updatePendingMessageStatus).toHaveBeenCalledWith(
-        'c1',
-        'cid-3',
-        { status: 'FAILED' },
-      )
+      expect(deps.updatePendingMessageStatus).toHaveBeenCalledWith('c1', 'cid-3', {
+        status: 'FAILED',
+      })
       // 在途任务不受影响，队列任务移除后也不会被补发
       expect(wsClient.sendEnvelope).toHaveBeenCalledTimes(1)
     })
@@ -516,11 +509,9 @@ describe('realtimeDomain', () => {
         requestId: envelope.requestId,
         payload: { message: '服务端拒绝' },
       })
-      expect(deps.updatePendingMessageStatus).toHaveBeenCalledWith(
-        'c1',
-        envelope.clientMessageId,
-        { status: 'FAILED' },
-      )
+      expect(deps.updatePendingMessageStatus).toHaveBeenCalledWith('c1', envelope.clientMessageId, {
+        status: 'FAILED',
+      })
       expect(state.lastWsError.value).toBe('服务端拒绝')
     })
 
@@ -714,11 +705,9 @@ describe('realtimeDomain', () => {
 
       domain.disconnectWebSocket()
       expect(deps.clearReadSyncTimers).toHaveBeenCalled()
-      expect(deps.updatePendingMessageStatus).toHaveBeenCalledWith(
-        'c1',
-        expect.any(String),
-        { status: 'FAILED' },
-      )
+      expect(deps.updatePendingMessageStatus).toHaveBeenCalledWith('c1', expect.any(String), {
+        status: 'FAILED',
+      })
       expect(wsClient.disconnect).toHaveBeenCalled()
       expect(state.wsStatus.value).toBe(IM_WS_STATUS.DISCONNECTED)
       expect(state.lastWsError.value).toBe('实时连接已关闭')
@@ -862,11 +851,9 @@ describe('realtimeDomain', () => {
       domain.sendTextMessage('c1', 'hello')
 
       vi.advanceTimersByTime(30_000)
-      expect(deps.updatePendingMessageStatus).toHaveBeenCalledWith(
-        'c1',
-        expect.any(String),
-        { status: 'FAILED' },
-      )
+      expect(deps.updatePendingMessageStatus).toHaveBeenCalledWith('c1', expect.any(String), {
+        status: 'FAILED',
+      })
       expect(state.lastWsError.value).toBe('消息发送超时')
     })
 
@@ -1019,11 +1006,9 @@ describe('realtimeDomain', () => {
       expect(() =>
         domain.sendFileCardMessage('c1', [{ id: 2, type: 1, fileName: 'a.pdf' }]),
       ).toThrow('实时连接未建立')
-      expect(deps.updatePendingMessageStatus).toHaveBeenCalledWith(
-        'c1',
-        expect.any(String),
-        { status: 'FAILED' },
-      )
+      expect(deps.updatePendingMessageStatus).toHaveBeenCalledWith('c1', expect.any(String), {
+        status: 'FAILED',
+      })
     })
 
     it('文件列表非法时 buildFileCardPayload 抛错且不入队', () => {

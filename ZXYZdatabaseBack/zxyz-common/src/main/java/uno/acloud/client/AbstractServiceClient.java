@@ -455,8 +455,10 @@ public abstract class AbstractServiceClient {
         try {
             JsonNode root = objectMapper.readTree(responseBody);
             if (root.path("code").asInt() != ErrorCode.SUCCESS) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST,
-                        root.path("msg").asText(fallbackMessage));
+                // 60 号审计 🟡-7：上游 msg 原样透传会把内部错误细节（SQL 片段/端点名/
+                // 服务内部语义）暴露给终端用户 —— 错误码保留供前端分支，文案统一收敛
+                // 为调用方提供的 fallback（各 Client 传入面向用户的通用文案）。
+                throw new BusinessException(ErrorCode.BAD_REQUEST, fallbackMessage);
             }
             return root.path("data");
         } catch (BusinessException e) {
@@ -474,10 +476,9 @@ public abstract class AbstractServiceClient {
                                                     String fallbackMessage) {
         try {
             JsonNode root = objectMapper.readTree(exception.getResponseBodyAsString());
+            // 60 号审计 🟡-7：同上 —— 错误码保留，msg 不透传上游内部细节。
             int errorCode = root.path("code").asInt(ErrorCode.SYSTEM_ERROR);
-            String message = root.path("msg").asText(
-                    root.path("message").asText(fallbackMessage));
-            return new BusinessException(errorCode, message);
+            return new BusinessException(errorCode, fallbackMessage);
         } catch (Exception ignored) {
             return new BusinessException(ErrorCode.SYSTEM_ERROR, fallbackMessage);
         }

@@ -6,11 +6,7 @@
 // 🔴 该清单与「真实调用点」的一致性由 src/utils/__tests__/env.spec.js 强制守护（F1）：
 //    新增/删除 requireViteEnv 调用点而不同步本清单，测试会直接变红 —— 因为这份手写清单
 //    一旦漂移，入口自检就会漏报（表现为白屏而非友好提示），属"静默失效"类缺陷。
-export const REQUIRED_ENV_VARS = [
-  'VITE_API_BASE_URL',
-  'VITE_IM_API_BASE_URL',
-  'VITE_IM_WS_URL',
-]
+export const REQUIRED_ENV_VARS = ['VITE_API_BASE_URL', 'VITE_IM_API_BASE_URL', 'VITE_IM_WS_URL']
 
 /**
  * 统一的 API 基地址（来自 VITE_API_BASE_URL）。

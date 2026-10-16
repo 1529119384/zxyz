@@ -2,9 +2,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 
 import {
   createTeamRole,
-  updateTeamRole,
   deleteTeamRole as deleteTeamRoleApi,
-  assignTeamRolePermissions,
   assignTeamMemberRole,
 } from '@/api/teamIm'
 import { handleBusinessError } from '@/utils/error'

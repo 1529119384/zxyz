@@ -237,7 +237,10 @@ describe('conversationDomain', () => {
 
     it('conversationId 与会话 id 按 Number 比较，字符串也能命中', () => {
       const { state, messageDomain, domain } = createDomain()
-      state.conversations.value = [{ id: 1, teamId: 10 }, { id: 2, teamId: 20 }]
+      state.conversations.value = [
+        { id: 1, teamId: 10 },
+        { id: 2, teamId: 20 },
+      ]
       state.activeConversationId.value = 2
       domain.handleConversationAccessRevoked({ conversationId: '1' })
       expect(state.conversations.value.map((c) => c.id)).toEqual([2])

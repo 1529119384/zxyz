@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 import { clearToken } from '@/utils/auth'
 import { useCurrentUserStore } from '@/store/currentUser'
@@ -73,16 +73,29 @@ function buildLoginUrl() {
   return `${loginPath}?${searchParams.toString()}`
 }
 
+let silentAuthWarned = false
+
 async function handleAuthFailure(onTokenExpired) {
   // 审计 12-第三节中危项：只有主服务实例（onTokenExpired==='redirect'）才清空本地用户状态并跳转。
   // 附属服务实例（'silent'，如 IM / 公开分享）的 401 只代表该子系统自己的会话/权限问题，
   // 原实现无条件 clearProfile() 会把主应用登录态一起抹掉，用户表现为「被登出」。
   if (onTokenExpired !== 'redirect') {
+    // 60 号审计前端 🟡-1：附属实例（IM/公开分享）401 不能全静默 —— 用户在 IM 里
+    // 操作失败却毫无反馈。用非侵入式 warning 提示一次（不跳登录、不清主应用状态），
+    // 并用模块级标记防止提示风暴（连续多次 401 只提示一次）。
+    if (!silentAuthWarned) {
+      silentAuthWarned = true
+      try {
+        ElMessage.warning('登录状态已过期，部分功能暂不可用，请刷新页面重新登录')
+      } catch {
+        // element-plus 未就绪时忽略
+      }
+    }
     return
   }
   try {
     useCurrentUserStore().clearProfile()
-  } catch (_) {
+  } catch {
     // Pinia 未初始化时忽略
   }
   // 礼貌提示后再跳转，避免用户内容丢失
@@ -91,7 +104,7 @@ async function handleAuthFailure(onTokenExpired) {
       confirmButtonText: '重新登录',
       type: 'warning',
     })
-  } catch (_) {
+  } catch {
     // 用户关闭弹窗或 element-plus 未就绪，继续跳转
   }
   redirectToLogin()
@@ -103,7 +116,7 @@ function redirectToLogin() {
   // 清除本地用户状态
   try {
     useCurrentUserStore().clearProfile()
-  } catch (_) {
+  } catch {
     // Pinia 未初始化时忽略
   }
 

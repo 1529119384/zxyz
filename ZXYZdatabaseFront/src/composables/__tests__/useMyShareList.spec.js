@@ -168,7 +168,10 @@ describe('useMyShareList', () => {
     copyText.mockRejectedValue(new Error('clipboard denied'))
     await c.copyShareRecord({ shareUrl: 'https://example.test/s/a1' })
 
-    expect(handleBusinessError).toHaveBeenCalledWith(expect.any(Error), '复制分享文案失败，请稍后重试')
+    expect(handleBusinessError).toHaveBeenCalledWith(
+      expect.any(Error),
+      '复制分享文案失败，请稍后重试',
+    )
     c.app.unmount()
   })
 

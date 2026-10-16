@@ -227,7 +227,10 @@ describe('messageDomain', () => {
         content: 'b',
         createTime: '2026-01-02T00:00:00Z',
       })
-      const updated = domain.updatePendingMessageStatus('c1', 'cli-1', { status: STORED, content: 'new' })
+      const updated = domain.updatePendingMessageStatus('c1', 'cli-1', {
+        status: STORED,
+        content: 'new',
+      })
       expect(updated.status).toBe(STORED)
       expect(updated.content).toBe('new')
       expect(updated.clientMessageId).toBe('cli-1')
@@ -309,9 +312,13 @@ describe('messageDomain', () => {
       const { state, domain } = createDomain()
       seedBuckets(state, ['1', '2', '3', '4', '5'])
       domain.evictStaleBuckets()
-      expect(Object.keys(state.messagesByConversation.value).sort()).toEqual(
-        ['1', '2', '3', '4', '5']
-      )
+      expect(Object.keys(state.messagesByConversation.value).sort()).toEqual([
+        '1',
+        '2',
+        '3',
+        '4',
+        '5',
+      ])
     })
 
     it('超过上限时驱逐访问时间最旧的一个桶', () => {
@@ -320,7 +327,9 @@ describe('messageDomain', () => {
       const ids = Array.from({ length: 21 }, (_, i) => String(i + 1))
       seedBuckets(state, ids)
       domain.evictStaleBuckets()
-      const remaining = Object.keys(state.messagesByConversation.value).map(Number).sort((a, b) => a - b)
+      const remaining = Object.keys(state.messagesByConversation.value)
+        .map(Number)
+        .sort((a, b) => a - b)
       expect(remaining).toHaveLength(20)
       expect(remaining).not.toContain(1)
     })

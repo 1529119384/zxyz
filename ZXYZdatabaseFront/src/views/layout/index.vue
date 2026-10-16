@@ -219,7 +219,7 @@ async function logout() {
   chatStore.disconnect()
   try {
     await logoutApi()
-  } catch (_) {
+  } catch {
     // 即使后端清理失败，也要清除本地状态
   }
   sessionStore.resetSessionBootstrap()

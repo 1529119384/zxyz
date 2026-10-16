@@ -91,8 +91,8 @@ export function useExplorerTableInteractions({
   })
 
   // 框选：拖拽选择 + 选择框样式 + 行解析。
-  const { dragState, selectionBoxStyle, getRowFromTarget, shouldSuppressRowClick } = useDragSelection(
-    {
+  const { dragState, selectionBoxStyle, getRowFromTarget, shouldSuppressRowClick } =
+    useDragSelection({
       dragContainerRef: filePageRef,
       tableWrapperRef,
       filteredList,
@@ -100,8 +100,7 @@ export function useExplorerTableInteractions({
       selectedIds,
       setSelectedIds,
       closeContextMenu: () => closeContextMenu(),
-    },
-  )
+    })
 
   // 右键菜单状态机（contextMenu / handlePageContextMenu / closeContextMenu）。
   const fileContextMenu = useFileContextMenu({

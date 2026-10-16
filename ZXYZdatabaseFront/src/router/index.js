@@ -164,7 +164,7 @@ router.afterEach((to, from) => {
   }
 })
 
-router.beforeEach(async (to, from) => {
+router.beforeEach(async (to) => {
   if (publicRouteNames.has(to.name)) {
     return true
   }

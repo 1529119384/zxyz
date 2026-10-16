@@ -192,7 +192,10 @@ describe('useChatStore.totalConversationUnreadCount', () => {
 
   it('累加各会话未读数', async () => {
     fetchMyConversations.mockResolvedValue({
-      data: [makeConversation({ id: 1, unreadCount: 3 }), makeConversation({ id: 2, unreadCount: 4 })],
+      data: [
+        makeConversation({ id: 1, unreadCount: 3 }),
+        makeConversation({ id: 2, unreadCount: 4 }),
+      ],
     })
     await store.loadConversations()
     expect(store.totalConversationUnreadCount).toBe(7)
@@ -200,7 +203,10 @@ describe('useChatStore.totalConversationUnreadCount', () => {
 
   it('负数未读被夹到 0（normalizeConversation 不夹，由本 computed 兜底）', async () => {
     fetchMyConversations.mockResolvedValue({
-      data: [makeConversation({ id: 1, unreadCount: -5 }), makeConversation({ id: 2, unreadCount: 2 })],
+      data: [
+        makeConversation({ id: 1, unreadCount: -5 }),
+        makeConversation({ id: 2, unreadCount: 2 }),
+      ],
     })
     await store.loadConversations()
     expect(store.conversations[0].unreadCount).toBe(-5)

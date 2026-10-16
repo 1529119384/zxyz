@@ -13,7 +13,6 @@ export function useChatPageActions(options) {
     chatStore,
     teamStore,
     router,
-    currentUserStore,
     currentUserId,
     activeConversation,
     moreDrawerVisible,

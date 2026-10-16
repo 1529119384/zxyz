@@ -157,12 +157,22 @@ public class ImMessageService {
         return toMessageVO(row);
     }
 
+    /**
+     * 转义 LIKE 元字符：反斜杠 → {@code \\}、百分号 → {@code \%}、下划线 → {@code \_}。
+     * <p>⚠️ 顺序固定：先 {@code \}，再 {@code %}/{@code _}（先转自身否则语义错，file-service F16 同款）。</p>
+     */
+    private static String escapeLikeWildcards(String keyword) {
+        return keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+    }
+
     public List<ImMessageVO> searchMessages(Long userId, Long conversationId, String keyword, Integer limit) {
         if (keyword == null || keyword.trim().length() < 2) {
             return List.of();
         }
         conversationService.requireConversationMember(conversationId, userId);
-        String normalizedKeyword = keyword.trim();
+        // 60 号审计 🟡：LIKE 元字符转义（%/_/\）——与 file-service F16 同款修法。
+        // 用户输入 %/_ 会被当作通配符（% → 全表扫描面、_ → 单字符匹配），转义后按字面量匹配。
+        String normalizedKeyword = escapeLikeWildcards(keyword.trim());
         return imMessageMapper.searchMessageRows(conversationId, normalizedKeyword, normalizeLimit(limit))
                 .stream()
                 .map(this::toMessageVO)

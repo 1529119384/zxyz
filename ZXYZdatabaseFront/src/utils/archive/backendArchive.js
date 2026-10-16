@@ -66,9 +66,7 @@ async function collectFileEntry(file, basePath) {
   }
 
   const effectiveDownloadUrl =
-    directDownload === false
-      ? `/api/files/${file.id}/stream`
-      : downloadUrl
+    directDownload === false ? `/api/files/${file.id}/stream` : downloadUrl
 
   return {
     fileName: file.fileName,

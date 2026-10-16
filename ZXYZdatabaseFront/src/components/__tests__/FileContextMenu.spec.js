@@ -101,9 +101,13 @@ describe('FileContextMenu: 空白处（blank）', () => {
   it('写入动作发出的是 createFolder / uploadFile / uploadFolder', async () => {
     const wrapper = mountMenu({ contextType: 'blank', canWrite: true })
 
-    expect((await clickLabel(wrapper, '新建文件夹')).action).toBe(FILE_CONTEXT_ACTIONS.CREATE_FOLDER)
+    expect((await clickLabel(wrapper, '新建文件夹')).action).toBe(
+      FILE_CONTEXT_ACTIONS.CREATE_FOLDER,
+    )
     expect((await clickLabel(wrapper, '上传文件')).action).toBe(FILE_CONTEXT_ACTIONS.UPLOAD_FILE)
-    expect((await clickLabel(wrapper, '上传文件夹')).action).toBe(FILE_CONTEXT_ACTIONS.UPLOAD_FOLDER)
+    expect((await clickLabel(wrapper, '上传文件夹')).action).toBe(
+      FILE_CONTEXT_ACTIONS.UPLOAD_FOLDER,
+    )
   })
 })
 
@@ -217,9 +221,7 @@ describe('FileContextMenu: 单选文件夹 / 多选 / 混合', () => {
       '上传文件夹',
       '刷新',
     ])
-    expect((await clickLabel(wrapper, '批量下载')).action).toBe(
-      FILE_CONTEXT_ACTIONS.BATCH_DOWNLOAD,
-    )
+    expect((await clickLabel(wrapper, '批量下载')).action).toBe(FILE_CONTEXT_ACTIONS.BATCH_DOWNLOAD)
     // 多选删除仍走同一个 delete 动作（后端按 selectedItems 处理）
     expect((await clickLabel(wrapper, '删除（2）')).action).toBe(FILE_CONTEXT_ACTIONS.DELETE)
   })
@@ -293,9 +295,7 @@ describe('FileContextMenu: 回收站模式（mode=recycle）', () => {
     })
 
     expect(labels(wrapper)).toEqual(['取消删除', '彻底删除', '刷新'])
-    expect((await clickLabel(wrapper, '彻底删除')).action).toBe(
-      FILE_CONTEXT_ACTIONS.DELETE_FOREVER,
-    )
+    expect((await clickLabel(wrapper, '彻底删除')).action).toBe(FILE_CONTEXT_ACTIONS.DELETE_FOREVER)
   })
 
   it('多选时文案带数量，且动作切换为 *_SELECTED', async () => {

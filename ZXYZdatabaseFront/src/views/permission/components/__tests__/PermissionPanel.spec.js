@@ -36,10 +36,7 @@ describe('PermissionPanel', () => {
 
   it('variant 映射为修饰类；default 不带修饰类', () => {
     expect(mountPanel().classes()).toEqual(['panel'])
-    expect(mountPanel({ variant: 'assignment' }).classes()).toEqual([
-      'panel',
-      'panel--assignment',
-    ])
+    expect(mountPanel({ variant: 'assignment' }).classes()).toEqual(['panel', 'panel--assignment'])
     expect(mountPanel({ variant: 'wide' }).classes()).toEqual(['panel', 'panel--wide'])
   })
 

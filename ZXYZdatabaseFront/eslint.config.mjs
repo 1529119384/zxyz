@@ -31,7 +31,7 @@ export default [
       'vue/define-macros-order': ['error', {
         order: ['defineProps', 'defineEmits', 'defineSlots']
       }],
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      'no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       'no-console': 'warn',
       'no-debugger': 'error',
       'prefer-const': 'error',
@@ -74,6 +74,14 @@ export default [
       globals: {
         ...globals.vitest,
       },
+    },
+    rules: {
+      // 60 号审计 D1 收口：测试里 console（调试输出）、未用变量（占位/mock 参数）
+      // 与多组件定义（stub 组件）都是合法形态 —— 生产侧已升 error + --max-warnings=0，
+      // 测试侧放宽避免门禁误伤。
+      'no-console': 'off',
+      'no-unused-vars': 'off',
+      'vue/one-component-per-file': 'off',
     },
   },
   prettier,

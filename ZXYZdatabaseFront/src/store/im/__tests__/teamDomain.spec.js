@@ -2,13 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ref } from 'vue'
 
 import { createAdminTeam } from '@/api/adminTeam'
-import {
-  fetchMyTeams,
-  fetchTeamMembers,
-  leaveTeam,
-  removeTeamMember,
-  updateTeam,
-} from '@/api/team'
+import { fetchMyTeams, fetchTeamMembers, leaveTeam, removeTeamMember, updateTeam } from '@/api/team'
 import {
   acceptTeamInvitation,
   approveTeamJoinRequest,
@@ -329,7 +323,12 @@ describe('teamDomain', () => {
       })
       await domain.loadTeams()
       expect(state.teams.value).toHaveLength(1)
-      expect(state.teams.value[0]).toMatchObject({ id: 4, name: 'T4', myRoleCode: 'OWNER', myPermissions: [] })
+      expect(state.teams.value[0]).toMatchObject({
+        id: 4,
+        name: 'T4',
+        myRoleCode: 'OWNER',
+        myPermissions: [],
+      })
     })
 
     it('恰好 1 个团队时自动选中该团队并加载成员', async () => {
@@ -436,8 +435,7 @@ describe('teamDomain', () => {
       vi.mocked(fetchTeamMembers).mockImplementation(
         () =>
           new Promise((resolve) => {
-            resolveA = () =>
-              resolve({ data: [{ userId: 11, name: '成员A', role: 'ADMIN' }] })
+            resolveA = () => resolve({ data: [{ userId: 11, name: '成员A', role: 'ADMIN' }] })
           }),
       )
 
@@ -780,7 +778,9 @@ describe('teamDomain', () => {
     it('禁言后重载管理态并返回数据', async () => {
       const { domain } = createDomain()
       vi.mocked(muteTeamMember).mockResolvedValue({ data: { muted: true } })
-      await expect(domain.muteMember(2, { userId: 7, minutes: 10 })).resolves.toEqual({ muted: true })
+      await expect(domain.muteMember(2, { userId: 7, minutes: 10 })).resolves.toEqual({
+        muted: true,
+      })
       expect(muteTeamMember).toHaveBeenCalledWith(2, { userId: 7, minutes: 10 })
       expect(fetchTeamMutes).toHaveBeenCalledWith(2)
       expect(fetchTeamJoinRequests).toHaveBeenCalledWith(2)

@@ -107,7 +107,11 @@ const globalStubs = {
   },
   'el-empty': { name: 'ElEmpty', props: ['description'], template: '<div class="stub-empty" />' },
   'el-alert': { name: 'ElAlert', props: ['title', 'type'], template: '<div class="stub-alert" />' },
-  'el-tag': { name: 'ElTag', props: ['type', 'size', 'effect'], template: '<span class="stub-tag"><slot /></span>' },
+  'el-tag': {
+    name: 'ElTag',
+    props: ['type', 'size', 'effect'],
+    template: '<span class="stub-tag"><slot /></span>',
+  },
 }
 
 // 07-P1-7：面板把「文案」聚合成 `labels`、把「行为」聚合成 `actions`。
@@ -212,7 +216,11 @@ beforeEach(() => {
 
 describe('RoleManagementPanel: 头部与权限提示', () => {
   it('渲染标题、副标题与可定制的创建按钮文案', () => {
-    const wrapper = mountPanel({ title: '角色权限', subtitle: '说明文字', createLabel: '新增权限组' })
+    const wrapper = mountPanel({
+      title: '角色权限',
+      subtitle: '说明文字',
+      createLabel: '新增权限组',
+    })
 
     expect(wrapper.find('.role-panel-header h3').text()).toBe('角色权限')
     expect(wrapper.find('.role-panel-header p').text()).toBe('说明文字')
@@ -293,10 +301,11 @@ describe('RoleManagementPanel: 角色行渲染', () => {
 
     // 桩自检：作用域插槽确实按行渲染了
     expect(columnRows(wrapper, '类型')).toHaveLength(2)
-    expect(column(wrapper, '类型').findAll('.stub-tag').map((tag) => tag.text())).toEqual([
-      '内置',
-      '自定义',
-    ])
+    expect(
+      column(wrapper, '类型')
+        .findAll('.stub-tag')
+        .map((tag) => tag.text()),
+    ).toEqual(['内置', '自定义'])
 
     expect(rowButton(wrapper, 0, '删除').attributes('disabled')).toBeDefined()
     expect(rowButton(wrapper, 1, '删除').attributes('disabled')).toBeUndefined()

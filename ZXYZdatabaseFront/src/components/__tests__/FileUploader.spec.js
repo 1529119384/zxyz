@@ -58,7 +58,11 @@ const ElButtonStub = {
 const globalStubs = {
   'el-dialog': ElDialogStub,
   'el-button': ElButtonStub,
-  'el-progress': { name: 'ElProgress', props: ['percentage', 'status', 'strokeWidth'], template: '<div class="stub-progress" />' },
+  'el-progress': {
+    name: 'ElProgress',
+    props: ['percentage', 'status', 'strokeWidth'],
+    template: '<div class="stub-progress" />',
+  },
   // 需要渲染默认插槽：移除按钮的 @click 挂在 el-icon 根节点上，槽不渲染就点不到
   'el-icon': { name: 'ElIcon', template: '<span><slot /></span>' },
 }
@@ -174,9 +178,10 @@ describe('FileUploader: 上传结果三条分支', () => {
   it('全部失败 ⇒ error 提示，且**弹窗保持打开**（否则用户无法重试）', async () => {
     const { wrapper, state } = mountUploader(
       stateRefs({
-        doUpload: vi
-          .fn()
-          .mockResolvedValue({ successList: [], failList: [{ fileName: 'b.txt', message: '超限' }] }),
+        doUpload: vi.fn().mockResolvedValue({
+          successList: [],
+          failList: [{ fileName: 'b.txt', message: '超限' }],
+        }),
       }),
     )
 
@@ -286,7 +291,10 @@ describe('FileUploader: 交互与展示', () => {
 
   it('重名预测命中时才展示「预计名称」', () => {
     const renamed = mountUploader(
-      stateRefs({ isPredictedRenamed: vi.fn(() => true), getPredictedName: vi.fn(() => 'a(1).txt') }),
+      stateRefs({
+        isPredictedRenamed: vi.fn(() => true),
+        getPredictedName: vi.fn(() => 'a(1).txt'),
+      }),
     ).wrapper
     expect(renamed.find('.predicted-name').text()).toContain('a(1).txt')
 
@@ -297,7 +305,9 @@ describe('FileUploader: 交互与展示', () => {
   it('上传中才展示进度区', () => {
     expect(mountUploader(stateRefs()).wrapper.find('.upload-progress').exists()).toBe(false)
     expect(
-      mountUploader(stateRefs({ uploading: ref(true) })).wrapper.find('.upload-progress').exists(),
+      mountUploader(stateRefs({ uploading: ref(true) }))
+        .wrapper.find('.upload-progress')
+        .exists(),
     ).toBe(true)
   })
 })

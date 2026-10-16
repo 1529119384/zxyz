@@ -162,8 +162,13 @@ describe('permissionDomain', () => {
   describe('saveTeamRole', () => {
     it('有 roleId 时走 updateTeamRole 并回传 data', async () => {
       const { domain } = createDomain()
-      const { updateTeamRole, createTeamRole, fetchTeamPermissions, fetchTeamRoles, fetchTeamPermissionAudit } =
-        await import('@/api/teamIm')
+      const {
+        updateTeamRole,
+        createTeamRole,
+        fetchTeamPermissions,
+        fetchTeamRoles,
+        fetchTeamPermissionAudit,
+      } = await import('@/api/teamIm')
       updateTeamRole.mockResolvedValue({ data: { id: 5, name: '改后' } })
       createTeamRole.mockResolvedValue({ data: { id: 9 } })
       fetchTeamPermissions.mockResolvedValue({ data: [] })
@@ -178,8 +183,13 @@ describe('permissionDomain', () => {
 
     it('无 roleId 时走 createTeamRole 并回传 data', async () => {
       const { domain } = createDomain()
-      const { updateTeamRole, createTeamRole, fetchTeamPermissions, fetchTeamRoles, fetchTeamPermissionAudit } =
-        await import('@/api/teamIm')
+      const {
+        updateTeamRole,
+        createTeamRole,
+        fetchTeamPermissions,
+        fetchTeamRoles,
+        fetchTeamPermissionAudit,
+      } = await import('@/api/teamIm')
       updateTeamRole.mockResolvedValue({ data: { id: 5 } })
       createTeamRole.mockResolvedValue({ data: { id: 9, name: '新角色' } })
       fetchTeamPermissions.mockResolvedValue({ data: [] })
@@ -223,8 +233,12 @@ describe('permissionDomain', () => {
   describe('updateTeamRolePermissions', () => {
     it('传 permissionCodes 并刷新权限中心', async () => {
       const { domain } = createDomain()
-      const { assignTeamRolePermissions, fetchTeamPermissions, fetchTeamRoles, fetchTeamPermissionAudit } =
-        await import('@/api/teamIm')
+      const {
+        assignTeamRolePermissions,
+        fetchTeamPermissions,
+        fetchTeamRoles,
+        fetchTeamPermissionAudit,
+      } = await import('@/api/teamIm')
       assignTeamRolePermissions.mockResolvedValue({})
       fetchTeamPermissions.mockResolvedValue({ data: [] })
       fetchTeamRoles.mockResolvedValue({ data: [] })
@@ -239,8 +253,12 @@ describe('permissionDomain', () => {
 
     it('permissionCodes 省略时默认为空数组', async () => {
       const { domain } = createDomain()
-      const { assignTeamRolePermissions, fetchTeamPermissions, fetchTeamRoles, fetchTeamPermissionAudit } =
-        await import('@/api/teamIm')
+      const {
+        assignTeamRolePermissions,
+        fetchTeamPermissions,
+        fetchTeamRoles,
+        fetchTeamPermissionAudit,
+      } = await import('@/api/teamIm')
       assignTeamRolePermissions.mockResolvedValue({})
       fetchTeamPermissions.mockResolvedValue({ data: [] })
       fetchTeamRoles.mockResolvedValue({ data: [] })
@@ -274,9 +292,7 @@ describe('permissionDomain', () => {
       const state = { teamPermissions: ref([]), teamRoles: ref([]), teamPermissionAudit: ref([]) }
       const domain = createPermissionDomain(state, {})
       await setupMocks()
-      await expect(
-        domain.updateTeamMemberRole(7, 42, 'MEMBER'),
-      ).resolves.toBeUndefined()
+      await expect(domain.updateTeamMemberRole(7, 42, 'MEMBER')).resolves.toBeUndefined()
     })
   })
 })

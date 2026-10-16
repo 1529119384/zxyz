@@ -201,7 +201,7 @@ const currentUserId = computed(() => currentUserStore.profile?.id ?? null)
 const activeConversation = computed(() => imChat.activeConversation)
 const messages = computed(() => imChat.activeMessages)
 
-const { isNearBottom, scrollToBottom, loadOlderMessages, handleNewMessage, resetForConversation } =
+const { scrollToBottom, loadOlderMessages, handleNewMessage, resetForConversation } =
   useVirtualScroll({ messages, chatStore: imChat, listRef: virtualListRef })
 
 const isSystemConversation = computed(() => activeConversation.value?.type === SYSTEM)
@@ -260,11 +260,7 @@ const actions = useChatPageActions({
 })
 
 // 解构 computed/ref，使模板中自动解包为原始值
-const {
-  visibleGroupMembers,
-  canExpandGroupMembers,
-  reviewingApplicationId,
-} = actions
+const { visibleGroupMembers, canExpandGroupMembers, reviewingApplicationId } = actions
 
 const {
   contextMenu,

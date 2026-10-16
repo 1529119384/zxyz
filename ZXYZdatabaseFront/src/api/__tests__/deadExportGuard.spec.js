@@ -145,7 +145,9 @@ describe('api/project 请求契约', () => {
 
     await createTeamProject(7, { name: 'p' })
 
-    expect(request.post).toHaveBeenCalledWith('/api/project-catalog/teams/7/projects', { name: 'p' })
+    expect(request.post).toHaveBeenCalledWith('/api/project-catalog/teams/7/projects', {
+      name: 'p',
+    })
   })
 
   it('应 POST 提交项目创建申请', async () => {

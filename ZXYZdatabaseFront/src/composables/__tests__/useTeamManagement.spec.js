@@ -744,7 +744,9 @@ describe('useTeamManagement: createMemberAccount', () => {
 
   it('密码短于 8 位时提示并返回 false', async () => {
     const { api } = setup({ teamStore: { selectedTeamId: 5 } })
-    await expect(api.createMemberAccount({ username: 'u', password: '1234567' })).resolves.toBe(false)
+    await expect(api.createMemberAccount({ username: 'u', password: '1234567' })).resolves.toBe(
+      false,
+    )
     expect(ElMessage.warning).toHaveBeenCalledWith('初始密码不能少于 8 位')
     expect(createTeamMember).not.toHaveBeenCalled()
   })

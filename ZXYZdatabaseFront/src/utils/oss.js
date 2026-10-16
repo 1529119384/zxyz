@@ -79,7 +79,7 @@ export function uploadToBackend(file, parentId, teamId, spaceType, projectId) {
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           resolve(JSON.parse(xhr.responseText))
-        } catch (e) {
+        } catch {
           resolve(xhr.responseText)
         }
         return

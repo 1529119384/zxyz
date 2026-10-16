@@ -56,7 +56,7 @@ export const useSessionStore = defineStore('session', () => {
     return pendingSessionReady
   }
 
-  async function loadSession(options = {}) {
+  async function loadSession(_options = {}) {
     const currentUserStore = useCurrentUserStore()
     const teamStore = useTeamStore()
 
