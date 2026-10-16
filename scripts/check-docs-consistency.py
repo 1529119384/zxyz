@@ -142,6 +142,9 @@ def scan_backend_tests() -> tuple[int, int, dict[str, int], dict[str, int]]:
 DECLARED_COUNT_RES = [
     # CLAUDE.md:80 形态：「N 个测试类 / M 个测试源文件」
     (re.compile(r"(\d+)\s*个测试类\s*/\s*(\d+)\s*个测试源文件"), "classes_files"),
+    # 61 号 P1-2 新形态（f040fd17e 改措辞后）：「N 个测试源文件 / M 个测试类」——
+    # 该语序曾让本门禁的 classes_files 正则永久失配 ⇒ CLAUDE.md 计数漂移静默放行。
+    (re.compile(r"(\d+)\s*个测试源文件\s*/\s*(\d+)\s*个测试类"), "files_classes_plain"),
     # testing.md:17 形态：「**N 个文件**」
     (re.compile(r"\*{0,2}(\d+)\s*个文件\*{0,2}"), "files"),
     # testing.md:1314 形态：「共 N 个文件 / M 个 `*Test.java` 测试类」
@@ -164,7 +167,7 @@ def extract_declared_counts(lines: list[str], rel: str) -> list[dict]:
                 if kind == "classes_files":
                     out.append({"file": rel, "line": idx, "kind": "classes+files",
                                 "classes": int(m.group(1)), "files": int(m.group(2)), "text": line.strip()[:120]})
-                elif kind == "files_classes":
+                elif kind in ("files_classes", "files_classes_plain"):
                     out.append({"file": rel, "line": idx, "kind": "classes+files",
                                 "files": int(m.group(1)), "classes": int(m.group(2)), "text": line.strip()[:120]})
                 elif kind == "files":
@@ -584,6 +587,12 @@ def run_gate(failures: list[dict]) -> dict:
     if not declared_backend:
         fail(failures, "反空扫", "解析到 ≥1 条后端规模声明", "0",
              "CLAUDE.md / docs/testing.md（声明格式变了？门禁会漏检）")
+    # 61 号 P1-2 反空扫加强（按文件断言）：总数 ≥1 不够 —— CLAUDE.md 那条若因措辞
+    # 变化失配（f040fd17e 实证），docs/testing.md 的条目会把总数撑起来 ⇒ CLAUDE.md
+    # 静默掉出校验范围而门禁照常 PASS。必须逐文件断言：CLAUDE.md 至少贡献 1 条。
+    if not any(d["file"] == "CLAUDE.md" for d in declared_backend):
+        fail(failures, "反空扫(CLAUDE.md)", "CLAUDE.md 至少解析到 1 条后端规模声明", "0",
+             "CLAUDE.md 的措辞掉出了全部正则的覆盖（61 号 P1-2 同型）——门禁对其静默失明")
     check_backend_counts(declared_backend, breakdown, actual_files, actual_classes, failures)
 
     # --- 检查 2 ---

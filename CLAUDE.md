@@ -94,7 +94,7 @@ cd ZXYZdatabaseFront && git diff HEAD --ignore-cr-at-eol --numstat && cd ..
 
 ```bash
 mvn clean -DskipTests compile                   # baseline compile check
-mvn test                                         # all tests（205 个测试源文件 / 202 个测试类，见 docs/testing.md；⚠️ 措辞勿改回「测试文件」——前缀会被前端 doc-count 门禁的正则误抓）
+mvn test                                         # all tests（208 个测试源文件 / 205 个测试类，见 docs/testing.md；措辞已纳入后端门禁双正则（两种语序都校验）——改数字前先跑 scripts/check-docs-consistency.py 对账）
 mvn test -pl zxyz-team-service                   # single module tests
 mvn test -pl zxyz-file-service -Dtest=FileUploadServiceTest  # single test class
 mvn clean package -DskipTests                    # package for Docker build
