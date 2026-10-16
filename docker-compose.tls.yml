@@ -29,7 +29,7 @@ services:
       - ./deploy/nginx/certs:/etc/nginx/certs:ro
     healthcheck:
       # 80 现已 301 重定向，改为校验 HTTPS 端点（自签证书用 -k）。
-      test: ["CMD-SHELL", "code=$(curl -sk -o /dev/null -w '%{http_code}' https://localhost/api/); echo code=$$code; [ \"$$code\" -ge 1 ] && [ \"$$code\" -lt 500 ]"]
+      test: ["CMD-SHELL", "code=$$(curl -sk -o /dev/null -w '%{http_code}' https://localhost/api/); echo code=$$code; [ \"$$code\" -ge 1 ] && [ \"$$code\" -lt 500 ]"]
       interval: 15s
       timeout: 10s
       retries: 6

@@ -27,12 +27,12 @@ export default [
       'vue/multi-word-component-names': 'off',
       'vue/no-useless-template-attributes': 'off',
       'vue/no-mutating-props': 'error',
-      'vue/no-v-html': 'warn',
+      'vue/no-v-html': 'error',
       'vue/define-macros-order': ['error', {
         order: ['defineProps', 'defineEmits', 'defineSlots']
       }],
       'no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
-      'no-console': 'warn',
+      'no-console': 'error',
       'no-debugger': 'error',
       'prefer-const': 'error',
       'no-var': 'error',
