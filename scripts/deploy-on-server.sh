@@ -74,6 +74,7 @@ write_deploy_manifest() {
   local outcome="$1"
   local synced="${SYNCED_SCRIPTS[*]:-（未执行同步：克隆缺失或脚本目录不存在）}"
   local conf_synced="${SYNCED_CONF[*]:-}"
+  local updated_svc="${UPDATE_SVC[*]:-}"
   local sha="${GITHUB_SHA:-$IMAGE_TAG}"
   {
     echo "----- deploy $(date -u '+%Y-%m-%dT%H:%M:%SZ') -----"

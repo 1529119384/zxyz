@@ -672,16 +672,13 @@ jobs:
               esac
             done < <(git diff --name-status "origin/${BASE}...HEAD" 2>/dev/null || true)
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            # dispatch 只在 dev 上触发（ci-cd.yml 顶部限定）⇒ checkout 即分支 tip ⇒
-            # origin/dev == HEAD ⇒ 任何三点/两点 diff 都恒空 —— 这**不是守卫漏洞**而是
-            # 语义使然（59 号 NEW-2 复核结论）：dispatch 是「把已通过 push 轮全部门禁
-            # （含本守卫）的产物重新部署」，迁移变更集已在 push 事件被把关过。
-            # ⚠️ 若 dispatch 时 origin/dev 尚不存在（首建仓库场景）则无任何先验把关 ⇒ 红。
-            # 显式打印语义，避免排障时误判「守卫静默放行」。
-            if git rev-parse --verify origin/dev >/dev/null 2>&1; then
-              echo "diff guard: workflow_dispatch, base=origin/dev (dispatch has no before)"
-              echo "NOTE: origin/dev == HEAD on dispatch ⇒ diff is empty by definition;"
-              echo "      migration changes were already gated at the push event. Not a silent pass."
+            # 61 号第三次点名修订（NEW-2 终修）：dispatch 无 before 可用，但
+            # 「push 轮已把关」的前提在 push 轮 quality 红时并不成立（dispatch 可在
+            # 任意时刻触发）。改用 HEAD~1 作为基线：dispatch 的 tag 输入指向当前
+            # HEAD 构建产物，与其「上一个提交」的差就是本次可能带入的迁移变更。
+            # HEAD~1 不存在（浅克隆单提交）⇒ fail-closed 红。
+            if git rev-parse --verify HEAD~1 >/dev/null 2>&1; then
+              echo "diff guard: workflow_dispatch, base=HEAD~1"
               while IFS=$'\t' read -r status path; do
                 case "$path" in
                   *db/migration/*.sql)
@@ -693,7 +690,12 @@ jobs:
                     esac
                     ;;
                 esac
-              done < <(git diff --name-status "origin/dev...HEAD" 2>/dev/null || true)
+              done < <(git diff --name-status "HEAD~1 HEAD" 2>/dev/null || true)
+            else
+              echo "::error::FLYWAY_GUARD_NO_BASE: workflow_dispatch 且 HEAD~1 不存在（浅克隆/单提交）——无比对基线（fail-closed）"
+              git ls-files '*db/migration/*.sql'
+              exit 1
+            fi
             else
               echo "::warning::workflow_dispatch without origin/dev; skipping modify-guard"
             fi
