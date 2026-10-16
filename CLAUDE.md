@@ -233,6 +233,12 @@ WHEN 添加 setting 子路由, DO 确保 `route.name` 在 Setting 组件 watcher
 
 > 完整规范（9 条规则、投影模式说明、内部窄端点清单、已落地窄端点表）详见 [docs/claude-backend.md](docs/claude-backend.md) 的「服务间接口设计规范」章节。
 
+## 本机环境注意事项（2026-10-16）
+
+- **代理进程可能挂**：push/pull 报 `Failed to connect to 127.0.0.1 port 7897` 时，mihomo 核心已停 —— 手动拉起：`Start-Process 'D:\soft\clash\Clash Verge\meta-backup\verge-mihomo.exe' -ArgumentList '-d',"$env:APPDATA\io.github.clash-verge-rev.clash-verge-rev",'-f',"$env:APPDATA\io.github.clash-verge-rev.clash-verge-rev\clash-verge.yaml"`，`Test-NetConnection 127.0.0.1 -Port 7897` 确认后再操作。
+- **pwsh 裸 `bash` 是 WSL 陷阱**：所有 bash 调用必须显式 `D:\soft\Git\bin\bash.exe`（60/61 号两代教训）。
+- **credential helper**：全局 `.gitconfig` 曾混入指向已删除路径（workbuddy PortableGit）的 helper ⇒ 子仓 push 报 `could not read Username`。已清理为仅 `manager`；若再现用 `git config --global --get-all credential.helper` 核查。
+- **服务器 SSH**：banner timeout = sshd 限流，退避 5-10 分钟单次重连（勿高频重试触发更长封禁）。
 ## Work Principles
 
 本文件是唯一权威的项目指令；`.qoder/`、`.trae/`、`.opencode/`、`.workbuddy/` 等目录是其他工具的配置/笔记（含可能过时的 spec 草案），不要当作项目规则来源。
