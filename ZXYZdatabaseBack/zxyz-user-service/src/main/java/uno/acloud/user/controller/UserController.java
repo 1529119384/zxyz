@@ -227,6 +227,15 @@ public class UserController {
         return Result.of(accountLinkingService.trustLinkedAccount(userId, targetUserId, request));
     }
 
+    @Operation(summary = "解除关联账号切换信任")
+    @org.springframework.web.bind.annotation.DeleteMapping("/linked-accounts/{targetUserId}/trust")
+    public Result<Void> untrustLinkedAccount(@CurrentUser Long userId,
+                                             @org.springframework.web.bind.annotation.PathVariable Long targetUserId) {
+        // 62g-S1 / 63 号 P1-3：信任表此前全仓零撤销路径（无解除端点），用户无法自我救济。
+        accountLinkingService.untrustLinkedAccount(userId, targetUserId);
+        return Result.success();
+    }
+
     @Operation(summary = "切换关联账号")
     @PostMapping("/linked-accounts/{targetUserId}/switch")
     public Result<AccountSwitchVO> switchLinkedAccount(@CurrentUser Long userId,

@@ -257,6 +257,28 @@ public interface UserMapper extends BaseMapper<User> {
     int countAccountSwitchTrust(@Param("sourceUserId") Long sourceUserId,
                                 @Param("targetUserId") Long targetUserId);
 
+    /**
+     * 62g-S1 / 63 号 P1-3：删除某用户的全部双向切换信任行。
+     * <p>改密 = 作废旧凭证，必须切断对该账号/来自该账号的一切免密切换信任；
+     * 原实现全仓只有 INSERT + SELECT（无 DELETE），目标改密后旧持有者仍可凭
+     * 信任行直接切换进该账号（安全暗门）。</p>
+     */
+    @Delete("""
+            DELETE FROM account_switch_trust
+            WHERE source_user_id = #{userId} OR target_user_id = #{userId}
+            """)
+    int deleteAllAccountSwitchTrustByUser(@Param("userId") Long userId);
+
+    /**
+     * 62g-S1 / 63 号 P1-3：解除指定方向（source→target）的切换信任行，供用户主动解除端点用。
+     */
+    @Delete("""
+            DELETE FROM account_switch_trust
+            WHERE source_user_id = #{sourceUserId} AND target_user_id = #{targetUserId}
+            """)
+    int deleteAccountSwitchTrust(@Param("sourceUserId") Long sourceUserId,
+                                 @Param("targetUserId") Long targetUserId);
+
     @Delete("DELETE FROM contact_verification_code WHERE expire_time < NOW()")
     int deleteExpiredContactVerificationCodes();
 }

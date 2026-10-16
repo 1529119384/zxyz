@@ -6,6 +6,7 @@ import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import uno.acloud.common.ErrorCode;
+import uno.acloud.common.UserErrorCode;
 import uno.acloud.common.util.VerifyCodeHasher;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.user.config.ServiceProperties;
@@ -66,6 +67,9 @@ public class ContactVerificationService {
 
     public CurrentUserVO bindEmail(Long userId, EmailBindRequest request) {
         userQueryHelper.requireExistingUser(userId);
+        // 62g-S2：改绑联系方式必须验证当前密码（与改密踢会话同级——被盗号/未锁屏会话
+        // 此前可把联系通道改成任意未验证地址，配合 S1 的永久信任构成接管链）。
+        requireCurrentPassword(userId, request.getPassword());
         String email = optionalText(request.getEmail());
         userQueryHelper.requireUpdated(userMapper.updateEmail(userId, email));
         return userQueryHelper.requireCurrentUser(userId);
@@ -73,9 +77,19 @@ public class ContactVerificationService {
 
     public CurrentUserVO bindPhone(Long userId, PhoneBindRequest request) {
         userQueryHelper.requireExistingUser(userId);
+        // 62g-S2：同上。
+        requireCurrentPassword(userId, request.getPassword());
         String phone = optionalText(request.getPhone());
         userQueryHelper.requireUpdated(userMapper.updatePhone(userId, phone));
         return userQueryHelper.requireCurrentUser(userId);
+    }
+
+    /** 62g-S2：当前密码校验（失败文案与改密一致，不泄露账号是否存在）。 */
+    private void requireCurrentPassword(Long userId, String password) {
+        User dbUser = userQueryHelper.requireExistingUser(userId);
+        if (!userQueryHelper.passwordMatched(optionalText(password), dbUser)) {
+            throw new BusinessException(UserErrorCode.LOGIN_FAILED, "当前密码错误");
+        }
     }
 
     public ContactVerificationCodeVO createEmailVerificationCode(Long userId, String requestIp) {

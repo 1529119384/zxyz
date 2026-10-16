@@ -76,6 +76,10 @@ public class UserAdminService {
             if (deleted != 1) {
                 throw new BusinessException(ErrorCode.SYSTEM_ERROR, "用户删除失败");
             }
+            // 62g-S1 / 63 号 P1-3：注销用户必须清掉其全部双向切换信任行（此前零清理，
+            // 残留信任行在 userId 被注册复用时构成跨账号残留信任）。
+            int trustRemoved = userMapper.deleteAllAccountSwitchTrustByUser(targetUserId);
+            log.info("用户删除清理切换信任: userId={}, 清理 {} 行", targetUserId, trustRemoved);
             log.info("用户记录已删除: userId={}, username={}, operatorId={}", targetUserId, username, operatorId);
 
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {

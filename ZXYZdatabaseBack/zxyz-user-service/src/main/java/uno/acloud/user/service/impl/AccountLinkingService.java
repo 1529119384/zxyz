@@ -62,8 +62,21 @@ public class AccountLinkingService {
         return toLinkedAccountVO(userId, target);
     }
 
-    public AccountSwitchVO switchLinkedAccount(Long userId, Long targetUserId) {
+    /**
+     * 62g-S1 / 63 号 P1-3：解除对目标账号的切换信任（双向删）。
+     * <p>用户自我救济入口 —— 此前信任表全仓无任何撤销路径，且列表只读。</p>
+     */
+    @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
+    public void untrustLinkedAccount(Long userId, Long targetUserId) {
         requireLinkedTarget(userId, targetUserId);
+        int removed = userMapper.deleteAccountSwitchTrust(userId, targetUserId);
+        if (removed == 0) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "该账号当前不存在切换信任");
+        }
+        log.info("解除账号切换信任 userId={} targetUserId={} 删除 {} 行", userId, targetUserId, removed);
+    }
+
+    public AccountSwitchVO switchLinkedAccount(Long userId, Long targetUserId) {        requireLinkedTarget(userId, targetUserId);
         if (userMapper.countAccountSwitchTrust(userId, targetUserId) <= 0) {
             throw new BusinessException(ErrorCode.NO_PERMISSION, "首次切换前需要验证目标账号密码");
         }

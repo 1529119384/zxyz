@@ -152,7 +152,10 @@ public interface ImMessageMapper extends BaseMapper<ImMessage> {
             WHERE m.conversation_id = #{conversationId}
               AND m.status = 0
               -- 仅用生成列前缀索引（content_extracted 已提取 TEXT 消息内容）；去掉 OR CAST 使前缀索引可剪枝（P2-C5-1）
-              AND m.content_extracted LIKE CONCAT(#{keyword}, '%') ESCAPE '\\'
+              -- ⚠️ 63 号 P1-2：text block 内必须写 4 个反斜杠（Java 渲染成 2 个，MySQL 再解成 1 个）
+              -- 与 escapeLikeWildcards 输出的单反斜杠配对。勿"统一"成 XML 的 2 反斜杠写法
+              -- （FileMapper.xml 在 XML 里 2 个是对的——Java text block 需要双倍，方向反了同样坏）
+              AND m.content_extracted LIKE CONCAT(#{keyword}, '%') ESCAPE '\\\\'
             ORDER BY m.id DESC
             LIMIT #{limit}
             """)

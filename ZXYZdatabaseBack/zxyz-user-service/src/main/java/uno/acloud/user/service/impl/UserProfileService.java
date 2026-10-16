@@ -113,6 +113,14 @@ public class UserProfileService {
         }
         userQueryHelper.requireUpdated(userMapper.updatePassword(userId, passwordEncoder.encode(newPassword)));
 
+        // 62g-S1 / 63 号 P1-3：改密 = 作废旧凭证 —— 同事务删除该用户的全部双向切换信任。
+        // 信任表此前全仓零撤销路径（INSERT+SELECT 而已），目标账号改密后旧持有者仍可
+        // 凭信任行免密切换进该账号；与改密踢会话同级的安全语义，必须在同一事务内原子完成。
+        int revokedTrust = userMapper.deleteAllAccountSwitchTrustByUser(userId);
+        if (revokedTrust > 0) {
+            log.info("改密撤销账号切换信任 userId={}, 撤销 {} 行（双向）", userId, revokedTrust);
+        }
+
         // 改密后踢出所有旧会话
         final Long uid = userId;
         if (TransactionSynchronizationManager.isActualTransactionActive()) {

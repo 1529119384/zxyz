@@ -194,8 +194,8 @@ if [ "$DRY_RUN" = true ]; then
     echo "  -> $line"
   done
   echo ""
-  echo "----- 将执行的 SQL -----"
-  printf '%s\n' "${RENDERED[@]}"
+  echo "----- 将执行的 SQL（口令已打码，62g-S3）-----"
+  printf '%s\n' "${RENDERED[@]}" | sed -E "s/IDENTIFIED BY '[^']*'/IDENTIFIED BY '***'/g"
   echo "----- 将执行的 docker 命令（密码经 -p 传入，不出现在 argv 明文之外）-----"
   echo "docker exec -i '$MYSQL_CONTAINER' mysql -uroot -p\"\$MYSQL_ROOT_PASSWORD\" < <rendered.sql>"
   exit 0

@@ -22,4 +22,8 @@ public class EmailBindRequest implements Serializable {
     @Email(message = "邮箱格式不正确")
     @Schema(description = "邮箱地址", example = "user@example.com")
     private String email;
+
+    @NotBlank(message = "当前密码不能为空")
+    @Schema(description = "当前密码（改绑联系方式必须验证，62g-S2）")
+    private String password;
 }

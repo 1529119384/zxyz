@@ -679,6 +679,12 @@ jobs:
             # HEAD~1 不存在（浅克隆单提交）⇒ fail-closed 红。
             if git rev-parse --verify HEAD~1 >/dev/null 2>&1; then
               echo "diff guard: workflow_dispatch, base=HEAD~1"
+              # 63 号 P2: diff 失败必须显式失败（吞掉 git fatal = 与无变更无法区分 = 静默放行）
+              if ! GUARD_DIFF=$(git diff --name-status HEAD~1..HEAD 2>&1); then
+                echo "::error::FLYWAY_GUARD_DIFF_FAILED: guard diff failed (fail-closed)"
+                echo "$GUARD_DIFF"
+                exit 1
+              fi
               while IFS=$'\t' read -r status path; do
                 case "$path" in
                   *db/migration/*.sql)
@@ -689,8 +695,7 @@ jobs:
                         ;;
                     esac
                     ;;
-                esac
-              done < <(git diff --name-status "HEAD~1 HEAD" 2>/dev/null || true)
+              done <<< "$GUARD_DIFF"
             else
               echo "::error::FLYWAY_GUARD_NO_BASE: workflow_dispatch 且 HEAD~1 不存在（浅克隆/单提交）——无比对基线（fail-closed）"
               git ls-files '*db/migration/*.sql'
