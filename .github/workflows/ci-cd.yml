@@ -1069,7 +1069,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           # 审计 I-16：原为 20。Node 20 已于 2026-04 结束维护（EOL），且与
           #   ZXYZdatabaseFront/Dockerfile 的 `FROM node:22-alpine`、docs/claude-infra.md:50
@@ -1151,7 +1151,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           # 与 quality-check-frontend 同步（审计 I-16）：Node 20 已 EOL，统一升到 22。
           node-version: 22
