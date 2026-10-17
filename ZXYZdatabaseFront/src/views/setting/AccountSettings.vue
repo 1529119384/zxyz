@@ -92,6 +92,15 @@
       </div>
 
       <el-form label-position="top" @submit.prevent>
+        <el-form-item label="当前密码（改绑邮箱/手机号时需验证）">
+          <el-input
+            v-model="contactForm.password"
+            type="password"
+            show-password
+            autocomplete="current-password"
+            placeholder="改绑联系方式时必填"
+          />
+        </el-form-item>
         <el-form-item label="邮箱">
           <div class="inline-control">
             <el-input v-model="contactForm.email" placeholder="name@example.com" />
@@ -192,7 +201,7 @@ const teamStore = useTeamStore()
 const savingDefaultTeam = ref(false)
 
 // Shared reactive forms created at component level
-const contactForm = reactive({ email: '', phone: '' })
+const contactForm = reactive({ email: '', phone: '', password: '' })
 const teamForm = reactive({ defaultTeamId: null })
 
 const {

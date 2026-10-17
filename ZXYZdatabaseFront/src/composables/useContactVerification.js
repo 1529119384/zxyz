@@ -28,7 +28,7 @@ export function useContactVerification({
   const emailCodeCountdown = ref(0)
   let emailCodeCountdownTimer = null
 
-  const contactForm = externalContactForm || reactive({ email: '', phone: '' })
+  const contactForm = externalContactForm || reactive({ email: '', phone: '', password: '' })
   const verifyForm = reactive({ type: 'email', code: '' })
 
   const emailCodeButtonText = computed(() =>
@@ -58,10 +58,12 @@ export function useContactVerification({
   async function saveEmail() {
     const email = contactForm.email.trim()
     if (!EMAIL_PATTERN.test(email)) return ElMessage.warning('请输入正确的邮箱格式')
+    const password = contactForm.password
+    if (!password) return ElMessage.warning('改绑邮箱需要输入当前密码')
     const previousEmail = normalizeEmail(currentUserStore.profile?.email)
     savingEmail.value = true
     try {
-      const response = await bindEmail({ email })
+      const response = await bindEmail({ email, password })
       applyProfile(response?.data || null)
       if (normalizeEmail(response?.data?.email) !== previousEmail) {
         resetEmailCodeCountdown()
@@ -77,9 +79,11 @@ export function useContactVerification({
   async function savePhone() {
     const phone = contactForm.phone.trim()
     if (!MAINLAND_PHONE_PATTERN.test(phone)) return ElMessage.warning('请输入正确的手机号')
+    const password = contactForm.password
+    if (!password) return ElMessage.warning('改绑手机号需要输入当前密码')
     savingPhone.value = true
     try {
-      const response = await bindPhone({ phone })
+      const response = await bindPhone({ phone, password })
       applyProfile(response?.data || null)
       ElMessage.success('手机号已绑定，请获取开发验证码完成验证')
     } catch (error) {
