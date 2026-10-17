@@ -64,6 +64,8 @@ export function useContactVerification({
     savingEmail.value = true
     try {
       const response = await bindEmail({ email, password })
+      // 改绑成功后立即清空密码，避免明文密码长时间驻留在组件状态与 DOM input 中
+      contactForm.password = ''
       applyProfile(response?.data || null)
       if (normalizeEmail(response?.data?.email) !== previousEmail) {
         resetEmailCodeCountdown()
@@ -84,6 +86,8 @@ export function useContactVerification({
     savingPhone.value = true
     try {
       const response = await bindPhone({ phone, password })
+      // 改绑成功后立即清空密码，避免明文密码长时间驻留在组件状态与 DOM input 中
+      contactForm.password = ''
       applyProfile(response?.data || null)
       ElMessage.success('手机号已绑定，请获取开发验证码完成验证')
     } catch (error) {
