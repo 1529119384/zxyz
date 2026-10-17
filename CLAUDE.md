@@ -40,11 +40,13 @@ scripts/**
 sql/**
 conf/**
 DEPLOYMENT.md
+CLAUDE.md
+docs/**
 ```
 
 > 58 号 §二.6 / §二.9 白名单补两项的通道归属：`conf/**`（`conf/rabbitmq.conf` 是 rabbitmq 水位线的唯一配置来源，compose bind mount 进容器）与 `DEPLOYMENT.md`（根目录部署指南）都**只进顶层 paths**（lint-config/secret-scan 会跑，消除「改它零检查」盲区），刻意**不进任何 dorny 部署 filter** —— 纯配置/纯文档变更不需要重建任何镜像（与 `docker-compose.dev.yml` 同款通道归属逻辑）。✅ 2026-10-14 收口：`deploy-on-server.sh` 同步白名单**已含** `conf/rabbitmq.conf` 与 `deploy/rabbitmq/enabled_plugins`（mkdir 卫兵 + `synced_conf` 留痕）⇒ conf 变更有自动上线通道；rabbitmq 需重启容器才吃进新配置。
 
-不在此白名单内的文件变更（如 `CLAUDE.md`、`docs/**`）**不触发** workflow。`dorny/paths-filter` 进一步按服务目录判断哪些镜像需要重建。
+不在白名单内的文件变更（如 `ISSUE/**`、`.husky/**`、`.gitignore`）**不触发** workflow；但 `CLAUDE.md` 与 `docs/**` **在**白名单内（`ci-cd.yml:61-69`，工作流注释记录了补入理由）——纯文档提交仍会触发一次轻量 `lint-config`，它是文档门禁 `check-docs-consistency.py` 的**唯一**入口（不补则纯文档提交零检查）。`dorny/paths-filter` 进一步按服务目录判断哪些镜像需要重建。
 
 > 2026-10-11 P2-4 白名单补三项的通道归属：`.gitattributes`（行尾归一影响全部构建产物）与 `docker-compose.tls.yml`（TLS 部署载体，deploy-on-server.sh 会同步它）→ 顶层 paths + `docker-config`（全量 11 服务重建+部署）；`docker-compose.dev.yml` 仅本地 dev-up 用 → **只进顶层 paths**（lint-config/secret-scan 会跑），刻意不进任何 dorny 部署 filter。
 
