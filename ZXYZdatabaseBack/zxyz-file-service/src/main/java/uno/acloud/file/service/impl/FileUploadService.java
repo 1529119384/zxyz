@@ -105,6 +105,7 @@ public class FileUploadService implements FileUploadPort {
     private final FileDomainValidator fileDomainValidator;
     private final FilePathResolver filePathResolver;
     private final FileAccessGuard fileAccessGuardService;
+    private final ProjectAccessCacheService projectAccessCacheService;
     /**
      * F8：配额校验统一走 {@link ProjectStorageCheckClient}（带 Resilience4j 重试+熔断）。
      *
@@ -135,6 +136,7 @@ public class FileUploadService implements FileUploadPort {
                              FileDomainValidator fileDomainValidator,
                              FilePathResolver filePathResolver,
                              FileAccessGuard fileAccessGuardService,
+                             ProjectAccessCacheService projectAccessCacheService,
                              ProjectStorageCheckClient projectStorageCheckClient,
                              ObjectMapper objectMapper,
                              ServiceProperties serviceProperties,
@@ -148,6 +150,7 @@ public class FileUploadService implements FileUploadPort {
         this.fileDomainValidator = fileDomainValidator;
         this.filePathResolver = filePathResolver;
         this.fileAccessGuardService = fileAccessGuardService;
+        this.projectAccessCacheService = projectAccessCacheService;
         this.projectStorageCheckClient = projectStorageCheckClient;
         this.objectMapper = objectMapper;
         this.projectServiceBaseUrl = serviceProperties.getProjectService().getBaseUrl();
@@ -788,6 +791,14 @@ public class FileUploadService implements FileUploadPort {
         if (FileSpaceType.isProject(target.spaceType())) {
             if (target.projectId() == null) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "projectId 不能为空");
+            }
+            // 65 号 #6（🟠）：projectId 与请求 teamId 必须真实归属一致 —— 伪造 teamId 会让
+            // 回收站按裸 teamId 过滤时跨团队信息泄露 + 配额污染。
+            if (target.teamId() != null) {
+                Long projectTeamId = projectAccessCacheService.getProjectTeamId(target.projectId());
+                if (!target.teamId().equals(projectTeamId)) {
+                    throw new BusinessException(ErrorCode.NO_PERMISSION, "项目不属于该团队空间");
+                }
             }
             fileAccessGuardService.requireProjectFileAccess(target.projectId(), userId);
             return;

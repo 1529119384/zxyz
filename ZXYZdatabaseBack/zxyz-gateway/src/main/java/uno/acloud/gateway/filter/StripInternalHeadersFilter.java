@@ -39,7 +39,10 @@ public class StripInternalHeadersFilter implements GlobalFilter, Ordered {
                 .request(r -> r.headers(h -> {
                     boolean removed = h.remove(InternalServiceHeaders.TOKEN_HEADER) != null;
                     boolean removedCaller = h.remove(InternalServiceHeaders.CALLER_SERVICE_HEADER) != null;
-                    if ((removed || removedCaller) && log.isDebugEnabled()) {
+                    // 65 号 §2.6a（🟡）：X-Acting-User-Id 是内部链路操作者身份（file 卡片链），
+                    // 语义上不应由公网客户端声明 —— 并入剥除清单消除伪造面。
+                    boolean removedActing = h.remove("X-Acting-User-Id") != null;
+                    if ((removed || removedCaller || removedActing) && log.isDebugEnabled()) {
                         log.debug("stripped forged internal headers from inbound gateway request: uri={}",
                                 exchange.getRequest().getURI());
                     }

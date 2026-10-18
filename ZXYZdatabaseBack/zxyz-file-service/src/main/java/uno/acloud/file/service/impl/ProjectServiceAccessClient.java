@@ -1,5 +1,6 @@
 package uno.acloud.file.service.impl;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -32,6 +33,18 @@ public class ProjectServiceAccessClient extends AbstractServiceClient {
     @Override
     protected String serviceName() {
         return "项目服务";
+    }
+
+    /**
+     * 65 号 #6：查询项目归属团队 —— 上传链路校验「请求里的 teamId 与 projectId 实际
+     * 归属一致」，堵跨团队伪造（回收站按裸 teamId 过滤 ⇒ 跨团队信息泄露+配额污染）。
+     */
+    public Long getProjectTeamId(Long projectId) {
+        JsonNode data = getJson("/api/internal/projects/{projectId}/team-id", projectId).path("data");
+        if (!data.canConvertToLong() || data.asLong() <= 0) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "项目不存在");
+        }
+        return data.asLong();
     }
 
     public void checkAccess(Long projectId, Long userId) {

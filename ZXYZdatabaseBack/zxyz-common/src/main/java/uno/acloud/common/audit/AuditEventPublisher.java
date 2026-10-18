@@ -99,8 +99,10 @@ public class AuditEventPublisher {
         if (retryBuffer.isEmpty()) {
             return 0;
         }
-        List<String> snapshot = new ArrayList<>(retryBuffer);
-        retryBuffer.clear();
+        // 65 号 §2.8 B-3：copy-then-clear 在窗口内 offer 的事件会被 clear 一并删掉
+        // （丢失且无日志）。drainTo 原子搬移，窗口内新事件留在队列进下一轮。
+        List<String> snapshot = new ArrayList<>(retryBuffer.size());
+        retryBuffer.drainTo(snapshot);
 
         int successCount = 0;
         List<String> stillFailed = new ArrayList<>();

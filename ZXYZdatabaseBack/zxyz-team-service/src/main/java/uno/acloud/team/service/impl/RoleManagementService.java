@@ -16,6 +16,7 @@ import uno.acloud.team.dto.permission.AssignTeamMemberRoleRequest;
 import uno.acloud.team.dto.permission.AssignTeamRolePermissionsRequest;
 import uno.acloud.team.dto.permission.SaveTeamRoleRequest;
 import uno.acloud.team.entity.TeamPermissionEntity;
+import uno.acloud.team.entity.Team;
 import uno.acloud.team.entity.TeamRoleEntity;
 import uno.acloud.team.infrastructure.client.UserServiceClient;
 import uno.acloud.team.infrastructure.mapper.TeamEntityMapper;
@@ -134,6 +135,16 @@ public class RoleManagementService {
         if (teamMapper.getActiveMember(teamId, userId) == null) {
             throw new BusinessException(TeamErrorCode.TEAM_NOT_FOUND.getCode(), "用户不在团队中");
         }
+        // 65 号 §2.1（🔴）：owner 层级守卫 —— 与 removeMember/updateMemberStatus 的 owner
+        // 守卫同款（三兄弟缺一）：owner 的权限完全由 member 行 roleCode 决定（权限解析无
+        // owner 短路），持 ASSIGN_ROLE 的 admin 可把 owner 降级锁死。owner 角色行只允许
+        // team_owner（由 initializeBuiltInRoles/grantBuiltInRole 内部链路维护）。
+        Team teamForGuard = teamMapper.selectById(teamId);
+        if (teamForGuard != null && teamForGuard.getOwnerUserId() != null
+                && teamForGuard.getOwnerUserId().equals(userId)
+                && !"team_owner".equals(request.getRoleCode())) {
+            throw new BusinessException(TeamErrorCode.TEAM_PERMISSION_DENIED.getCode(), "团队所有者角色不可变更");
+        }
         String beforeRole = getMemberRoleCode(teamId, userId);
         assignMemberRoleInternal(teamId, userId, requireText(request.getRoleCode(), "roleCode 不能为空"));
         auditLogService.writeTeamAudit(teamId, operatorUserId, "team_member:assign-role", "team_member", Long.valueOf(userId), beforeRole, request.getRoleCode());
@@ -244,6 +255,13 @@ public class RoleManagementService {
     }
 
     void assignRolePermissionsInternal(Long teamId, Long roleId, List<String> permissionCodes) {
+        // 65 号 §2.1b（🔴）：内置角色权限集 = Policy 常量，语义上不可变 —— 否则持
+        // TEAM_ROLE_MANAGE 的 admin 可直接清空/改写 team_owner 权限集（连降级都不需要）。
+        // 与 saveRole（不许改编码）/deleteRole（不许删）凑齐「内置角色守卫四口子」。
+        TeamRoleEntity guardRole = teamPermissionMapper.getRoleById(teamId, roleId);
+        if (guardRole != null && Integer.valueOf(1).equals(guardRole.getBuiltin())) {
+            throw new BusinessException(TeamErrorCode.TEAM_PERMISSION_DENIED.getCode(), "内置角色权限集不允许修改");
+        }
         teamPermissionMapper.deleteRolePermissions(teamId, roleId);
         List<String> safeCodes = permissionCodes == null ? List.of() : permissionCodes;
         List<Integer> permissionIds = BatchPermissionHelper.resolvePermissionIds(

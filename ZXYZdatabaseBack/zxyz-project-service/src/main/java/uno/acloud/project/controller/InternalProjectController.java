@@ -10,8 +10,11 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import uno.acloud.common.ErrorCode;
 import uno.acloud.common.Result;
 import uno.acloud.project.dto.internal.ProjectAccessCheckRequest;
+import uno.acloud.exception.BusinessException;
+import uno.acloud.project.entity.Project;
 import uno.acloud.project.mapper.ProjectMapper;
 import uno.acloud.project.mapper.ProjectQuotaMapper;
 import uno.acloud.project.service.ProjectAccessGuardPort;
@@ -49,6 +52,16 @@ public class InternalProjectController {
                                          @Valid @RequestBody ProjectAccessCheckRequest body) {
         projectAccessGuardPort.requireProjectFileAccess(projectId, body.userId());
         return Result.success();
+    }
+
+    @Operation(summary = "查询项目归属团队（文件侧 teamId 伪造校验用，65 号 #6）")
+    @GetMapping("/{projectId}/team-id")
+    public Result<Long> getProjectTeamId(@PathVariable Long projectId) {
+        Project project = projectMapper.selectById(projectId);
+        if (project == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "项目不存在");
+        }
+        return Result.of(project.getTeamId());
     }
 
     @Operation(summary = "查询团队下所有项目配额总和")

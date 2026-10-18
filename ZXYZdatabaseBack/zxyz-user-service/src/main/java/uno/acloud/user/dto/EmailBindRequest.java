@@ -12,7 +12,7 @@ import java.io.Serializable;
 
 @Getter
 @Setter
-@ToString
+@ToString(exclude = {"password"})
 @Schema(description = "邮箱绑定请求")
 public class EmailBindRequest implements Serializable {
     private static final long serialVersionUID = 1L;

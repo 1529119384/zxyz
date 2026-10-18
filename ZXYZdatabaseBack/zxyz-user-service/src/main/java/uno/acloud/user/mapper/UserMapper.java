@@ -43,6 +43,22 @@ public interface UserMapper extends BaseMapper<User> {
     User getByUsername(String username);
 
     @Select("""
+            SELECT id, username, email, email_verified AS emailVerified,
+                   phone, phone_verified AS phoneVerified
+            FROM user
+            WHERE email = #{email} LIMIT 1
+            """)
+    User getByEmail(@Param("email") String email);
+
+    @Select("""
+            SELECT id, username, email, email_verified AS emailVerified,
+                   phone, phone_verified AS phoneVerified
+            FROM user
+            WHERE phone = #{phone} LIMIT 1
+            """)
+    User getByPhone(@Param("phone") String phone);
+
+    @Select("""
             SELECT id, username, name, email, phone, avatar, email_verified, phone_verified, default_team_id, create_time, password
             FROM `user`
             WHERE username = #{identifier}

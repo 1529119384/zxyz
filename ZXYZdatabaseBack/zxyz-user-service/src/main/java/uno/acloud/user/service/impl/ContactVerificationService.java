@@ -71,6 +71,12 @@ public class ContactVerificationService {
         // 此前可把联系通道改成任意未验证地址，配合 S1 的永久信任构成接管链）。
         requireCurrentPassword(userId, request.getPassword());
         String email = optionalText(request.getEmail());
+        // 65 号 §2.8 A-2（🔴）：同邮箱双账号 + verify_code (email,scene) upsert 互相踩踏
+        // —— 绑定前查重（配合 V5 唯一索引双保险）。
+        User emailOwner = userMapper.getByEmail(email);
+        if (emailOwner != null && !emailOwner.getId().equals(userId)) {
+            throw new BusinessException(UserErrorCode.LOGIN_FAILED, "该邮箱已被其他账号绑定");
+        }
         userQueryHelper.requireUpdated(userMapper.updateEmail(userId, email));
         return userQueryHelper.requireCurrentUser(userId);
     }
@@ -80,6 +86,11 @@ public class ContactVerificationService {
         // 62g-S2：同上。
         requireCurrentPassword(userId, request.getPassword());
         String phone = optionalText(request.getPhone());
+        // 65 号 §2.8 A-2：同上（手机号同型）。
+        User phoneOwner = userMapper.getByPhone(phone);
+        if (phoneOwner != null && !phoneOwner.getId().equals(userId)) {
+            throw new BusinessException(UserErrorCode.LOGIN_FAILED, "该手机号已被其他账号绑定");
+        }
         userQueryHelper.requireUpdated(userMapper.updatePhone(userId, phone));
         return userQueryHelper.requireCurrentUser(userId);
     }

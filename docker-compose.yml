@@ -446,7 +446,7 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
+      JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8 -Xss512k -Dserver.tomcat.threads.max=50"
       SERVER_PORT: ${PROJECT_SERVICE_PORT:-18080}
       APP_INTERNAL_SERVICE_KEY: ${SVC_PROJECT_KEY:?启用矩阵必须设置 SVC_PROJECT_KEY}
       PROJECT_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_project?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
@@ -473,6 +473,8 @@ services:
       TZ: Asia/Shanghai
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?缺少 CORS_ALLOWED_ORIGINS，请先运行 scripts/init-secrets.sh 或手工填写真实域名}
       NACOS_SERVER_ADDR: nacos:8848
+      NACOS_USERNAME: ${NACOS_USERNAME:-}
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-}
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
       JASYPT_PASSWORD: ${JASYPT_PASSWORD}
       ADMIN_SERVICE_BASE_URL: ${ADMIN_SERVICE_BASE_URL:-http://zxyz-admin-service}
@@ -522,7 +524,7 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
+      JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8 -Xss512k -Dserver.tomcat.threads.max=50"
       SERVER_PORT: ${IM_SERVICE_PORT:-18081}
       APP_INTERNAL_SERVICE_KEY: ${SVC_IM_KEY:?启用矩阵必须设置 SVC_IM_KEY}
       IM_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_im?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
@@ -545,6 +547,8 @@ services:
       TZ: Asia/Shanghai
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?缺少 CORS_ALLOWED_ORIGINS，请先运行 scripts/init-secrets.sh 或手工填写真实域名}
       NACOS_SERVER_ADDR: nacos:8848
+      NACOS_USERNAME: ${NACOS_USERNAME:-}
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-}
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
       JASYPT_PASSWORD: ${JASYPT_PASSWORD}
       ADMIN_SERVICE_BASE_URL: ${ADMIN_SERVICE_BASE_URL:-http://zxyz-admin-service}
@@ -593,7 +597,7 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
+      JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8 -Xss512k -Dserver.tomcat.threads.max=50"
       SERVER_PORT: ${EMAIL_SERVICE_PORT:-18082}
       APP_INTERNAL_SERVICE_KEY: ${SVC_EMAIL_KEY:?启用矩阵必须设置 SVC_EMAIL_KEY}
       # P2-A2 邮件试点：开放 allowed-sources（来源服务名 -> 该来源 SVC_*_KEY）
@@ -620,6 +624,8 @@ services:
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       TZ: Asia/Shanghai
       NACOS_SERVER_ADDR: nacos:8848
+      NACOS_USERNAME: ${NACOS_USERNAME:-}
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-}
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
       JASYPT_PASSWORD: ${JASYPT_PASSWORD}
       # A4（ISSUE/15）：验证码 pepper 与 Jasypt 主密钥**解耦** —— 独立密钥、可独立轮换，
@@ -673,7 +679,7 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
+      JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8 -Xss512k -Dserver.tomcat.threads.max=50"
       SERVER_PORT: ${SHARE_SERVICE_PORT:-18084}
       APP_INTERNAL_SERVICE_KEY: ${SVC_SHARE_KEY:?启用矩阵必须设置 SVC_SHARE_KEY}
       SHARE_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_share?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
@@ -696,6 +702,8 @@ services:
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       TZ: Asia/Shanghai
       NACOS_SERVER_ADDR: nacos:8848
+      NACOS_USERNAME: ${NACOS_USERNAME:-}
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-}
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
       JASYPT_PASSWORD: ${JASYPT_PASSWORD}
       ADMIN_SERVICE_BASE_URL: ${ADMIN_SERVICE_BASE_URL:-http://zxyz-admin-service}
@@ -745,7 +753,7 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
+      JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8 -Xss512k -Dserver.tomcat.threads.max=50"
       SERVER_PORT: ${FILE_SERVICE_PORT:-18085}
       APP_INTERNAL_SERVICE_KEY: ${SVC_FILE_KEY:?启用矩阵必须设置 SVC_FILE_KEY}
       FILE_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_file?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
@@ -773,6 +781,8 @@ services:
       TZ: Asia/Shanghai
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?缺少 CORS_ALLOWED_ORIGINS，请先运行 scripts/init-secrets.sh 或手工填写真实域名}
       NACOS_SERVER_ADDR: nacos:8848
+      NACOS_USERNAME: ${NACOS_USERNAME:-}
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-}
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
       JASYPT_PASSWORD: ${JASYPT_PASSWORD}
       ADMIN_SERVICE_BASE_URL: ${ADMIN_SERVICE_BASE_URL:-http://zxyz-admin-service}
@@ -828,7 +838,7 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
+      JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8 -Xss512k -Dserver.tomcat.threads.max=50"
       SERVER_PORT: ${TEAM_SERVICE_PORT:-18086}
       APP_INTERNAL_SERVICE_KEY: ${SVC_TEAM_KEY:?启用矩阵必须设置 SVC_TEAM_KEY}
       TEAM_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_team?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
@@ -857,6 +867,8 @@ services:
       TZ: Asia/Shanghai
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?缺少 CORS_ALLOWED_ORIGINS，请先运行 scripts/init-secrets.sh 或手工填写真实域名}
       NACOS_SERVER_ADDR: nacos:8848
+      NACOS_USERNAME: ${NACOS_USERNAME:-}
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-}
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
       JASYPT_PASSWORD: ${JASYPT_PASSWORD}
       ADMIN_SERVICE_BASE_URL: ${ADMIN_SERVICE_BASE_URL:-http://zxyz-admin-service}
@@ -906,7 +918,7 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
+      JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8 -Xss512k -Dserver.tomcat.threads.max=50"
       SERVER_PORT: ${AUDIT_SERVICE_PORT:-18087}
       APP_INTERNAL_SERVICE_KEY: ${SVC_AUDIT_KEY:?启用矩阵必须设置 SVC_AUDIT_KEY}
       AUDIT_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_audit?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
@@ -925,6 +937,8 @@ services:
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
       SPRING_APPLICATION_JSON: '{"app":{"internal":{"allowed-sources":"{''zxyz-user-service'':''${SVC_USER_KEY:?启用矩阵必须设置 SVC_USER_KEY}'',''zxyz-admin-service'':''${SVC_ADMIN_KEY:?启用矩阵必须设置 SVC_ADMIN_KEY}'',''zxyz-project-service'':''${SVC_PROJECT_KEY:?启用矩阵必须设置 SVC_PROJECT_KEY}'',''zxyz-im-service'':''${SVC_IM_KEY:?启用矩阵必须设置 SVC_IM_KEY}'',''zxyz-file-service'':''${SVC_FILE_KEY:?启用矩阵必须设置 SVC_FILE_KEY}'',''zxyz-team-service'':''${SVC_TEAM_KEY:?启用矩阵必须设置 SVC_TEAM_KEY}'',''zxyz-gateway'':''${SVC_GATEWAY_KEY:?启用矩阵必须设置 SVC_GATEWAY_KEY}'',''zxyz-email-service'':''${SVC_EMAIL_KEY:?启用矩阵必须设置 SVC_EMAIL_KEY}'',''zxyz-share-service'':''${SVC_SHARE_KEY:?启用矩阵必须设置 SVC_SHARE_KEY}'',''zxyz-audit-service'':''${SVC_AUDIT_KEY:?启用矩阵必须设置 SVC_AUDIT_KEY}''}"}}}'
       NACOS_SERVER_ADDR: nacos:8848
+      NACOS_USERNAME: ${NACOS_USERNAME:-}
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-}
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
       JASYPT_PASSWORD: ${JASYPT_PASSWORD}
       ADMIN_SERVICE_BASE_URL: ${ADMIN_SERVICE_BASE_URL:-http://zxyz-admin-service}
@@ -974,7 +988,7 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
+      JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8 -Xss512k -Dserver.tomcat.threads.max=50"
       SERVER_PORT: ${ADMIN_SERVICE_PORT:-18088}
       APP_INTERNAL_SERVICE_KEY: ${SVC_ADMIN_KEY:?启用矩阵必须设置 SVC_ADMIN_KEY}
       CONFIG_DB_HOST: mysql
@@ -984,6 +998,8 @@ services:
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       NACOS_SERVER_ADDR: nacos:8848
+      NACOS_USERNAME: ${NACOS_USERNAME:-}
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-}
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
       JASYPT_PASSWORD: ${JASYPT_PASSWORD}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
@@ -1039,7 +1055,7 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
+      JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8 -Xss512k -Dserver.tomcat.threads.max=50"
       SERVER_PORT: ${USER_SERVICE_PORT:-18083}
       APP_INTERNAL_SERVICE_KEY: ${SVC_USER_KEY:?启用矩阵必须设置 SVC_USER_KEY}
       USER_DATASOURCE_URL: jdbc:mysql://mysql:3306/zxyz_user?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
@@ -1083,6 +1099,8 @@ services:
       AUTH_TOKEN_TIMEOUT: ${AUTH_TOKEN_TIMEOUT:-43200}
       AUTH_LONG_LIVED_TIMEOUT: ${AUTH_LONG_LIVED_TIMEOUT:-604800}
       NACOS_SERVER_ADDR: nacos:8848
+      NACOS_USERNAME: ${NACOS_USERNAME:-}
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-}
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
       JASYPT_PASSWORD: ${JASYPT_PASSWORD}
       ADMIN_SERVICE_BASE_URL: ${ADMIN_SERVICE_BASE_URL:-http://zxyz-admin-service}
@@ -1130,7 +1148,7 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8"
+      JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:TieredStopAtLevel=1 -Dfile.encoding=UTF-8 -Xss512k -Dserver.tomcat.threads.max=50"
       SERVER_PORT: ${GATEWAY_PORT:-18000}
       APP_INTERNAL_SERVICE_KEY: ${SVC_GATEWAY_KEY:?启用矩阵必须设置 SVC_GATEWAY_KEY}
       # 启用矩阵必须设置 SVC_GATEWAY_KEY（缺失则网关拒绝启动，fail-closed）
@@ -1148,6 +1166,8 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       REDIS_DATABASE: ${REDIS_DATABASE:-0}
       NACOS_SERVER_ADDR: nacos:8848
+      NACOS_USERNAME: ${NACOS_USERNAME:-}
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-}
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
       JASYPT_PASSWORD: ${JASYPT_PASSWORD}
       ADMIN_SERVICE_BASE_URL: ${ADMIN_SERVICE_BASE_URL:-http://zxyz-admin-service}
@@ -1274,3 +1294,4 @@ networks:
       config:
         - subnet: 172.19.0.0/16
     # 注：子网已钉死。此后任何 ipam 改动都必须重复「维护窗口 + down / network rm / up」全栈重建，不可随普通部署上线。
+

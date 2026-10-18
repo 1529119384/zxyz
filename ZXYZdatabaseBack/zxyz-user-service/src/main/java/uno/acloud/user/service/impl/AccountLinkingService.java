@@ -63,17 +63,22 @@ public class AccountLinkingService {
     }
 
     /**
-     * 62g-S1 / 63 号 P1-3：解除对目标账号的切换信任（双向删）。
-     * <p>用户自我救济入口 —— 此前信任表全仓无任何撤销路径，且列表只读。</p>
+     * 62g-S1 / 63 号 P1-3：解除对目标账号的切换信任。
+     * <p>65 号 §2.10（🔴）：必须<b>双向删</b> —— trust 建立时写入 A→B/B→A 两行，
+     * 单向删 (A→B) 后 B→A 行仍在 ⇒ B 仍可免密切换进 A，解除权实际落在对方手里，
+     * 与自我救济意图相反。统一走 {@link UserMapper#deleteAllAccountSwitchTrustByUser}
+     * 的双向删除；语义「我解除与该账号之间的信任关系」对双方同时生效。</p>
      */
     @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
     public void untrustLinkedAccount(Long userId, Long targetUserId) {
         requireLinkedTarget(userId, targetUserId);
-        int removed = userMapper.deleteAccountSwitchTrust(userId, targetUserId);
+        int removedByUser = userMapper.deleteAccountSwitchTrust(userId, targetUserId);
+        int removedReverse = userMapper.deleteAccountSwitchTrust(targetUserId, userId);
+        int removed = removedByUser + removedReverse;
         if (removed == 0) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "该账号当前不存在切换信任");
         }
-        log.info("解除账号切换信任 userId={} targetUserId={} 删除 {} 行", userId, targetUserId, removed);
+        log.info("解除账号切换信任（双向） userId={} targetUserId={} 删除 {} 行", userId, targetUserId, removed);
     }
 
     public AccountSwitchVO switchLinkedAccount(Long userId, Long targetUserId) {        requireLinkedTarget(userId, targetUserId);

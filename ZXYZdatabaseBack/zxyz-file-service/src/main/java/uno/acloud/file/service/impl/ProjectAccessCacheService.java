@@ -32,6 +32,13 @@ public class ProjectAccessCacheService {
      * Cache value: "1" (access granted)
      * TTL: 30 seconds
      */
+    /**
+     * 65 号 #6：查询项目归属团队（上传链路 teamId 伪造校验）。低频写路径，直连不缓存。
+     */
+    public Long getProjectTeamId(Long projectId) {
+        return projectServiceAccessClient.getProjectTeamId(projectId);
+    }
+
     public void checkAccess(Long projectId, Long userId) {
         String key = KEY_PREFIX + projectId + ":" + userId;
         try {
