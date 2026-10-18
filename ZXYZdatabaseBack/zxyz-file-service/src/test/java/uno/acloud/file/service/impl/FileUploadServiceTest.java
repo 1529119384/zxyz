@@ -58,6 +58,9 @@ class FileUploadServiceTest {
     private FileAccessGuard fileAccessGuardService;
 
     @Mock
+    private uno.acloud.file.service.impl.ProjectAccessCacheService projectAccessCacheService;
+
+    @Mock
     private RestClient restClient;
 
     /**
@@ -98,7 +101,7 @@ class FileUploadServiceTest {
 
         fileUploadService = new FileUploadService(
                 registry, fileUploadPersistenceService, fileDomainValidator,
-                filePathResolver, fileAccessGuardService, projectStorageCheckClient,
+                filePathResolver, fileAccessGuardService, projectAccessCacheService, projectStorageCheckClient,
                 objectMapper, serviceProperties, usageLedgerMapper, redisTemplate, "", "", 524288000L);
     }
 
@@ -255,7 +258,7 @@ class FileUploadServiceTest {
 
         FileUploadService quotaService = new FileUploadService(
                 registry, fileUploadPersistenceService, fileDomainValidator,
-                filePathResolver, fileAccessGuardService, projectStorageCheckClient,
+                filePathResolver, fileAccessGuardService, projectAccessCacheService, projectStorageCheckClient,
                 objectMapper, quotaProps, usageLedgerMapper, redisTemplate, "", "", 524288000L);
 
         BusinessException ex = assertThrows(BusinessException.class,
@@ -548,7 +551,7 @@ class FileUploadServiceTest {
 
         FileUploadService quotaService = new FileUploadService(
                 registry, fileUploadPersistenceService, fileDomainValidator,
-                filePathResolver, fileAccessGuardService, projectStorageCheckClient,
+                filePathResolver, fileAccessGuardService, projectAccessCacheService, projectStorageCheckClient,
                 objectMapper, quotaProps, usageLedgerMapper, redisTemplate, "", "", 524288000L);
 
         when(fileDomainValidator.validateInputName("quota-test.txt")).thenReturn("quota-test.txt");
@@ -749,7 +752,7 @@ class FileUploadServiceTest {
         // 声明 8 字节（不超上限）但实际写 16 字节：应被逐字节计数拦下并清理
         FileUploadService tinyLimitService = new FileUploadService(
                 registry, fileUploadPersistenceService, fileDomainValidator,
-                filePathResolver, fileAccessGuardService, projectStorageCheckClient,
+                filePathResolver, fileAccessGuardService, projectAccessCacheService, projectStorageCheckClient,
                 objectMapper, serviceProperties, usageLedgerMapper, redisTemplate, "", "", 8L);
 
         when(fileDomainValidator.validateInputName("tiny.txt")).thenReturn("tiny.txt");

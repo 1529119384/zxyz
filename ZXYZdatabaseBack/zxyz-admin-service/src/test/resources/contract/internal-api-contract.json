@@ -373,6 +373,12 @@
     "responseDataType" : "java.lang.Void"
   }, {
     "method" : "GET",
+    "path" : "/api/internal/projects/{projectId}/team-id",
+    "requestBodyType" : null,
+    "requestBodyJsonFields" : [ ],
+    "responseDataType" : "java.lang.Long"
+  }, {
+    "method" : "GET",
     "path" : "/api/internal/projects/{userId}/active-projects-led-count",
     "requestBodyType" : null,
     "requestBodyJsonFields" : [ ],
