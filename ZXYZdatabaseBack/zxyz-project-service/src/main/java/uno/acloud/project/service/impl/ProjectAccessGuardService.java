@@ -11,16 +11,19 @@ import uno.acloud.exception.BusinessException;
 import uno.acloud.exception.ForbiddenException;
 import uno.acloud.exception.NotFoundException;
 import uno.acloud.project.mapper.ProjectMapper;
+import uno.acloud.project.mapper.ProjectQuotaMapper;
 import uno.acloud.project.service.ProjectAccessGuardPort;
 
 @Service
 public class ProjectAccessGuardService implements ProjectAccessGuardPort {
 
     private final ProjectMapper projectMapper;
+    private final ProjectQuotaMapper projectQuotaMapper;
     private final TeamFileAccessPort teamFileAccessService;
 
-    public ProjectAccessGuardService(ProjectMapper projectMapper, TeamFileAccessPort teamFileAccessService) {
+    public ProjectAccessGuardService(ProjectMapper projectMapper, ProjectQuotaMapper projectQuotaMapper, TeamFileAccessPort teamFileAccessService) {
         this.projectMapper = projectMapper;
+        this.projectQuotaMapper = projectQuotaMapper;
         this.teamFileAccessService = teamFileAccessService;
     }
 
@@ -65,4 +68,22 @@ public class ProjectAccessGuardService implements ProjectAccessGuardPort {
         }
         return project;
     }
+
+
+    @Override
+    public Long getTeamId(Long projectId) {
+        Project project = projectMapper.selectById(projectId);
+        return project == null ? null : project.getTeamId();
+    }
+
+    @Override
+    public int countActiveProjectsLedBy(Long userId) {
+        return projectMapper.countActiveProjectsLedBy(userId);
+    }
+
+    @Override
+    public long sumProjectQuotaByTeam(Long teamId) {
+        return projectQuotaMapper.selectStorageLimitSumByTeamId(teamId);
+    }
 }
+

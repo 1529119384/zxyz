@@ -41,7 +41,7 @@ class ProjectErrorCodeTest {
 
     @BeforeEach
     void setUp() {
-        projectAccessGuardService = new ProjectAccessGuardService(projectMapper, teamFileAccessPort);
+        projectAccessGuardService = new ProjectAccessGuardService(projectMapper, projectQuotaMapper, teamFileAccessPort);
         projectCommandSupport = new ProjectCommandSupport(
                 projectMapper,
                 projectCreateRequestMapper,

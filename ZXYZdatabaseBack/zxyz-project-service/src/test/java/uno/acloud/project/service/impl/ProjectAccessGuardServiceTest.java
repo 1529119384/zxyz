@@ -26,11 +26,14 @@ class ProjectAccessGuardServiceTest {
     @Mock
     private TeamFileAccessPort teamFileAccessService;
 
+    @Mock
+    private uno.acloud.project.mapper.ProjectQuotaMapper projectQuotaMapper;
+
     private ProjectAccessGuardService projectAccessGuardService;
 
     @BeforeEach
     void setUp() {
-        projectAccessGuardService = new ProjectAccessGuardService(projectMapper, teamFileAccessService);
+        projectAccessGuardService = new ProjectAccessGuardService(projectMapper, projectQuotaMapper, teamFileAccessService);
     }
 
     private Project activeProject(Long id, Long teamId, Long leaderUserId) {
