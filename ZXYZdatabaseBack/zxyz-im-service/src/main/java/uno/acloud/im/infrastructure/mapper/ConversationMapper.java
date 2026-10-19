@@ -133,6 +133,9 @@ public interface ConversationMapper extends BaseMapper<ImConversation> {
                   WHERE tm.team_id = c.team_id AND tm.user_id = #{userId} AND tm.status = 0
               ))
             ORDER BY c.update_time DESC, c.id DESC
+            -- 66 号二.7②：安全上限（500）。前端为全量加载形态，正常用户远低于该值；
+            -- 超过说明存在数据异常或极端账号，截断防止单请求拖垮 DB。
+            LIMIT 500
             """)
     List<ConversationSummaryVO> listMyConversations(@Param("userId") Long userId, @Param("teamId") Long teamId);
 

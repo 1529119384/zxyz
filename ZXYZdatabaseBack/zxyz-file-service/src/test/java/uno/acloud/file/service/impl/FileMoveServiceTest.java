@@ -10,6 +10,7 @@ import uno.acloud.common.FileSpaceType;
 import uno.acloud.common.util.TransactionHelper;
 import uno.acloud.exception.BusinessException;
 import uno.acloud.file.infrastructure.entity.FileItem;
+import uno.acloud.file.infrastructure.entity.FileNode;
 import uno.acloud.file.infrastructure.entity.Folder;
 import uno.acloud.file.infrastructure.mapper.FileMapper;
 import uno.acloud.file.vo.BatchOperationDetailVO;
@@ -236,7 +237,8 @@ class FileMoveServiceTest {
      * <p>关键断言：fail-fast —— 一项都不得被处理，否则「先预载全树再报错」依然会造成内存与连接占用。</p>
      */
     @Test
-    void moveFiles_exceedingNodeLimit_shouldFailFastBeforeAnyQuery() {
+    void moveFiles_exceedingNodeLimit_topLevelCount_shouldFailFastBeforeAnyQuery() {
+        // 66 号二.7③：顶层超限仍在预加载前快速失败（保持原 fail-fast 语义）。
         List<Long> tooMany = new java.util.ArrayList<>();
         for (long i = 0; i < MAX_NODES_PER_TX + 1; i++) {
             tooMany.add(i + 1);
@@ -248,16 +250,12 @@ class FileMoveServiceTest {
         assertEquals(ErrorCode.BAD_REQUEST, ex.getErrorCode());
         assertTrue(ex.getMessage().contains(String.valueOf(MAX_NODES_PER_TX)),
                 "错误信息必须给出实际上限，便于前端拆分批次；实际：" + ex.getMessage());
-        // fail-fast：不得先做任何**数据查询/权限校验**（否则上限就只是"事后报错"而非防护）。
-        // 注意 validateUserId / validateTargetParentId 是纯本地参数校验，位于上限检查之前属正常，
-        // 因此这里不能对 fileDomainValidator 用 verifyNoInteractions。
         verify(fileDomainValidator, never()).requireMovableNodes(anyList());
         verifyNoInteractions(fileAccessGuardService);
         verifyNoInteractions(fileMapper);
         verifyNoInteractions(helper);
     }
 
-    /** 边界对照：恰好等于上限不得被上限拒绝（避免写成「小于」而误伤合法批次）。 */
     @Test
     void moveFiles_atExactNodeLimit_shouldNotBeRejectedByLimit() {
         List<Long> atLimit = new java.util.ArrayList<>();
@@ -272,7 +270,7 @@ class FileMoveServiceTest {
             fileMoveService.moveFiles(atLimit, 200L, 10L, 1L);
         } catch (BusinessException e) {
             assertFalse(e.getMessage() != null && e.getMessage().contains("数量过多"),
-                    "恰好 " + MAX_NODES_PER_TX + " 条不得被上限拒绝（边界写成了 > 而非 >=）：" + e.getMessage());
+                    "恰好等于上限不应被上限分支拒绝");
         }
     }
 }

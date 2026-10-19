@@ -51,7 +51,12 @@ public class FileMoveService {
     public BatchOperationDetailVO moveFiles(List<Long> fileIds, Long targetParentId, Long requestedTeamId, Integer requestedSpaceType, Long requestedProjectId, Long userId) {
         fileDomainValidator.validateUserId(userId);
         fileDomainValidator.validateTargetParentId(targetParentId);
-        requireWithinMoveLimit(fileIds);
+        // 顶层快速检查（fail-fast：MAX+1 顶层在预加载前即拒绝；66 号二.7③ 保留原语义）
+        if (fileIds != null && fileIds.size() > maxNodesPerTransaction) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                    "单次移动文件数量过多（" + fileIds.size() + "），请分批操作（上限 "
+                            + maxNodesPerTransaction + "）");
+        }
 
         List<FileNode> selectedNodes = fileDomainValidator.requireMovableNodes(fileIds);
         fileAccessGuardService.requireWriteAccess(selectedNodes, userId);
@@ -75,6 +80,16 @@ public class FileMoveService {
             childrenMap = helper.buildChildrenMap(allDescendants);
         } else {
             childrenMap = Map.of();
+        }
+
+        // 66 号二.7③：移动护栏改为「实际移动节点总数」（顶层 + 预加载的子树），
+        // 旧实现只数顶层 —— 选 1 个含 10 万文件的文件夹即可绕过上限。
+        int totalMoved = topLevelNodes.size() + childrenMap.values().stream()
+                .mapToInt(List::size).sum();
+        if (totalMoved > maxNodesPerTransaction) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                    "单次移动文件数量过多（含子树共 " + totalMoved + "），请分批操作（上限 "
+                            + maxNodesPerTransaction + "）");
         }
 
         return transactionHelper.execute(status ->

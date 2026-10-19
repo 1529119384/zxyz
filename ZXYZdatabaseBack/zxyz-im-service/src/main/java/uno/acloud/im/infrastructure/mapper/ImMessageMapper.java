@@ -1,6 +1,8 @@
 package uno.acloud.im.infrastructure.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import org.apache.ibatis.annotations.Delete;
+import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -182,4 +184,16 @@ public interface ImMessageMapper extends BaseMapper<ImMessage> {
               AND status = 0
             """)
     int updateMessageContent(@Param("messageId") Long messageId, @Param("content") String content);
+
+
+    /**
+     * 66 号二.7①：系统通知广播的批量消息落库（广播 N=1000 时 insert 从 N 条降为 ceil(N/500) 条）。
+     */
+    @Insert("<script>"
+            + "INSERT INTO im_message (conversation_id, sender_user_id, message_type, content, client_message_id, status, create_time) VALUES "
+            + "<foreach collection='messages' item='m' separator=','>"
+            + "(#{m.conversationId}, #{m.senderUserId}, #{m.messageType}, #{m.content}, #{m.clientMessageId}, #{m.status}, #{m.createTime})"
+            + "</foreach>"
+            + "</script>")
+    int batchInsert(@Param("messages") List<ImMessage> messages);
 }

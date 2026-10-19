@@ -79,7 +79,7 @@ public class SystemConversationService {
         );
     }
 
-    private String writeSystemContent(String title, String content, String type, Long businessId) {
+    String writeSystemContent(String title, String content, String type, Long businessId) {
         try {
             return objectMapper.createObjectNode()
                     .put("title", title == null ? "System message" : title)

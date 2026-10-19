@@ -1003,8 +1003,8 @@ jobs:
             export NACOS_USER NACOS_PASS
 
             cd "$REPO_DIR/nacos-config"
-            echo "===== import.sh（namespace=public, group=ZXYZ, 端口 8848/18081）====="
-            exec bash ./import.sh "" 127.0.0.1:8848 127.0.0.1:18081
+            echo "===== import.sh（namespace=public, group=ZXYZ, 端口默认 8848/18081，可经 env 覆盖）====="
+            exec bash ./import.sh "" "${{ vars.NACOS_IMPORT_ADDR || '127.0.0.1:8848' }}" "${{ vars.NACOS_CONSOLE_ADDR || '127.0.0.1:18081' }}"
 
   # ============================================================
   # Job: 密钥泄漏扫描（Gitleaks）
