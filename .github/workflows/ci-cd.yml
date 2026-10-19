@@ -660,6 +660,12 @@ jobs:
               exit 1
             fi
             echo "diff guard: PR base=origin/${BASE}"
+            # 67 号 P2-1：diff 失败显式失败（三臂统一，照 dispatch 臂形态）
+            if ! GUARD_DIFF=$(git diff --name-status "origin/${BASE}...HEAD" 2>&1); then
+              echo "::error::FLYWAY_GUARD_DIFF_FAILED: guard diff failed (fail-closed)"
+              echo "$GUARD_DIFF"
+              exit 1
+            fi
             while IFS=$'\t' read -r status path; do
               case "$path" in
                 *db/migration/*.sql)
@@ -671,7 +677,7 @@ jobs:
                   esac
                   ;;
               esac
-            done < <(git diff --name-status "origin/${BASE}...HEAD" 2>/dev/null || true)
+            done <<< "$GUARD_DIFF"
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             # 61 号第三次点名修订（NEW-2 终修）：dispatch 无 before 可用，但
             # 「push 轮已把关」的前提在 push 轮 quality 红时并不成立（dispatch 可在
@@ -715,6 +721,12 @@ jobs:
               exit 1
             fi
             echo "diff guard: push before=$BEFORE...HEAD"
+            # 67 号 P2-1：同上（三臂统一）
+            if ! GUARD_DIFF=$(git diff --name-status "${BEFORE}...HEAD" 2>&1); then
+              echo "::error::FLYWAY_GUARD_DIFF_FAILED: guard diff failed (fail-closed)"
+              echo "$GUARD_DIFF"
+              exit 1
+            fi
             while IFS=$'\t' read -r status path; do
               case "$path" in
                 *db/migration/*.sql)
@@ -726,7 +738,7 @@ jobs:
                   esac
                   ;;
               esac
-            done < <(git diff --name-status "${BEFORE}...HEAD" 2>/dev/null || true)
+            done <<< "$GUARD_DIFF"
           else
             echo "::error::FLYWAY_GUARD_NO_BASE: event ${{ github.event_name }} 无比对基线（fail-closed）——以下为全量迁移文件清单："
             git ls-files '*db/migration/*.sql'

@@ -56,6 +56,10 @@ mkdir -p "$BACKUP_DIR"
 
 # 汇总失败标志：任何一个关键步骤失败都不得静默成功
 FAILED=0
+# 64 号 §九.1 / 66 号：binlog 核验留痕信号（尾部统一写 deploy-last.log，
+#  解掉「每周 30 分钟窗口 + SSH 可用」双重依赖——核验从赶窗口变成读一行日志）
+BINLOG_OK=false
+BINLOG_NOTE="未执行（--mysql-only 或条件不满足）"
 
 echo "=== ZXYZ 备份 $DATE ==="
 
@@ -125,6 +129,7 @@ else
 
   if [ -z "$CURRENT_BINLOG" ]; then
     echo "WARN: 无法获取当前 binlog 文件名，跳过 binlog 备份" >&2
+    BINLOG_NOTE="跳过：无法获取当前 binlog 文件名"
     [ "$MYSQL_BINLOG_OK" = true ] && FAILED=1
   else
     LAST_COPIED=""
@@ -151,12 +156,17 @@ else
       if tar -czf "$BACKUP_DIR/binlog_$DATE.tar.gz" -C "$BINLOG_TMP" . ; then
         BINLOG_ARTIFACT="$BACKUP_DIR/binlog_$DATE.tar.gz"
         echo "binlog 增量备份: $BINLOG_ARTIFACT ($BINLOG_COPIED 个文件)"
+        BINLOG_OK=true
+        BINLOG_NOTE="$BINLOG_ARTIFACT ($BINLOG_COPIED 个文件)"
       else
         echo "ERROR: binlog 打包失败" >&2
         FAILED=1
+        BINLOG_NOTE="打包失败"
       fi
     else
       echo "本次无新增 binlog 文件可备份"
+      BINLOG_OK=true
+      BINLOG_NOTE="无新增（FLUSH 轮转后无封口文件）"
     fi
     rm -rf "$BINLOG_TMP"
     # 状态推进到当前文件：下次先轮转，当前文件即封口，再从其起拷贝
@@ -375,6 +385,14 @@ find "$BACKUP_DIR" -name "mysql_*.sql.gz" -mtime +$KEEP_DAYS -delete
 find "$BACKUP_DIR" -name "redis_*.rdb"     -mtime +$KEEP_DAYS -delete
 find "$BACKUP_DIR" -name "rabbitmq_*.json" -mtime +$KEEP_DAYS -delete
 find "$BACKUP_DIR" -name "binlog_*.tar.gz" -mtime +$KEEP_DAYS -delete
+
+# 64 号 §九.1：binlog 核验留痕——核验方读这一行即可判定（不再依赖赶 SSH 窗口）
+BINLOG_OK_LOG="${DEPLOY_PATH:-/www/zxyz}/deploy-last.log"
+if [ -w "$(dirname "$BINLOG_OK_LOG")" ] || [ -w "$BINLOG_OK_LOG" ]; then
+  echo "binlog_ok=$BINLOG_OK note=$BINLOG_NOTE date=$DATE" >> "$BINLOG_OK_LOG"
+else
+  echo "binlog_ok=$BINLOG_OK note=$BINLOG_NOTE date=$DATE（本机无部署目录写权限，仅 stdout）"
+fi
 
 if [ "$FAILED" -ne 0 ]; then
   echo "ERROR: 备份流程中存在失败步骤，请检查上方 WARN/ERROR。本地备份可能不完整。" >&2
