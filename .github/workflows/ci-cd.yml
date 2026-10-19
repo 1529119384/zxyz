@@ -640,6 +640,40 @@ jobs:
           fi
           echo "Flyway filename sanity: all filenames valid."
 
+      - name: UNIQUE constraint pre-deploy checklist (67 号 P1)
+        shell: bash
+        run: |
+          # 67 号 §二：V4/V5 类「ADD CONSTRAINT UNIQUE」迁移在服务启动时执行，
+          # 库里若有重复数据 ⇒ ERROR 1062 ⇒ 服务起不来 ⇒ 烧一次部署。
+          # 本步静态提取所有迁移里的 UNIQUE 约束，生成对应查重 SQL 清单打进 Summary
+          # —— 部署前人工（或后续连库步骤）逐条核对。
+          mkdir -p predeploy-checks
+          OUT=predeploy-checks/unique-constraint-checklist.md
+          echo "## Flyway UNIQUE 约束部署前查重清单" > "$OUT"
+          FOUND=0
+          for f in $(git ls-files 'ZXYZdatabaseBack/*/src/main/resources/db/migration/V*.sql' | grep -v '/target/'); do
+            # 提取 "ALTER TABLE <tbl> ADD CONSTRAINT <name> UNIQUE (<col>)" 行
+            grep -oE "ALTER TABLE +[a-zA-Z_]+ +ADD CONSTRAINT +[a-zA-Z_]+ +UNIQUE +\([^)]+\)" "$f" | while IFS= read -r line; do
+              TBL=$(echo "$line" | sed -E "s/ALTER TABLE +([a-zA-Z_]+).*/\1/")
+              COL=$(echo "$line" | sed -E "s/.*UNIQUE +\(([^)]+)\).*/\1/")
+              COND=$(echo "$COL" | sed -E "s/([^ ]+) IS NULL//g; s/ AND +$//")
+              {
+                echo ""
+                echo "### $f"
+                echo "```sql"
+                echo "SELECT $COL, COUNT(*) c FROM $TBL GROUP BY $COL HAVING c > 1;"
+                echo "```"
+                echo "（若有输出 ⇒ 先清理重复数据，否则服务启动时 ERROR 1062）"
+              } >> "$OUT"
+              FOUND=1
+            done
+          done
+          if [ "$FOUND" -eq 1 ]; then
+            cat "$OUT"
+            echo "::notice::UNIQUE 约束查重清单已生成（predeploy-checks/unique-constraint-checklist.md）—— 部署前逐条核对"
+          else
+            echo "No UNIQUE constraint migrations found; nothing to check."
+          fi
       - name: Reject modifying applied migrations (diff guard)
         env:
           BEFORE: ${{ github.event.before }}
