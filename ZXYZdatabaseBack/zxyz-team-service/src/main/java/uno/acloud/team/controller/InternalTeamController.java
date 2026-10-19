@@ -8,127 +8,88 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import uno.acloud.common.Result;
-import uno.acloud.team.entity.Team;
-import uno.acloud.team.entity.TeamMember;
-import uno.acloud.team.entity.TeamQuota;
-import uno.acloud.team.mapper.TeamMapper;
-import uno.acloud.team.mapper.TeamQuotaMapper;
-import uno.acloud.team.infrastructure.mapper.TeamEntityMapper;
+import uno.acloud.team.service.impl.InternalTeamService;
 import uno.acloud.team.vo.team.TeamMemberDetailVO;
 import uno.acloud.team.vo.team.TeamQuotaVO;
 import uno.acloud.team.vo.team.TeamVO;
 
 import java.util.List;
 
+/**
+ * 内部服务团队查询 API（Hidden：不出现在对外文档）。
+ *
+ * <p>65/66 号 🟠-5 重构：业务全部下沉 {@link InternalTeamService}，
+ * Controller 不再直注 Mapper（照 InternalProjectController Port 范式）。</p>
+ */
 @Hidden
 @Tag(name = "团队管理（内部）", description = "内部服务团队查询 API")
 @RestController
 @RequestMapping("/api/internal/teams")
 public class InternalTeamController {
 
-    private final TeamMapper teamMapper;
-    private final TeamQuotaMapper teamQuotaMapper;
-    private final TeamEntityMapper teamEntityMapper;
+    private final InternalTeamService internalTeamService;
 
-    public InternalTeamController(TeamMapper teamMapper, TeamQuotaMapper teamQuotaMapper, TeamEntityMapper teamEntityMapper) {
-        this.teamMapper = teamMapper;
-        this.teamQuotaMapper = teamQuotaMapper;
-        this.teamEntityMapper = teamEntityMapper;
+    public InternalTeamController(InternalTeamService internalTeamService) {
+        this.internalTeamService = internalTeamService;
     }
 
     @Operation(summary = "根据ID查询团队")
     @GetMapping("/{teamId}")
-    @SuppressWarnings("unchecked")
     public Result<TeamVO> getTeamById(@PathVariable Long teamId) {
-        Team team = teamMapper.selectById(teamId);
-        if (team == null) {
-            return (Result<TeamVO>) (Result<?>) Result.success();
-        }
-        return Result.of(teamEntityMapper.toTeamVO(team));
+        return Result.of(internalTeamService.getTeamById(teamId));
     }
 
-    /**
-     * 查询用户所属团队 ID 列表（窄端点，仅返回 ID）。
-     */
     @Operation(summary = "查询用户所属团队ID列表")
     @GetMapping("/ids/by-user/{userId}")
     public Result<List<Long>> listTeamIdsByUserId(@PathVariable Long userId) {
-        List<Team> teams = teamMapper.listMyTeams(userId);
-        return Result.of(teams.stream().map(Team::getId).toList());
+        return Result.of(internalTeamService.listTeamIdsByUserId(userId));
     }
 
     @Operation(summary = "查询团队成员用户ID列表")
     @GetMapping("/{teamId}/members")
     public Result<List<Long>> listMemberUserIds(@PathVariable Long teamId) {
-        List<TeamMember> members = teamMapper.listMembers(teamId);
-        return Result.of(members.stream().map(TeamMember::getUserId).toList());
+        return Result.of(internalTeamService.listMemberUserIds(teamId));
     }
 
     @Operation(summary = "查询团队活跃成员详情")
     @GetMapping("/{teamId}/members/{userId}")
-    @SuppressWarnings("unchecked")
     public Result<TeamMemberDetailVO> getActiveMember(@PathVariable Long teamId, @PathVariable Long userId) {
-        TeamMember member = teamMapper.getActiveMember(teamId, userId);
-        if (member == null) {
-            return (Result<TeamMemberDetailVO>) (Result<?>) Result.success();
-        }
-        return Result.of(teamEntityMapper.toMemberDetailVO(member));
+        return Result.of(internalTeamService.getActiveMember(teamId, userId));
     }
 
     @Operation(summary = "检查是否为团队活跃成员")
     @GetMapping("/{teamId}/members/{userId}/active")
     public Result<Boolean> isActiveMember(@PathVariable Long teamId, @PathVariable Long userId) {
-        TeamMember member = teamMapper.getActiveMember(teamId, userId);
-        return Result.of(member != null);
+        return Result.of(internalTeamService.isActiveMember(teamId, userId));
     }
 
     @Operation(summary = "查询成员个人存储配额")
     @GetMapping("/{teamId}/members/{userId}/storage-limit")
-    @SuppressWarnings("unchecked")
     public Result<Long> getMemberPersonalStorageLimit(@PathVariable Long teamId, @PathVariable Long userId) {
-        TeamMember member = teamMapper.getActiveMember(teamId, userId);
-        if (member == null) {
-            return (Result<Long>) (Result<?>) Result.success();
-        }
-        return Result.of(member.getPersonalStorageLimit());
+        return Result.of(internalTeamService.getMemberPersonalStorageLimit(teamId, userId));
     }
 
     @Operation(summary = "查询成员角色编码")
     @GetMapping("/{teamId}/members/{userId}/role")
-    @SuppressWarnings("unchecked")
     public Result<String> getMemberRoleCode(@PathVariable Long teamId, @PathVariable Long userId) {
-        TeamMember member = teamMapper.getActiveMember(teamId, userId);
-        if (member == null) {
-            return (Result<String>) (Result<?>) Result.success();
-        }
-        return Result.of(member.getRoleCode());
+        return Result.of(internalTeamService.getMemberRoleCode(teamId, userId));
     }
 
     @Operation(summary = "查询团队配额")
     @GetMapping("/{teamId}/quota")
-    @SuppressWarnings("unchecked")
     public Result<TeamQuotaVO> getTeamQuota(@PathVariable Long teamId) {
-        TeamQuota quota = teamQuotaMapper.getByTeamId(teamId);
-        if (quota == null) {
-            return (Result<TeamQuotaVO>) (Result<?>) Result.success();
-        }
-        return Result.of(teamEntityMapper.toQuotaVO(quota));
+        return Result.of(internalTeamService.getTeamQuota(teamId));
     }
 
     @Operation(summary = "统计团队成员数量")
     @GetMapping("/{teamId}/member-count")
     public Result<Integer> countOccupiedMembers(@PathVariable Long teamId) {
-        return Result.of(teamMapper.countOccupiedMembers(teamId));
+        return Result.of(internalTeamService.countOccupiedMembers(teamId));
     }
 
     @Operation(summary = "查询团队所有者ID")
     @GetMapping("/{teamId}/owner-id")
-    @SuppressWarnings("unchecked")
     public Result<Long> getTeamOwnerId(@PathVariable Long teamId) {
-        Team team = teamMapper.selectById(teamId);
-        if (team == null) {
-            return (Result<Long>) (Result<?>) Result.success();
-        }
-        return Result.of(team.getOwnerUserId());
+        return Result.of(internalTeamService.getTeamOwnerId(teamId));
     }
 }

@@ -89,6 +89,24 @@ updates:
       - dependencies
       - docker
 
+  # --- Docker Compose: 可观测栈镜像（docker-compose.observability.yml） ---
+  # 62e/66 号二.8：观测栈此前完全不在 Dependabot 视野（loki/prometheus/grafana/
+  # alertmanager 等镜像无监控）。默认 profile 不启动不影响 PR 安全性。
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+      day: wednesday
+      time: "04:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(deps-obs)"
+    labels:
+      - dependencies
+      - docker
+      - observability
+
   # --- GitHub Actions（根仓库 .github/workflows） ---
   - package-ecosystem: github-actions
     directory: /

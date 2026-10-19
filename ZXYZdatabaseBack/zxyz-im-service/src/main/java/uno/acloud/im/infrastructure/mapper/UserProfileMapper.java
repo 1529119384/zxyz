@@ -20,7 +20,7 @@ public interface UserProfileMapper extends BaseMapper<UserProfile> {
     @Select("""
             SELECT user_id, username, name, avatar
             FROM im_user_profile
-            WHERE username LIKE CONCAT(#{keyword}, '%')
+            WHERE username LIKE CONCAT(#{keyword}, '%') ESCAPE '\\\\'
                OR CAST(user_id AS CHAR) = #{keyword}
             ORDER BY user_id ASC
             LIMIT #{limit}

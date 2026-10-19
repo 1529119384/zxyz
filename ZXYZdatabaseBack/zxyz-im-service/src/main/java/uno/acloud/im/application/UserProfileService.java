@@ -29,10 +29,20 @@ public class UserProfileService {
 
     public List<UserProfileVO> searchAndSync(String keyword) {
         String normalizedKeyword = requireText(keyword, "搜索关键词不能为空");
+        // 65 号 §2.4 / 66 号 🟡1：LIKE 元字符转义（%/_/\）——与 ImMessageService/file 侧同型。
+        // 注：searchLocal 的 SQL 是 username LIKE 前缀匹配，未转义时 % 匹配全部、_ 单字符。
+        String escapedKeyword = escapeLikeWildcards(normalizedKeyword);
         // HTTP call outside transaction to avoid holding DB connection during remote I/O
         List<UserProfile> profiles = userServiceClient.searchUsers(normalizedKeyword);
         // DB operations via proxy to ensure proper transaction boundary
-        return self.syncAndSearchLocal(normalizedKeyword, profiles);
+        return self.syncAndSearchLocal(escapedKeyword, profiles);
+    }
+
+    /**
+     * 转义 LIKE 元字符（file F16 / ImMessage 同款；顺序固定先反斜杠）。
+     */
+    private static String escapeLikeWildcards(String keyword) {
+        return keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 
     @Transactional(rollbackFor = Exception.class)

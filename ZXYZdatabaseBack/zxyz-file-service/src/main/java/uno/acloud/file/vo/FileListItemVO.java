@@ -26,7 +26,7 @@ public class FileListItemVO implements Serializable {
     private Long id;
 
     /** 文件类型，前端依赖它区分文件夹与文件的展示和交互 */
-    @Schema(description = "文件类型：1-文件夹，2-文件", example = "2")
+    @Schema(description = "文件类型：0-文件夹，1-文件（分类码另见 FileType 枚举 0-9）", example = "2")
     private Integer fileType;
 
     /** 原始名称，用于文件列表直接展示 */

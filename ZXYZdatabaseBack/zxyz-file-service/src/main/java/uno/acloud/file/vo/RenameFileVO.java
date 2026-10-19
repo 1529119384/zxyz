@@ -27,7 +27,7 @@ public class RenameFileVO implements Serializable {
     @Schema(description = "新文件名", example = "新名称.txt")
     private String originalName;
 
-    @Schema(description = "文件类型：1-文件夹，2-文件", example = "2")
+    @Schema(description = "文件类型：0-文件夹，1-文件（分类码另见 FileType 枚举 0-9）", example = "2")
     private Integer fileType;
 
     @Schema(description = "父目录ID")
