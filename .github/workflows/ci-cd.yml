@@ -653,10 +653,13 @@ jobs:
           FOUND=0
           for f in $(git ls-files 'ZXYZdatabaseBack/*/src/main/resources/db/migration/V*.sql' | grep -v '/target/'); do
             # 提取 "ALTER TABLE <tbl> ADD CONSTRAINT <name> UNIQUE (<col>)" 行
-            grep -oE "ALTER TABLE +[a-zA-Z_]+ +ADD CONSTRAINT +[a-zA-Z_]+ +UNIQUE +\([^)]+\)" "$f" | while IFS= read -r line; do
-              TBL=$(echo "$line" | sed -E "s/ALTER TABLE +([a-zA-Z_]+).*/\1/")
-              COL=$(echo "$line" | sed -E "s/.*UNIQUE +\(([^)]+)\).*/\1/")
-              COND=$(echo "$COL" | sed -E "s/([^ ]+) IS NULL//g; s/ AND +$//")
+            # （grep 无匹配返回 1 是正常分支 —— 先收变量避免 pipefail 误杀）
+            MATCHES=$(grep -oE "ALTER TABLE +[a-zA-Z_]+ +ADD CONSTRAINT +[a-zA-Z_]+ +UNIQUE +\([^)]+\)" "$f" || true)
+            if [ -z "$MATCHES" ]; then continue; fi
+            echo "$MATCHES" | while IFS= read -r line; do
+              TBL=$(echo "$line" | sed -E "s/ALTER TABLE +([a-zA-Z_]+).*/\1/" || true)
+              COL=$(echo "$line" | sed -E "s/.*UNIQUE +\(([^)]+)\).*/\1/" || true)
+              COND=$(echo "$COL" | sed -E "s/([^ ]+) IS NULL//g; s/ AND +$//" || true)
               {
                 echo ""
                 echo "### $f"
