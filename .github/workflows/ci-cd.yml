@@ -648,6 +648,8 @@ jobs:
           # 本步静态提取所有迁移里的 UNIQUE 约束，生成对应查重 SQL 清单打进 Summary
           # —— 部署前人工（或后续连库步骤）逐条核对。
           mkdir -p predeploy-checks
+          FENCE_SQL='```sql'
+          FENCE_CLOSE='```'
           OUT=predeploy-checks/unique-constraint-checklist.md
           echo "## Flyway UNIQUE 约束部署前查重清单" > "$OUT"
           FOUND=0
@@ -663,9 +665,9 @@ jobs:
               {
                 echo ""
                 echo "### $f"
-                echo "```sql"
+                printf '%s\n' "$FENCE_SQL"
                 echo "SELECT $COL, COUNT(*) c FROM $TBL GROUP BY $COL HAVING c > 1;"
-                echo "```"
+                printf '%s\n' "$FENCE_CLOSE"
                 echo "（若有输出 ⇒ 先清理重复数据，否则服务启动时 ERROR 1062）"
               } >> "$OUT"
               FOUND=1
