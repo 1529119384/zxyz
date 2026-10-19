@@ -15,6 +15,7 @@ import uno.acloud.user.satoken.SaTokenAuthSessionService;
 
 import uno.acloud.user.vo.UserInfoVO;
 import uno.acloud.user.vo.UserQuotaVO;
+import uno.acloud.user.vo.UserQuotaVO;
 
 import java.util.List;
 
@@ -58,6 +59,11 @@ public class InternalUserService {
         return userEntityMapper.toUserInfoVO(user);
     }
 
+    /** userInfo VO 转换一并下沉（66 号二.10：controller 不再持 UserEntityMapper）。 */
+    public UserInfoVO toUserInfo(User user) {
+        return userEntityMapper.toUserInfoVO(user);
+    }
+
     public void updateDefaultTeam(Long id, Long teamId) {
         userMapper.updateDefaultTeam(id, teamId);
     }
@@ -72,6 +78,12 @@ public class InternalUserService {
 
     public UserQuota getQuota(Long id) {
         return userQuotaMapper.getByUserId(id);
+    }
+
+    /** 66 号二.10：配额 VO 转换一并下沉（controller 不再持 UserEntityMapper）。 */
+    public UserQuotaVO getQuotaVO(Long id) {
+        UserQuota quota = userQuotaMapper.getByUserId(id);
+        return quota == null ? null : userEntityMapper.toUserQuotaVO(quota);
     }
 
     public void clearPermissionCache(Long id) {

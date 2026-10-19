@@ -17,8 +17,6 @@ import uno.acloud.user.dto.DefaultTeamRequest;
 import uno.acloud.user.dto.InternalBatchUserRequest;
 import uno.acloud.user.dto.InternalCreateTeamUserRequest;
 import uno.acloud.user.entity.User;
-import uno.acloud.user.entity.UserQuota;
-import uno.acloud.user.mapper.UserEntityMapper;
 import uno.acloud.user.service.impl.InternalUserService;
 import uno.acloud.user.service.impl.UserProfileService;
 import uno.acloud.vo.InternalUserInfoVO;
@@ -43,14 +41,11 @@ public class InternalUserController {
 
     private final UserProfileService userProfileService;
     private final InternalUserService internalUserService;
-    private final UserEntityMapper userEntityMapper;
 
     public InternalUserController(UserProfileService userProfileService,
-                                  InternalUserService internalUserService,
-                                  UserEntityMapper userEntityMapper) {
+                                  InternalUserService internalUserService) {
         this.userProfileService = userProfileService;
         this.internalUserService = internalUserService;
-        this.userEntityMapper = userEntityMapper;
     }
 
     @Operation(summary = "获取用户基本信息")
@@ -71,14 +66,14 @@ public class InternalUserController {
         if (user == null) {
             return Result.of(null);
         }
-        return Result.of(toUserInfo(user));
+        return Result.of(internalUserService.toUserInfo(user));
     }
 
     @Operation(summary = "批量获取用户")
     @PostMapping("/batch")
     public Result<List<UserInfoVO>> getUsersByIds(@Valid @RequestBody InternalBatchUserRequest request) {
         List<User> users = internalUserService.getUsersByIds(request.getUserIds());
-        return Result.of(users.stream().map(this::toUserInfo).toList());
+        return Result.of(users.stream().map(internalUserService::toUserInfo).toList());
     }
 
     @Operation(summary = "创建团队用户")
@@ -117,12 +112,12 @@ public class InternalUserController {
     @Operation(summary = "获取用户配额")
     @GetMapping("/{id}/quota")
     public Result<UserQuotaVO> getUserQuota(@PathVariable Long id) {
-        UserQuota quota = internalUserService.getQuota(id);
+        UserQuotaVO quota = internalUserService.getQuotaVO(id);
         if (quota == null) {
             // 契约：配额不存在返回 code=1 + data=null
             return Result.of(null);
         }
-        return Result.of(userEntityMapper.toUserQuotaVO(quota));
+        return Result.of(quota);
     }
 
     @Operation(summary = "搜索用户")
@@ -145,7 +140,4 @@ public class InternalUserController {
         return Result.success();
     }
 
-    private UserInfoVO toUserInfo(User user) {
-        return userEntityMapper.toUserInfoVO(user);
-    }
 }
