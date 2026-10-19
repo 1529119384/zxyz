@@ -22,6 +22,12 @@ public final class ImChannelAttributes {
      */
     public static final AttributeKey<AtomicLong> LAST_SA_TOKEN_RENEW_AT =
             AttributeKey.valueOf("im.lastSaTokenRenewAt");
+    /**
+     * 连续会话续签失败计数（65/66 号二.3）：达到 {@code ImWebSocketFrameHandler}
+     * 的阈值即断连 —— token 冻结/注销后旧连接不死的幽灵连接防线。
+     */
+    public static final AttributeKey<Integer> RENEW_FAILURE_COUNT =
+            AttributeKey.valueOf("im.renewFailureCount");
 
     private ImChannelAttributes() {
     }

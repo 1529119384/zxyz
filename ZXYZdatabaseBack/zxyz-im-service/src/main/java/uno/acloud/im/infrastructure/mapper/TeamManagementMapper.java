@@ -13,6 +13,8 @@ import uno.acloud.im.vo.TeamJoinRequestVO;
 import uno.acloud.im.vo.TeamMuteVO;
 
 import java.util.List;
+import java.time.LocalDateTime;
+import org.apache.ibatis.annotations.Delete;
 
 @Mapper
 public interface TeamManagementMapper {
@@ -80,6 +82,9 @@ public interface TeamManagementMapper {
             UPDATE team_invite_link
             SET used_count = used_count + 1, update_time = NOW()
             WHERE id = #{linkId}
+              -- 65/66 号二.4：超卖守卫 —— 并发使用链接时 used_count 不会越过 max_uses。
+              -- max_uses=0 表示不限次数（不加上限条件）；返回 0 行 = 次数已用尽（调用方判超卖）。
+              AND (max_uses = 0 OR used_count < max_uses)
             """)
     int incrementInviteLinkUsedCount(Long linkId);
 
@@ -127,4 +132,10 @@ public interface TeamManagementMapper {
     int auditJoinRequest(@Param("requestId") Long requestId,
                          @Param("status") Integer status,
                          @Param("auditByUserId") Long auditByUserId);
+
+    /**
+     * 66 号二.5：分批删除已终态且超保留期的行（im_stale_rows 清理任务用）。
+     */
+    @Delete("DELETE FROM team_join_request WHERE status != 0 AND create_time < #{cutoff} LIMIT #{batchLimit}")
+    int deleteJoinRequestTerminatedOlderThanBatch(@Param("cutoff") LocalDateTime cutoff, @Param("batchLimit") int batchLimit);
 }

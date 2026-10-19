@@ -125,19 +125,26 @@ public class MqOutboxPublisher {
      * 下一个调度周期会再次尝试 —— 频率控制交给调度器。
      */
     private boolean retryOne(String key) {
+        // 66 号二.6（扩容前必须）：GET→发→DEL 三步在多实例下会双发（两实例同时 GET
+        // 到同一事件）。改为「DEL 原子认领」：DEL 返回 1 = 本实例获得唯一处理权，
+        // 认领后发送失败则回填键（TTL 重置，等下一轮）；返回 0 = 已被处理或 TTL 过期。
         String eventJson = redisTemplate.opsForValue().get(key);
         if (eventJson == null) {
-            // TTL 已过或已被并发实例处理，无需动作
+            return false;
+        }
+        Boolean claimed = redisTemplate.delete(key);
+        if (!Boolean.TRUE.equals(claimed)) {
             return false;
         }
         String eventType = eventTypeOf(key, serviceName);
         try {
             rabbitTemplate().convertAndSend(uno.acloud.common.RabbitMqConstants.EXCHANGE, eventType, eventJson);
-            redisTemplate.delete(key);
             log.info("outbox 事件补偿重发成功: key={}", key);
             return true;
         } catch (Exception e) {
-            log.warn("outbox 事件补偿重发失败（保留等下一轮）: key={}", key, e);
+            // 消费端幂等兼容重投；TTL 重置 = 从本次重试起重新计时
+            redisTemplate.opsForValue().set(key, eventJson, TTL);
+            log.warn("outbox 事件补偿重发失败（已回填等下一轮）: key={}", key, e);
             return false;
         }
     }

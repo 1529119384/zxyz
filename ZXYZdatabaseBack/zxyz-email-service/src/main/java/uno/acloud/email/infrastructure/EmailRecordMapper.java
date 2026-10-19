@@ -1,6 +1,7 @@
 package uno.acloud.email.infrastructure;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -186,4 +187,11 @@ public interface EmailRecordMapper extends BaseMapper<EmailRecord> {
               AND attempt_count >= max_attempts
             """)
     int failStaleSending(@Param("staleMinutes") int staleMinutes);
+
+    /**
+     * 66 号二.5：分批删除终态（SENT/FAILED）且超保留期的邮件记录
+     * （email_record_cleanup 任务用；PENDING/SENDING 永不清理）。
+     */
+    @Delete("DELETE FROM email_record WHERE status IN ('SENT', 'FAILED') AND create_time < #{cutoff} LIMIT #{batchLimit}")
+    int deleteTerminalOlderThanBatch(@Param("cutoff") LocalDateTime cutoff, @Param("batchLimit") int batchLimit);
 }

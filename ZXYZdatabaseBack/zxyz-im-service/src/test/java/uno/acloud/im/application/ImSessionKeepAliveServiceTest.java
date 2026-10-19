@@ -10,6 +10,7 @@ import org.mockito.quality.Strictness;
 
 import java.util.concurrent.atomic.AtomicLong;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doThrow;
@@ -91,13 +92,16 @@ class ImSessionKeepAliveServiceTest {
     }
 
     @Test
-    void 底层续签抛异常时静默不外抛() {
+    void 底层续签抛异常时抛RENEW_FAILED标记供handler计数() {
         doThrow(new RuntimeException("redis down")).when(renewDelegate).updateLastActiveToNow("token-abc");
         AtomicLong lastRenewAt = new AtomicLong(0L);
 
-        boolean renewed = service.renew(lastRenewAt, "token-abc");
-
-        assertFalse(renewed, "底层异常应被吞掉并返回 false");
+        // 65/66 号二.3 行为契约变更：失败不再静默吞掉 —— 抛 IllegalStateException
+        // （消息含 RENEW_FAILED 标记）供 handler 计数并按阈值断连；handler 侧负责 try-catch。
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> service.renew(lastRenewAt, "token-abc"));
+        assertTrue(ex.getMessage().startsWith("RENEW_FAILED:"),
+                "异常消息必须带 RENEW_FAILED 标记（handler 识别依据）");
         verify(renewDelegate, times(1)).updateLastActiveToNow("token-abc");
     }
 }

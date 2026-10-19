@@ -69,10 +69,12 @@ public class ImSessionKeepAliveService {
             renewDelegate.updateLastActiveToNow(tokenValue);
             return true;
         } catch (Exception e) {
-            // 失败静默：token 可能已被冻结/注销/Redis 抖动 —— 续不上就算了，
-            // 绝不影响消息主链路（token 冻结的恢复由用户下一次 HTTP 请求的 401 流程兜底）
-            log.debug("IM session renew skipped (token may be frozen or logged out): {}", e.getMessage());
-            return false;
+            // 65/66 号二.3：失败区分返回（62c 🟠-1 修法的回调约定）——
+            // true=执行成功 / false=节流跳过 / CONSECUTIVE_FAILURE=续签失败。
+            // 抛专用标记异常不如返回三态，这里维持 boolean 但由 handler 结合
+            // 「失败计数」断连（连续失败大概率 token 已冻结/注销，不再是有价值的连接）。
+            log.debug("IM session renew failed (token may be frozen or logged out): {}", e.getMessage());
+            throw new IllegalStateException("RENEW_FAILED:" + e.getMessage(), e);
         }
     }
 }

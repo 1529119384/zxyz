@@ -105,13 +105,15 @@ class MqOutboxPublisherTest {
         mockScanReturning(List.of(key));
         when(valueOperations.get(key)).thenReturn("{\"userId\":42}");
 
+        when(redisTemplate.delete(key)).thenReturn(Boolean.TRUE);
+
         assertEquals(1, publisher.retryPending());
 
         verify(rabbitTemplate).convertAndSend(eq(uno.acloud.common.RabbitMqConstants.EXCHANGE),
                 eq("user.deleted"), eq("{\"userId\":42}"));
-        inOrder(rabbitTemplate, redisTemplate).verify(rabbitTemplate)
+        inOrder(redisTemplate, rabbitTemplate).verify(redisTemplate).delete(key);
+        inOrder(redisTemplate, rabbitTemplate).verify(rabbitTemplate)
                 .convertAndSend(anyString(), anyString(), anyString());
-        inOrder(redisTemplate).verify(redisTemplate).delete(key);
     }
 
     @Test
@@ -119,12 +121,14 @@ class MqOutboxPublisherTest {
         String key = "mq:outbox:zxyz-test-service:team.created:uuid-2";
         mockScanReturning(List.of(key));
         when(valueOperations.get(key)).thenReturn("{}");
+        when(redisTemplate.delete(key)).thenReturn(Boolean.TRUE);
         doThrow(new RuntimeException("broker down"))
                 .when(rabbitTemplate).convertAndSend(anyString(), anyString(), anyString());
 
         assertEquals(0, publisher.retryPending());
 
-        verify(redisTemplate, never()).delete(key);
+        // 认领后失败：回填键（等下一轮），而不是保留原键不删
+        verify(valueOperations).set(eq(key), eq("{}"), eq(MqOutboxPublisher.TTL));
     }
 
     @Test

@@ -134,10 +134,16 @@ public class ImWebSocketFrameHandler extends SimpleChannelInboundHandler<TextWeb
         );
     }
 
+    /** 连续续签失败计数阈值：超过即断连（65/66 号二.3 —— 旧实现失败静默，
+     *  token 冻结/注销后旧连接不死，成为「在线但已无身份」的幽灵连接）。 */
+    private static final int MAX_CONSECUTIVE_RENEW_FAILURES = 3;
+
     /**
      * WS 连接存活期间的 Sa-Token 会话续签（节流在 {@link ImSessionKeepAliveService} 内）。
      *
-     * <p>token 缺失（attr 未挂，如未认证连接）或续签抛错均静默跳过 —— 本方法绝不抛异常。</p>
+     * <p>节流跳过是正常流；<b>续签失败</b>（token 冻结/注销/Redis 异常）计入连续失败
+     * 计数（channel attr），超过阈值即关闭连接 —— 客户端会走重连并重新认证。
+     * 单次失败不断连，避免 Redis 抖动误杀。</p>
      */
     private void renewSessionQuietly(ChannelHandlerContext ctx) {
         try {
@@ -145,10 +151,19 @@ public class ImWebSocketFrameHandler extends SimpleChannelInboundHandler<TextWeb
                     ctx.channel().attr(ImChannelAttributes.LAST_SA_TOKEN_RENEW_AT).get(),
                     ctx.channel().attr(ImChannelAttributes.TOKEN).get()
             );
+            ctx.channel().attr(ImChannelAttributes.RENEW_FAILURE_COUNT).set(0);
         } catch (Exception e) {
-            // 双保险：service 自身已 try-catch，这里兜底防御任何意外抛出影响消息主链路
-            log.debug("IM session renew failed unexpectedly: channel={}, error={}",
-                    ctx.channel().id().asShortText(), e.getMessage());
+            var countAttr = ctx.channel().attr(ImChannelAttributes.RENEW_FAILURE_COUNT);
+            Integer failures = countAttr.get();
+            int next = (failures == null ? 0 : failures) + 1;
+            countAttr.set(next);
+            log.warn("IM session renew failed (consecutive={}): channel={}, error={}",
+                    next, ctx.channel().id().asShortText(), e.getMessage());
+            if (next >= MAX_CONSECUTIVE_RENEW_FAILURES) {
+                log.warn("IM session closing after {} consecutive renew failures: channel={}",
+                        next, ctx.channel().id().asShortText());
+                ctx.close();
+            }
         }
     }
 

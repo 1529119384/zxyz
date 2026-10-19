@@ -1,6 +1,7 @@
 package uno.acloud.im.infrastructure.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Options;
@@ -8,6 +9,8 @@ import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 import uno.acloud.im.infrastructure.persistence.entity.SystemNotification;
+
+import java.time.LocalDateTime;
 import uno.acloud.im.vo.SystemNotificationVO;
 
 import java.util.List;
@@ -66,4 +69,10 @@ public interface SystemNotificationMapper extends BaseMapper<SystemNotification>
     int markBusinessRead(@Param("userId") Long userId,
                          @Param("businessType") String businessType,
                          @Param("businessId") Long businessId);
+
+    /**
+     * 66 号二.5：分批删除已读且超保留期的系统通知（im_stale_rows 清理任务用）。
+     */
+    @Delete("DELETE FROM system_notification WHERE status = 1 AND create_time < #{cutoff} LIMIT #{batchLimit}")
+    int deleteReadOlderThanBatch(@Param("cutoff") LocalDateTime cutoff, @Param("batchLimit") int batchLimit);
 }

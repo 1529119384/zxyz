@@ -226,7 +226,12 @@ public class JoinRequestService {
         if (conversationId != null) {
             conversationMapper.upsertConversationMember(conversationId, request.getUserId());
         }
-        managementMapper.incrementInviteLinkUsedCount(request.getLinkId());
+        // 65/66 号二.4：超卖守卫 —— WHERE 已带 used_count < max_uses 上限条件，
+        // 0 行更新 = 链接次数已用尽（并发耗尽场景），拒绝本次通过而不是静默超发。
+        int incremented = managementMapper.incrementInviteLinkUsedCount(request.getLinkId());
+        if (incremented == 0) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "邀请链接使用次数已达上限");
+        }
         notificationService.createNotification(
                 request.getUserId(),
                 SystemNotificationType.TEAM_JOIN_APPROVED,
