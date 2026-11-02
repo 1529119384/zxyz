@@ -1,0 +1,118 @@
+name: 运维·基础设施容器重启（手动，需确认）
+
+# =============================================================================
+# 用途（2026-11-02 新增，P0 事件驱动）：
+#   deploy-on-server.sh 的 UPDATE_SVC **不含基础设施容器**（mysql/nacos/redis/rabbitmq）。
+#   因此当某个 infra 容器异常退出（例如被 OOM kill，Exit 137）时，**部署链路不会把它拉起**；
+#   而全部 10 个 Java 服务的 actuator 健康里含 RabbitHealthIndicator ⇒ rabbitmq 一死，
+#   10 个服务全部 unhealthy ⇒ 部署健康门禁失败并回滚（但回滚也救不回 dead 的 infra）。
+#
+# 本 workflow 只做一件事：**重启指定 infra 容器**（docker start / restart），
+# 不重建镜像、不改配置、不动数据库数据。
+#
+# ⚠️ 这是**变更类**操作，必须显式输入 confirm=RESTART 才会执行（默认 dry-run 只打印现状）。
+# 触发方式：Actions → 本 workflow → Run workflow。
+# =============================================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      containers:
+        description: '要重启的容器（逗号分隔，仅允许 mysql,nacos,redis,rabbitmq）'
+        required: true
+        default: 'rabbitmq'
+      confirm:
+        description: '输入 RESTART 才会真正执行（否则只打印现状）'
+        required: true
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-infra-restart
+  cancel-in-progress: false
+
+jobs:
+  restart:
+    name: 基础设施容器重启
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: 前置断言（凭据 + confirm 变量）
+        env:
+          PROD_HOST: ${{ secrets.DEV_DEPLOY_HOST || secrets.DEPLOY_HOST }}
+          PROD_KEY: ${{ secrets.DEV_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
+          PROD_USER: ${{ secrets.DEPLOY_USERNAME }}
+        run: |
+          set -euo pipefail
+          missing=""
+          [ -n "${PROD_HOST:-}" ] || missing="$missing host"
+          [ -n "${PROD_KEY:-}" ] || missing="$missing key"
+          [ -n "${PROD_USER:-}" ] || missing="$missing user"
+          if [ -n "$missing" ]; then echo "::error::缺少凭据:$missing"; exit 1; fi
+          echo "凭据齐备"
+
+      - name: 校验容器白名单
+        env:
+          CONTAINERS: ${{ inputs.containers }}
+        run: |
+          set -euo pipefail
+          IFS=',' read -ra list <<< "$CONTAINERS"
+          for c in "${list[@]}"; do
+            c="$(echo "$c" | tr -d ' ')"
+            case "$c" in
+              mysql|nacos|redis|rabbitmq) ;;
+              *) echo "::error::不允许的容器 '$c'（仅 mysql|nacos|redis|rabbitmq）"; exit 1 ;;
+            esac
+          done
+          echo "白名单校验通过: $CONTAINERS"
+
+      - name: 重启（confirm=RESTART 才执行）
+        env:
+          PROD_HOST: ${{ secrets.DEV_DEPLOY_HOST || secrets.DEPLOY_HOST }}
+          PROD_KEY: ${{ secrets.DEV_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
+          PROD_USER: ${{ secrets.DEPLOY_USERNAME }}
+          PROD_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+          CONTAINERS: ${{ inputs.containers }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -uo pipefail
+          mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$PROD_KEY" > "$HOME/.ssh/prod_key" && chmod 600 "$HOME/.ssh/prod_key"
+          ssh -i "$HOME/.ssh/prod_key" -p "${PROD_PORT:-22}" \
+              -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -o BatchMode=yes \
+              "${PROD_USER}@${PROD_HOST}" "CONTAINERS='${CONTAINERS}' CONFIRM='${CONFIRM}' bash -s" 2>&1 | tee /tmp/out.txt <<'REMOTE'
+          set -uo pipefail
+          echo "### 现状（重启前）"
+          docker ps -a --filter name=zxyz --format '{{.Names}}  {{.Status}}' | sort
+          echo
+          echo "### 宿主机内存"
+          free -m | head -3
+          echo
+          IFS=',' read -ra list <<< "$CONTAINERS"
+          if [ "${CONFIRM:-}" != "RESTART" ]; then
+            echo "DRY-RUN：未提供 confirm=RESTART，不执行任何变更。将重启：${CONTAINERS}"
+            exit 0
+          fi
+          for c in "${list[@]}"; do
+            c="$(echo "$c" | tr -d ' ')"
+            name="zxyz-$c"
+            echo "--- 处理 $name ---"
+            if docker ps -a --format '{{.Names}}' | grep -qx "$name"; then
+              docker start "$name" 2>&1 || { echo "::error::docker start $name 失败"; exit 1; }
+            else
+              echo "::error::$name 不存在"; exit 1
+            fi
+          done
+          echo "等待 40s 让容器进入 running/healthy..."
+          sleep 40
+          echo
+          echo "### 重启后状态"
+          docker ps -a --filter name=zxyz --format '{{.Names}}  {{.Status}}' | sort
+          echo
+          echo "### rabbitmq 最近日志（若存在）"
+          docker logs --tail 20 zxyz-rabbitmq 2>&1 | tail -20 || true
+          REMOTE
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then echo "::error::SSH 执行失败 rc=$rc"; exit 1; fi
