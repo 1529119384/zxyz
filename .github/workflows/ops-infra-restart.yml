@@ -78,6 +78,7 @@ jobs:
           CONFIRM: ${{ inputs.confirm }}
         run: |
           set -uo pipefail
+          set +e
           mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
           printf '%s\n' "$PROD_KEY" > "$HOME/.ssh/prod_key" && chmod 600 "$HOME/.ssh/prod_key"
           ssh -i "$HOME/.ssh/prod_key" -p "${PROD_PORT:-22}" \
@@ -115,6 +116,7 @@ jobs:
           docker logs --tail 20 zxyz-rabbitmq 2>&1 | tail -20 || true
           REMOTE
           rc=$?
+          set -e
           echo "===== 远端输出 ====="
           cat /tmp/out.txt 2>/dev/null || true
           if [ "$rc" -ne 0 ]; then echo "::error::SSH 执行失败 rc=$rc"; exit 1; fi
