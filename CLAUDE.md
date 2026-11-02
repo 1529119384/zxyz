@@ -46,7 +46,7 @@ docs/**
 
 > 58 号 §二.6 / §二.9 白名单补两项的通道归属：`conf/**`（`conf/rabbitmq.conf` 是 rabbitmq 水位线的唯一配置来源，compose bind mount 进容器）与 `DEPLOYMENT.md`（根目录部署指南）都**只进顶层 paths**（lint-config/secret-scan 会跑，消除「改它零检查」盲区），刻意**不进任何 dorny 部署 filter** —— 纯配置/纯文档变更不需要重建任何镜像（与 `docker-compose.dev.yml` 同款通道归属逻辑）。✅ 2026-10-14 收口：`deploy-on-server.sh` 同步白名单**已含** `conf/rabbitmq.conf` 与 `deploy/rabbitmq/enabled_plugins`（mkdir 卫兵 + `synced_conf` 留痕）⇒ conf 变更有自动上线通道；rabbitmq 需重启容器才吃进新配置。
 
-不在白名单内的文件变更（如 `ISSUE/**`、`.husky/**`、`.gitignore`）**不触发** workflow；但 `CLAUDE.md` 与 `docs/**` **在**白名单内（`ci-cd.yml:61-69`，工作流注释记录了补入理由）——纯文档提交仍会触发一次轻量 `lint-config`，它是文档门禁 `check-docs-consistency.py` 的**唯一**入口（不补则纯文档提交零检查）。`dorny/paths-filter` 进一步按服务目录判断哪些镜像需要重建。
+不在白名单内的文件变更（如 `ISSUE/**`、`local-*`）**不触发** workflow（`.husky/**`、`.gitignore`、`.dockerignore`、`.github/dependabot.yml` 自 2026-11-02 起**已纳入**顶层 paths，只触发 lint-config —— 理由见 ci-cd.yml 对应注释）；但 `CLAUDE.md` 与 `docs/**` **在**白名单内（`ci-cd.yml:61-69`，工作流注释记录了补入理由）——纯文档提交仍会触发一次轻量 `lint-config`，它是文档门禁 `check-docs-consistency.py` 的**唯一**入口（不补则纯文档提交零检查）。`dorny/paths-filter` 进一步按服务目录判断哪些镜像需要重建。
 
 > 2026-10-11 P2-4 白名单补三项的通道归属：`.gitattributes`（行尾归一影响全部构建产物）与 `docker-compose.tls.yml`（TLS 部署载体，deploy-on-server.sh 会同步它）→ 顶层 paths + `docker-config`（全量 11 服务重建+部署）；`docker-compose.dev.yml` 仅本地 dev-up 用 → **只进顶层 paths**（lint-config/secret-scan 会跑），刻意不进任何 dorny 部署 filter。
 
@@ -96,7 +96,7 @@ cd ZXYZdatabaseFront && git diff HEAD --ignore-cr-at-eol --numstat && cd ..
 
 ```bash
 mvn clean -DskipTests compile                   # baseline compile check
-mvn test                                         # all tests（209 个测试源文件 / 206 个测试类，见 docs/testing.md；措辞已纳入后端门禁双正则（两种语序都校验）——改数字前先跑 scripts/check-docs-consistency.py 对账）
+mvn test                                         # all tests（210 个测试源文件 / 207 个测试类，见 docs/testing.md；措辞已纳入后端门禁双正则（两种语序都校验）——改数字前先跑 scripts/check-docs-consistency.py 对账）
 mvn test -pl zxyz-team-service                   # single module tests
 mvn test -pl zxyz-file-service -Dtest=FileUploadServiceTest  # single test class
 mvn clean package -DskipTests                    # package for Docker build
@@ -221,7 +221,7 @@ WHEN 添加 setting 子路由, DO 确保 `route.name` 在 Setting 组件 watcher
 - 服务器 `.env` 在 `/www/zxyz/.env`，独立于仓库维护，CI/CD 不同步
 - 镜像标签：dev → `dev`，main → `latest`，tag → 版本号；每镜像双 tag（`${tag}` + `${git_sha}` 供精确回滚）；本地改 `.env` 的 `APP_IMAGE_TAG`/`IMAGE_PREFIX` 控制部署目标
 
-**前端测试**: 68 个测试文件，1246 个用例（`npm run test`）。⚠️ 文件数由 `npm run doc-count:check`（`ZXYZdatabaseFront/scripts/check-doc-test-count.mjs`）对着 `src/**/*.spec.js` 实测校验 —— 此前这里写的是 26 个，实测已 65 个（2026-10-03 起为 68），是无人发现的 2.5 倍偏差。用例数无法静态推导，改测试后请跑一次 `npm run test` 并同步这里的数字（`vite.config.mjs` 覆盖率注释里的同类数字是**历史快照**，不要改）。命名 `*.spec.js` 放对应目录 `__tests__/` 下，`vi.mock()` 外部依赖，测试名中文。import 顺序：vitest/vue 最前 → `vi.mock()` 紧跟 → 再 `@/` 与第三方（`element-plus` import 须在 `vi.mock()` 后，否则 `import-x/order` 报错）。详见 [docs/testing.md](docs/testing.md)。
+**前端测试**: 68 个测试文件，1249 个用例（`npm run test`）。⚠️ 文件数由 `npm run doc-count:check`（`ZXYZdatabaseFront/scripts/check-doc-test-count.mjs`）对着 `src/**/*.spec.js` 实测校验 —— 此前这里写的是 26 个，实测已 65 个（2026-10-03 起为 68），是无人发现的 2.5 倍偏差。用例数无法静态推导，改测试后请跑一次 `npm run test` 并同步这里的数字（`vite.config.mjs` 覆盖率注释里的同类数字是**历史快照**，不要改）。命名 `*.spec.js` 放对应目录 `__tests__/` 下，`vi.mock()` 外部依赖，测试名中文。import 顺序：vitest/vue 最前 → `vi.mock()` 紧跟 → 再 `@/` 与第三方（`element-plus` import 须在 `vi.mock()` 后，否则 `import-x/order` 报错）。详见 [docs/testing.md](docs/testing.md)。
 
 **CI/CD**: `.github/workflows/ci-cd.yml` 按路径变更选择性构建部署。push 到 **dev**、PR、手动 dispatch（⚠️ 只触发 dev：`ci-cd.yml:5-8`——远程**不存在 `main` 分支、0 个 tag**，保留 `main`/`v*` tag 等于留一条「一触发就以空主机 ssh 必失败」的死路，故 2026-09-18 刻意删掉）；`dorny/paths-filter` 按服务目录判断重建；backend-common 变更触发全部后端重建；**`scripts/**`、`sql/**` 变更走 deploy-only 通道**（2026-10-11 P1-1 事故收口）：只同步脚本到服务器、不重建镜像、不重启服务（UPDATE_SVC 为空），deploy 的 if 已容忍 build/scan 整体 skipped；**`docker-compose.yml`/`.env.example` 变更会触发全量 11 服务重建与部署（docker-config），改它（哪怕只改注释）前须知晓此代价**；workflow_dispatch 输入 `tag`（必填）/`skip_quality`/`fast_deploy`/`force_deploy`/`run_e2e`。辅助 workflow：`lint-workflows.yml`（actionlint）、`ghcr-cleanup.yml`、`restore-drill.yml`（手动恢复演练，带凭据 fail-closed 断言）。
 

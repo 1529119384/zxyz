@@ -274,7 +274,12 @@ if [ -d "$REPO_DIR" ]; then
     #   生效动作 = 重启 rabbitmq 容器（本脚本不做，维护窗口人工执行——compose 注释已写明）。
     # =============================================================================
     SYNCED_CONF=()
-    for _conf_rel in "conf/rabbitmq.conf" "deploy/rabbitmq/enabled_plugins"; do
+    # 2026-11-02（66 号 🟡 部署链长尾）：sql/ 三件一并纳入白名单。
+    # 原因：mysql 服务用 bind mount 引用 ./sql/00-init-zxyz.sh 与 ./sql/nacos-mysql-schema.sql，
+    #       但此前 deploy 只同步 compose 而**不同步 sql/** ⇒ 换新服务器/重建数据目录时挂载源缺失，
+    #       mysql 初始化直接失败（"no such file"）。grant-least-privilege.sql 是人工执行件，同样需要落位。
+    for _conf_rel in "conf/rabbitmq.conf" "deploy/rabbitmq/enabled_plugins" \
+                     "sql/00-init-zxyz.sh" "sql/nacos-mysql-schema.sql" "sql/grant-least-privilege.sql"; do
       if [ -f "$REPO_DIR/$_conf_rel" ]; then
         _dst="$DEPLOY_DIR/$_conf_rel"
         mkdir -p "$(dirname "$_dst")"
@@ -568,6 +573,40 @@ fi
 #   resolve : lstat ***/ZXYZdatabaseBack: no such file or directory（服务器上确实没有该目录）
 # 判据选择：不直接拿 pull 的退出码当结论，而是检查「compose up 时该镜像在不在本地」——
 # 这才是决定它会不会退化成源码构建的真正前提；退出码非零但镜像已在本地不算故障。
+# --- 前置断言：infra 必须 running+healthy（70 号 §六.2「部署与 infra 解耦」）---
+# 为什么放在拉镜像之前：deploy 的 UPDATE_SVC **不含 infra**，infra 死了本脚本救不回；
+# 而 10 个应用的 actuator 健康都含 RabbitHealthIndicator（MySQL/Redis 同理），infra 不健康时
+# 部署必然卡在健康门禁 → 回滚 → 白烧一个窗口（2026-11-02 真实发生，见 ISSUE/70）。
+# 早失败 + 给出可操作处置，比"等到健康门禁才失败"便宜得多。
+assert_infra_healthy() {
+  local out line state health bad=0 svc
+  if ! out="$(docker compose ps -a --format '{{.Service}} {{.State}} {{.Health}}' 2>/dev/null)"; then
+    echo "  ERROR: docker compose ps -a 执行失败，无法判定 infra 状态"
+    return 1
+  fi
+  for svc in mysql nacos redis rabbitmq; do
+    line="$(printf '%s\n' "$out" | awk -v s="$svc" '$1==s{print; exit}')"
+    if [ -z "$line" ]; then
+      echo "  MISSING: infra $svc 未创建（容器不存在）"; bad=1; continue
+    fi
+    state="$(printf '%s' "$line" | awk '{print $2}')"
+    health="$(printf '%s' "$line" | awk '{print $3}')"
+    if [ "$state" != "running" ]; then
+      echo "  NOT READY: infra $svc state=$state（需要 running）"; bad=1
+    elif [ -n "$health" ] && [ "$health" != "healthy" ]; then
+      echo "  NOT READY: infra $svc health=$health（需要 healthy）"; bad=1
+    fi
+  done
+  return $bad
+}
+if ! assert_infra_healthy; then
+  echo "::error::INFRA_NOT_HEALTHY: 基础设施容器未就绪（见上），已中止部署（未触碰任何服务）。"
+  echo "  处置：Actions →「运维·基础设施容器重启」→ Run workflow，"
+  echo "        containers=<故障服务>，confirm=RESTART（必要时 mode=recreate，数据为 bind mount 可保留），"
+  echo "        待 infra 全部 healthy 后重新触发部署。"
+  exit 1
+fi
+echo "Infra pre-flight OK (mysql/nacos/redis/rabbitmq healthy)"
 DEPLOY_PHASE="pull-images"
 echo "===== Pulling images ====="
 PULL_PIDS=()

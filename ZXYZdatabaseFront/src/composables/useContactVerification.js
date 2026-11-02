@@ -9,6 +9,17 @@ import {
 import { bindEmail, bindPhone, fetchUserSettings } from '@/api/user'
 import { handleBusinessError } from '@/utils/error'
 
+/**
+ * 开发期验证码回显开关（66 号 §三-14）。
+ *
+ * 旧实现：手机验证码分支**无条件**把后端返回的 code 显示到界面 —— 只要后端哪天在
+ * 非 dev profile 也回传 code（配置漂移/误开），生产就会把验证码打到屏幕上。
+ * 现在改为「编译期 DEV **且** 显式打开 VITE_SHOW_DEV_VERIFY_CODE=true」双门控，
+ * 生产构建里 import.meta.env.DEV 恒为 false ⇒ 无论后端如何都不会回显。
+ */
+const SHOW_DEV_VERIFY_CODE =
+  import.meta.env.DEV && import.meta.env.VITE_SHOW_DEV_VERIFY_CODE === 'true'
+
 const EMAIL_CODE_COOLDOWN_SECONDS = 60
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const MAINLAND_PHONE_PATTERN = /^1[3-9]\d{9}$/
@@ -119,8 +130,12 @@ export function useContactVerification({
     try {
       const response = await createPhoneVerificationCode()
       verifyForm.type = 'phone'
-      verifyForm.code = response?.data?.code || ''
-      ElMessage.success(`开发验证码：${verifyForm.code}`)
+      if (SHOW_DEV_VERIFY_CODE && response?.data?.code) {
+        verifyForm.code = response.data.code
+        ElMessage.success(`开发验证码：${verifyForm.code}`)
+      } else {
+        ElMessage.success('验证码已发送')
+      }
     } catch (error) {
       handleBusinessError(error, '获取手机验证码失败')
     }

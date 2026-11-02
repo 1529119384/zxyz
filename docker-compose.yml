@@ -127,7 +127,9 @@
 # ---------------------------------------------------------------------------
 services:
   mysql:
-    image: mysql:8.4.0-oraclelinux8@sha256:f7a8e140a7d6d1e6e0c99eeb0489c50a186ee4ac44ff55323a176529b9a43d33
+    # 2026-11-02（66 号 🟡 基础设施镜像 patch）：8.4.0-ol8 → 8.4.13-ol9（8.4 线最新补丁）。
+    # 数据目录 8.4.x 同 minor 兼容；digest 为本地 docker inspect 实取。
+    image: mysql:8.4.13-oraclelinux9@sha256:a0225d1ea6631c8bc2385dc4c2faba17bbf1834ecf369e1659a9a382bd8d5dd7
     container_name: zxyz-mysql
     restart: unless-stopped
     deploy:
@@ -269,7 +271,8 @@ services:
   # 恰好重演本项目已踩过的"镜像不被监控"。收成 compose 服务后，digest 就落在
   # .github/dependabot.yml 已有的 `docker-compose` 生态视野内。
   flyway:
-    image: flyway/flyway:10.12@sha256:ac06f3b8d08887be37b7753f40f4a7315df750d9b42ad3ee5bcd10e29f163a3e
+    # 2026-11-02（66 号 🟡）：10.12 → 10.22.0（10.x 线最新）。迁移语义不变，仅版本补丁。
+    image: flyway/flyway:10.22.0@sha256:43592cc125eb0594d9b013e8dced2fa67d473c091abaa5dec03b22f49e682949
     container_name: zxyz-flyway
     profiles: ["tools"]
     restart: "no"

@@ -426,3 +426,74 @@ describe('imWebSocket 重连策略', () => {
     })
   })
 })
+
+  describe('鉴权失败止损（66 号 §三-12）', () => {
+    let originalWebSocket
+
+    beforeEach(() => {
+      originalWebSocket = globalThis.WebSocket
+      globalThis.WebSocket = FakeWebSocket
+      FakeWebSocket.instances = []
+      vi.useFakeTimers()
+      imRequest.post.mockReset()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+      globalThis.WebSocket = originalWebSocket
+      imRequest.post.mockReset()
+      imRequest.post.mockResolvedValue({ data: 'test-ticket' })
+    })
+
+    it('票据接口 401 时停止自动重连，且不发新连接', async () => {
+      const authErr = Object.assign(new Error('Unauthorized'), {
+        response: { status: 401, data: { code: 4010 } },
+      })
+      imRequest.post.mockRejectedValueOnce(authErr)
+
+      const statuses = []
+      const errors = []
+      const client = createImWebSocketClient({
+        onStatusChange: (s) => statuses.push(s),
+        onError: (e) => errors.push(e),
+      })
+
+      client.connect()
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(statuses.at(-1)).toBe(IM_WS_STATUS.CONNECTION_ERROR)
+      expect(errors.at(-1)?.message).toContain('鉴权失败')
+      // 止损：即使推进很久也不再尝试
+      await vi.advanceTimersByTimeAsync(120000)
+      expect(FakeWebSocket.instances.length).toBe(0)
+      expect(imRequest.post).toHaveBeenCalledTimes(1)
+    })
+
+    it('用户显式 reconnect() 会复位止损并重新尝试', async () => {
+      const authErr = Object.assign(new Error('Unauthorized'), {
+        response: { status: 401, data: { code: 4010 } },
+      })
+      imRequest.post.mockRejectedValueOnce(authErr)
+
+      const client = createImWebSocketClient({})
+      client.connect()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(FakeWebSocket.instances.length).toBe(0)
+
+      // 登录恢复后用户点「重新连接」
+      imRequest.post.mockResolvedValueOnce({ data: 'fresh-ticket' })
+      client.reconnect()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(FakeWebSocket.instances.length).toBe(1)
+    })
+
+    it('isAuthError 覆盖 401/403/4010/4030，不误判网络错误', async () => {
+      const { isAuthError } = await import('@/utils/imWebSocket')
+      expect(isAuthError({ response: { status: 401 } })).toBe(true)
+      expect(isAuthError({ response: { status: 403 } })).toBe(true)
+      expect(isAuthError({ response: { status: 500, data: { code: 4010 } } })).toBe(true)
+      expect(isAuthError({ response: { status: 200, data: { code: 4030 } } })).toBe(true)
+      expect(isAuthError({ response: { status: 500, data: { code: 5000 } } })).toBe(false)
+      expect(isAuthError(new Error('network down'))).toBe(false)
+    })
+  })

@@ -33,6 +33,21 @@ function computeReconnectDelay(attempt, jitterFactor = Math.random()) {
   )
 }
 
+/**
+ * 判断错误是否为「鉴权类失败」（登录态失效/无权限）。
+ *
+ * 66 号 §三-12（2026-11-02）：WS 票据接口 401/4010 属**不可自愈**错误 ——
+ * 继续无限重连只会每 30s 打一次已失效的登录态，既救不回连接又刷日志/网关。
+ * 判据与前端 createApiClient 一致：HTTP 401/403 或业务码 4010/4030。
+ * @param {unknown} err
+ * @returns {boolean}
+ */
+function isAuthError(err) {
+  const status = err?.response?.status ?? err?.status
+  const code = err?.response?.data?.code ?? err?.code
+  return status === 401 || status === 403 || code === 4010 || code === 4030
+}
+
 function getImWebSocketUrl() {
   return resolveWebSocketUrl(requireViteEnv('VITE_IM_WS_URL'))
 }
@@ -60,6 +75,8 @@ export function createImWebSocketClient(options = {}) {
   let reconnectTimer = null
   let reconnectAttempt = 0
   let manualClose = false
+  // 鉴权止损位（66 号 §三-12）：票据接口鉴权失败后停止自动重连，直到用户显式重连/重新登录
+  let authStopLoss = false
   let sendQueue = Promise.resolve()
   // 最近一次收到 PONG 的本地时间；心跳看护据此判断连接是否还有响应（L6）
   let lastPongAt = 0
@@ -139,7 +156,7 @@ export function createImWebSocketClient(options = {}) {
   // 无限重连：不再设置尝试次数上限，长时间断网（如笔记本合盖过夜）后无需用户手动干预
   // 也能自动恢复；延迟已被 MAX_RECONNECT_DELAY_MS 封顶（30s），空转成本可控（P1-E2）。
   function scheduleReconnect() {
-    if (manualClose || reconnectTimer) {
+    if (manualClose || reconnectTimer || authStopLoss) {
       return
     }
     emitStatus(IM_WS_STATUS.RECONNECTING)
@@ -147,7 +164,7 @@ export function createImWebSocketClient(options = {}) {
     reconnectAttempt += 1
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null
-      connect()
+      connect(false)
     }, delay)
   }
 
@@ -157,7 +174,13 @@ export function createImWebSocketClient(options = {}) {
   // connect，后完成者覆盖前者 → 双连接、双心跳、消息重复。在途时所有重入复用同一 Promise。
   let connectInFlight = null
 
-  function connect() {
+  /**
+   * @param {boolean} explicit true=用户/初始化显式调用（复位鉴权止损位）；false=退避定时器内部调用
+   */
+  function connect(explicit = true) {
+    if (explicit) {
+      authStopLoss = false
+    }
     if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) {
       return Promise.resolve()
     }
@@ -177,6 +200,17 @@ export function createImWebSocketClient(options = {}) {
     try {
       ticket = await fetchWsTicket()
     } catch (err) {
+      if (isAuthError(err)) {
+        // 66 号 §三-12：登录态失效不可自愈 —— 停止自动重连，界面提示重新登录。
+        authStopLoss = true
+        clearReconnect()
+        clearHeartbeat()
+        emitStatus(IM_WS_STATUS.CONNECTION_ERROR)
+        onError?.(new Error(
+          'IM 连接凭证鉴权失败（登录已失效），已停止自动重连；请重新登录后再连接',
+        ))
+        return
+      }
       emitStatus(IM_WS_STATUS.CONNECTION_ERROR)
       onError?.(err)
       scheduleReconnect()
@@ -312,6 +346,7 @@ export function createImWebSocketClient(options = {}) {
    */
   function reconnect() {
     manualClose = false
+    authStopLoss = false
     reconnectAttempt = 0
     clearReconnect()
     connect()
@@ -325,4 +360,4 @@ export function createImWebSocketClient(options = {}) {
   }
 }
 
-export { computeReconnectDelay }
+export { computeReconnectDelay, isAuthError }

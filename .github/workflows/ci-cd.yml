@@ -40,6 +40,16 @@ on:
       # 「零检查变更 = 盲区」形态。它不参与镜像构建，只触发 lint-config
       # （严格 YAML 校验），代价一次轻量 run。
       - '.trivyignore.yaml'
+      # 2026-11-02（66 号 🟡 部署链长尾）：补三项「改了也一条检查都不跑」的盲区文件。
+      #   共同点：都能改变构建/依赖/钩子行为，但都不参与镜像内容 ⇒ 只进顶层 paths 触发
+      #   lint-config（shellcheck + 严格 YAML），刻意不进任何 dorny 部署 filter。
+      #   · .dockerignore        —— 决定构建上下文（漏项会把 .git/密钥带上构建机）
+      #   · .github/dependabot.yml —— 依赖 PR 的分组/限流策略（改错会静默停更依赖）
+      #   · .husky/**            —— 本地提交/推送钩子（改错会静默放过双提交漂移）
+      - '.dockerignore'
+      - '.github/dependabot.yml'
+      - '.husky/**'
+      - '.gitignore'
       # ⚠️ 2026-10-11 P2-4 白名单补三项（消除「只改这些文件 = 一条检查都不跑」的
       #    零检查变更盲区）。三项通道归属：
       #    · .gitattributes          → 顶层 paths + docker-config filter（全量重建+部署）
