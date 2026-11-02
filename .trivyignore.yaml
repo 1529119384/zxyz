@@ -25,4 +25,29 @@
 #    不得无理由恢复裸 ID 豁免。
 #
 
-vulnerabilities: []
+vulnerabilities:
+  # ── CVE-2026-102554：guava DoS（反序列化期间无节流的内存分配） ──────────────
+  # 2026-11-02 登记（69 号审核实证：Trivy DB 更新后 10 个 security-scan job 全红）。
+  # 事实取证（本机实测，非推断）：
+  #   * 报出位置是 app.jar → `com.google.guava:guava 33.3.1-android`；
+  #   * 全仓 pom 无任何 guava 依赖，`mvn dependency:tree` 也查不到 ⇒ 它不是直接/传递依赖，
+  #     而是 **nacos-client-3.1.1.jar 内嵌（shaded）** 的副本
+  #     （jar 内 META-INF/maven/com.google.guava/guava/pom.properties: version=33.3.1-android）。
+  #   * 「升 nacos 就行」不成立：实测 nacos-client 3.2.4/3.3.0 内嵌的是 guava **33.5.0-android**，
+  #     仍 < 修复版 33.7.2 ⇒ **无药可升**（不是"懒得升"）。
+  # 风险判定（为什么不可达）：
+  #   * nacos-client 只在「服务注册/配置拉取」内部使用 guava 的集合/并发工具；
+  #   * 本应用**不把任何外部输入交给 guava 的序列化/反序列化 API**
+  #     （项目无 guava 直接引用，见上）；
+  #   * 该 CVE 的触发前提是「攻击者控制被 guava 反序列化的字节流」，本项目不满足。
+  # 重新评估条件（任一满足即须删除本豁免并复扫）：
+  #   1) nacos-client 发布内嵌 guava ≥ 33.7.2 的版本；
+  #   2) 项目首次直接引用 guava 或把外部数据交给 guava 反序列化；
+  #   3) 到期日（下面 expired_at）到达 —— 到期即失效，Trivy 会重新报红，强制复查。
+  - id: CVE-2026-102554
+    statement: >-
+      guava 33.3.1-android 是 nacos-client-3.1.1 的内嵌（shaded）副本，非项目依赖；
+      nacos-client 3.2.4/3.3.0 内嵌的仍是 33.5.0-android（< 修复版 33.7.2），无药可升；
+      项目不将外部输入交给 guava 反序列化，触发前提不成立。
+    expired_at: 2027-02-01
+
