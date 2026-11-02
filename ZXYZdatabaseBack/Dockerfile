@@ -60,9 +60,15 @@ RUN mvn -B -T 1C -pl zxyz-common -am install -Dmaven.test.skip=false -DskipTests
 # Alpine 瘦身：eclipse-temurin:21-jre-alpine 体积更小（Boot4 迁移 ISSUE/48：17 → 21）。
 # 阻塞点检查：项目仅使用 Netty NIO（纯 Java），不依赖 netty-transport-native，
 # 因此 Alpine musl libc 不会影响 Netty 功能。
-# 运行时镜像固定为「确切 patch 版本 tag + 不可变 digest」（已回填 2026-10-09，
-# 经 Registry HTTP API v2 实取 multi-arch digest；21.0.9_10 = 21.0.9+10，21 线当前最新 patch）。
-FROM eclipse-temurin:21.0.9_10-jre-alpine@sha256:08eecc477dbe3f2e33daac27f36e41daf7f4ec51d2f3396006e54fa41832c74c
+# 运行时镜像固定为「确切版本 tag + 不可变 digest」。
+# ⚠️ 2026-11-02 升级（66 号二.8「镜像 patch」+ 69 号审核实证）：
+#   旧钉定 `21.0.9_10-jre-alpine`（alpine 3.22.3）在新 Trivy DB 下判出
+#   **5 CRITICAL + 38 HIGH**（gnutls 3.8.8-r0 → 修复版 3.8.13-r0 只发在 3.23/3.24，
+#   3.22 仓库没有 ⇒ 下方 `apk upgrade` 在 3.22 内无法修复）⇒ security-scan 全 10 个
+#   服务 job 红 ⇒ deploy 被阻断。已换到 `21-jre-alpine`（alpine 3.24.3 / JDK 21.0.13，
+#   本地实测 `trivy image --severity HIGH,CRITICAL --ignore-unfixed` = **0 条**）。
+#   digest 为本地 `docker inspect RepoDigests` 实取值；tag 仅可读，digest 才决定比特。
+FROM eclipse-temurin:21-jre-alpine@sha256:82cf3d9ccbe1ed46252008d51b2f2329e6b9e8a2f4394c4bebefc3ea7f4b1372
 
 # 在构建期把运行时基础镜像（eclipse-temurin:21-jre-alpine）内已安装的 OS 包
 # 升级到最新安全修复版，以修复 Trivy 扫描会判定 FAIL 的 HIGH/CRITICAL 漏洞
