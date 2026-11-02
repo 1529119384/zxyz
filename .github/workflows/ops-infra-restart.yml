@@ -97,6 +97,15 @@ jobs:
           echo "### 宿主机内存"
           free -m | head -3
           echo
+          echo "### infra 健康详情（只读）"
+          for n in zxyz-rabbitmq zxyz-mysql zxyz-redis zxyz-nacos; do
+            echo "--- $n ---"
+            docker inspect --format '{{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} restarts={{.RestartCount}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' "$n" 2>/dev/null || echo "(不存在)"
+          done
+          echo
+          echo "### rabbitmq 最近 30 行日志（只读）"
+          docker logs --tail 30 zxyz-rabbitmq 2>&1 | tail -30 || true
+          echo
           IFS=',' read -ra list <<< "$CONTAINERS"
           if [ "${CONFIRM:-}" != "RESTART" ]; then
             echo "DRY-RUN：未提供 confirm=RESTART，不执行任何变更。将重启：${CONTAINERS}"
