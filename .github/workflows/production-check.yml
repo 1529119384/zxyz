@@ -68,7 +68,7 @@ jobs:
             echo "| 触发时间 (UTC) | $(date -u '+%Y-%m-%dT%H:%M:%SZ') |"
             echo "| 仓库 commit | ${{ github.sha }} |"
             echo "| base_url | ${{ inputs.base_url }} |"
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       # ---------------------------------------------------------------- HTTP
       # 说明（69 号 §附 假证据清单 ①）：`/api/health` 200 可能是 4010 假绿，
@@ -85,7 +85,7 @@ jobs:
             echo ""
             echo "| path | HTTP | 业务 code | 判定 |"
             echo "|---|---|---|---|"
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
           IFS=',' read -ra PATHS <<< "$PROBE_PATHS"
           for p in "${PATHS[@]}"; do
@@ -104,7 +104,7 @@ jobs:
               4010) verdict="$verdict（未登录，符合预期）" ;;
               1)    verdict="$verdict（业务成功）" ;;
             esac
-            echo "| \`$p\` | $body | $code | $verdict |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| \`$p\` | $body | $code | $verdict |" | tee -a "$GITHUB_STEP_SUMMARY"
           done
           rm -f /tmp/body.$$
           echo "" >> "$GITHUB_STEP_SUMMARY"
@@ -127,7 +127,7 @@ jobs:
           else
             echo "::warning::SSH 只读取证未执行（include_server=$INCLUDE_SERVER，凭据 host/key/user 需齐备）—— 本轮仅有 HTTP 证据"
           fi
-          echo "present=$present" >> "$GITHUB_OUTPUT"
+          echo "present=$present" | tee -a "$GITHUB_OUTPUT"
 
       # ------------------------------------------------------ SSH 只读取证
       # 用原生 ssh（不引入第三方 action）：只读命令，超时短，失败不阻断（证据缺失要显式写出来）
@@ -177,8 +177,15 @@ jobs:
           echo
           echo "### 5) 磁盘与内存余量"
           echo '```'
-          df -h / 2>/dev/null | tail -1 || true
-          free -m 2>/dev/null | head -2 || true
+          df -h / 2>/dev/null | tail -2 || true
+          free -m 2>/dev/null | head -3 || true
+          echo '```'
+          echo
+          echo "### 6) 容器日志尾部（gateway / user-service）"
+          echo '```'
+          docker logs --tail 40 zxyz-gateway 2>&1 | tail -40 || true
+          echo "--- user-service ---"
+          docker logs --tail 40 zxyz-user-service 2>&1 | tail -40 || true
           echo '```'
           REMOTE
           rc=$?
@@ -190,12 +197,13 @@ jobs:
               echo "> ❌ SSH 取证失败（退出码 $rc）—— 通道仍不可用，需换证或稍后重试。"
               echo ""
               echo '```'
-              tail -5 "$OUT" 2>/dev/null || true
+              tail -20 "$OUT" 2>/dev/null || true
+              echo "===== SSH stderr/output tail ====="
               echo '```'
             else
               cat "$OUT" 2>/dev/null || echo "(空输出)"
             fi
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
           # 证据缺失不阻断 workflow（取证工具的目的就是记录现状），但必须显式标注
           if [ $rc -ne 0 ]; then
             echo "::warning::SSH 取证失败 rc=$rc"
@@ -215,4 +223,4 @@ jobs:
             echo ""
             echo "**binlog 销账口径（44#4）**：在 §1 的 \`deploy-last.log\` 里出现"
             echo "\`binlog_ok=true note=...\` 一行即视为该窗口成功；\`binlog_ok=false\` 需看 note 原因。"
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
