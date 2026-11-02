@@ -181,7 +181,15 @@ jobs:
           free -m 2>/dev/null | head -3 || true
           echo '```'
           echo
-          echo "### 6) 容器日志尾部（gateway / user-service）"
+          echo "### 6) 定时任务与备份日志（binlog_ok 取证）"
+          echo '```'
+          crontab -l 2>/dev/null | grep -i backup || echo "(root crontab 无 backup 行)"
+          ls -l "$D/deploy-last.log" 2>/dev/null || true
+          echo '--- backups 目录最近 binlog 产物 ---'
+          ls -lt "$D/backups" 2>/dev/null | head -8 || echo "(无 backups 目录)"
+          echo '```'
+          echo
+          echo "### 7) 容器日志尾部（gateway / user-service）"
           echo '```'
           docker logs --tail 40 zxyz-gateway 2>&1 | tail -40 || true
           echo "--- user-service ---"
