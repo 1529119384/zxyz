@@ -206,9 +206,9 @@ export function createImWebSocketClient(options = {}) {
         clearReconnect()
         clearHeartbeat()
         emitStatus(IM_WS_STATUS.CONNECTION_ERROR)
-        onError?.(new Error(
-          'IM 连接凭证鉴权失败（登录已失效），已停止自动重连；请重新登录后再连接',
-        ))
+        onError?.(
+          new Error('IM 连接凭证鉴权失败（登录已失效），已停止自动重连；请重新登录后再连接'),
+        )
         return
       }
       emitStatus(IM_WS_STATUS.CONNECTION_ERROR)
