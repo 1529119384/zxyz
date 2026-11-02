@@ -82,7 +82,7 @@ jobs:
           printf '%s\n' "$PROD_KEY" > "$HOME/.ssh/prod_key" && chmod 600 "$HOME/.ssh/prod_key"
           ssh -i "$HOME/.ssh/prod_key" -p "${PROD_PORT:-22}" \
               -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -o BatchMode=yes \
-              "${PROD_USER}@${PROD_HOST}" "CONTAINERS='${CONTAINERS}' CONFIRM='${CONFIRM}' bash -s" 2>&1 | tee /tmp/out.txt <<'REMOTE'
+              "${PROD_USER}@${PROD_HOST}" "CONTAINERS='${CONTAINERS}' CONFIRM='${CONFIRM}' bash -s" > /tmp/out.txt 2>&1 <<'REMOTE'
           set -uo pipefail
           echo "### 现状（重启前）"
           docker ps -a --filter name=zxyz --format '{{.Names}}  {{.Status}}' | sort
@@ -114,5 +114,7 @@ jobs:
           echo "### rabbitmq 最近日志（若存在）"
           docker logs --tail 20 zxyz-rabbitmq 2>&1 | tail -20 || true
           REMOTE
-          rc=${PIPESTATUS[0]}
+          rc=$?
+          echo "===== 远端输出 ====="
+          cat /tmp/out.txt 2>/dev/null || true
           if [ "$rc" -ne 0 ]; then echo "::error::SSH 执行失败 rc=$rc"; exit 1; fi
