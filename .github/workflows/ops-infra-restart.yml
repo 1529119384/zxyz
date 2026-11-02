@@ -25,6 +25,10 @@ on:
         description: '输入 RESTART 才会真正执行（否则只打印现状）'
         required: true
         default: ''
+      mode:
+        description: 'start=仅 docker start；recreate=rm -f + compose up --force-recreate（数据卷保留）'
+        required: false
+        default: 'start'
 
 permissions:
   contents: read
@@ -76,6 +80,8 @@ jobs:
           PROD_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
           CONTAINERS: ${{ inputs.containers }}
           CONFIRM: ${{ inputs.confirm }}
+          MODE: ${{ inputs.mode }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/www/zxyz' }}
         run: |
           set -uo pipefail
           set +e
@@ -83,7 +89,7 @@ jobs:
           printf '%s\n' "$PROD_KEY" > "$HOME/.ssh/prod_key" && chmod 600 "$HOME/.ssh/prod_key"
           ssh -i "$HOME/.ssh/prod_key" -p "${PROD_PORT:-22}" \
               -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -o BatchMode=yes \
-              "${PROD_USER}@${PROD_HOST}" "CONTAINERS='${CONTAINERS}' CONFIRM='${CONFIRM}' bash -s" > /tmp/out.txt 2>&1 <<'REMOTE'
+              "${PROD_USER}@${PROD_HOST}" "CONTAINERS='${CONTAINERS}' CONFIRM='${CONFIRM}' MODE='${MODE}' DEPLOY_PATH='${DEPLOY_PATH}' bash -s" > /tmp/out.txt 2>&1 <<'REMOTE'
           set -uo pipefail
           echo "### 现状（重启前）"
           docker ps -a --filter name=zxyz --format '{{.Names}}  {{.Status}}' | sort
@@ -100,10 +106,17 @@ jobs:
             c="$(echo "$c" | tr -d ' ')"
             name="zxyz-$c"
             echo "--- 处理 $name ---"
-            if docker ps -a --format '{{.Names}}' | grep -qx "$name"; then
-              docker start "$name" 2>&1 || { echo "::error::docker start $name 失败"; exit 1; }
+            if [ "${MODE:-start}" = "recreate" ]; then
+              echo "mode=recreate：rm -f + compose up --force-recreate $c（bind 数据卷保留）"
+              docker rm -f "$name" >/dev/null 2>&1 || true
+              ( cd "${DEPLOY_PATH:-/www/zxyz}" && docker compose up -d --force-recreate "$c" ) 2>&1 \
+                || { echo "::error::compose up --force-recreate $c 失败"; exit 1; }
             else
-              echo "::error::$name 不存在"; exit 1
+              if docker ps -a --format '{{.Names}}' | grep -qx "$name"; then
+                docker start "$name" 2>&1 || { echo "::error::docker start $name 失败"; exit 1; }
+              else
+                echo "::error::$name 不存在"; exit 1
+              fi
             fi
           done
           echo "等待 40s 让容器进入 running/healthy..."
