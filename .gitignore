@@ -112,3 +112,6 @@ spss_homework/
 # 2026-10-03 已执行 `git rm --cached`：.qoder/better-harness/**（12 文件）+ .qoder/settings.json
 # 共 13 个文件已停止跟踪（物理文件仍在本地磁盘，未删除）。现已只剩 .qoder/rules/（7 文件）入库，
 # 与本节标题「只保留 rules」一致。事后核对：`git ls-files .qoder` 应恰好 7 行。
+
+# ===== CI 生成物（本地跑「UNIQUE 查重清单」步骤时产生）=====
+predeploy-checks/
