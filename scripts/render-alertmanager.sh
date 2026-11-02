@@ -78,6 +78,9 @@ if [ -z "$CFG" ]; then
   # 优雅降级：无投递渠道时告警合法路由但静默丢弃，监控不中断
   CFG="    # 未配置任何告警投递渠道：告警路由合法但静默丢弃（监控不中断）。
     # 配置 ALERT_WEBHOOK_URL 或 ALERT_EMAIL_TO(且 EMAIL_ENABLED=true) 后重新渲染生效。"
+  # 2026-11-02（70 号/66 二.1）：**必须响亮**。此前这种情况也打印 RENDER_ALERTMANAGER_OK，
+  # 部署日志看起来"告警已渲染"，实际 8 条规则全投空 receiver —— 静默丢弃最容易被误读成"已配好"。
+  echo "::warning::ALERTMANAGER_NO_CHANNEL: 未配置任何投递渠道（ALERT_WEBHOOK_URL / ALERT_EMAIL_TO），所有告警将被静默丢弃；监控栈虽可启动但等于没有告警出口" >&2
 fi
 
 mkdir -p "$(dirname "$OUT_FILE")"
