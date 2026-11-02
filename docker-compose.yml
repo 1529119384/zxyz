@@ -405,10 +405,14 @@ services:
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
-      timeout: 5s
-      retries: 20
-      # start_period 让冷启动期间的临时失败不消耗 retries，避免被误判为不健康阻塞依赖服务
-      start_period: 60s
+      # ⚠️ 2026-11-02 事故复盘（ISSUE/70）：timeout 5s 在本机（8G / 无 swap）**实测不足** ——
+      #   rabbitmq-diagnostics ping 常超过 5s，健康检查恒 "exceeded timeout" ⇒ 容器长期
+      #   unhealthy ⇒ 10 个应用服务（depends_on rabbitmq: service_healthy）无法重启，部署被阻断。
+      #   实测冷启动 267s（内存紧张时 Erlang/Mnesia 恢复慢）也远超原 start_period 60s + 20×10s。
+      timeout: 20s
+      retries: 30
+      # start_period 覆盖实测冷启动 267s，再留余量（闸门宁可慢，不可误判）
+      start_period: 300s
     logging:
       driver: json-file
       options:
