@@ -168,6 +168,16 @@ public class ImWebSocketFrameHandler extends SimpleChannelInboundHandler<TextWeb
     }
 
     private void writeEnvelope(ChannelHandlerContext ctx, Object envelope) {
+        // 66 号二.3（2026-11-02 补）：写缓冲背压 —— 慢消费者（连接还在但不读）会让
+        // Netty 的写队列无界增长，最终 OOM。水位线（ImNettyServer 的
+        // WRITE_BUFFER_WATER_MARK）越过 high 后 isWritable() 转 false：
+        // 此时主动断开，客户端重连后会重新拉取，避免服务端内存被单个僵尸客户端吃满。
+        if (!ctx.channel().isWritable()) {
+            log.warn("IM 连接写缓冲已超高水位，主动断开以避免内存无界增长: channel={}",
+                    ctx.channel().id().asShortText());
+            ctx.close();
+            return;
+        }
         try {
             ctx.writeAndFlush(new TextWebSocketFrame(objectMapper.writeValueAsString(envelope)));
         } catch (Exception e) {

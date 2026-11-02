@@ -7,6 +7,7 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.EventLoopGroup;
+import io.netty.channel.WriteBufferWaterMark;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
@@ -14,6 +15,7 @@ import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler;
 import io.netty.handler.stream.ChunkedWriteHandler;
+import io.netty.handler.timeout.IdleStateHandler;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -64,6 +66,13 @@ public class ImNettyServer {
                     .channel(NioServerSocketChannel.class)
                     .option(ChannelOption.SO_BACKLOG, 1024)
                     .childOption(ChannelOption.SO_KEEPALIVE, true)
+                    // 66 号二.3（2026-11-02 补）：低延迟小包（IM 文本帧），禁用 Nagle
+                    .childOption(ChannelOption.TCP_NODELAY, true)
+                    // 66 号二.3：写缓冲水位线 —— 慢消费者（不再读但连接未断）时
+                    // Channel.isWritable() 会转 false，业务侧可据此丢弃/断开，避免
+                    // 无界内存增长（Netty 默认 high=64KiB，对广播场景偏小）。
+                    .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK,
+                            new WriteBufferWaterMark(32 * 1024, 256 * 1024))
                     .childHandler(channelInitializer());
 
             ChannelFuture bindFuture = bootstrap.bind(properties.getPort()).sync();
@@ -99,6 +108,12 @@ public class ImNettyServer {
     /** @see #channelInitializer() */
     void configurePipeline(ChannelPipeline pipeline) {
         int maxContentLength = this.maxContentLength;
+        // 66 号二.3（2026-11-02 补）：IdleStateHandler 必须装配在**最前**（编解码之前），
+        // 才能观察到原始读事件；0 表示禁用（properties.readerIdleSeconds=0 时退化为旧行为）。
+        int readerIdle = properties.getReaderIdleSeconds();
+        if (readerIdle > 0) {
+            pipeline.addLast(new IdleStateHandler(readerIdle, 0, 0));
+        }
         pipeline.addLast(new HttpServerCodec())
                 .addLast(new ChunkedWriteHandler())
                 .addLast(new HttpObjectAggregator(maxContentLength))
@@ -107,7 +122,9 @@ public class ImNettyServer {
                 // B-6：业务 handler 交给独立线程组，EventLoop 只做编解码与写回。
                 // 同一 Channel 的该 handler 始终由组内固定 executor 执行，
                 // 因此「同一连接内消息按序处理」的语义不变。
-                .addLast(commandExecutorGroup.eventExecutorGroup(), webSocketFrameHandler);
+                .addLast(commandExecutorGroup.eventExecutorGroup(), webSocketFrameHandler)
+                // 66 号二.3：空闲事件消费者（IdleStateHandler 只发事件、不会自动关连接）
+                .addLast(new ImIdleCloseHandler());
     }
 
     public boolean isRunning() {

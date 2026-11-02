@@ -57,3 +57,37 @@ groups:
         annotations:
           summary: "{{ $labels.instance }} JVM 堆内存 > 95%（OOM 风险）"
           description: "堆内存使用率 {{ $value | humanizePercentage }} 已持续 5 分钟，逼近容器 OOMKill"
+
+
+  - name: zxyz-rabbitmq
+    # 66 号二.1：rabbitmq_prometheus 插件指标（job 已接入 prometheus.yml）
+    rules:
+      # DLQ 积压：死信队列出现未消费消息即告警（队列名按全仓 DLQ 命名：*.dlq）
+      - alert: RabbitMqDlqBacklog
+        expr: sum(rabbitmq_queue_messages{queue=~".*dlq.*"}) by (queue) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "死信队列 {{ $labels.queue }} 存在未消费消息"
+          description: "DLQ 积压 {{ $value }} 条已持续 10 分钟——有消息反序列化失败或消费端异常"
+
+      # 队列积压（全队列口径，排除 DLQ——DLQ 单列）
+      - alert: RabbitMqQueueBacklog
+        expr: sum(rabbitmq_queue_messages{queue!~".*dlq.*"}) by (queue) > 1000
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "队列 {{ $labels.queue }} 积压超过 1000 条"
+          description: "积压 {{ $value }} 条已持续 15 分钟——消费能力不足或消费者离线"
+
+      # Watchdog（DeadMansSwitch）：恒真告警，用于端到端验证「告警链投递通畅」
+      # ——alertmanager 侧应收到它；收不到 = 告警链自身断点（62d P1 判据）
+      - alert: Watchdog
+        expr: vector(1)
+        labels:
+          severity: none
+        annotations:
+          summary: "告警链存活探针（恒触发，勿处理）"
+          description: "若 alertmanager/通知渠道长时间未收到本告警 = 告警链断点"

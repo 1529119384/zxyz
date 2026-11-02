@@ -178,8 +178,49 @@ class MqOutboxPublisherTest {
     // ==================== 工具 ====================
 
     @SuppressWarnings("unchecked")
-    private void mockScanReturning(List<String> keys) {
-        Cursor<String> cursor = mock(Cursor.class);
+    // ==================== 66 号二.6：积压/TTL 快照 ====================
+
+    @Test
+    void backlogStats_emptyOutbox_isEmpty() {
+        mockScanReturning(List.of());
+
+        MqOutboxPublisher.BacklogStats stats = publisher.backlogStats();
+
+        assertEquals(0, stats.pending());
+        assertEquals(-1L, stats.minRemainingTtlSecs());
+        assertTrue(stats.isEmpty());
+    }
+
+    @Test
+    void backlogStats_reportsCountAndMinRemainingTtl() {
+        String a = "mq:outbox:zxyz-test-service:user.deleted:uuid-a";
+        String b = "mq:outbox:zxyz-test-service:team.created:uuid-b";
+        mockScanReturning(List.of(a, b));
+        when(redisTemplate.getExpire(a, java.util.concurrent.TimeUnit.SECONDS)).thenReturn(7200L);
+        when(redisTemplate.getExpire(b, java.util.concurrent.TimeUnit.SECONDS)).thenReturn(600L);
+
+        MqOutboxPublisher.BacklogStats stats = publisher.backlogStats();
+
+        assertEquals(2, stats.pending());
+        assertEquals(600L, stats.minRemainingTtlSecs(),
+                "必须报告最小剩余 TTL —— 它才是「即将过期丢失」的告警判据");
+        assertFalse(stats.isEmpty());
+    }
+
+    @Test
+    void backlogStats_ignoresKeysWithoutExpiry() {
+        String a = "mq:outbox:zxyz-test-service:user.deleted:uuid-c";
+        mockScanReturning(List.of(a));
+        when(redisTemplate.getExpire(a, java.util.concurrent.TimeUnit.SECONDS)).thenReturn(-1L);
+
+        MqOutboxPublisher.BacklogStats stats = publisher.backlogStats();
+
+        assertEquals(1, stats.pending());
+        assertEquals(-1L, stats.minRemainingTtlSecs(),
+                "无过期时间的键不参与 TTL 告警（-1 表示不适用），否则会一直误报");
+    }
+
+    private void mockScanReturning(List<String> keys) {        Cursor<String> cursor = mock(Cursor.class);
         java.util.Iterator<String> iterator = keys.iterator();
         when(cursor.hasNext()).thenAnswer(inv -> iterator.hasNext());
         when(cursor.next()).thenAnswer(inv -> iterator.next());

@@ -17,6 +17,7 @@
 //   - 路径 `e2e/.auth/` 已在 .gitignore 中显式忽略（务必保持）；
 //   - 不要把它复制到别处、不要提交、不要贴进 issue。
 import { test as setup, expect, request as playwrightRequest } from '@playwright/test'
+import { existsSync } from 'node:fs'
 
 const STATE_PATH = 'e2e/.auth/authed-state.json'
 
@@ -24,6 +25,14 @@ const USERNAME = process.env.E2E_USERNAME || ''
 const PASSWORD = process.env.E2E_PASSWORD || ''
 const REQUIRE_AUTHED = process.env.E2E_REQUIRE_AUTHED === '1'
 const HAS_CREDS = Boolean(USERNAME && PASSWORD)
+
+// 🔁 幂等化（69 号 P2-1）：storageState 若仍有效则**跳过登录**。
+//    起因：本轮审核连跑 3 次冒烟，第 2 次因「每用户名 5 次/分钟」登录限流拿到
+//    HTTP 400 ⇒ setup 失败 ⇒ 后续 14 个用例 did not run，被误读成 P1「登录坏了」。
+//    修法：先拿已落盘的会话发一个**只读探针**（GET /api/users/me），
+//    code===1 即复用，不再发登录请求 ⇒ 重复执行不产生额外登录，天然幂等。
+//    想要「强制重新登录」时设 E2E_REUSE_STATE=0（或删掉 e2e/.auth/authed-state.json）。
+const REUSE_STATE = process.env.E2E_REUSE_STATE !== '0'
 
 // 与 authed-smoke.e2e.js 同款守卫（必须在**模块加载期**，理由见那个文件）。
 // ⚠️ setup 也必须跳过：否则凭据缺失时它会拿空账号去登录 ⇒ HTTP 400 ⇒
@@ -45,8 +54,35 @@ if (!HAS_CREDS) {
 setup.skip(!HAS_CREDS, '未提供 E2E_USERNAME/E2E_PASSWORD，跳过登录前置')
 
 setup('登录一次并保存 storageState', async () => {
+  const baseURL = setup.info().project.use.baseURL
+
+  // ---- 复用短路（幂等化，见文件头注释）----
+  if (REUSE_STATE && existsSync(STATE_PATH)) {
+    const probe = await playwrightRequest.newContext({ baseURL, storageState: STATE_PATH })
+    try {
+      const res = await probe.get('/api/users/me')
+      if (res.status() === 200) {
+        const body = await res.json().catch(() => ({}))
+        if (body.code === 1) {
+          console.log(
+            '[smoke-authed-auth] 复用未过期的 storageState（会话仍有效），跳过本次登录 —— ' +
+              '避免重复运行触发登录限流。如需强制重新登录请设 E2E_REUSE_STATE=0。',
+          )
+          return
+        }
+      }
+      console.log(
+        `[smoke-authed-auth] 已有 storageState 已失效（HTTP ${res.status()} / code ${body && body.code}），改为重新登录。`,
+      )
+    } catch (err) {
+      console.log(`[smoke-authed-auth] 复用探针异常，改为重新登录：${err && err.message}`)
+    } finally {
+      await probe.dispose()
+    }
+  }
+
   const api = await playwrightRequest.newContext({
-    baseURL: setup.info().project.use.baseURL,
+    baseURL,
   })
   try {
     const response = await api.post('/api/users/login', {

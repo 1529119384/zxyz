@@ -1,0 +1,218 @@
+name: 生产只读取证（手动触发，不部署）
+
+# =============================================================================
+# 69 号 §十 建议 3（2026-11-02 审核）：换一条生产取证通道。
+#
+# 问题：44#4 的 binlog 取证已连续 **7 轮**因为「本机 → 生产 SSH banner timeout
+#       （sshd 限流）」而失败；`binlog_ok` 留痕脚本 10-20 就实现了，但从未被观察到。
+#       根因不是产物缺失，是**取证通道单点依赖本机 IP**。
+#
+# 本 workflow 的作用：把取证挪到 **GitHub Runner 出口 IP** 上执行，结果直接写进
+#   Actions Job Summary（可在网页/手机上看，不必登服务器）。
+#   - HTTP 探针：任何环境下都能跑（无需凭据），至少证明边缘/网关在服；
+#   - SSH 只读取证：**仅在仓库配置了部署凭据时执行**；未配置则明确标注「未配置」，
+#     而不是伪装成通过（宁可见空地写"未配置"，也不静默）。
+#
+# 严格只读承诺（改动前必读）：
+#   远端命令只允许：grep/tail 日志、docker ps/inspect、mysql SELECT。
+#   **禁止**：任何写库、重启、删除、compose 变更、备份/恢复。
+#   本 workflow 不部署、不打镜像、不改服务器状态。
+#
+# 与 ci-cd.yml 的关系：完全独立，不由 push 触发 ⇒ 不会与部署竞争，
+#   也不会因为改它而触发全量重建（lint-workflows 的 actionlint 会检查本文件）。
+#
+# 用法：Actions → 「生产只读取证」 → Run workflow
+#   可选输入：
+#     base_url        默认 http://160.202.46.118:8081
+#     probe_paths     逗号分隔的探针路径（默认见下）
+#     include_server  是否执行 SSH 只读取证（true/false，凭据缺失时自动降级）
+# =============================================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: '生产基址（含端口）'
+        required: false
+        default: 'http://160.202.46.118:8081'
+      probe_paths:
+        description: 'HTTP 探针路径（逗号分隔）'
+        required: false
+        default: '/,/api/health,/api/users/me,/api/files?parentId=-1,/api/teams/my,/api/storage/usage'
+      include_server:
+        description: '是否执行 SSH 只读取证（凭据缺失会自动跳过）'
+        required: false
+        default: 'true'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-check-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  evidence:
+    name: 生产取证（只读）
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: 打印取证上下文
+        run: |
+          {
+            echo "## 生产只读取证"
+            echo ""
+            echo "| 项 | 值 |"
+            echo "|---|---|"
+            echo "| 触发人 | ${{ github.actor }} |"
+            echo "| 触发时间 (UTC) | $(date -u '+%Y-%m-%dT%H:%M:%SZ') |"
+            echo "| 仓库 commit | ${{ github.sha }} |"
+            echo "| base_url | ${{ inputs.base_url }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ---------------------------------------------------------------- HTTP
+      # 说明（69 号 §附 假证据清单 ①）：`/api/health` 200 可能是 4010 假绿，
+      # 因此这里**同时打印 HTTP 状态码与业务 code**，不把 200 当"功能正常"。
+      - name: HTTP 探针（状态码 + 业务码）
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+          PROBE_PATHS: ${{ inputs.probe_paths }}
+        run: |
+          set -uo pipefail
+          {
+            echo ""
+            echo "### HTTP 探针"
+            echo ""
+            echo "| path | HTTP | 业务 code | 判定 |"
+            echo "|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          IFS=',' read -ra PATHS <<< "$PROBE_PATHS"
+          for p in "${PATHS[@]}"; do
+            [ -z "$p" ] && continue
+            # -m 15 防止挂死；-k 容忍证书；POST 与前端一致（部分网关只放行 POST）
+            body="$(curl -sS -k -m 15 -o /tmp/body.$$ -w '%{http_code}' -X GET "${BASE_URL}${p}" 2>/dev/null || echo '000')"
+            code="$(sed -nE 's/.*"code"[[:space:]]*:[[:space:]]*(-?[0-9]+).*/\1/p' /tmp/body.$$ 2>/dev/null | head -1)"
+            [ -z "$code" ] && code='-'
+            verdict='❓'
+            case "$body" in
+              5*|000) verdict='❌ 不可达/服务端错误' ;;
+              2*|3*)  verdict='✅ 边缘可达' ;;
+              *)      verdict='⚠️ 非 2xx' ;;
+            esac
+            case "$code" in
+              4010) verdict="$verdict（未登录，符合预期）" ;;
+              1)    verdict="$verdict（业务成功）" ;;
+            esac
+            echo "| \`$p\` | $body | $code | $verdict |" >> "$GITHUB_STEP_SUMMARY"
+          done
+          rm -f /tmp/body.$$
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "> ⚠️ 业务 code 4010 = 未登录。匿名探针拿 4010 属正常；要验证"登录后可用"请看 C-4 冒烟。" >> "$GITHUB_STEP_SUMMARY"
+
+      # ------------------------------------------------------------ SSH 前置
+      - name: 判定是否具备 SSH 取证条件
+        id: preflight
+        env:
+          PROD_HOST: ${{ secrets.DEV_DEPLOY_HOST || secrets.DEPLOY_HOST }}
+          PROD_KEY: ${{ secrets.DEV_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
+          PROD_USER: ${{ secrets.DEPLOY_USERNAME }}
+          INCLUDE_SERVER: ${{ inputs.include_server }}
+        run: |
+          set -uo pipefail
+          present='false'
+          if [ "$INCLUDE_SERVER" = 'true' ] && [ -n "${PROD_HOST:-}" ] && [ -n "${PROD_KEY:-}" ] && [ -n "${PROD_USER:-}" ]; then
+            present='true'
+            echo "SSH 取证条件齐备"
+          else
+            echo "::warning::SSH 只读取证未执行（include_server=$INCLUDE_SERVER，凭据 host/key/user 需齐备）—— 本轮仅有 HTTP 证据"
+          fi
+          echo "present=$present" >> "$GITHUB_OUTPUT"
+
+      # ------------------------------------------------------ SSH 只读取证
+      # 用原生 ssh（不引入第三方 action）：只读命令，超时短，失败不阻断（证据缺失要显式写出来）
+      - name: SSH 只读取证（deployed_sha / binlog_ok / 容器 / sql_mode / flyway）
+        if: steps.preflight.outputs.present == 'true'
+        env:
+          PROD_HOST: ${{ secrets.DEV_DEPLOY_HOST || secrets.DEPLOY_HOST }}
+          PROD_KEY: ${{ secrets.DEV_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
+          PROD_USER: ${{ secrets.DEPLOY_USERNAME }}
+          PROD_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/www/zxyz' }}
+        run: |
+          set -uo pipefail
+          mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$PROD_KEY" > "$HOME/.ssh/prod_key"
+          chmod 600 "$HOME/.ssh/prod_key"
+          OUT=/tmp/server-evidence.txt
+          # 远端只读脚本（heredoc 传入，避免引号地狱）；单次连接，减少 sshd 限流面
+          ssh -i "$HOME/.ssh/prod_key" -p "${PROD_PORT:-22}" \
+              -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -o BatchMode=yes \
+              "${PROD_USER}@${PROD_HOST}" "DEPLOY_PATH='${DEPLOY_PATH}' bash -s" > "$OUT" 2>&1 <<'REMOTE'
+          set -uo pipefail
+          D="${DEPLOY_PATH:-/www/zxyz}"
+          echo "### 1) deployed_sha 与 binlog_ok（deploy-last.log）"
+          echo '```'
+          grep -E 'deployed_sha|binlog_ok' "$D/deploy-last.log" 2>/dev/null | tail -20 || echo "(deploy-last.log 缺失或无匹配)"
+          echo '```'
+          echo
+          echo "### 2) 容器状态（zxyz-*）"
+          echo '```'
+          docker ps --filter name=zxyz --format '{{.Names}}  {{.Status}}' 2>/dev/null | sort || echo "(docker 不可用)"
+          echo '--- exited ---'
+          docker ps -a --filter name=zxyz --filter status=exited --format '{{.Names}}  {{.Status}}' 2>/dev/null || true
+          echo '```'
+          echo
+          echo "### 3) mysql 镜像 tag（精确版本取证）"
+          echo '```'
+          docker inspect zxyz-mysql --format '{{.Config.Image}}' 2>/dev/null || echo "(zxyz-mysql 不存在)"
+          echo '```'
+          echo
+          echo "### 4) @@sql_mode 与 flyway 已应用版本"
+          echo '```'
+          docker exec zxyz-mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -N -e "SELECT @@sql_mode;"' 2>/dev/null || echo "(sql_mode 读取失败)"
+          echo '--- flyway (user 库最近 5 条) ---'
+          docker exec zxyz-mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -N -e "SELECT version, description, success FROM zxyz_user.flyway_schema_history ORDER BY installed_rank DESC LIMIT 5;"' 2>/dev/null || echo "(flyway 读取失败)"
+          echo '```'
+          echo
+          echo "### 5) 磁盘与内存余量"
+          echo '```'
+          df -h / 2>/dev/null | tail -1 || true
+          free -m 2>/dev/null | head -2 || true
+          echo '```'
+          REMOTE
+          rc=$?
+          {
+            echo ""
+            echo "### 服务器只读取证（SSH）"
+            echo ""
+            if [ $rc -ne 0 ]; then
+              echo "> ❌ SSH 取证失败（退出码 $rc）—— 通道仍不可用，需换证或稍后重试。"
+              echo ""
+              echo '```'
+              tail -5 "$OUT" 2>/dev/null || true
+              echo '```'
+            else
+              cat "$OUT" 2>/dev/null || echo "(空输出)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          # 证据缺失不阻断 workflow（取证工具的目的就是记录现状），但必须显式标注
+          if [ $rc -ne 0 ]; then
+            echo "::warning::SSH 取证失败 rc=$rc"
+          fi
+          rm -f "$HOME/.ssh/prod_key"
+          exit 0
+
+      - name: 汇总尾巴
+        if: always()
+        run: |
+          {
+            echo ""
+            echo "---"
+            echo ""
+            echo "**只读声明**：本 workflow 仅执行 grep/tail/docker ps/inspect/mysql SELECT，"
+            echo "不写库、不重启、不改配置、不部署。"
+            echo ""
+            echo "**binlog 销账口径（44#4）**：在 §1 的 \`deploy-last.log\` 里出现"
+            echo "\`binlog_ok=true note=...\` 一行即视为该窗口成功；\`binlog_ok=false\` 需看 note 原因。"
+          } >> "$GITHUB_STEP_SUMMARY"

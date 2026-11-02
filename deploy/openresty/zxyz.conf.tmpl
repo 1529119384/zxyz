@@ -1,0 +1,115 @@
+# Openresty 外层反代配置（66 号二.2：配置入库模板）
+#
+# 背景：宿主机 80/443 由 openresty 常驻（9 月起），回源 frontend-nginx:8081。
+# 此前该层配置只存在于服务器本地（换机即丢，55 号 conf 同型风险），且：
+#   ① proxy-headers.conf:19 覆盖式 XFF —— 外层若也覆盖 XFF，gateway 按 IP 风控全站单值；
+#   ② http-common.conf $binary_remote_addr 分桶在外层遮蔽后退化全站单桶 429；
+#   ③ 两跳零监控。
+#
+# 本模板为外层 openresty 的**推荐基线**（62d P1-3 落地件）：
+#   - XFF 用追加（proxy_add_x_forwarded_for）而非覆盖，保留客户端链路；
+#   - X-Real-IP 透传内层已判定的值（若外层直连客户端则为其地址）；
+#   - real_ip 模块从内层可信代理还原真实客户端 IP 给限流分桶；
+#   - 监控：/stub_status 仅内网（由内层 Prometheus 采集端点扩展——待 node_exporter 接入）。
+#
+# 部署方式（服务器 openresty）：
+#   1) 将本文件放入 openresty 的 vhost include 目录（如 /usr/local/openresty/nginx/conf/conf.d/zxyz.conf）
+#   2) 替换 {{BACKEND_HOST}} 为内层 nginx 地址（默认 127.0.0.1:8081）
+#   3) 替换 {{SERVER_NAME}} 为业务域名
+#   4) nginx -t && nginx -s reload
+#   ⚠️ 本文件是**模板参考**，实际同步仍需人工（openresty 不在本仓部署链路内）——
+#      同步自动化已登记 66 号遗留（与 render-alertmanager 同型，待运维决策接入部署链）。
+
+# --- http 级指令（必须位于 http{} 作用域；本文件按 http include 使用）---
+# ⚠️ 2026-11-02 审核修正（69 号 §十一-6 复审）：
+#   - old 版把 limit_req_zone 写在 server{} 里 —— nginx 会直接报
+#     `"limit_req_zone" directive is not allowed here`（http 级指令），已上移；
+#   - map 的变量名不要加引号（加引号会被当字面量，$connection_upgrade 取不到值）；
+#   - http2 指令仅 OpenResty/nginx ≥ 1.25.1 支持，旧版本改用 `listen 443 ssl http2;`。
+
+# WebSocket upgrade map（http 级，须在 server 之前）
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+# 62d P1-3 ③：外层限流分桶——real_ip 还原后的 $remote_addr 才是真实客户端。
+# 速率应 ≥ 内层（外层只做粗粒度洪峰削峰，精细限流在内层 gateway/redis）。
+limit_req_zone $binary_remote_addr zone=outer_api_per_ip:10m rate=200r/s;
+
+# --- 业务域名 vhost ---
+server {
+    listen 80;
+    server_name {{SERVER_NAME}};
+
+    # 全站 301 到 HTTPS（证书在 openresty 层终结）
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    # http2 on; 需 OpenResty/nginx ≥ 1.25.1；更旧版本请删掉本行并改用
+    # `listen 443 ssl http2;`（http2 参数形式已在新版弃用但旧版仍可用）。
+    http2 on;
+    server_name {{SERVER_NAME}};
+
+    # 证书路径按实际部署填写（openresty 层终结 TLS）
+    ssl_certificate     /usr/local/openresty/nginx/conf/certs/{{SERVER_NAME}}.pem;
+    ssl_certificate_key /usr/local/openresty/nginx/conf/certs/{{SERVER_NAME}}.pem.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    # 62d P1-3 ②：从可信内层代理还原真实客户端 IP——
+    # openresty 看到的 $remote_addr 若是 CDN/回源段，需把该段加进 set_real_ip_from。
+    set_real_ip_from 127.0.0.1;
+    set_real_ip_from ::1;
+    real_ip_header X-Forwarded-For;
+    real_ip_recursive on;
+
+    location / {
+        # 62d P1-3 ①：XFF 追加而非覆盖 —— 保留完整代理链，gateway 的
+        # GATEWAY_TRUSTED_PROXIES（58 号已入库）按最右可信跳解析客户端 IP。
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Port $server_port;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_pass http://{{BACKEND_HOST}};
+        proxy_http_version 1.1;
+
+        # WebSocket 升级透传（IM 链路）
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+
+        # 大文件直传走内层 nginx（512M 阶梯的最外层——不额外设限避免与内层不一致）
+        client_max_body_size 0;
+        proxy_request_buffering on;
+
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+
+    location /api/ {
+        limit_req zone=outer_api_per_ip burst=400 nodelay;
+
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Port $server_port;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://{{BACKEND_HOST}};
+        proxy_http_version 1.1;
+    }
+}
+
+# --- 监控端点（仅本机访问，供内层或后续 node_exporter 抓取） ---
+server {
+    listen 127.0.0.1:8082;
+    server_name _;
+
+    location /stub_status {
+        stub_status;
+        allow 127.0.0.1;
+        deny all;
+    }
+}

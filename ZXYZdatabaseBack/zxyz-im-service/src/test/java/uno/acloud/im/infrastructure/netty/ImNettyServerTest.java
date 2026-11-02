@@ -3,6 +3,7 @@ package uno.acloud.im.infrastructure.netty;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelPipeline;
 import io.netty.handler.codec.http.HttpObjectAggregator;
+import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.util.concurrent.EventExecutorGroup;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -93,6 +94,33 @@ class ImNettyServerTest {
                 "鉴权 handler 应保留在默认 EventLoop 上");
         assertTrue(calls.stream().anyMatch(call -> call.handler() instanceof HttpObjectAggregator),
                 "应装配 HttpObjectAggregator（聚合 WebSocket 握手帧）");
+    }
+
+    // ==================== 66 号二.3：空闲超时与背压 ====================
+
+    @Test
+    void configurePipeline_addsIdleStateHandlerAndIdleCloseConsumer() {
+        List<AddCall> calls = capturePipelineAdds();
+
+        // IdleStateHandler 只产生事件、不会自动断连 —— 必须同时有消费者
+        assertTrue(calls.stream().anyMatch(c -> c.handler() instanceof io.netty.handler.timeout.IdleStateHandler),
+                "应装配 IdleStateHandler（66 号二.3：半开连接不能永久占用内存/fd）");
+        assertTrue(calls.stream().anyMatch(c -> c.handler() instanceof ImIdleCloseHandler),
+                "应装配 ImIdleCloseHandler —— 否则 IdleStateHandler 的事件无人消费，等于没装");
+
+        // 顺序不变量：IdleStateHandler 必须在 HttpServerCodec 之前才能观察到原始读事件
+        int idleIdx = -1;
+        int codecIdx = -1;
+        for (int i = 0; i < calls.size(); i++) {
+            if (calls.get(i).handler() instanceof io.netty.handler.timeout.IdleStateHandler) {
+                idleIdx = i;
+            }
+            if (calls.get(i).handler() instanceof HttpServerCodec) {
+                codecIdx = i;
+            }
+        }
+        assertTrue(idleIdx >= 0 && codecIdx > idleIdx,
+                "IdleStateHandler 必须装配在 HttpServerCodec 之前（实际 idle=" + idleIdx + ", codec=" + codecIdx + "）");
     }
 
     // ==================== B-7：bind 失败要归还 EventLoop ====================

@@ -99,6 +99,12 @@ scrape_configs:
           service: audit
 
   # 管理服务
+
+  # 66 号二.1：RabbitMQ 官方 prometheus 插件（deploy/rabbitmq/enabled_plugins 已启用
+  # rabbitmq_prometheus，默认端口 15692）—— 此前「插件开着但无 scrape job」的断链修复。
+  - job_name: rabbitmq
+    static_configs:
+      - targets: ["rabbitmq:15692"]
   - job_name: admin-service
     metrics_path: /actuator/prometheus
     static_configs:

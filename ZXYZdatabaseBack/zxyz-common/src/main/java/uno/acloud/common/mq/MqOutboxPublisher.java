@@ -102,6 +102,42 @@ public class MqOutboxPublisher {
         return success;
     }
 
+    /**
+     * outbox 积压快照（66 号二.6 TTL 告警的数据源）。
+     *
+     * @param pending               扫描到的待重发键数（受单个扫描批次上限约束）
+     * @param minRemainingTtlSecs   这些键中剩余 TTL 的最小值（秒）；-1 = 无过期时间或不适用
+     */
+    public record BacklogStats(int pending, long minRemainingTtlSecs) {
+        public boolean isEmpty() {
+            return pending <= 0;
+        }
+    }
+
+    /**
+     * 采集本服务 outbox 的积压快照。Redis 不可用时返回空快照（不抛异常，
+     * 调度任务不能因为监控本身失败而中断）。
+     */
+    public BacklogStats backlogStats() {
+        List<String> keys = scanKeys();
+        if (keys.isEmpty()) {
+            return new BacklogStats(0, -1L);
+        }
+        long minTtl = Long.MAX_VALUE;
+        for (String key : keys) {
+            try {
+                Long ttl = redisTemplate.getExpire(key, java.util.concurrent.TimeUnit.SECONDS);
+                if (ttl != null && ttl >= 0) {
+                    minTtl = Math.min(minTtl, ttl);
+                }
+            } catch (Exception e) {
+                // 单个键读取失败不影响整体快照
+                log.debug("outbox TTL 读取失败: key={}, err={}", key, e.getMessage());
+            }
+        }
+        return new BacklogStats(keys.size(), minTtl == Long.MAX_VALUE ? -1L : minTtl);
+    }
+
     /** 扫描本服务的 outbox 键（只取本服务前缀，互不干扰）。 */
     private List<String> scanKeys() {
         List<String> keys = new ArrayList<>();

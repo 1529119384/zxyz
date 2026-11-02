@@ -60,7 +60,9 @@ public class MqOutboxAutoConfiguration {
     // 就会因缺 MqOutboxPublisher 参数而 NoSuchBean（team IntegrationTest 实证）。
     @ConditionalOnBean({ScheduledAnnotationBeanPostProcessor.class, RabbitTemplate.class})
     public MqOutboxRetryScheduler mqOutboxRetryScheduler(
-            ObjectProvider<MqOutboxPublisher> outboxPublisherProvider) {
+            ObjectProvider<MqOutboxPublisher> outboxPublisherProvider,
+            @Value("${app.mq.outbox.backlog-warn-threshold:100}") int backlogWarnThreshold,
+            @Value("${app.mq.outbox.near-expiry-seconds:7200}") long nearExpirySeconds) {
         // 60 号收口二轮：参数改 ObjectProvider —— publisher 的 @ConditionalOnBean(RabbitTemplate)
         // 与 scheduler 的求值顺序在「RabbitTemplate 为 @MockitoBean 替换」的测试上下文里不对称
         // （先注册者过、后注册者 false），硬参数会在缺 publisher 时直接 NoSuchBean。
@@ -72,8 +74,8 @@ public class MqOutboxAutoConfiguration {
                 protected RabbitTemplate rabbitTemplate() {
                     return null;
                 }
-            });
+            }, backlogWarnThreshold, nearExpirySeconds);
         }
-        return new MqOutboxRetryScheduler(p);
+        return new MqOutboxRetryScheduler(p, backlogWarnThreshold, nearExpirySeconds);
     }
 }
