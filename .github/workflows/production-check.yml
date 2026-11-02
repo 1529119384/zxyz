@@ -172,12 +172,10 @@ jobs:
           echo '```'
           docker exec zxyz-mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -N -e "SELECT @@sql_mode;"' 2>/dev/null || echo "(sql_mode 读取失败)"
           echo '--- flyway：各库最近 3 条（含 V4~V7 落库核验）---'
-          _dbs=$(docker exec zxyz-mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -N -e "SELECT schema_name FROM information_schema.schemata WHERE schema_name LIKE \'zxyz\_%\';"' 2>/dev/null || true)
-          for _db in $_dbs; do
-            _v=$(docker exec zxyz-mysql sh -c "mysql -uroot -p\"\$MYSQL_ROOT_PASSWORD\" -N -e \"SELECT version,success FROM ${_db}.flyway_schema_history ORDER BY installed_rank DESC LIMIT 3;\"" 2>/dev/null || true)
-            if [ -n "$_v" ]; then
-              echo "[$_db] $(echo "$_v" | tr '\n' ' ')"
-            fi
+          echo '--- flyway: zxyz_user / zxyz_im（含 V4~V7 落库核验）---'
+          for _db in zxyz_user zxyz_im; do
+            echo "[$_db]"
+            docker exec zxyz-mysql sh -c "mysql -uroot -p\"\$MYSQL_ROOT_PASSWORD\" -N -e \"SELECT version,description,success FROM $_db.flyway_schema_history ORDER BY installed_rank DESC LIMIT 5;\"" 2>/dev/null || echo "  (读取失败)"
           done
           echo '```'
           echo
