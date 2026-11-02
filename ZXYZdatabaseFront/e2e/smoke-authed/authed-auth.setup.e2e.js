@@ -61,9 +61,10 @@ setup('登录一次并保存 storageState', async () => {
     const probe = await playwrightRequest.newContext({ baseURL, storageState: STATE_PATH })
     try {
       const res = await probe.get('/api/users/me')
+      let body = null
       if (res.status() === 200) {
-        const body = await res.json().catch(() => ({}))
-        if (body.code === 1) {
+        body = await res.json().catch(() => ({}))
+        if (body && body.code === 1) {
           console.log(
             '[smoke-authed-auth] 复用未过期的 storageState（会话仍有效），跳过本次登录 —— ' +
               '避免重复运行触发登录限流。如需强制重新登录请设 E2E_REUSE_STATE=0。',
