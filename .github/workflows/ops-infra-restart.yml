@@ -101,6 +101,14 @@ jobs:
           for n in zxyz-rabbitmq zxyz-mysql zxyz-redis zxyz-nacos; do
             echo "--- $n ---"
             docker inspect --format '{{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} restarts={{.RestartCount}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' "$n" 2>/dev/null || echo "(不存在)"
+            if [ "$n" = "zxyz-rabbitmq" ]; then
+              echo "--- rabbit health log (last 3) ---"
+              docker inspect --format '{{range .State.Health.Log}}{{.ExitCode}} | {{.Output}}{{"\n"}}{{end}}' "$n" 2>/dev/null | tail -6 || true
+              echo "--- rabbit alarms ---"
+              docker exec "$n" rabbitmq-diagnostics -q alarms 2>&1 | head -12 || true
+              echo "--- rabbit memory ---"
+              docker exec "$n" rabbitmq-diagnostics -q memory 2>&1 | head -12 || true
+            fi
           done
           echo
           echo "### rabbitmq 最近 30 行日志（只读）"
