@@ -20,6 +20,11 @@
 #
 # 兼容旧逻辑：BACKUP_REMOTE_HOST 的 ssh/scp 可选项仍保留（可选异地路径），
 # 但主异地路径已改为 OSS。
+#
+# ⚠️ 2026-11-03（71 号 P0 修复）：此前「Redis RDB < 1024B 即 exit 1」把**空库**误判为备份失败，
+#   导致周六全量在中段硬退出 ⇒ 3 周零 OSS 异地备份（而日志仍打印『异地化: OSS …』）。
+#   现改为：① 用 DBSIZE 区分空库/异常；② 单组件失败只剔除该组件，不再阻断其它组件的异地推送；
+#   ③ OSS 标题只在真正上传前打印，跳过必写明原因；④ FAILED=1 时经 ALERT_WEBHOOK_URL 外发告警。
 
 set -euo pipefail
 # 审计 2.3.3：备份产物含 mysql.user 口令哈希与业务数据，禁止组/其他用户读取
@@ -60,6 +65,7 @@ FAILED=0
 #  解掉「每周 30 分钟窗口 + SSH 可用」双重依赖——核验从赶窗口变成读一行日志）
 BINLOG_OK=false
 BINLOG_NOTE="未执行（--mysql-only 或条件不满足）"
+if [ "$MYSQL_ONLY" = true ]; then BINLOG_NOTE="按设计跳过（--mysql-only 预部署备份，不上传 OSS）"; fi
 
 echo "=== ZXYZ 备份 $DATE ==="
 
@@ -78,9 +84,9 @@ if docker exec -e MYSQL_PWD zxyz-mysql mysqldump -uroot \
   gzip > "$BACKUP_DIR/mysql_$DATE.sql.gz"; then
   :
 else
-  echo "ERROR: MySQL 备份失败" >&2
+  echo "ERROR: MySQL 备份失败（本组件不计入异地推送，其余组件继续）" >&2
   FAILED=1
-  exit 1
+  MYSQL_SKIPPED=true
 fi
 fi
 
@@ -191,7 +197,7 @@ fi
 #   容器侧本来就靠 `-e REDISCLI_AUTH` 拿到口令（那是干净的），故删前缀不改变任何行为。
 if [ "$MYSQL_ONLY" = false ]; then
 echo "备份 Redis..."
-PREV_SAVE=$(docker exec -e REDISCLI_AUTH zxyz-redis redis-cli LASTSAVE) || { echo "ERROR: Redis LASTSAVE 失败" >&2; FAILED=1; exit 1; }
+PREV_SAVE=$(docker exec -e REDISCLI_AUTH zxyz-redis redis-cli LASTSAVE) || { echo "ERROR: Redis LASTSAVE 失败（跳过 Redis，其余继续）" >&2; FAILED=1; REDIS_SKIPPED=true; }
 docker exec -e REDISCLI_AUTH zxyz-redis redis-cli BGSAVE >/dev/null
 
 echo "等待 Redis BGSAVE 完成..."
@@ -205,12 +211,14 @@ for i in $(seq 1 60); do
   fi
 done
 if [ "${BACKUP_READY:-0}" -ne 1 ]; then
-  echo "ERROR: Redis BGSAVE 超时 (60s)" >&2
+  echo "ERROR: Redis BGSAVE 超时 (60s)（跳过 Redis 产物，其余继续）" >&2
   FAILED=1
-  exit 1
+  REDIS_SKIPPED=true
 fi
 
+if [ "${REDIS_SKIPPED:-false}" = false ]; then
 docker cp zxyz-redis:/data/dump.rdb "$BACKUP_DIR/redis_$DATE.rdb"
+fi
 fi
 
 # RabbitMQ 队列/交换器/绑定拓扑备份
@@ -241,143 +249,148 @@ else
 fi
 fi
 
-# 备份完整性校验（被跳过的组件不校验、不入产物清单）
+# 备份完整性校验（被跳过/失败的组件不校验、不入产物清单）
+# 2026-11-03（71 号 P0）：**单组件校验失败只影响该组件**，不再 `exit 1` 阻断其它组件的异地推送。
+#   旧实现：Redis RDB <1024B 就 exit 1 ⇒ 周六全量永远走不到 OSS（空库 RDB 天然 89B）⇒ 3 周零异地备份。
 echo "校验备份文件..."
+MYSQL_VALID=false
+REDIS_VALID=false
+
 if [ "$MYSQL_SKIPPED" = true ]; then
   MYSQL_SIZE=0
+  echo "MySQL 备份: 已跳过（容器未运行或导出失败）"
 else
-  MYSQL_SIZE=$(wc -c < "$BACKUP_DIR/mysql_$DATE.sql.gz")
+  MYSQL_SIZE=$(wc -c < "$BACKUP_DIR/mysql_$DATE.sql.gz" 2>/dev/null || echo 0)
+  MYSQL_SIZE=${MYSQL_SIZE:-0}
+  if [ "$MYSQL_SIZE" -lt 1024 ]; then
+    echo "ERROR: MySQL 备份文件过小 ($MYSQL_SIZE bytes)，本组件不计入异地推送" >&2
+    FAILED=1
+  else
+    echo "MySQL 备份: $BACKUP_DIR/mysql_$DATE.sql.gz ($MYSQL_SIZE bytes)"
+    MYSQL_VALID=true
+  fi
 fi
 
-# --mysql-only 时只校验 MySQL；redis/rabbitmq 产物不存在，跳过其校验与汇总
 if [ "$MYSQL_ONLY" = false ]; then
-REDIS_SIZE=$(wc -c < "$BACKUP_DIR/redis_$DATE.rdb")
+  REDIS_RDB="$BACKUP_DIR/redis_$DATE.rdb"
+  if [ "${REDIS_SKIPPED:-false}" = true ] || [ ! -f "$REDIS_RDB" ]; then
+    echo "Redis 备份: 未生成（见上方 WARN/ERROR），本组件不计入异地推送"
+  else
+    REDIS_SIZE=$(wc -c < "$REDIS_RDB")
+    REDIS_VALID=true
+    if [ "$REDIS_SIZE" -lt 1024 ]; then
+      # 空库的 RDB 天生很小（实测 89B / used-mem 856B）。旧判据把"空库"当"dump 失败"，导致 exit 1。
+      # 现用 DBSIZE 区分：空库=正常继续；有 key 却极小=真异常（仅剔除该组件）。
+      REDIS_KEYS=$(docker exec -e REDISCLI_AUTH zxyz-redis redis-cli DBSIZE 2>/dev/null | tr -d '\r' | tr -dc '0-9')
+      REDIS_KEYS="${REDIS_KEYS:-unknown}"
+      if [ "$REDIS_KEYS" = "0" ]; then
+        echo "NOTE: Redis 为空库（DBSIZE=0），RDB ${REDIS_SIZE}B 属正常，继续备份"
+      elif [ "$REDIS_KEYS" = "unknown" ]; then
+        echo "WARN: Redis RDB 仅 ${REDIS_SIZE}B 且 DBSIZE 不可读 —— 保留该产物但标记失败，请人工确认" >&2
+        FAILED=1
+      else
+        echo "ERROR: Redis 有 $REDIS_KEYS 个 key 但 RDB 仅 ${REDIS_SIZE}B —— 备份异常，本组件不计入异地推送" >&2
+        FAILED=1
+        REDIS_VALID=false
+      fi
+    fi
+    echo "Redis 备份: $REDIS_RDB ($REDIS_SIZE bytes)"
+  fi
+  if [ -f "$BACKUP_DIR/rabbitmq_$DATE.json" ]; then
+    echo "RabbitMQ 拓扑: $BACKUP_DIR/rabbitmq_$DATE.json ($(wc -c < "$BACKUP_DIR/rabbitmq_$DATE.json") bytes)"
+  else
+    echo "RabbitMQ 拓扑: 未生成（见上方 WARN）"
+  fi
+fi
 
-if [ "$REDIS_SIZE" -lt 1024 ]; then
-  echo "ERROR: Redis 备份文件过小 ($REDIS_SIZE bytes)，可能备份失败" >&2
-  FAILED=1
-  exit 1
-fi
-fi
-
-if [ "$MYSQL_SKIPPED" = true ]; then
-  echo "MySQL 备份: 已跳过（容器未运行，首次部署场景）"
-elif [ "$MYSQL_SIZE" -lt 1024 ]; then
-  echo "ERROR: MySQL 备份文件过小 ($MYSQL_SIZE bytes)，可能备份失败" >&2
-  FAILED=1
-  exit 1
-else
-  echo "MySQL 备份: $BACKUP_DIR/mysql_$DATE.sql.gz ($MYSQL_SIZE bytes)"
-fi
-if [ "$MYSQL_ONLY" = false ]; then
-echo "Redis 备份: $BACKUP_DIR/redis_$DATE.rdb ($REDIS_SIZE bytes)"
-# 拓扑 echo 移进存在性分支（2026-10-11 53 号 P2-1 残留收口）：导出失败时不得打印假行——
-# 日志撒谎会让「json 缺失」被汇总行掩盖（下方的 ARTIFACTS 追加本就带 -f 守卫，两处口径对齐）
-if [ -f "$BACKUP_DIR/rabbitmq_$DATE.json" ]; then
-  echo "RabbitMQ 拓扑: $BACKUP_DIR/rabbitmq_$DATE.json ($(wc -c < "$BACKUP_DIR/rabbitmq_$DATE.json") bytes)"
-else
-  echo "RabbitMQ 拓扑: 未生成（见上方 WARN）"
-fi
-fi
-
-# 组装本次产物列表（--mysql-only 时仅 MySQL，避免异地推送扫到不存在的文件）
-if [ "$MYSQL_SKIPPED" = true ]; then
+# 组装产物列表：**只收真实存在且通过校验的组件**（不再把坏产物推上 OSS）
 ARTIFACTS=()
-if [ "$MYSQL_ONLY" = false ]; then
-ARTIFACTS=( "$BACKUP_DIR/redis_$DATE.rdb" )
-[ -f "$BACKUP_DIR/rabbitmq_$DATE.json" ] && ARTIFACTS+=( "$BACKUP_DIR/rabbitmq_$DATE.json" )
+[ "$MYSQL_VALID" = true ] && ARTIFACTS+=( "$BACKUP_DIR/mysql_$DATE.sql.gz" )
+[ "$REDIS_VALID" = true ] && ARTIFACTS+=( "$BACKUP_DIR/redis_$DATE.rdb" )
+if [ "$MYSQL_ONLY" = false ] && [ -f "$BACKUP_DIR/rabbitmq_$DATE.json" ]; then
+  ARTIFACTS+=( "$BACKUP_DIR/rabbitmq_$DATE.json" )
 fi
-elif [ "$MYSQL_ONLY" = false ]; then
-ARTIFACTS=( "$BACKUP_DIR/mysql_$DATE.sql.gz" "$BACKUP_DIR/redis_$DATE.rdb" )
-[ -f "$BACKUP_DIR/rabbitmq_$DATE.json" ] && ARTIFACTS+=( "$BACKUP_DIR/rabbitmq_$DATE.json" )
-else
-ARTIFACTS=( "$BACKUP_DIR/mysql_$DATE.sql.gz" )
+if [ -n "${BINLOG_ARTIFACT:-}" ] && [ -f "${BINLOG_ARTIFACT:-}" ]; then
+  ARTIFACTS+=( "$BINLOG_ARTIFACT" )
 fi
-
-# binlog 增量产物纳入 OSS 异地推送清单（ISSUE/51 时限项）：PITR 的增量此前只在本地，
-# 服务器盘损坏时全量+增量一起丢 —— binlog_*.tar.gz 打包后从未进过 ARTIFACTS，异地永远缺增量。
-# BINLOG_ARTIFACT 为空（--mysql-only / binlog 跳过 / 本次无新增文件）时不追加。
-[ -n "$BINLOG_ARTIFACT" ] && ARTIFACTS+=( "$BINLOG_ARTIFACT" )
+ARTIFACT_COUNT=${#ARTIFACTS[@]}
 
 # ---------------------------------------------------------------------------
 # 异地化备份（优先 OSS，旧 ssh/scp 作为可选兼容）
 # ---------------------------------------------------------------------------
 REGION="${OSS_REGION:-cn-shenzhen}"
 ENDPOINT="${OSS_ENDPOINT:-https://oss-${REGION}.aliyuncs.com}"
-
-# 解析 bucket 内对象前缀：BACKUP_OSS_PREFIX，默认 backups/<YYYYMMDD>
 OSS_PREFIX="${BACKUP_OSS_PREFIX:-backups}/$(date +%Y%m%d)"
-OSS_PREFIX="${OSS_PREFIX#/}"      # 去掉首部斜杠，避免空前缀
-OSS_PREFIX="${OSS_PREFIX%/}"      # 去掉尾部斜杠
+OSS_PREFIX="${OSS_PREFIX#/}"
+OSS_PREFIX="${OSS_PREFIX%/}"
 
-echo "异地化: OSS bucket=$OSS_BUCKET prefix=$OSS_PREFIX endpoint=$ENDPOINT"
-
-# 选择 ossutil 路径：优先 OSS_ALIYUN，其次 PATH 中的 ossutil
 OSSUTIL="${OSS_ALIYUN:-}"
 if [ -z "$OSSUTIL" ] && command -v ossutil >/dev/null 2>&1; then
   OSSUTIL=$(command -v ossutil)
 fi
 
-# 优先尝试 OSS 推送
-# --mysql-only 时跳过：预部署只备本地 MySQL，异地推送由 crontab 全量备份完成
-if [ "$MYSQL_ONLY" = false ]; then
-if [ -z "$OSS_BUCKET" ] || [ -z "$OSS_ACCESS_KEY_ID" ] || [ -z "$OSS_ACCESS_KEY_SECRET" ]; then
+# 71 号 P0-②：**标题只在真正要上传时打印**；跳过要写明原因，不能再制造"在传"的假信号。
+if [ "$MYSQL_ONLY" = true ]; then
+  echo "OSS 推送: 本次 --mysql-only（预部署备份），按设计跳过异地推送（由周六全量备份负责）"
+elif [ -z "${OSS_BUCKET:-}" ] || [ -z "${OSS_ACCESS_KEY_ID:-}" ] || [ -z "${OSS_ACCESS_KEY_SECRET:-}" ]; then
   echo "WARN: 未配置完整 OSS 参数 (OSS_BUCKET/OSS_ACCESS_KEY_ID/OSS_ACCESS_KEY_SECRET)，跳过 OSS 异地推送" >&2
 elif [ -z "$OSSUTIL" ]; then
   echo "WARN: 已配置 OSS 但未找到 ossutil（PATH 或 OSS_ALIYUN），无法推送异地备份。" >&2
   echo "     安装 ossutil 后设置 OSS_ALIYUN=<ossutil 路径>，或在 PATH 中提供 ossutil。" >&2
-  echo "     （可选）配置 BACKUP_REMOTE_HOST 走旧的 ssh/scp 异地路径也可。" >&2
   FAILED=1
 elif [ ! -x "$OSSUTIL" ] && [ ! -f "$OSSUTIL" ]; then
   echo "ERROR: ossutil 路径不存在或不可执行: $OSSUTIL" >&2
   FAILED=1
+elif [ "$ARTIFACT_COUNT" -eq 0 ]; then
+  echo "WARN: 本次无任何可推送产物（各组件均失败/跳过），跳过 OSS 推送" >&2
+  FAILED=1
 else
+  echo "异地化: OSS bucket=$OSS_BUCKET prefix=$OSS_PREFIX endpoint=$ENDPOINT（待上传 $ARTIFACT_COUNT 个产物）"
   echo "使用 ossutil 推送异地备份到 OSS..."
-  # ossutil 首次使用需配置凭证；为避免交互，用环境变量注入
-  # ossutil2.x 语法: ossutil cp <本地> oss://bucket/key [-e endpoint] [-i id] [-k secret]
   export OSS_ACCESS_KEY_ID="$OSS_ACCESS_KEY_ID" OSS_ACCESS_KEY_SECRET="$OSS_ACCESS_KEY_SECRET"
   OSS_PUSH_FAIL=0
+  OSS_PUSH_OK=0
   for ART in "${ARTIFACTS[@]}"; do
     NAME=$(basename "$ART")
     if "$OSSUTIL" cp "$ART" "oss://$OSS_BUCKET/$OSS_PREFIX/$NAME" -e "$ENDPOINT" --region "$REGION"; then
       echo "OSS 上传成功: $OSS_PREFIX/$NAME"
       OSSFILE="$OSS_PREFIX/$NAME"
+      OSS_PUSH_OK=$((OSS_PUSH_OK+1))
     else
       echo "ERROR: OSS 上传失败: $NAME" >&2
       OSS_PUSH_FAIL=1
     fi
   done
   if [ "$OSS_PUSH_FAIL" -ne 0 ]; then
-    echo "ERROR: OSS 异地备份部分失败（本地备份仍有效）" >&2
+    echo "ERROR: OSS 异地备份部分失败（成功 $OSS_PUSH_OK/$ARTIFACT_COUNT；本地备份仍有效）" >&2
     FAILED=1
   else
-    echo "异地化备份完成: s3://$OSS_BUCKET/$OSS_PREFIX/"
+    echo "异地化备份完成: oss://$OSS_BUCKET/$OSS_PREFIX/（$OSS_PUSH_OK 个产物）"
   fi
 fi
-fi
+
 
 # 兼容旧 ssh/scp 异地同步（可选，--mysql-only 同样跳过）
 if [ "$MYSQL_ONLY" = false ]; then
 BACKUP_REMOTE_HOST="${BACKUP_REMOTE_HOST:-}"
 BACKUP_REMOTE_DIR="${BACKUP_REMOTE_DIR:-/data/backups/zxyz}"
-
-if [ -n "$BACKUP_REMOTE_HOST" ]; then
+if [ "${ARTIFACT_COUNT:-0}" -eq 0 ]; then
+  echo "WARN: 本次无产物，跳过 ssh/scp 异地同步" >&2
+elif [ -z "$BACKUP_REMOTE_HOST" ]; then
+  : # 未配置旧 ssh 异地路径：正常（当前主异地路径是 OSS）
+else
   echo "同步备份到远程主机 $BACKUP_REMOTE_HOST..."
   REMOTE_DIR="$BACKUP_REMOTE_DIR/$DATE"
-  # 审计 2.3.3：原来用 StrictHostKeyChecking=no（完全不校验主机密钥，可被 MITM 劫持）。
-  # 改为 accept-new：首次连接按 TOFU 固化，之后密钥变化即失败；known_hosts 落到稳定路径，
-  # 需要预置时用 BACKUP_SSH_KNOWN_HOSTS 指向受控文件。
+  # 审计 2.3.3：StrictHostKeyChecking=accept-new（首次 TOFU，之后密钥变化即失败）
   SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile=${BACKUP_SSH_KNOWN_HOSTS:-$HOME/.ssh/known_hosts}")
-  ssh "${SSH_OPTS[@]}" "$BACKUP_REMOTE_HOST" "mkdir -p $REMOTE_DIR" || {
-    echo "WARN: 无法创建远程目录，跳过 ssh 异地化" >&2
-  }
-  scp "${SSH_OPTS[@]}" \
-    "${ARTIFACTS[@]}" "$BACKUP_REMOTE_HOST:$REMOTE_DIR/" || {
-    echo "WARN: ssh/scp 异地化备份失败，本地备份仍有效" >&2
-  }
+  ssh "${SSH_OPTS[@]}" "$BACKUP_REMOTE_HOST" "mkdir -p $REMOTE_DIR" \
+    || echo "WARN: 无法创建远程目录，跳过 ssh 异地化" >&2
+  scp "${SSH_OPTS[@]}" "${ARTIFACTS[@]}" "$BACKUP_REMOTE_HOST:$REMOTE_DIR/" \
+    || echo "WARN: ssh/scp 异地化备份失败，本地备份仍有效" >&2
   echo "ssh/scp 异地化备份完成: $BACKUP_REMOTE_HOST:$REMOTE_DIR/"
 fi
 fi
+
 
 # 清理过期备份（本地 + RabbitMQ 拓扑，均纳入清理周期）
 echo "清理 ${KEEP_DAYS} 天前的备份..."
@@ -392,6 +405,14 @@ if [ -w "$(dirname "$BINLOG_OK_LOG")" ] || [ -w "$BINLOG_OK_LOG" ]; then
   echo "binlog_ok=$BINLOG_OK note=$BINLOG_NOTE date=$DATE" >> "$BINLOG_OK_LOG"
 else
   echo "binlog_ok=$BINLOG_OK note=$BINLOG_NOTE date=$DATE（本机无部署目录写权限，仅 stdout）"
+fi
+
+# 71 号 P0-④：失败要"外部可见"（此前 FAILED=1 只写进 cron 日志，无人看）。
+# 复用 ALERT_WEBHOOK_URL 设施，best-effort，失败不影响本地备份。
+if [ "$FAILED" -ne 0 ] && [ -n "${ALERT_WEBHOOK_URL:-}" ]; then
+  _payload="{\"text\":\"[ZXYZ 备份失败] host=$(hostname) date=$DATE —— 详见 $BACKUP_DIR 与 deploy-last.log（binlog_ok=$BINLOG_OK）\"}"
+  curl -sS -m 10 -X POST -H 'Content-Type: application/json' -d "$_payload" "$ALERT_WEBHOOK_URL" >/dev/null 2>&1 \
+    || echo "WARN: 备份失败告警发送失败（webhook 不可达）" >&2
 fi
 
 if [ "$FAILED" -ne 0 ]; then

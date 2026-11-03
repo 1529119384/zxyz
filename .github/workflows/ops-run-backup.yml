@@ -1,0 +1,98 @@
+name: 运维·立即执行一次备份（手动，需确认）
+
+# =============================================================================
+# 用途（2026-11-03，71 号 P0 验收）：在服务器上**真实跑一次全量备份**，
+# 用于验证「异地（OSS）备份」修复是否真的把对象传上去了，而不是只看脚本逻辑。
+#
+# 背景：71 号发现 10-10 之后 OSS 上 0 个对象，原因是全量备份在 Redis 判据处 exit 1；
+#   修复见 scripts/backup.sh（DBSIZE 判空库 / 单组件失败不阻断 / OSS 标题后移 / 失败 webhook）。
+#
+# ⚠️ 变更类操作：会真实生成备份并**上传到 OSS**（只增不改），必须 confirm=RUN。
+#   - 默认 dry-run：只打印现状（cron、最近备份、OSS 最近对象）；
+#   - confirm=RUN：执行 `bash scripts/backup.sh`（全量），随后打印 OSS 当日前缀对象清单。
+# 只读/写范围：服务器 /www/zxyz 下 backups/ 目录 + OSS backups/<日期>/；不重启、不改容器。
+# =============================================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: '输入 RUN 才会真正执行全量备份（否则仅打印现状）'
+        required: true
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-run-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: 执行一次全量备份
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: 前置断言
+        env:
+          PROD_HOST: ${{ secrets.DEV_DEPLOY_HOST || secrets.DEPLOY_HOST }}
+          PROD_KEY: ${{ secrets.DEV_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
+          PROD_USER: ${{ secrets.DEPLOY_USERNAME }}
+        run: |
+          set -euo pipefail
+          missing=""
+          [ -n "${PROD_HOST:-}" ] || missing="$missing host"
+          [ -n "${PROD_KEY:-}" ] || missing="$missing key"
+          [ -n "${PROD_USER:-}" ] || missing="$missing user"
+          if [ -n "$missing" ]; then echo "::error::缺少凭据:$missing"; exit 1; fi
+          echo "凭据齐备"
+
+      - name: 执行备份 / 只读现状
+        env:
+          PROD_HOST: ${{ secrets.DEV_DEPLOY_HOST || secrets.DEPLOY_HOST }}
+          PROD_KEY: ${{ secrets.DEV_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
+          PROD_USER: ${{ secrets.DEPLOY_USERNAME }}
+          PROD_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/www/zxyz' }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -uo pipefail
+          mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$PROD_KEY" > "$HOME/.ssh/prod_key" && chmod 600 "$HOME/.ssh/prod_key"
+          set +e
+          ssh -i "$HOME/.ssh/prod_key" -p "${PROD_PORT:-22}" \
+              -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -o BatchMode=yes \
+              "${PROD_USER}@${PROD_HOST}" "DEPLOY_PATH='${DEPLOY_PATH}' CONFIRM='${CONFIRM}' bash -s" > /tmp/out.txt 2>&1 <<'REMOTE'
+          set -uo pipefail
+          D="${DEPLOY_PATH:-/www/zxyz}"
+          echo "### 现状"
+          echo "--- crontab(backup) ---"
+          crontab -l 2>/dev/null | grep -i backup || echo "(无)"
+          echo "--- 本地最近备份 ---"
+          ls -lt "$D/backups" 2>/dev/null | head -6 || echo "(无)"
+          echo "--- OSS 最近对象(backups/) ---"
+          ( cd "$D" && set -a && . ./.env && set +a && \
+            ossutil ls "oss://${OSS_BUCKET}/backups/" 2>&1 | tail -12 ) || echo "(ossutil 不可用)"
+          if [ "${CONFIRM:-}" != "RUN" ]; then
+            echo "DRY-RUN：未提供 confirm=RUN，不执行备份。"
+            exit 0
+          fi
+          echo "### 执行全量备份"
+          cd "$D" || exit 1
+          bash scripts/backup.sh
+          rc=$?
+          echo "BACKUP_EXIT=$rc"
+          echo "--- deploy-last.log 尾部 ---"
+          tail -3 "$D/deploy-last.log" 2>/dev/null || true
+          echo "--- OSS 当日前缀 ---"
+          set -a; . "$D/.env"; set +a
+          TODAY=$(date +%Y%m%d)
+          ossutil ls "oss://${OSS_BUCKET}/${BACKUP_OSS_PREFIX:-backups}/$TODAY/" 2>&1 | tail -15 || true
+          exit $rc
+          REMOTE
+          rc=$?
+          set -e
+          echo "===== 远端输出 ====="
+          cat /tmp/out.txt 2>/dev/null || true
+          if [ "$rc" -ne 0 ]; then echo "::error::备份执行失败 rc=$rc（见上方输出）"; exit 1; fi
