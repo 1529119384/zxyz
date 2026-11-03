@@ -68,7 +68,7 @@ RUN mvn -B -T 1C -pl zxyz-common -am install -Dmaven.test.skip=false -DskipTests
 #   服务 job 红 ⇒ deploy 被阻断。已换到 `21-jre-alpine`（alpine 3.24.3 / JDK 21.0.13，
 #   本地实测 `trivy image --severity HIGH,CRITICAL --ignore-unfixed` = **0 条**）。
 #   digest 为本地 `docker inspect RepoDigests` 实取值；tag 仅可读，digest 才决定比特。
-FROM eclipse-temurin:21-jre-alpine@sha256:82cf3d9ccbe1ed46252008d51b2f2329e6b9e8a2f4394c4bebefc3ea7f4b1372
+FROM eclipse-temurin:25-jre-alpine@sha256:56f273059de6b13a6b49fe0ded691ed2d0399bbee76156a8f2d385f7524a3d43
 
 # 在构建期把运行时基础镜像（eclipse-temurin:21-jre-alpine）内已安装的 OS 包
 # 升级到最新安全修复版，以修复 Trivy 扫描会判定 FAIL 的 HIGH/CRITICAL 漏洞
